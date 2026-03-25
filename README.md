@@ -1,3 +1,11 @@
+<p align="center">
+  <img src="assets/logo.png" alt="CSGClaw logo" width="560" />
+</p>
+
+<p align="center">
+  English | <a href="./README.zh.md">中文</a>
+</p>
+
 # CSGClaw
 
 > Your Personal AI Team
