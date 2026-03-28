@@ -173,6 +173,7 @@ function GlobeIcon() {
 
 function MessageContent({ content }) {
   const containerRef = useRef(null);
+  const structured = useMemo(() => parseStructuredMessage(content), [content]);
   const markup = useMemo(() => renderMarkdown(content), [content]);
 
   useEffect(() => {
@@ -200,7 +201,42 @@ function MessageContent({ content }) {
     }
   }, [markup]);
 
+  if (structured) {
+    return html`<${StructuredMessageCard} data=${structured} />`;
+  }
+
   return html`<div ref=${containerRef} className="message-content" dangerouslySetInnerHTML=${{ __html: markup }} />`;
+}
+
+function StructuredMessageCard({ data }) {
+  return html`
+    <div className="structured-message">
+      <div className="structured-message-header">
+        <div>
+          <div className="structured-message-title">${data.title}</div>
+          ${data.subtitle ? html`<div className="structured-message-subtitle">${data.subtitle}</div>` : null}
+        </div>
+        ${data.badge ? html`<span className="structured-message-badge">${data.badge}</span>` : null}
+      </div>
+      ${data.summary ? html`<div className="structured-message-summary">${data.summary}</div>` : null}
+      ${data.code
+        ? html`
+            <details className="structured-message-details">
+              <summary>${data.codeSummary}</summary>
+              <pre className="structured-message-code"><code>${data.code}</code></pre>
+            </details>
+          `
+        : null}
+      ${data.payload
+        ? html`
+            <details className="structured-message-details">
+              <summary>${data.payloadSummary}</summary>
+              <pre className="structured-message-json"><code>${data.payload}</code></pre>
+            </details>
+          `
+        : null}
+    </div>
+  `;
 }
 
 function AddUserIcon() {
@@ -968,6 +1004,170 @@ function renderMarkdown(content) {
     USE_PROFILES: { html: true },
     ADD_ATTR: ["target", "rel", "class"],
   });
+}
+
+function parseStructuredMessage(content) {
+  const cleaned = (content ?? "").trim();
+  if (!cleaned) {
+    return null;
+  }
+
+  const fencedJSON = cleaned.match(/^```(?:json|javascript|js)?\s*([\s\S]+?)\s*```$/i);
+  const rawJSON = fencedJSON ? fencedJSON[1].trim() : cleaned;
+  const parsed = tryParseJSON(rawJSON);
+  if (parsed && isStructuredPayload(parsed)) {
+    return buildStructuredPayload(parsed);
+  }
+
+  const codeBlock = extractSingleLargeCodeBlock(cleaned);
+  if (codeBlock) {
+    return buildCodeBlockPayload(codeBlock);
+  }
+
+  return null;
+}
+
+function tryParseJSON(input) {
+  if (!input || (!input.startsWith("{") && !input.startsWith("["))) {
+    return null;
+  }
+  try {
+    return JSON.parse(input);
+  } catch {
+    return null;
+  }
+}
+
+function isStructuredPayload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const keys = Object.keys(value);
+  return keys.some((key) => ["tool", "name", "arguments", "input", "file", "path", "code", "content", "status", "action"].includes(key));
+}
+
+function buildStructuredPayload(value) {
+  const title = String(value.tool || value.name || value.action || "Structured output");
+  const target = firstNonEmptyString(value.file, value.path, value.file_path, value.filename);
+  const code = findLargeCodeString(value);
+
+  return {
+    title,
+    subtitle: target && title !== target ? target : "",
+    badge: inferPayloadBadge(value),
+    summary: summarizeStructuredValue(value, code),
+    code,
+    codeSummary: code ? summarizeCode(code) : "",
+    payload: JSON.stringify(value, null, 2),
+    payloadSummary: `查看原始 JSON · ${Object.keys(value).length} 个字段`,
+  };
+}
+
+function buildCodeBlockPayload(codeBlock) {
+  const lineCount = codeBlock.code.split("\n").length;
+  return {
+    title: "Long code block",
+    subtitle: codeBlock.language ? codeBlock.language.toUpperCase() : "Plain text",
+    badge: lineCount > 80 ? "Long output" : "Code",
+    summary: `检测到 ${lineCount} 行代码，默认折叠以避免聊天流被长内容撑开。`,
+    code: codeBlock.code,
+    codeSummary: `展开代码 · ${lineCount} 行`,
+    payload: "",
+    payloadSummary: "",
+  };
+}
+
+function extractSingleLargeCodeBlock(content) {
+  const match = content.match(/^```([\w-]+)?\n([\s\S]+?)\n```$/);
+  if (!match) {
+    return null;
+  }
+  const code = match[2];
+  if (code.length < 600 && code.split("\n").length < 18) {
+    return null;
+  }
+  return {
+    language: match[1] || "",
+    code,
+  };
+}
+
+function findLargeCodeString(value, seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) {
+    return "";
+  }
+  seen.add(value);
+
+  for (const key of ["code", "content", "text", "body", "source"]) {
+    if (typeof value[key] === "string" && looksLikeCode(value[key])) {
+      return value[key];
+    }
+  }
+
+  for (const item of Object.values(value)) {
+    if (typeof item === "string" && looksLikeCode(item)) {
+      return item;
+    }
+    if (item && typeof item === "object") {
+      const nested = findLargeCodeString(item, seen);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return "";
+}
+
+function looksLikeCode(text) {
+  if (typeof text !== "string") {
+    return false;
+  }
+  const trimmed = text.trim();
+  if (trimmed.length < 180) {
+    return false;
+  }
+  return /[{};<>]/.test(trimmed) || trimmed.includes("\n");
+}
+
+function summarizeStructuredValue(value, code) {
+  const parts = [];
+  const args = value.arguments || value.input || value.params;
+  if (args && typeof args === "object" && !Array.isArray(args)) {
+    const interestingKeys = Object.keys(args).slice(0, 3);
+    if (interestingKeys.length > 0) {
+      parts.push(`参数: ${interestingKeys.join(", ")}`);
+    }
+  }
+  if (code) {
+    parts.push(`代码: ${summarizeCode(code)}`);
+  }
+  return parts.join(" · ") || "已识别为结构化工具输出，默认折叠原始内容。";
+}
+
+function summarizeCode(code) {
+  const lines = code.split("\n").length;
+  const chars = code.length;
+  return `${lines} 行 / ${chars} 字符`;
+}
+
+function inferPayloadBadge(value) {
+  if (typeof value.status === "string" && value.status.trim()) {
+    return value.status.trim();
+  }
+  if (typeof value.tool === "string" && value.tool.trim()) {
+    return "Tool";
+  }
+  return "JSON";
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
 }
 
 createRoot(document.getElementById("root")).render(html`<${App} />`);
