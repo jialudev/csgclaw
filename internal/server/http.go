@@ -156,17 +156,9 @@ func (s *HTTPServer) handleWorkers(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if s.im != nil {
-			_, _, err := s.im.EnsureAgentUser(im.EnsureAgentUserRequest{
-				ID:     created.ID,
-				Name:   created.Name,
-				Handle: deriveAgentHandle(created),
-				Role:   displayRole(created.Role),
-			})
-			if err != nil {
-				http.Error(w, fmt.Sprintf("agent created but failed to ensure im user: %v", err), http.StatusBadGateway)
-				return
-			}
+		if err := s.ensureWorkerIMState(created); err != nil {
+			http.Error(w, fmt.Sprintf("agent created but failed to ensure im user: %v", err), http.StatusBadGateway)
+			return
 		}
 
 		writeJSON(w, http.StatusCreated, created)
@@ -476,6 +468,27 @@ func sanitizeHandle(input string) (string, bool) {
 	return b.String(), true
 }
 
+func (s *HTTPServer) ensureWorkerIMState(created agent.Agent) error {
+	if s.im == nil {
+		return nil
+	}
+
+	user, room, err := s.im.EnsureAgentUser(im.EnsureAgentUserRequest{
+		ID:     created.ID,
+		Name:   created.Name,
+		Handle: deriveAgentHandle(created),
+		Role:   displayRole(created.Role),
+	})
+	if err != nil {
+		return err
+	}
+	s.publishUserEvent(im.EventTypeUserCreated, user)
+	if room != nil {
+		s.publishConversationEvent(im.EventTypeConversationCreated, *room)
+	}
+	return nil
+}
+
 func (s *HTTPServer) publishMessageCreated(conversationID, senderID string, message im.Message) {
 	if s.imBus == nil {
 		return
@@ -502,6 +515,17 @@ func (s *HTTPServer) publishConversationEvent(eventType string, conversation im.
 	s.imBus.Publish(im.Event{
 		Type:         eventType,
 		Conversation: &conversationCopy,
+	})
+}
+
+func (s *HTTPServer) publishUserEvent(eventType string, user im.User) {
+	if s.imBus == nil {
+		return
+	}
+	userCopy := user
+	s.imBus.Publish(im.Event{
+		Type: eventType,
+		User: &userCopy,
 	})
 }
 

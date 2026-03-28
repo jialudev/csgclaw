@@ -952,6 +952,9 @@ function applyIMEvent(current, event) {
     return current;
   }
 
+  if (event.type === "user.created" && event.user) {
+    return upsertUserInData(current, event.user);
+  }
   if (event.type === "message.created" && event.message) {
     return appendMessageToData(current, event.conversation_id, event.message);
   }
@@ -988,6 +991,19 @@ function upsertConversationInData(current, conversation) {
     ? current.conversations.map((item) => (item.id === conversation.id ? conversation : item))
     : [conversation, ...current.conversations];
   return { ...current, conversations: sortConversations(conversations) };
+}
+
+function upsertUserInData(current, user) {
+  if (!current || !user) {
+    return current;
+  }
+
+  const existing = current.users.some((item) => item.id === user.id);
+  const users = existing
+    ? current.users.map((item) => (item.id === user.id ? user : item))
+    : [...current.users, user];
+  users.sort((a, b) => a.name.localeCompare(b.name));
+  return { ...current, users };
 }
 
 function sortConversations(conversations) {

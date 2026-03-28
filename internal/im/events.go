@@ -6,12 +6,14 @@ const (
 	EventTypeMessageCreated           = "message.created"
 	EventTypeConversationCreated      = "conversation.created"
 	EventTypeConversationMembersAdded = "conversation.members_added"
+	EventTypeUserCreated              = "user.created"
 )
 
 type Event struct {
 	Type           string        `json:"type"`
 	ConversationID string        `json:"conversation_id,omitempty"`
 	Conversation   *Conversation `json:"conversation,omitempty"`
+	User           *User         `json:"user,omitempty"`
 	Message        *Message      `json:"message,omitempty"`
 	Sender         *User         `json:"sender,omitempty"`
 }
