@@ -21,9 +21,9 @@
 ok
 ```
 
-## 2. Agent 接口
+## 2. Worker 接口
 
-统一后的 `agent` 对象字段如下。除 PicoClaw Bot 兼容接口外，`bot / worker / agent` 在 API 和内部结构里都按这一套字段表达：
+统一后的 `worker` 对象字段如下。除 PicoClaw Bot 兼容接口外，`bot / worker / agent` 在 API 和内部结构里都按这一套字段表达：
 
 ```json
 {
@@ -43,69 +43,6 @@ ok
 - `image` 仍可能出现在响应中，用于表示容器镜像；它不是统一身份字段的一部分
 - `/api/v1/workers` 只是 `worker` 视角的路由别名，返回对象仍然是统一的 `agent`
 
-### `GET /api/v1/agents`
-
-获取全部 agent 列表。
-
-响应示例：
-
-```json
-[
-  {
-    "id": "u-manager",
-    "name": "manager",
-    "description": "",
-    "role": "manager",
-    "status": "running",
-    "created_at": "2026-03-28T12:00:00Z",
-    "model_id": "minimax-m2.7",
-    "image": "ghcr.io/russellluo/picoclaw:2026.3.27"
-  }
-]
-```
-
-### `POST /api/v1/agents`
-
-创建普通 agent。
-
-请求体：
-
-```json
-{
-  "id": "agent-alice",
-  "name": "alice",
-  "description": "general purpose agent",
-  "role": "agent",
-  "model_id": "minimax-m2.7",
-  "image": "ghcr.io/example/agent:latest"
-}
-```
-
-响应：`201 Created`
-
-```json
-{
-  "id": "agent-alice",
-  "name": "alice",
-  "description": "general purpose agent",
-  "role": "agent",
-  "image": "ghcr.io/example/agent:latest",
-  "status": "running",
-  "created_at": "2026-03-28T12:00:00Z",
-  "model_id": "minimax-m2.7"
-}
-```
-
-说明：
-
-- `name` 必填
-- `image` 对普通容器 agent 必填
-- `id`、`description`、`role`、`status`、`created_at`、`model_id` 可传；未传时由服务端补默认值或实际运行态填充
-- `role=manager` 不允许通过该接口创建
-- 失败时通常返回 `502 Bad Gateway`
-
-## 3. Worker 接口
-
 ### `GET /api/v1/workers`
 
 获取全部 `role=worker` 的 agent 列表。
@@ -113,8 +50,6 @@ ok
 ### `POST /api/v1/workers`
 
 创建 `role=worker` 的 agent，并自动同步到 IM 用户体系。
-
-请求体与 `POST /api/v1/agents` 使用同一结构；服务端会强制把 `role` 视为 `worker`。
 
 请求体：
 
@@ -153,7 +88,7 @@ ok
 - 若 IM 服务可用，会自动创建对应 IM 用户，并创建 `Admin & <Worker>` 私聊
 - 校验失败通常返回 `400 Bad Request`
 
-## 4. IM 接口
+## 3. IM 接口
 
 ### `GET /api/v1/im/bootstrap`
 

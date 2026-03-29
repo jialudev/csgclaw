@@ -43,14 +43,6 @@ func main() {
 		if err := runServe(ctx); err != nil {
 			log.Fatal(err)
 		}
-	case "create":
-		if err := runCreate(ctx); err != nil {
-			log.Fatal(err)
-		}
-	case "list":
-		if err := runList(ctx); err != nil {
-			log.Fatal(err)
-		}
 	default:
 		usage()
 		os.Exit(2)
@@ -63,8 +55,6 @@ func usage() {
 Usage:
   csgclaw onboard [--force-recreate-manager]
   csgclaw start [-d|--daemon]
-  csgclaw create --name NAME --image IMAGE
-  csgclaw list
 `)
 }
 
@@ -254,68 +244,6 @@ func runServe(ctx context.Context) error {
 		PicoClaw:   im.NewPicoClawBridge(cfg.PicoClaw),
 		Context:    ctx,
 	})
-}
-
-func runCreate(ctx context.Context) error {
-	fs := flag.NewFlagSet("create", flag.ContinueOnError)
-	name := fs.String("name", "", "agent name")
-	image := fs.String("image", "", "container image")
-	if err := fs.Parse(os.Args[2:]); err != nil {
-		return err
-	}
-	if strings.TrimSpace(*name) == "" {
-		return errors.New("missing --name")
-	}
-	if strings.TrimSpace(*image) == "" {
-		return errors.New("missing --image")
-	}
-
-	cfg, err := config.LoadDefault()
-	if err != nil {
-		return err
-	}
-
-	client := server.NewClient(cfg.Server.APIBaseURL, &http.Client{Timeout: 15 * time.Second})
-	resp, err := client.CreateAgent(ctx, server.CreateAgentRequest{
-		Name:  *name,
-		Image: *image,
-	})
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("agent created\nid: %s\nname: %s\nimage: %s\nstatus: %s\n", resp.ID, resp.Name, resp.Image, resp.Status)
-	return nil
-}
-
-func runList(ctx context.Context) error {
-	cfg, err := config.LoadDefault()
-	if err != nil {
-		return err
-	}
-
-	client := server.NewClient(cfg.Server.APIBaseURL, &http.Client{Timeout: 15 * time.Second})
-	agents, err := client.ListAgents(ctx)
-	if err != nil {
-		return err
-	}
-
-	if len(agents) == 0 {
-		fmt.Println("no agents")
-		return nil
-	}
-
-	fmt.Printf("%-28s %-16s %-10s %-20s %s\n", "ID", "NAME", "STATUS", "CREATED_AT", "IMAGE")
-	for _, a := range agents {
-		fmt.Printf("%-28s %-16s %-10s %-20s %s\n",
-			a.ID,
-			truncate(a.Name, 16),
-			a.Status,
-			a.CreatedAt.Local().Format("2006-01-02 15:04:05"),
-			a.Image,
-		)
-	}
-	return nil
 }
 
 func waitForHealthy(apiBaseURL string, timeout time.Duration) error {

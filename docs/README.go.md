@@ -4,8 +4,7 @@ This repository now includes a minimal Go implementation for:
 
 - `csgclaw onboard`
 - `csgclaw start`
-- `csgclaw create`
-- `POST /api/v1/agents`
+- `POST /api/v1/workers`
 
 Notes:
 

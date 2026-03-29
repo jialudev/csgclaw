@@ -6,7 +6,6 @@
 2. CLI: 支持两个子命令
     - csgclaw onboard: 初始化 ~/.csgclaw/config.toml（里面最基本可以配置llm model的base_url、api_key和model_id）
     - csgclaw start: 以daemon形式启动上述Server
-    - csgclaw create: 调用API创建一个Agent
 
 ## Go SDK用法
 
