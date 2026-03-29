@@ -234,6 +234,13 @@ body::after {
   flex: 1;
 }
 
+.chat-title-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .title-badge {
   flex-shrink: 0;
   display: inline-flex;
@@ -429,6 +436,13 @@ body::after {
 
 .icon-button:hover {
   transform: translateY(-1px);
+}
+
+.icon-button.active {
+  border-color: rgba(43, 109, 246, 0.28);
+  background: linear-gradient(180deg, rgba(86, 153, 255, 0.16), rgba(43, 109, 246, 0.12));
+  color: var(--primary-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .icon-button-mark {

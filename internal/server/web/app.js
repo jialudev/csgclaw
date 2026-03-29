@@ -7,6 +7,7 @@ import mermaid from "https://esm.sh/mermaid@11.4.1";
 
 const html = htm.bind(React.createElement);
 const LOCALE_STORAGE_KEY = "csgclaw.im.locale";
+const TOOL_CALLS_STORAGE_KEY = "csgclaw.im.showToolCalls";
 
 marked.setOptions({
   gfm: true,
@@ -36,6 +37,7 @@ const messages = {
     roomCreatedToast: "Room 已创建",
     inviteSentToast: "邀请已发送",
     noMessages: "还没有消息，发一条开始吧。",
+    noVisibleMessages: "工具调用已隐藏，当前没有可显示的消息。",
     createRoom: "新建会话",
     conversationLabel: "会话",
     participants: "成员",
@@ -62,6 +64,8 @@ const messages = {
     languageSwitcher: "切换语言",
     languageOptionZh: "简体中文",
     languageOptionEn: "English",
+    toggleToolCallsShow: "显示工具调用",
+    toggleToolCallsHide: "隐藏工具调用",
     online: "在线",
     offline: "离线",
     justNow: "刚刚",
@@ -105,6 +109,7 @@ const messages = {
     roomCreatedToast: "Room created",
     inviteSentToast: "Invite sent",
     noMessages: "No messages yet. Start the conversation.",
+    noVisibleMessages: "Tool calls are hidden, and there are no visible messages in this conversation.",
     createRoom: "New Chat",
     conversationLabel: "Conversation",
     participants: "participants",
@@ -131,6 +136,8 @@ const messages = {
     languageSwitcher: "Switch language",
     languageOptionZh: "简体中文",
     languageOptionEn: "English",
+    toggleToolCallsShow: "Show tool calls",
+    toggleToolCallsHide: "Hide tool calls",
     online: "online",
     offline: "offline",
     justNow: "just now",
@@ -280,8 +287,23 @@ function UsersIcon() {
   `;
 }
 
+function WrenchIcon() {
+  return html`
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M14.71 6.29a4 4 0 0 0-5.32 5.94l-4.1 4.1a1.5 1.5 0 1 0 2.12 2.12l4.1-4.1a4 4 0 0 0 5.94-5.32l-2.24 2.24a1 1 0 0 1-1.42 0l-1.38-1.38a1 1 0 0 1 0-1.42Z"
+        fill="currentColor"
+      />
+    </svg>
+  `;
+}
+
 function App() {
   const [locale, setLocale] = useState(() => detectInitialLocale());
+  const [showToolCalls, setShowToolCalls] = useState(() => {
+    const value = window.localStorage.getItem(TOOL_CALLS_STORAGE_KEY);
+    return value === "true";
+  });
   const [data, setData] = useState(null);
   const [activeConversationId, setActiveConversationId] = useState("");
   const [draft, setDraft] = useState("");
@@ -329,6 +351,10 @@ function App() {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
   }, [locale]);
 
+  useEffect(() => {
+    window.localStorage.setItem(TOOL_CALLS_STORAGE_KEY, String(showToolCalls));
+  }, [showToolCalls]);
+
   const t = useMemo(() => createTranslator(locale), [locale]);
 
   const usersById = useMemo(() => {
@@ -341,6 +367,16 @@ function App() {
     () => data?.conversations.find((item) => item.id === activeConversationId) ?? null,
     [data, activeConversationId],
   );
+
+  const visibleMessages = useMemo(() => {
+    if (!activeConversation) {
+      return [];
+    }
+    if (showToolCalls) {
+      return activeConversation.messages;
+    }
+    return activeConversation.messages.filter((message) => !isToolCallMessage(message.content));
+  }, [activeConversation, showToolCalls]);
 
   const conversations = useMemo(
     () => data?.conversations ?? [],
@@ -406,7 +442,7 @@ function App() {
       return;
     }
     el.scrollTop = el.scrollHeight;
-  }, [activeConversationId, activeConversation?.messages.length]);
+  }, [activeConversationId, visibleMessages.length]);
 
   async function sendMessage() {
     if (!data || !activeConversation || !draft.trim()) {
@@ -625,14 +661,25 @@ function App() {
                           <span>${activeConversationOnlineCount}</span>
                         </div>
                       </div>
-                      <button
-                        className="icon-button"
-                        aria-label=${t("inviteMembers")}
-                        title=${t("inviteMembers")}
-                        onClick=${() => setShowInvite(true)}
-                      >
-                        <span className="icon-button-mark"><${AddUserIcon} /></span>
-                      </button>
+                      <div className="chat-title-actions">
+                        <button
+                          className=${`icon-button ${showToolCalls ? "active" : ""}`}
+                          aria-label=${showToolCalls ? t("toggleToolCallsHide") : t("toggleToolCallsShow")}
+                          aria-pressed=${showToolCalls}
+                          title=${showToolCalls ? t("toggleToolCallsHide") : t("toggleToolCallsShow")}
+                          onClick=${() => setShowToolCalls((value) => !value)}
+                        >
+                          <span className="icon-button-mark"><${WrenchIcon} /></span>
+                        </button>
+                        <button
+                          className="icon-button"
+                          aria-label=${t("inviteMembers")}
+                          title=${t("inviteMembers")}
+                          onClick=${() => setShowInvite(true)}
+                        >
+                          <span className="icon-button-mark"><${AddUserIcon} /></span>
+                        </button>
+                      </div>
                     </div>
                     ${getConversationDescription(activeConversation, data.current_user_id, usersById, locale, t)
                       ? html`<div className="chat-subtitle">${getConversationDescription(activeConversation, data.current_user_id, usersById, locale, t)}</div>`
@@ -643,8 +690,10 @@ function App() {
                 <section ref=${messageListRef} className="messages">
                   ${activeConversation.messages.length === 0
                     ? html`<div className="messages-empty">${t("noMessages")}</div>`
-                    : null}
-                  ${activeConversation.messages.map((message) => {
+                    : visibleMessages.length === 0
+                      ? html`<div className="messages-empty">${t("noVisibleMessages")}</div>`
+                      : null}
+                  ${visibleMessages.map((message) => {
                     const user = usersById.get(message.sender_id);
                     const own = message.sender_id === data.current_user_id;
                     return html`
@@ -885,6 +934,10 @@ function getMentionState(text, textarea) {
     start: cursor - match[2].length - 1,
     end: cursor,
   };
+}
+
+function isToolCallMessage(content) {
+  return (content ?? "").trimStart().startsWith("🔧 ");
 }
 
 function resolveConversationUser(conversation, currentUserID, usersById) {
