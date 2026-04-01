@@ -525,13 +525,21 @@ func TestHandleRoomsPostCreatesConversation(t *testing.T) {
 	}
 }
 
-func TestHandleUsersDeleteMarksUserOffline(t *testing.T) {
+func TestHandleUsersDeleteKicksUser(t *testing.T) {
 	srv := &HTTPServer{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Users: []im.User{
 				{ID: "u-admin", Name: "Admin", Handle: "admin", IsOnline: true},
 				{ID: "u-alice", Name: "Alice", Handle: "alice", IsOnline: true},
+			},
+			Conversations: []im.Conversation{
+				{
+					ID:           "room-1",
+					Title:        "Room One",
+					Participants: []string{"u-admin", "u-alice"},
+					Messages:     []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
+				},
 			},
 		}),
 	}
@@ -540,31 +548,48 @@ func TestHandleUsersDeleteMarksUserOffline(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
 	}
-
-	var got im.User
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
+	if _, ok := srv.im.User("u-alice"); ok {
+		t.Fatal("User() ok = true, want false after delete")
 	}
-	if got.ID != "u-alice" || got.IsOnline {
-		t.Fatalf("user = %+v, want u-alice offline", got)
-	}
-	if got.LastSeen == "" {
-		t.Fatal("LastSeen = empty, want timestamp")
+	if _, ok := srv.im.Conversation("room-1"); ok {
+		t.Fatal("Conversation() ok = true, want false for DM after kicked user")
 	}
 }
 
-func TestHandleRoomsDeleteNotImplementedYet(t *testing.T) {
+func TestHandleUsersDeleteCurrentUserReturnsConflict(t *testing.T) {
 	srv := &HTTPServer{im: im.NewService()}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/u-admin", nil)
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusConflict)
+	}
+}
+
+func TestHandleRoomsDeleteRemovesConversation(t *testing.T) {
+	srv := &HTTPServer{
+		im: im.NewServiceFromBootstrap(im.Bootstrap{
+			CurrentUserID: "u-admin",
+			Conversations: []im.Conversation{
+				{ID: "room-1", Title: "Room One", Participants: []string{"u-admin", "u-manager"}},
+			},
+		}),
+	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/rooms/room-1", nil)
 	rec := httptest.NewRecorder()
 	srv.routes().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotImplemented)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if _, ok := srv.im.Conversation("room-1"); ok {
+		t.Fatal("Conversation() ok = true, want false after delete")
 	}
 }
 

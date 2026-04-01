@@ -130,10 +130,10 @@
 - `现状`：当前只有创建会话、发消息、加成员，没有 room 删除和 user kick。
 - `影响`：这是典型增量功能，适合独立完成，不依赖大重构。
 - `推荐增量步骤`：
-  - [ ] A10-1 先补 `im.Service.DeleteConversation`，处理删除会话及持久化。
-  - [ ] A10-2 再补 `DELETE /api/v1/rooms/:id`。
-  - [ ] A10-3 再补 `KickUser` 的最小定义，先明确是“全局移除用户”还是“从所有会话移除”。
-  - [ ] A10-4 最后暴露 `DELETE /api/v1/users/:id`，并补前后端行为约束测试。
+  - [x] A10-1 先补 `im.Service.DeleteConversation`，处理删除会话及持久化。
+  - [x] A10-2 再补 `DELETE /api/v1/rooms/:id`。
+  - [x] A10-3 再补 `KickUser` 的最小定义，当前语义定为“全局移除用户，并从所有会话与历史消息中清理；若会话剩余成员少于 2 人则一并删除”。
+  - [x] A10-4 最后暴露 `DELETE /api/v1/users/:id`，并补前后端行为约束测试。
 
 ### A11. 目录结构与目标架构差异较大
 

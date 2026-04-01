@@ -373,10 +373,26 @@ func (s *Service) ListMessages(conversationID string) ([]Message, error) {
 	return append([]Message(nil), conv.Messages...), nil
 }
 
-func (s *Service) MarkUserOffline(userID string) (User, error) {
+func (s *Service) DeleteConversation(conversationID string) error {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return fmt.Errorf("conversation_id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.conversations[conversationID]; !ok {
+		return fmt.Errorf("conversation not found")
+	}
+	delete(s.conversations, conversationID)
+	return s.saveLocked()
+}
+
+func (s *Service) KickUser(userID string) error {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return User{}, fmt.Errorf("user_id is required")
+		return fmt.Errorf("user_id is required")
 	}
 
 	s.mu.Lock()
@@ -384,17 +400,41 @@ func (s *Service) MarkUserOffline(userID string) (User, error) {
 
 	user, ok := s.users[userID]
 	if !ok {
-		return User{}, fmt.Errorf("user not found")
+		return fmt.Errorf("user not found")
+	}
+	if userID == s.currentUserID {
+		return fmt.Errorf("cannot kick current user")
 	}
 
-	user.IsOnline = false
-	user.LastSeen = time.Now().UTC().Format(time.RFC3339)
-	s.users[userID] = user
+	delete(s.users, userID)
+	delete(s.byHandle, strings.ToLower(user.Handle))
 
-	if err := s.saveLocked(); err != nil {
-		return User{}, err
+	for id, conv := range s.conversations {
+		participants := make([]string, 0, len(conv.Participants))
+		for _, participantID := range conv.Participants {
+			if participantID != userID {
+				participants = append(participants, participantID)
+			}
+		}
+
+		messages := make([]Message, 0, len(conv.Messages))
+		for _, message := range conv.Messages {
+			if message.SenderID != userID {
+				messages = append(messages, message)
+			}
+		}
+
+		if len(participants) < 2 {
+			delete(s.conversations, id)
+			continue
+		}
+
+		conv.Participants = participants
+		conv.Messages = messages
+		conv.Subtitle = formatConversationSubtitle(len(participants))
 	}
-	return user, nil
+
+	return s.saveLocked()
 }
 
 func (s *Service) EnsureAgentUser(req EnsureAgentUserRequest) (User, *Conversation, error) {

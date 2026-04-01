@@ -318,6 +318,11 @@ func (s *HTTPServer) handleMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) handleRoomByID(w http.ResponseWriter, r *http.Request) {
+	if s.im == nil {
+		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/rooms/"))
 	if id == "" || strings.Contains(id, "/") {
 		http.NotFound(w, r)
@@ -326,7 +331,15 @@ func (s *HTTPServer) handleRoomByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodDelete:
-		http.Error(w, "room delete is not implemented yet", http.StatusNotImplemented)
+		if err := s.im.DeleteConversation(id); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				http.Error(w, "room not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -346,16 +359,19 @@ func (s *HTTPServer) handleUserByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodDelete:
-		user, err := s.im.MarkUserOffline(id)
-		if err != nil {
+		if err := s.im.KickUser(id); err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				http.Error(w, "user not found", http.StatusNotFound)
+				return
+			}
+			if strings.Contains(err.Error(), "cannot kick current user") {
+				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, user)
+		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

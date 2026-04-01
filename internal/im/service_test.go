@@ -140,3 +140,77 @@ func TestListRoomsUsersAndMessages(t *testing.T) {
 		t.Fatal("ListMessages(\"missing\") error = nil, want error")
 	}
 }
+
+func TestDeleteConversationRemovesConversation(t *testing.T) {
+	svc := NewServiceFromBootstrap(Bootstrap{
+		CurrentUserID: "u-admin",
+		Conversations: []Conversation{
+			{ID: "room-1", Title: "Room One", Participants: []string{"u-admin", "u-manager"}},
+		},
+	})
+
+	if err := svc.DeleteConversation("room-1"); err != nil {
+		t.Fatalf("DeleteConversation() error = %v", err)
+	}
+	if _, ok := svc.Conversation("room-1"); ok {
+		t.Fatal("Conversation() ok = true, want false after delete")
+	}
+}
+
+func TestKickUserRemovesUserFromStateConversationsAndMessages(t *testing.T) {
+	svc := NewServiceFromBootstrap(Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []User{
+			{ID: "u-admin", Name: "Admin", Handle: "admin"},
+			{ID: "u-alice", Name: "Alice", Handle: "alice"},
+			{ID: "u-bob", Name: "Bob", Handle: "bob"},
+		},
+		Conversations: []Conversation{
+			{
+				ID:           "room-group",
+				Title:        "Group",
+				Participants: []string{"u-admin", "u-alice", "u-bob"},
+				Messages: []Message{
+					{ID: "msg-1", SenderID: "u-alice", Content: "hello"},
+					{ID: "msg-2", SenderID: "u-bob", Content: "world"},
+				},
+			},
+			{
+				ID:           "room-dm",
+				Title:        "Alice",
+				Participants: []string{"u-admin", "u-alice"},
+				Messages:     []Message{{ID: "msg-3", SenderID: "u-alice", Content: "ping"}},
+			},
+		},
+	})
+
+	if err := svc.KickUser("u-alice"); err != nil {
+		t.Fatalf("KickUser() error = %v", err)
+	}
+	if _, ok := svc.User("u-alice"); ok {
+		t.Fatal("User() ok = true, want false after kick")
+	}
+
+	group, ok := svc.Conversation("room-group")
+	if !ok {
+		t.Fatal("Conversation(room-group) ok = false, want true")
+	}
+	if containsUserIDInConversation(group, "u-alice") {
+		t.Fatalf("group participants = %+v, want u-alice removed", group.Participants)
+	}
+	if len(group.Messages) != 1 || group.Messages[0].SenderID != "u-bob" {
+		t.Fatalf("group messages = %+v, want only u-bob message", group.Messages)
+	}
+
+	if _, ok := svc.Conversation("room-dm"); ok {
+		t.Fatal("Conversation(room-dm) ok = true, want DM deleted after kick")
+	}
+}
+
+func TestKickUserRejectsCurrentUser(t *testing.T) {
+	svc := NewService()
+
+	if err := svc.KickUser("u-admin"); err == nil {
+		t.Fatal("KickUser(current user) error = nil, want error")
+	}
+}

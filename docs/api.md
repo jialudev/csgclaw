@@ -230,6 +230,50 @@ data: {"type":"message.created","conversation_id":"room-1","message":{"id":"msg-
 - `inviter_id` 必须已经在会话内
 - 若没有任何新成员被加入，会返回 `400 Bad Request`
 
+### `GET /api/v1/rooms`
+
+获取全部会话列表，按最近消息时间倒序返回。
+
+### `POST /api/v1/rooms`
+
+创建新 room。请求体与 `POST /api/v1/im/conversations` 一致，响应：`201 Created`。
+
+### `DELETE /api/v1/rooms/{id}`
+
+删除指定 room。
+
+响应：`204 No Content`
+
+说明：
+
+- `id` 必须是已存在会话
+- 若 room 不存在，返回 `404 Not Found`
+
+### `GET /api/v1/users`
+
+获取全部用户列表，按名称排序返回。
+
+### `DELETE /api/v1/users/{id}`
+
+Kick 指定用户。
+
+响应：`204 No Content`
+
+说明：
+
+- 当前语义为“全局移除用户，并从所有会话成员及历史消息中清理该用户”
+- 若某个会话清理后剩余成员少于 2 人，该会话会被一并删除
+- 不允许 kick 当前用户；此时返回 `409 Conflict`
+- 若用户不存在，返回 `404 Not Found`
+
+### `GET /api/v1/messages`
+
+获取指定会话的消息历史。查询参数支持 `conversation_id` 或 `room_id` 二选一。
+
+### `POST /api/v1/messages`
+
+发送消息。请求体与 `POST /api/v1/im/messages` 一致，响应：`201 Created`。
+
 ### `POST /api/v1/im/agents/join`
 
 把 agent 加入指定会话。该接口会先确保 agent 在 IM 中拥有对应用户身份。
