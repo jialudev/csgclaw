@@ -14,10 +14,10 @@
 当前项目已经具备一个最小闭环，但与 `docs/architecture.md` 的目标架构相比，仍然更接近“单二进制 + 内嵌服务对象 + 面向当前 IM/PicoClaw 场景的专用 API”：
 
 - CLI 入口集中在 `cmd/csgclaw/main.go`，当前只有 `onboard`、`start`、`_serve` 三类命令。
-- HTTP 路由集中在 `internal/server/http.go`，同时承载 agent、IM、PicoClaw bridge、静态页面。
+- HTTP 路由与 handler 已拆到 `internal/api/`，`internal/server/` 主要负责 server lifecycle、mux 装配与 UI 托管。
 - Agent 能力目前以 `worker` 为中心暴露，核心入口是 `GET/POST /api/v1/workers`。
 - IM 能力目前以 `/api/v1/im/*` 命名空间和 SSE 为主，不是目标文档里的扁平 REST + WebSocket 结构。
-- Web UI 直接以内嵌静态文件形式放在 `internal/server/web/`，没有独立 `web/` 前端工程目录。
+- Web UI 静态资源已迁到顶层 `web/` 目录并继续由 Go embed 托管，但还不是独立构建工程。
 
 ## 差异清单
 
@@ -138,13 +138,14 @@
 ### A11. 目录结构与目标架构差异较大
 
 - `目标`：有 `internal/api/`、`cli/`、`web/`、`migrations/` 等清晰分层目录。
-- `现状`：HTTP handler 在 `internal/server/`，CLI 逻辑在 `cmd/csgclaw/main.go`，前端静态资源在 `internal/server/web/`，没有 `migrations/`。
+- `现状`：HTTP handler 已迁到 `internal/api/`，CLI 命令装配已在 `cli/`，前端静态资源已迁到顶层 `web/`，但 `migrations/` 目录仍未引入。
 - `影响`：这属于结构性重排，应该放在行为稳定之后推进，否则容易和功能改动缠在一起。
 - `推荐增量步骤`：
-  - [ ] A11-1 先建立 `internal/api/` 并迁移一个最简单的 handler，不改路由行为。
-  - [ ] A11-2 再把剩余 HTTP handler 从 `internal/server/http.go` 拆出去。
-  - [ ] A11-3 建立 `cli/` 并迁移命令装配。
-  - [ ] A11-4 最后再处理前端目录迁移和 `migrations/` 目录引入。
+  - [x] A11-1 先建立 `internal/api/` 并迁移一个最简单的 handler，不改路由行为。
+  - [x] A11-2 再把剩余 HTTP handler 从 `internal/server/http.go` 拆出去。
+  - [x] A11-3 建立 `cli/` 并迁移命令装配。
+  - [x] A11-4 然后处理前端目录迁移。
+  - [ ] A11-5 最后处理 `migrations/` 目录引入。
 
 ### A12. 配置文件格式与目标设计不一致
 
@@ -179,7 +180,7 @@
 ### A15. Web UI 目录与目标设计不一致
 
 - `目标`：前端在独立 `web/` 工程目录中构建，再由服务端托管构建产物。
-- `现状`：当前只有 [`internal/server/web/index.html`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/server/web/index.html)、[`internal/server/web/app.js`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/server/web/app.js)、[`internal/server/web/styles.css`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/server/web/styles.css) 这套内嵌静态资源。
+- `现状`：当前静态资源已迁到 [`web/static/index.html`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/web/static/index.html)、[`web/static/app.js`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/web/static/app.js)、[`web/static/styles.css`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/web/static/styles.css)，并通过 [`web/ui.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/web/ui.go) 继续由服务端 embed 托管；但还没有独立前端构建脚手架。
 - `影响`：只要前端继续迭代，这个目录迟早会成为构建和测试瓶颈；但它不应该阻塞 API/CLI 对齐。
 - `推荐增量步骤`：
   - [ ] A15-1 先保持 UI 资源不动，只补对新 API 的兼容。

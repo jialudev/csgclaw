@@ -1,18 +1,11 @@
 package server
 
 import (
-	"embed"
-	"io/fs"
 	"net/http"
+
+	webui "csgclaw/web"
 )
 
-//go:embed web/*
-var webFiles embed.FS
-
 func uiHandler() http.Handler {
-	sub, err := fs.Sub(webFiles, "web")
-	if err != nil {
-		panic(err)
-	}
-	return http.FileServer(http.FS(sub))
+	return webui.Handler()
 }

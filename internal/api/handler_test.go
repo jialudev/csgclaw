@@ -1,4 +1,4 @@
-package server
+package api
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func TestEnsureWorkerIMStatePublishesBootstrapRoom(t *testing.T) {
 	events, cancel := bus.Subscribe()
 	defer cancel()
 
-	srv := &HTTPServer{
+	srv := &Handler{
 		im:    im.NewService(),
 		imBus: bus,
 	}
@@ -94,11 +94,11 @@ func TestHandleAgentsListReturnsUnifiedAgents(t *testing.T) {
 		{ID: "agent-1", Name: "observer", Role: agent.RoleAgent, CreatedAt: time.Date(2026, 3, 28, 11, 0, 0, 0, time.UTC)},
 	})
 
-	srv := &HTTPServer{svc: svc}
+	srv := &Handler{svc: svc}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil)
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -120,11 +120,11 @@ func TestHandleAgentsGetByIDReturnsAgent(t *testing.T) {
 		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
 	})
 
-	srv := &HTTPServer{svc: svc}
+	srv := &Handler{svc: svc}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/u-alice", nil)
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -141,11 +141,11 @@ func TestHandleAgentsGetByIDReturnsAgent(t *testing.T) {
 func TestHandleAgentsGetByIDNotFound(t *testing.T) {
 	svc := mustNewSeededService(t, nil)
 
-	srv := &HTTPServer{svc: svc}
+	srv := &Handler{svc: svc}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/missing", nil)
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
@@ -163,11 +163,11 @@ func TestHandleAgentsDeleteRemovesAgent(t *testing.T) {
 		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
 	})
 
-	srv := &HTTPServer{svc: svc}
+	srv := &Handler{svc: svc}
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/u-alice", nil)
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
@@ -180,11 +180,11 @@ func TestHandleAgentsDeleteRemovesAgent(t *testing.T) {
 func TestHandleAgentsDeleteNotFound(t *testing.T) {
 	svc := mustNewSeededService(t, nil)
 
-	srv := &HTTPServer{svc: svc}
+	srv := &Handler{svc: svc}
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/missing", nil)
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
@@ -210,7 +210,7 @@ func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
 	events, cancel := bus.Subscribe()
 	defer cancel()
 
-	srv := &HTTPServer{
+	srv := &Handler{
 		svc:   svc,
 		im:    im.NewService(),
 		imBus: bus,
@@ -218,7 +218,7 @@ func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"name":"alice","role":"worker"}`))
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
@@ -239,11 +239,11 @@ func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
 }
 
 func TestHandleBootstrapAliasReturnsIMBootstrap(t *testing.T) {
-	srv := &HTTPServer{im: im.NewService()}
+	srv := &Handler{im: im.NewService()}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -265,7 +265,7 @@ func TestHandleBootstrapAliasReturnsIMBootstrap(t *testing.T) {
 }
 
 func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Users: []im.User{
@@ -285,7 +285,7 @@ func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -303,11 +303,11 @@ func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
 }
 
 func TestHandleRoomsInviteRequiresRoomID(t *testing.T) {
-	srv := &HTTPServer{im: im.NewService()}
+	srv := &Handler{im: im.NewService()}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rooms/invite", strings.NewReader(`{"inviter_id":"u-admin","user_ids":["u-manager"]}`))
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
@@ -329,14 +329,14 @@ func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
 	defer agent.ResetTestHooks()
 
 	svc := mustNewService(t)
-	srv := &HTTPServer{
+	srv := &Handler{
 		svc: svc,
 		im:  im.NewService(),
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workers", strings.NewReader(`{"name":"bob"}`))
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
@@ -351,7 +351,7 @@ func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
 }
 
 func TestHandleRoomsReturnsConversationList(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Users: []im.User{
@@ -375,7 +375,7 @@ func TestHandleRoomsReturnsConversationList(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/rooms", nil)
 	rec := httptest.NewRecorder()
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -390,7 +390,7 @@ func TestHandleRoomsReturnsConversationList(t *testing.T) {
 }
 
 func TestHandleUsersReturnsUserList(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Users: []im.User{
@@ -402,7 +402,7 @@ func TestHandleUsersReturnsUserList(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
 	rec := httptest.NewRecorder()
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -417,7 +417,7 @@ func TestHandleUsersReturnsUserList(t *testing.T) {
 }
 
 func TestHandleMessagesReturnsConversationMessages(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Conversations: []im.Conversation{
@@ -441,7 +441,7 @@ func TestHandleMessagesReturnsConversationMessages(t *testing.T) {
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
-		srv.routes().ServeHTTP(rec, req)
+		srv.Routes().ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
 			t.Fatalf("path %s status = %d, want %d; body=%s", path, rec.Code, http.StatusOK, rec.Body.String())
@@ -457,14 +457,14 @@ func TestHandleMessagesReturnsConversationMessages(t *testing.T) {
 }
 
 func TestHandleMessagesRejectsInvalidQuery(t *testing.T) {
-	srv := &HTTPServer{im: im.NewService()}
+	srv := &Handler{im: im.NewService()}
 
 	for _, path := range []string{
 		"/api/v1/messages",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
-		srv.routes().ServeHTTP(rec, req)
+		srv.Routes().ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("path %s status = %d, want %d", path, rec.Code, http.StatusBadRequest)
@@ -473,7 +473,7 @@ func TestHandleMessagesRejectsInvalidQuery(t *testing.T) {
 }
 
 func TestHandleMessagesPostCreatesMessage(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Users: []im.User{
@@ -492,7 +492,7 @@ func TestHandleMessagesPostCreatesMessage(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/messages", strings.NewReader(`{"room_id":"room-1","sender_id":"u-admin","content":"hello @manager"}`))
 	rec := httptest.NewRecorder()
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
@@ -511,11 +511,11 @@ func TestHandleMessagesPostCreatesMessage(t *testing.T) {
 }
 
 func TestHandleMessagesPostRequiresRoomID(t *testing.T) {
-	srv := &HTTPServer{im: im.NewService()}
+	srv := &Handler{im: im.NewService()}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/messages", strings.NewReader(`{"sender_id":"u-admin","content":"hello"}`))
 	rec := httptest.NewRecorder()
 
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
@@ -524,7 +524,7 @@ func TestHandleMessagesPostRequiresRoomID(t *testing.T) {
 
 func TestHandleIMEventsExposeRoomIDOnly(t *testing.T) {
 	bus := im.NewBus()
-	srv := &HTTPServer{imBus: bus}
+	srv := &Handler{imBus: bus}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -534,7 +534,7 @@ func TestHandleIMEventsExposeRoomIDOnly(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		srv.routes().ServeHTTP(rec, req)
+		srv.Routes().ServeHTTP(rec, req)
 		close(done)
 	}()
 
@@ -563,7 +563,7 @@ func TestHandleIMEventsExposeRoomIDOnly(t *testing.T) {
 }
 
 func TestHandleRoomsPostCreatesRoom(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Users: []im.User{
@@ -576,7 +576,7 @@ func TestHandleRoomsPostCreatesRoom(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/rooms", strings.NewReader(`{"title":"Launch","description":"coordination","creator_id":"u-admin","participant_ids":["u-alice","u-manager"],"locale":"en"}`))
 	rec := httptest.NewRecorder()
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
@@ -595,7 +595,7 @@ func TestHandleRoomsPostCreatesRoom(t *testing.T) {
 }
 
 func TestHandleUsersDeleteKicksUser(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Users: []im.User{
@@ -615,7 +615,7 @@ func TestHandleUsersDeleteKicksUser(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/u-alice", nil)
 	rec := httptest.NewRecorder()
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
@@ -629,11 +629,11 @@ func TestHandleUsersDeleteKicksUser(t *testing.T) {
 }
 
 func TestHandleUsersDeleteCurrentUserReturnsConflict(t *testing.T) {
-	srv := &HTTPServer{im: im.NewService()}
+	srv := &Handler{im: im.NewService()}
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/u-admin", nil)
 	rec := httptest.NewRecorder()
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusConflict)
@@ -641,7 +641,7 @@ func TestHandleUsersDeleteCurrentUserReturnsConflict(t *testing.T) {
 }
 
 func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
-	srv := &HTTPServer{
+	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Conversations: []im.Conversation{
@@ -652,7 +652,7 @@ func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/rooms/room-1", nil)
 	rec := httptest.NewRecorder()
-	srv.routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
