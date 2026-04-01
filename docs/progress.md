@@ -77,9 +77,9 @@
 - `现状`：[`internal/agent/service.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/agent/service.go) 同时承载模型定义、状态持久化、runtime 管理、worker 创建、gateway box 组装等逻辑。
 - `影响`：继续在这个文件上加 `delete/status/logs` 会进一步放大修改面。
 - `推荐增量步骤`：
-  - [ ] A05-1 先把仅数据结构和常量抽到独立文件，不改行为。
-  - [ ] A05-2 再把状态读写 `load/save` 抽到 store 文件。
-  - [ ] A05-3 最后再拆 runtime/box 相关逻辑，保证每次改动都只做搬迁不改语义。
+  - [x] A05-1 先把仅数据结构和常量抽到独立文件，不改行为。
+  - [x] A05-2 再把状态读写 `load/save` 抽到 store 文件。
+  - [x] A05-3 最后再拆 runtime/box 相关逻辑，保证每次改动都只做搬迁不改语义。
 
 ### A06. IM HTTP 路由命名空间与目标设计不一致
 
