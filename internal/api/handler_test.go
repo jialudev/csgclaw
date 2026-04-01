@@ -18,6 +18,30 @@ import (
 	"csgclaw/internal/im"
 )
 
+func TestParsePicoClawBotPath(t *testing.T) {
+	tests := []struct {
+		path       string
+		wantBotID  string
+		wantAction string
+		wantOK     bool
+	}{
+		{path: "/api/bots/u-manager/events", wantBotID: "u-manager", wantAction: "events", wantOK: true},
+		{path: "/api/bots/u-manager/messages/send", wantBotID: "u-manager", wantAction: "messages/send", wantOK: true},
+		{path: "/api/bots/u-manager", wantOK: false},
+		{path: "/api/v1/bots/u-manager/events", wantOK: false},
+		{path: "/api/bots//events", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			gotBotID, gotAction, gotOK := parsePicoClawBotPath(tt.path)
+			if gotBotID != tt.wantBotID || gotAction != tt.wantAction || gotOK != tt.wantOK {
+				t.Fatalf("parsePicoClawBotPath(%q) = (%q, %q, %v), want (%q, %q, %v)", tt.path, gotBotID, gotAction, gotOK, tt.wantBotID, tt.wantAction, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestDeriveAgentHandle(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -659,6 +683,35 @@ func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
 	}
 	if _, ok := srv.im.Room("room-1"); ok {
 		t.Fatal("Room() ok = true, want false after delete")
+	}
+}
+
+func TestHandlePicoClawRoutesRequireAuthorization(t *testing.T) {
+	srv := &Handler{
+		im:       im.NewService(),
+		picoclaw: im.NewPicoClawBridge(config.PicoClawConfig{AccessToken: "secret"}),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"chat_id":"room-1","text":"hello"}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandlePicoClawSendMessageRequiresIMService(t *testing.T) {
+	srv := &Handler{
+		picoclaw: im.NewPicoClawBridge(config.PicoClawConfig{}),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"chat_id":"room-1","text":"hello"}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
 	}
 }
 

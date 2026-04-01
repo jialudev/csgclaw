@@ -57,43 +57,6 @@ func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *
 	}
 }
 
-func (h *Handler) Routes() *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", h.handleHealthz)
-	mux.HandleFunc("/api/v1/agents", h.handleAgents)
-	mux.HandleFunc("/api/v1/agents/", h.handleAgentByID)
-	mux.HandleFunc("/api/v1/bootstrap", h.handleIMBootstrap)
-	mux.HandleFunc("/api/v1/events", h.handleIMEvents)
-	mux.HandleFunc("/api/v1/rooms", h.handleRooms)
-	mux.HandleFunc("/api/v1/rooms/", h.handleRoomByID)
-	mux.HandleFunc("/api/v1/rooms/invite", h.handleIMRoomMembers)
-	mux.HandleFunc("/api/v1/users", h.handleUsers)
-	mux.HandleFunc("/api/v1/users/", h.handleUserByID)
-	mux.HandleFunc("/api/v1/messages", h.handleMessages)
-	mux.HandleFunc("/api/v1/workers", h.handleWorkers)
-	mux.HandleFunc("/api/v1/im/agents/join", h.handleIMAgentJoin)
-	mux.HandleFunc("/api/v1/im/bootstrap", h.handleIMBootstrap)
-	mux.HandleFunc("/api/v1/im/events", h.handleIMEvents)
-	mux.HandleFunc("/api/v1/im/messages", h.handleIMMessages)
-	mux.HandleFunc("/api/v1/im/conversations", h.handleIMRooms)
-	mux.HandleFunc("/api/v1/im/conversations/members", h.handleIMRoomMembers)
-	mux.HandleFunc("/api/v1/im/rooms", h.handleIMRooms)
-	mux.HandleFunc("/api/v1/im/rooms/invite", h.handleIMRoomMembers)
-	mux.HandleFunc("/api/bots/", h.handlePicoClawBotRoutes)
-	return mux
-}
-
-func (h *Handler) PublishPicoClawEvent(evt im.Event) {
-	if h.picoclaw == nil || evt.Type != im.EventTypeMessageCreated || evt.Message == nil || evt.Sender == nil {
-		return
-	}
-	room, ok := h.im.Room(evt.RoomID)
-	if !ok {
-		return
-	}
-	h.picoclaw.PublishMessageEvent(room, *evt.Sender, *evt.Message)
-}
-
 func (h *Handler) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
@@ -494,83 +457,6 @@ func (h *Handler) handleIMEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) handlePicoClawBotRoutes(w http.ResponseWriter, r *http.Request) {
-	botID, action, ok := parsePicoClawBotPath(r.URL.Path)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	if h.picoclaw == nil {
-		http.Error(w, "picoclaw integration is not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if !h.picoclaw.ValidateAccessToken(r.Header.Get("Authorization")) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	switch {
-	case r.Method == http.MethodGet && action == "events":
-		h.handlePicoClawEvents(w, r, botID)
-	case r.Method == http.MethodPost && action == "messages/send":
-		h.handlePicoClawSendMessage(w, r, botID)
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (h *Handler) handlePicoClawEvents(w http.ResponseWriter, r *http.Request, botID string) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	events, cancel := h.picoclaw.Subscribe(botID)
-	defer cancel()
-
-	_, _ = io.WriteString(w, ": connected\n\n")
-	flusher.Flush()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case evt := <-events:
-			data, err := evt.MarshalJSONLine()
-			if err != nil {
-				return
-			}
-			_, _ = fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
-			flusher.Flush()
-		}
-	}
-}
-
-func (h *Handler) handlePicoClawSendMessage(w http.ResponseWriter, r *http.Request, botID string) {
-	var req im.PicoClawSendMessageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	message, err := h.im.DeliverMessage(im.DeliverMessageRequest{
-		ChatID:   req.ChatID,
-		SenderID: botID,
-		Content:  req.Text,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	h.publishMessageCreated(req.ChatID, botID, message)
-	writeJSON(w, http.StatusOK, map[string]string{"message_id": message.ID})
-}
-
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -739,26 +625,4 @@ func (h *Handler) publishUserEvent(eventType string, user im.User) {
 		Type: eventType,
 		User: &userCopy,
 	})
-}
-
-func parsePicoClawBotPath(path string) (botID, action string, ok bool) {
-	const prefix = "/api/bots/"
-	if !strings.HasPrefix(path, prefix) {
-		return "", "", false
-	}
-
-	rest := strings.TrimPrefix(path, prefix)
-	parts := strings.Split(strings.Trim(rest, "/"), "/")
-	if len(parts) < 2 || parts[0] == "" {
-		return "", "", false
-	}
-
-	botID = parts[0]
-	action = strings.Join(parts[1:], "/")
-	switch action {
-	case "events", "messages/send":
-		return botID, action, true
-	default:
-		return "", "", false
-	}
 }

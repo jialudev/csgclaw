@@ -1,0 +1,33 @@
+package api
+
+import "net/http"
+
+func (h *Handler) Routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	h.registerCoreRoutes(mux)
+	h.registerPicoClawRoutes(mux)
+	return mux
+}
+
+func (h *Handler) registerCoreRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/healthz", h.handleHealthz)
+	mux.HandleFunc("/api/v1/agents", h.handleAgents)
+	mux.HandleFunc("/api/v1/agents/", h.handleAgentByID)
+	mux.HandleFunc("/api/v1/bootstrap", h.handleIMBootstrap)
+	mux.HandleFunc("/api/v1/events", h.handleIMEvents)
+	mux.HandleFunc("/api/v1/rooms", h.handleRooms)
+	mux.HandleFunc("/api/v1/rooms/", h.handleRoomByID)
+	mux.HandleFunc("/api/v1/rooms/invite", h.handleIMRoomMembers)
+	mux.HandleFunc("/api/v1/users", h.handleUsers)
+	mux.HandleFunc("/api/v1/users/", h.handleUserByID)
+	mux.HandleFunc("/api/v1/messages", h.handleMessages)
+	mux.HandleFunc("/api/v1/workers", h.handleWorkers)
+	mux.HandleFunc("/api/v1/im/agents/join", h.handleIMAgentJoin)
+	mux.HandleFunc("/api/v1/im/bootstrap", h.handleIMBootstrap)
+	mux.HandleFunc("/api/v1/im/events", h.handleIMEvents)
+	mux.HandleFunc("/api/v1/im/messages", h.handleIMMessages)
+	mux.HandleFunc("/api/v1/im/conversations", h.handleIMRooms)
+	mux.HandleFunc("/api/v1/im/conversations/members", h.handleIMRoomMembers)
+	mux.HandleFunc("/api/v1/im/rooms", h.handleIMRooms)
+	mux.HandleFunc("/api/v1/im/rooms/invite", h.handleIMRoomMembers)
+}

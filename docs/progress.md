@@ -190,12 +190,15 @@
 ### A16. `internal/server` 同时承担 HTTP 路由与 UI 托管，边界偏粗
 
 - `目标`：HTTP API 层与静态 UI 托管在职责上清晰分开。
-- `现状`：[`internal/server/http.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/server/http.go) 和 [`internal/server/ui.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/server/ui.go) 同处一层，且 `http.go` 还负责 PicoClaw bridge 事件分发。
+- `现状`：[`internal/server/http.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/server/http.go) 已只保留 server lifecycle、API mux 装配与 UI 托管接线；HTTP handler 已集中到 [`internal/api/handler.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/api/handler.go)、[`internal/api/router.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/api/router.go) 和 [`internal/api/picoclaw.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/api/picoclaw.go)。
 - `影响`：继续在这里叠加新 API，会让 `server` 包逐渐变成“所有适配层”的汇总处。
 - `推荐增量步骤`：
-  - [ ] A16-1 先把纯 HTTP handler 移到 `internal/api/`。
-  - [ ] A16-2 `internal/server` 只保留 server lifecycle、mux 装配、静态资源托管。
-  - [ ] A16-3 PicoClaw bridge 的 HTTP 入口再决定放 `api` 还是单独子包。
+  - [x] A16-1 先把纯 HTTP handler 移到 `internal/api/`。
+    完成于 2026-04-01；兼容策略：原有 HTTP 路径保持不变，只调整包内落点。
+  - [x] A16-2 `internal/server` 只保留 server lifecycle、mux 装配、静态资源托管。
+    完成于 2026-04-01；兼容策略：`server.Run` 继续负责订阅 IM bus 并把事件桥接到 API 层，不改变调用方式。
+  - [x] A16-3 PicoClaw bridge 的 HTTP 入口再决定放 `api` 还是单独子包。
+    完成于 2026-04-01；当前决定：继续保留在 `internal/api/`，但拆到独立的 [`internal/api/picoclaw.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/internal/api/picoclaw.go) 以明确这是 bridge 适配入口，而不是通用 REST handler。
 
 ### A17. 目标架构未体现 PicoClaw bridge，但当前实现强依赖它
 
