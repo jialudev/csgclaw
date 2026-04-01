@@ -1,10 +1,21 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
-	"csgclaw/internal/im"
+	boxlite "github.com/RussellLuo/boxlite/sdks/go"
+
 	"csgclaw/internal/agent"
+	"csgclaw/internal/config"
+	"csgclaw/internal/im"
 )
 
 func TestDeriveAgentHandle(t *testing.T) {
@@ -74,6 +85,229 @@ func TestEnsureWorkerIMStatePublishesBootstrapConversation(t *testing.T) {
 	if !containsParticipant(second.Conversation.Participants, "u-admin") || !containsParticipant(second.Conversation.Participants, "u-alice") {
 		t.Fatalf("second event.Conversation.Participants = %+v, want admin and worker", second.Conversation.Participants)
 	}
+}
+
+func TestHandleAgentsListReturnsUnifiedAgents(t *testing.T) {
+	svc := mustNewSeededService(t, []agent.Agent{
+		{ID: "u-manager", Name: "manager", Role: agent.RoleManager, CreatedAt: time.Date(2026, 3, 28, 9, 0, 0, 0, time.UTC)},
+		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+		{ID: "agent-1", Name: "observer", Role: agent.RoleAgent, CreatedAt: time.Date(2026, 3, 28, 11, 0, 0, 0, time.UTC)},
+	})
+
+	srv := &HTTPServer{svc: svc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil)
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var got []agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len(agents) = %d, want 3; body=%s", len(got), rec.Body.String())
+	}
+	if got[0].ID != "u-manager" || got[1].ID != "u-alice" || got[2].ID != "agent-1" {
+		t.Fatalf("agents = %+v, want manager/worker/agent in CreatedAt order", got)
+	}
+}
+
+func TestHandleAgentsGetByIDReturnsAgent(t *testing.T) {
+	svc := mustNewSeededService(t, []agent.Agent{
+		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+
+	srv := &HTTPServer{svc: svc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/u-alice", nil)
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-alice" || got.Name != "alice" || got.Role != agent.RoleWorker {
+		t.Fatalf("agent = %+v, want u-alice/alice/worker", got)
+	}
+}
+
+func TestHandleAgentsGetByIDNotFound(t *testing.T) {
+	svc := mustNewSeededService(t, nil)
+
+	srv := &HTTPServer{svc: svc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/missing", nil)
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleAgentsDeleteRemovesAgent(t *testing.T) {
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		nil,
+	)
+	defer agent.ResetTestHooks()
+
+	svc := mustNewSeededService(t, []agent.Agent{
+		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+
+	srv := &HTTPServer{svc: svc}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/u-alice", nil)
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if _, ok := svc.Agent("u-alice"); ok {
+		t.Fatal("Agent() ok = true, want false after delete")
+	}
+}
+
+func TestHandleAgentsDeleteNotFound(t *testing.T) {
+	svc := mustNewSeededService(t, nil)
+
+	srv := &HTTPServer{svc: svc}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/missing", nil)
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return nil, &boxlite.BoxInfo{
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+				Name:      name,
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer agent.ResetTestHooks()
+
+	svc := mustNewService(t)
+	bus := im.NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	srv := &HTTPServer{
+		svc:   svc,
+		im:    im.NewService(),
+		imBus: bus,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"name":"alice","role":"worker"}`))
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-alice" || got.Role != agent.RoleWorker {
+		t.Fatalf("agent = %+v, want worker alias result", got)
+	}
+
+	first := mustReceiveEvent(t, events)
+	second := mustReceiveEvent(t, events)
+	if first.Type != im.EventTypeUserCreated || second.Type != im.EventTypeConversationCreated {
+		t.Fatalf("events = [%q, %q], want user_created then conversation_created", first.Type, second.Type)
+	}
+}
+
+func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return nil, &boxlite.BoxInfo{
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+				Name:      name,
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer agent.ResetTestHooks()
+
+	svc := mustNewService(t)
+	srv := &HTTPServer{
+		svc: svc,
+		im:  im.NewService(),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workers", strings.NewReader(`{"name":"bob"}`))
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-bob" || got.Role != agent.RoleWorker {
+		t.Fatalf("agent = %+v, want worker alias result", got)
+	}
+}
+
+func mustNewService(t *testing.T) *agent.Service {
+	t.Helper()
+
+	svc, err := agent.NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	return svc
+}
+
+func mustNewSeededService(t *testing.T, agents []agent.Agent) *agent.Service {
+	t.Helper()
+
+	if agents == nil {
+		agents = []agent.Agent{}
+	}
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(map[string]any{
+		"agents": agents,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	svc, err := agent.NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath, "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	return svc
 }
 
 func containsParticipant(participants []string, want string) bool {

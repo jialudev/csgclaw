@@ -28,6 +28,7 @@ type Agent struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	Image       string    `json:"image,omitempty"`
+	BoxID       string    `json:"box_id,omitempty"`
 	Role        string    `json:"role"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -60,6 +61,28 @@ const (
 )
 
 var en0IPv4Resolver = en0IPv4
+
+var (
+	testEnsureRuntimeHook    func(*Service, string) (*boxlite.Runtime, error)
+	testCreateGatewayBoxHook func(*Service, context.Context, *boxlite.Runtime, string, string, string, string) (*boxlite.Box, *boxlite.BoxInfo, error)
+	testForceRemoveBoxHook   func(*Service, context.Context, *boxlite.Runtime, string) error
+)
+
+// SetTestHooks installs lightweight hooks for tests that need to bypass runtime/box creation.
+func SetTestHooks(
+	ensureRuntime func(*Service, string) (*boxlite.Runtime, error),
+	createGatewayBox func(*Service, context.Context, *boxlite.Runtime, string, string, string, string) (*boxlite.Box, *boxlite.BoxInfo, error),
+) {
+	testEnsureRuntimeHook = ensureRuntime
+	testCreateGatewayBoxHook = createGatewayBox
+}
+
+// ResetTestHooks clears hooks installed via SetTestHooks.
+func ResetTestHooks() {
+	testEnsureRuntimeHook = nil
+	testCreateGatewayBoxHook = nil
+	testForceRemoveBoxHook = nil
+}
 
 type Service struct {
 	llm          config.LLMConfig
@@ -166,6 +189,7 @@ func EnsureBootstrapState(ctx context.Context, statePath, runtimeHome string, se
 		ID:        ManagerUserID,
 		Name:      ManagerName,
 		Image:     svc.managerImage,
+		BoxID:     info.ID,
 		Status:    string(info.State),
 		CreatedAt: info.CreatedAt.UTC(),
 		ModelID:   llm.ModelID,
@@ -284,6 +308,56 @@ func (s *Service) Agent(id string) (Agent, bool) {
 	return *cloneAgent(&a), true
 }
 
+func (s *Service) Delete(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("agent id is required")
+	}
+
+	s.mu.RLock()
+	existing, ok := s.agents[id]
+	box := s.boxes[id]
+	s.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("agent %q not found", id)
+	}
+	if isManagerAgent(existing) {
+		return fmt.Errorf("agent %q is reserved", id)
+	}
+
+	rt, err := s.ensureRuntime(existing.Name)
+	if err != nil {
+		return err
+	}
+	if box != nil {
+		_ = box.Close()
+	}
+	boxIDOrName := strings.TrimSpace(existing.BoxID)
+	if boxIDOrName == "" {
+		boxIDOrName = existing.Name
+	}
+	if rt != nil {
+		if err := s.forceRemoveBox(ctx, rt, boxIDOrName); err != nil && !boxlite.IsNotFound(err) {
+			return fmt.Errorf("remove agent box: %w", err)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.agents[id]
+	if !ok {
+		return fmt.Errorf("agent %q not found", id)
+	}
+	delete(s.agents, id)
+	delete(s.boxes, id)
+	if rt := s.runtimes[current.Name]; rt != nil {
+		_ = rt.Close()
+		delete(s.runtimes, current.Name)
+	}
+	return s.saveLocked()
+}
+
 func (s *Service) List() []Agent {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -350,6 +424,7 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 		ID:          id,
 		Name:        name,
 		Image:       s.managerImage,
+		BoxID:       info.ID,
 		Description: description,
 		Status:      string(info.State),
 		CreatedAt:   info.CreatedAt.UTC(),
@@ -368,6 +443,9 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 }
 
 func (s *Service) createGatewayBox(ctx context.Context, rt *boxlite.Runtime, image, name, botID, modelID string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+	if testCreateGatewayBoxHook != nil {
+		return testCreateGatewayBoxHook(s, ctx, rt, image, name, botID, modelID)
+	}
 	boxOpts, err := s.gatewayBoxOptions(name, botID, modelID)
 	if err != nil {
 		return nil, nil, err
@@ -386,6 +464,13 @@ func (s *Service) createGatewayBox(ctx context.Context, rt *boxlite.Runtime, ima
 		return nil, nil, fmt.Errorf("read gateway box info: %w", err)
 	}
 	return box, info, nil
+}
+
+func (s *Service) forceRemoveBox(ctx context.Context, rt *boxlite.Runtime, idOrName string) error {
+	if testForceRemoveBoxHook != nil {
+		return testForceRemoveBoxHook(s, ctx, rt, idOrName)
+	}
+	return rt.ForceRemove(ctx, idOrName)
 }
 
 func (s *Service) ListWorkers() []Agent {
@@ -660,6 +745,9 @@ func cloneAgent(src *Agent) *Agent {
 }
 
 func (s *Service) ensureRuntime(agentName string) (*boxlite.Runtime, error) {
+	if testEnsureRuntimeHook != nil {
+		return testEnsureRuntimeHook(s, agentName)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

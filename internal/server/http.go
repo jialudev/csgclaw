@@ -86,6 +86,8 @@ func Run(opts Options) error {
 func (s *HTTPServer) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("/api/v1/agents", s.handleAgents)
+	mux.HandleFunc("/api/v1/agents/", s.handleAgentByID)
 	mux.HandleFunc("/api/v1/workers", s.handleWorkers)
 	mux.HandleFunc("/api/v1/im/agents/join", s.handleIMAgentJoin)
 	mux.HandleFunc("/api/v1/im/bootstrap", s.handleIMBootstrap)
@@ -115,27 +117,82 @@ func (s *HTTPServer) handleWorkers(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.svc.ListWorkers())
 	case http.MethodPost:
-		var req agent.CreateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
-			return
-		}
-		req.Role = agent.RoleWorker
-
-		created, err := s.svc.CreateWorker(r.Context(), req)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := s.ensureWorkerIMState(created); err != nil {
-			http.Error(w, fmt.Sprintf("agent created but failed to ensure im user: %v", err), http.StatusBadGateway)
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, created)
+		s.handleCreateWorker(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *HTTPServer) handleAgents(w http.ResponseWriter, r *http.Request) {
+	if s.svc == nil {
+		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.svc.List())
+	case http.MethodPost:
+		s.handleCreateWorker(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *HTTPServer) handleAgentByID(w http.ResponseWriter, r *http.Request) {
+	if s.svc == nil {
+		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/agents/"))
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		a, ok := s.svc.Agent(id)
+		if !ok {
+			http.Error(w, "agent not found", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, a)
+	case http.MethodDelete:
+		if err := s.svc.Delete(r.Context(), id); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				http.Error(w, "agent not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *HTTPServer) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
+	var req agent.CreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	req.Role = agent.RoleWorker
+
+	created, err := s.svc.CreateWorker(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.ensureWorkerIMState(created); err != nil {
+		http.Error(w, fmt.Sprintf("agent created but failed to ensure im user: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, created)
 }
 
 func (s *HTTPServer) handleIMAgentJoin(w http.ResponseWriter, r *http.Request) {

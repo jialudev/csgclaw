@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	boxlite "github.com/RussellLuo/boxlite/sdks/go"
+
 	"csgclaw/internal/config"
 )
 
@@ -103,6 +105,135 @@ func TestLoadMigratesLegacyWorkersIntoAgents(t *testing.T) {
 	}
 	if got.Role != RoleWorker {
 		t.Fatalf("Agent().Role = %q, want %q", got.Role, RoleWorker)
+	}
+}
+
+func TestDeleteRejectsManagerAgent(t *testing.T) {
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	svc.agents[ManagerUserID] = Agent{
+		ID:        ManagerUserID,
+		Name:      ManagerName,
+		Role:      RoleManager,
+		CreatedAt: time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC),
+	}
+
+	err = svc.Delete(context.Background(), ManagerUserID)
+	if err == nil {
+		t.Fatal("Delete() error = nil, want reserved error")
+	}
+	if !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("Delete() error = %q, want reserved error", err)
+	}
+}
+
+func TestDeleteRemovesAgentFromState(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		nil,
+	)
+	defer ResetTestHooks()
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath, "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+	if err := svc.saveLocked(); err != nil {
+		t.Fatalf("saveLocked() error = %v", err)
+	}
+
+	if err := svc.Delete(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if _, ok := svc.Agent("u-alice"); ok {
+		t.Fatal("Agent() ok = true, want false after delete")
+	}
+
+	reloaded, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath, "")
+	if err != nil {
+		t.Fatalf("NewService() reload error = %v", err)
+	}
+	if _, ok := reloaded.Agent("u-alice"); ok {
+		t.Fatal("reloaded Agent() ok = true, want false after delete")
+	}
+}
+
+func TestDeletePrefersBoxIDOverName(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		nil,
+	)
+	defer ResetTestHooks()
+
+	var removed string
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) error {
+		removed = idOrName
+		return nil
+	}
+	defer func() {
+		testForceRemoveBoxHook = nil
+	}()
+
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		BoxID:     "box-123",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	if err := svc.Delete(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if removed != "box-123" {
+		t.Fatalf("ForceRemove() target = %q, want %q", removed, "box-123")
+	}
+}
+
+func TestCreateWorkerStoresBoxID(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return nil, &boxlite.BoxInfo{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateRequest{Name: "alice"})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.BoxID != "box-alice" {
+		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "box-alice")
 	}
 }
 
