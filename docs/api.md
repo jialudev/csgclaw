@@ -267,6 +267,9 @@ data: {"type":"message.created","conversation_id":"room-1","message":{"id":"msg-
 
 当前以下接口是同义路由，行为与上文一致：
 
+- `GET /api/v1/bootstrap` 等价于 `GET /api/v1/im/bootstrap`
+- `GET /api/v1/events` 等价于 `GET /api/v1/im/events`
+- `POST /api/v1/rooms/invite` 等价于 `POST /api/v1/im/conversations/members`
 - `POST /api/v1/im/rooms` 等价于 `POST /api/v1/im/conversations`
 - `POST /api/v1/im/rooms/invite` 等价于 `POST /api/v1/im/conversations/members`
 

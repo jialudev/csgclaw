@@ -238,6 +238,63 @@ func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
 	}
 }
 
+func TestHandleBootstrapAliasReturnsIMBootstrap(t *testing.T) {
+	srv := &HTTPServer{im: im.NewService()}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got im.Bootstrap
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.CurrentUserID == "" {
+		t.Fatal("bootstrap current_user_id is empty")
+	}
+}
+
+func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
+	srv := &HTTPServer{
+		im: im.NewServiceFromBootstrap(im.Bootstrap{
+			CurrentUserID: "u-admin",
+			Users: []im.User{
+				{ID: "u-admin", Name: "Admin", Handle: "admin"},
+				{ID: "u-manager", Name: "Manager", Handle: "manager"},
+			},
+			Conversations: []im.Conversation{
+				{
+					ID:           "room-1",
+					Title:        "Room One",
+					Participants: []string{"u-admin"},
+				},
+			},
+		}),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rooms/invite", strings.NewReader(`{"conversation_id":"room-1","inviter_id":"u-admin","user_ids":["u-manager"],"locale":"en"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got im.Conversation
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "room-1" {
+		t.Fatalf("conversation id = %q, want %q", got.ID, "room-1")
+	}
+	if !containsParticipant(got.Participants, "u-manager") {
+		t.Fatalf("participants = %+v, want u-manager to be invited", got.Participants)
+	}
+}
+
 func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
 	agent.SetTestHooks(
 		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
@@ -395,6 +452,119 @@ func TestHandleMessagesRejectsInvalidQuery(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("path %s status = %d, want %d", path, rec.Code, http.StatusBadRequest)
 		}
+	}
+}
+
+func TestHandleMessagesPostCreatesMessage(t *testing.T) {
+	srv := &HTTPServer{
+		im: im.NewServiceFromBootstrap(im.Bootstrap{
+			CurrentUserID: "u-admin",
+			Users: []im.User{
+				{ID: "u-admin", Name: "Admin", Handle: "admin"},
+				{ID: "u-manager", Name: "Manager", Handle: "manager"},
+			},
+			Conversations: []im.Conversation{
+				{
+					ID:           "room-1",
+					Title:        "Room One",
+					Participants: []string{"u-admin", "u-manager"},
+				},
+			},
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/messages", strings.NewReader(`{"conversation_id":"room-1","sender_id":"u-admin","content":"hello @manager"}`))
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var got im.Message
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.SenderID != "u-admin" || got.Content != "hello @manager" {
+		t.Fatalf("message = %+v, want sender/content populated", got)
+	}
+	if len(got.Mentions) != 1 || got.Mentions[0] != "u-manager" {
+		t.Fatalf("mentions = %+v, want u-manager", got.Mentions)
+	}
+}
+
+func TestHandleRoomsPostCreatesConversation(t *testing.T) {
+	srv := &HTTPServer{
+		im: im.NewServiceFromBootstrap(im.Bootstrap{
+			CurrentUserID: "u-admin",
+			Users: []im.User{
+				{ID: "u-admin", Name: "Admin", Handle: "admin"},
+				{ID: "u-alice", Name: "Alice", Handle: "alice"},
+				{ID: "u-manager", Name: "Manager", Handle: "manager"},
+			},
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rooms", strings.NewReader(`{"title":"Launch","description":"coordination","creator_id":"u-admin","participant_ids":["u-alice","u-manager"],"locale":"en"}`))
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var got im.Conversation
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Title != "Launch" {
+		t.Fatalf("conversation.Title = %q, want Launch", got.Title)
+	}
+	if !containsParticipant(got.Participants, "u-admin") || !containsParticipant(got.Participants, "u-alice") || !containsParticipant(got.Participants, "u-manager") {
+		t.Fatalf("participants = %+v, want admin, alice, and manager", got.Participants)
+	}
+}
+
+func TestHandleUsersDeleteMarksUserOffline(t *testing.T) {
+	srv := &HTTPServer{
+		im: im.NewServiceFromBootstrap(im.Bootstrap{
+			CurrentUserID: "u-admin",
+			Users: []im.User{
+				{ID: "u-admin", Name: "Admin", Handle: "admin", IsOnline: true},
+				{ID: "u-alice", Name: "Alice", Handle: "alice", IsOnline: true},
+			},
+		}),
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/u-alice", nil)
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got im.User
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-alice" || got.IsOnline {
+		t.Fatalf("user = %+v, want u-alice offline", got)
+	}
+	if got.LastSeen == "" {
+		t.Fatal("LastSeen = empty, want timestamp")
+	}
+}
+
+func TestHandleRoomsDeleteNotImplementedYet(t *testing.T) {
+	srv := &HTTPServer{im: im.NewService()}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/rooms/room-1", nil)
+	rec := httptest.NewRecorder()
+	srv.routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotImplemented)
 	}
 }
 

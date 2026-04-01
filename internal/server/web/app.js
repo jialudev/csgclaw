@@ -321,7 +321,7 @@ function App() {
   const messageListRef = useRef(null);
 
   useEffect(() => {
-    fetch("/api/v1/im/bootstrap")
+    fetch("/api/v1/bootstrap")
       .then((resp) => resp.json())
       .then((payload) => {
         setData(payload);
@@ -335,7 +335,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const source = new EventSource("/api/v1/im/events");
+    const source = new EventSource("/api/v1/events");
 
     source.onmessage = (event) => {
       const payload = JSON.parse(event.data);
@@ -450,7 +450,7 @@ function App() {
     }
 
     setComposerError("");
-    const resp = await fetch("/api/v1/im/messages", {
+    const resp = await fetch("/api/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -474,7 +474,7 @@ function App() {
     }
 
     setSubmitError("");
-    const resp = await fetch("/api/v1/im/conversations", {
+    const resp = await fetch("/api/v1/rooms", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -503,7 +503,7 @@ function App() {
     }
 
     setSubmitError("");
-    const resp = await fetch("/api/v1/im/conversations/members", {
+    const resp = await fetch("/api/v1/rooms/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

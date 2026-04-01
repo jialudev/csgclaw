@@ -88,8 +88,13 @@ func (s *HTTPServer) routes() http.Handler {
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/api/v1/agents", s.handleAgents)
 	mux.HandleFunc("/api/v1/agents/", s.handleAgentByID)
+	mux.HandleFunc("/api/v1/bootstrap", s.handleIMBootstrap)
+	mux.HandleFunc("/api/v1/events", s.handleIMEvents)
 	mux.HandleFunc("/api/v1/rooms", s.handleRooms)
+	mux.HandleFunc("/api/v1/rooms/", s.handleRoomByID)
+	mux.HandleFunc("/api/v1/rooms/invite", s.handleIMConversationMembers)
 	mux.HandleFunc("/api/v1/users", s.handleUsers)
+	mux.HandleFunc("/api/v1/users/", s.handleUserByID)
 	mux.HandleFunc("/api/v1/messages", s.handleMessages)
 	mux.HandleFunc("/api/v1/workers", s.handleWorkers)
 	mux.HandleFunc("/api/v1/im/agents/join", s.handleIMAgentJoin)
@@ -255,63 +260,108 @@ func (s *HTTPServer) handleIMBootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) handleRooms(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	if s.im == nil {
 		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.im.ListRooms())
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.im.ListRooms())
+	case http.MethodPost:
+		s.handleCreateRoom(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *HTTPServer) handleUsers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	if s.im == nil {
 		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.im.ListUsers())
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, s.im.ListUsers())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func (s *HTTPServer) handleMessages(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if s.im == nil {
+		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
 		return
 	}
+	switch r.Method {
+	case http.MethodGet:
+		conversationID, err := conversationIDFromQuery(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		messages, err := s.im.ListMessages(conversationID)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				http.Error(w, err.Error(), http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, messages)
+	case http.MethodPost:
+		s.handleCreateMessage(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *HTTPServer) handleRoomByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/rooms/"))
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodDelete:
+		http.Error(w, "room delete is not implemented yet", http.StatusNotImplemented)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *HTTPServer) handleUserByID(w http.ResponseWriter, r *http.Request) {
 	if s.im == nil {
 		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
-	conversationID, err := conversationIDFromQuery(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/users/"))
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
 		return
 	}
 
-	messages, err := s.im.ListMessages(conversationID)
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			http.Error(w, err.Error(), http.StatusNotFound)
+	switch r.Method {
+	case http.MethodDelete:
+		user, err := s.im.MarkUserOffline(id)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				http.Error(w, "user not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		writeJSON(w, http.StatusOK, user)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-	writeJSON(w, http.StatusOK, messages)
 }
 
-func (s *HTTPServer) handleIMMessages(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+func (s *HTTPServer) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 	var req im.CreateMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
@@ -327,12 +377,7 @@ func (s *HTTPServer) handleIMMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, message)
 }
 
-func (s *HTTPServer) handleIMConversations(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
+func (s *HTTPServer) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	var req im.CreateConversationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
@@ -346,6 +391,22 @@ func (s *HTTPServer) handleIMConversations(w http.ResponseWriter, r *http.Reques
 	}
 	s.publishConversationEvent(im.EventTypeConversationCreated, conversation)
 	writeJSON(w, http.StatusCreated, conversation)
+}
+
+func (s *HTTPServer) handleIMMessages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.handleCreateMessage(w, r)
+}
+
+func (s *HTTPServer) handleIMConversations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.handleCreateRoom(w, r)
 }
 
 func (s *HTTPServer) handleIMConversationMembers(w http.ResponseWriter, r *http.Request) {

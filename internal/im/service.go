@@ -373,6 +373,30 @@ func (s *Service) ListMessages(conversationID string) ([]Message, error) {
 	return append([]Message(nil), conv.Messages...), nil
 }
 
+func (s *Service) MarkUserOffline(userID string) (User, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return User{}, fmt.Errorf("user_id is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	user, ok := s.users[userID]
+	if !ok {
+		return User{}, fmt.Errorf("user not found")
+	}
+
+	user.IsOnline = false
+	user.LastSeen = time.Now().UTC().Format(time.RFC3339)
+	s.users[userID] = user
+
+	if err := s.saveLocked(); err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
 func (s *Service) EnsureAgentUser(req EnsureAgentUserRequest) (User, *Conversation, error) {
 	id := strings.TrimSpace(req.ID)
 	name := strings.TrimSpace(req.Name)

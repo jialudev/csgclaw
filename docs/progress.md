@@ -87,10 +87,10 @@
 - `现状`：当前核心入口是 `/api/v1/im/bootstrap`、`/api/v1/im/events`、`/api/v1/im/messages`、`/api/v1/im/conversations`、`/api/v1/im/conversations/members`，另有 `/api/v1/im/rooms` 和 `/api/v1/im/rooms/invite` 作为别名。
 - `影响`：目标架构强调资源名本身足够表达语义，而当前 IM API 仍然暴露了内部 bootstrap/conversation 模型。
 - `推荐增量步骤`：
-  - [ ] A06-1 先增加 `/api/v1/messages` 作为 `/api/v1/im/messages` 的同义入口。
-  - [ ] A06-2 增加 `/api/v1/rooms` 的 `GET/POST/DELETE` 骨架；初期可以先只做 `GET/POST`，并把底层仍映射到 conversation。
-  - [ ] A06-3 增加 `/api/v1/users` 的 `GET/DELETE` 骨架；删除动作初期可只支持“从 IM 标记离线/移出会话”中的一种最小语义。
-  - [ ] A06-4 在新路由稳定后，把 WebUI 从 `/api/v1/im/*` 切换到扁平路由。
+  - [x] A06-1 先增加 `/api/v1/messages` 作为 `/api/v1/im/messages` 的同义入口。
+  - [x] A06-2 增加 `/api/v1/rooms` 的 `GET/POST/DELETE` 骨架；初期可以先只做 `GET/POST`，并把底层仍映射到 conversation。
+  - [x] A06-3 增加 `/api/v1/users` 的 `GET/DELETE` 骨架；删除动作初期可只支持“从 IM 标记离线/移出会话”中的一种最小语义。
+  - [x] A06-4 在新路由稳定后，把 WebUI 从 `/api/v1/im/*` 切换到扁平路由。
 
 ### A07. IM 实时通道实现为 SSE，不是 WebSocket
 
