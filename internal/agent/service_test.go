@@ -15,7 +15,7 @@ import (
 )
 
 func TestCreateWorkerRejectsReservedManagerName(t *testing.T) {
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -33,7 +33,7 @@ func TestCreateWorkerRejectsReservedManagerName(t *testing.T) {
 }
 
 func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -59,7 +59,7 @@ func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
 }
 
 func TestListWorkersFiltersUnifiedAgents(t *testing.T) {
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestLoadMigratesLegacyWorkersIntoAgents(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath, "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -109,7 +109,7 @@ func TestLoadMigratesLegacyWorkersIntoAgents(t *testing.T) {
 }
 
 func TestDeleteRejectsManagerAgent(t *testing.T) {
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -139,7 +139,7 @@ func TestDeleteRemovesAgentFromState(t *testing.T) {
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath, "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -162,7 +162,7 @@ func TestDeleteRemovesAgentFromState(t *testing.T) {
 		t.Fatal("Agent() ok = true, want false after delete")
 	}
 
-	reloaded, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath, "")
+	reloaded, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath)
 	if err != nil {
 		t.Fatalf("NewService() reload error = %v", err)
 	}
@@ -181,7 +181,7 @@ func TestDeleteRemovesAgentHomeDirectory(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -231,11 +231,14 @@ func TestDeletePrefersBoxIDOverName(t *testing.T) {
 		removed = idOrName
 		return nil
 	}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	}
 	defer func() {
 		testForceRemoveBoxHook = nil
 	}()
 
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -271,7 +274,7 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 	)
 	defer ResetTestHooks()
 
-	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "", "")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -282,6 +285,141 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 	}
 	if got.BoxID != "box-alice" {
 		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "box-alice")
+	}
+}
+
+func TestEnsureBootstrapStateForceRecreatePrefersStoredManagerBoxID(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return &boxlite.Box{}, &boxlite.BoxInfo{
+				ID:        "box-new",
+				Name:      name,
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	var removed string
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) error {
+		removed = idOrName
+		return nil
+	}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	}
+	defer func() {
+		testForceRemoveBoxHook = nil
+	}()
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(persistedState{
+		Agents: []Agent{
+			{
+				ID:        ManagerUserID,
+				Name:      ManagerName,
+				Role:      RoleManager,
+				BoxID:     "box-old",
+				Status:    "running",
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, config.LLMConfig{}, config.PicoClawConfig{}, "", true); err != nil {
+		t.Fatalf("EnsureBootstrapState() error = %v", err)
+	}
+	if removed != "box-old" {
+		t.Fatalf("ForceRemove() target = %q, want %q", removed, "box-old")
+	}
+
+	reloaded, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() reload error = %v", err)
+	}
+	got, ok := reloaded.Agent(ManagerUserID)
+	if !ok {
+		t.Fatal("Agent() ok = false, want true")
+	}
+	if got.BoxID != "box-new" {
+		t.Fatalf("Agent().BoxID = %q, want %q", got.BoxID, "box-new")
+	}
+}
+
+func TestEnsureBootstrapStateReusesStoredManagerBoxIDWithoutForce(t *testing.T) {
+	SetTestHooks(nil, nil)
+	defer ResetTestHooks()
+
+	primaryRT := &boxlite.Runtime{}
+	legacyRT := &boxlite.Runtime{}
+	testEnsureRuntimeAtHomeHook = func(_ *Service, home string) (*boxlite.Runtime, error) {
+		if strings.HasSuffix(home, filepath.Join(config.AppDirName, config.RuntimeHomeDirName)) {
+			return primaryRT, nil
+		}
+		return legacyRT, nil
+	}
+
+	var created bool
+	testCreateGatewayBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, _ string, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+		created = true
+		return nil, nil, nil
+	}
+	testGetBoxHook = func(_ *Service, _ context.Context, rt *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+		if rt == primaryRT {
+			return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing in primary"}
+		}
+		if rt == legacyRT && idOrName == "box-old" {
+			return &boxlite.Box{}, nil
+		}
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	}
+	testStartBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Box) error { return nil }
+	testBoxInfoHook = func(_ *Service, _ context.Context, _ *boxlite.Box) (*boxlite.BoxInfo, error) {
+		return &boxlite.BoxInfo{
+			ID:        "box-old",
+			Name:      ManagerName,
+			State:     boxlite.StateRunning,
+			CreatedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
+			Image:     "test-image",
+		}, nil
+	}
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(persistedState{
+		Agents: []Agent{
+			{
+				ID:        ManagerUserID,
+				Name:      ManagerName,
+				Role:      RoleManager,
+				BoxID:     "box-old",
+				Status:    "running",
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, config.LLMConfig{}, config.PicoClawConfig{}, "", false); err != nil {
+		t.Fatalf("EnsureBootstrapState() error = %v", err)
+	}
+	if created {
+		t.Fatal("createGatewayBox() called, want existing manager box to be reused")
 	}
 }
 
@@ -297,6 +435,46 @@ func TestBoxRuntimeHomeUsesPerAgentDirectory(t *testing.T) {
 	want := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice", config.RuntimeHomeDirName)
 	if got != want {
 		t.Fatalf("boxRuntimeHome() = %q, want %q", got, want)
+	}
+}
+
+func TestLookupBootstrapManagerUsesPerAgentHome(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	var gotHome string
+	testEnsureRuntimeAtHomeHook = func(_ *Service, homeDir string) (*boxlite.Runtime, error) {
+		gotHome = homeDir
+		return &boxlite.Runtime{}, nil
+	}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	}
+	defer func() {
+		testEnsureRuntimeAtHomeHook = nil
+		testGetBoxHook = nil
+	}()
+
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	rt, box, err := svc.lookupBootstrapManager(context.Background())
+	if err != nil {
+		t.Fatalf("lookupBootstrapManager() error = %v", err)
+	}
+	if box != nil {
+		t.Fatalf("lookupBootstrapManager() box = %#v, want nil", box)
+	}
+	wantHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, ManagerName, config.RuntimeHomeDirName)
+	if rt == nil {
+		t.Fatal("lookupBootstrapManager() runtime = nil, want non-nil")
+	}
+	if got, want := len(svc.runtimes), 0; got != want {
+		t.Fatalf("len(svc.runtimes) = %d, want %d when runtime creation is hooked", got, want)
+	}
+	if got, want := gotHome, wantHome; got != want {
+		t.Fatalf("resolved manager runtime home = %q, want %q", got, want)
 	}
 }
 

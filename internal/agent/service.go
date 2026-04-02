@@ -31,9 +31,13 @@ const (
 var localIPv4Resolver = localIPv4
 
 var (
-	testEnsureRuntimeHook    func(*Service, string) (*boxlite.Runtime, error)
-	testCreateGatewayBoxHook func(*Service, context.Context, *boxlite.Runtime, string, string, string, string) (*boxlite.Box, *boxlite.BoxInfo, error)
-	testForceRemoveBoxHook   func(*Service, context.Context, *boxlite.Runtime, string) error
+	testEnsureRuntimeHook       func(*Service, string) (*boxlite.Runtime, error)
+	testEnsureRuntimeAtHomeHook func(*Service, string) (*boxlite.Runtime, error)
+	testGetBoxHook              func(*Service, context.Context, *boxlite.Runtime, string) (*boxlite.Box, error)
+	testStartBoxHook            func(*Service, context.Context, *boxlite.Box) error
+	testBoxInfoHook             func(*Service, context.Context, *boxlite.Box) (*boxlite.BoxInfo, error)
+	testCreateGatewayBoxHook    func(*Service, context.Context, *boxlite.Runtime, string, string, string, string) (*boxlite.Box, *boxlite.BoxInfo, error)
+	testForceRemoveBoxHook      func(*Service, context.Context, *boxlite.Runtime, string) error
 )
 
 // SetTestHooks installs lightweight hooks for tests that need to bypass runtime/box creation.
@@ -42,12 +46,23 @@ func SetTestHooks(
 	createGatewayBox func(*Service, context.Context, *boxlite.Runtime, string, string, string, string) (*boxlite.Box, *boxlite.BoxInfo, error),
 ) {
 	testEnsureRuntimeHook = ensureRuntime
+	if ensureRuntime != nil {
+		testEnsureRuntimeAtHomeHook = func(s *Service, _ string) (*boxlite.Runtime, error) {
+			return ensureRuntime(s, ManagerName)
+		}
+	} else {
+		testEnsureRuntimeAtHomeHook = nil
+	}
 	testCreateGatewayBoxHook = createGatewayBox
 }
 
 // ResetTestHooks clears hooks installed via SetTestHooks.
 func ResetTestHooks() {
 	testEnsureRuntimeHook = nil
+	testEnsureRuntimeAtHomeHook = nil
+	testGetBoxHook = nil
+	testStartBoxHook = nil
+	testBoxInfoHook = nil
 	testCreateGatewayBoxHook = nil
 	testForceRemoveBoxHook = nil
 }
@@ -68,7 +83,7 @@ type closer interface {
 	Close() error
 }
 
-func NewService(llm config.LLMConfig, server config.ServerConfig, pico config.PicoClawConfig, managerImage, statePath, runtimeHome string) (*Service, error) {
+func NewService(llm config.LLMConfig, server config.ServerConfig, pico config.PicoClawConfig, managerImage, statePath string) (*Service, error) {
 	if managerImage == "" {
 		managerImage = config.DefaultManagerImage
 	}
@@ -88,8 +103,8 @@ func NewService(llm config.LLMConfig, server config.ServerConfig, pico config.Pi
 	return svc, nil
 }
 
-func EnsureBootstrapState(ctx context.Context, statePath, runtimeHome string, server config.ServerConfig, llm config.LLMConfig, pico config.PicoClawConfig, managerImage string, forceRecreate bool) error {
-	svc, err := NewService(llm, server, pico, managerImage, statePath, runtimeHome)
+func EnsureBootstrapState(ctx context.Context, statePath string, server config.ServerConfig, llm config.LLMConfig, pico config.PicoClawConfig, managerImage string, forceRecreate bool) error {
+	svc, err := NewService(llm, server, pico, managerImage, statePath)
 	if err != nil {
 		return err
 	}
@@ -97,25 +112,23 @@ func EnsureBootstrapState(ctx context.Context, statePath, runtimeHome string, se
 		_ = svc.Close()
 	}()
 
-	rt, err := svc.ensureRuntime(ManagerName)
+	rt, box, err := svc.lookupBootstrapManager(ctx)
 	if err != nil {
 		return err
 	}
-
-	var box *boxlite.Box
 	if forceRecreate {
 		log.Printf("force recreating bootstrap manager box %q", ManagerName)
-		if err := rt.ForceRemove(ctx, ManagerName); err != nil {
+		managerBoxIDOrName := svc.bootstrapManagerBoxIDOrName()
+		if err := svc.forceRemoveBox(ctx, rt, managerBoxIDOrName); err != nil {
 			if boxlite.IsNotFound(err) {
-				log.Printf("bootstrap manager box %q does not exist yet; continuing", ManagerName)
+				log.Printf("bootstrap manager box %q (%q) does not exist yet; continuing", ManagerName, managerBoxIDOrName)
 			} else {
-				return fmt.Errorf("force remove bootstrap manager box %q: %w", ManagerName, err)
+				return fmt.Errorf("force remove bootstrap manager box %q (%q): %w", ManagerName, managerBoxIDOrName, err)
 			}
 		} else {
-			log.Printf("bootstrap manager box %q removed", ManagerName)
+			log.Printf("bootstrap manager box %q (%q) removed", ManagerName, managerBoxIDOrName)
 		}
-	} else {
-		box, err = rt.Get(ctx, ManagerName)
+		box = nil
 	}
 	var info *boxlite.BoxInfo
 	if box == nil {
@@ -141,10 +154,10 @@ func EnsureBootstrapState(ctx context.Context, statePath, runtimeHome string, se
 		}
 		log.Printf("bootstrap manager box %q created", ManagerName)
 	} else {
-		if err := box.Start(ctx); err != nil {
+		if err := svc.startBox(ctx, box); err != nil {
 			return fmt.Errorf("start bootstrap manager box: %w", err)
 		}
-		info, err = box.Info(ctx)
+		info, err = svc.boxInfo(ctx, box)
 		if err != nil {
 			return fmt.Errorf("read bootstrap manager box info: %w", err)
 		}
@@ -171,6 +184,21 @@ func EnsureBootstrapState(ctx context.Context, statePath, runtimeHome string, se
 	svc.agents[manager.ID] = manager
 	svc.boxes[manager.ID] = box
 	return svc.saveLocked()
+}
+
+func (s *Service) bootstrapManagerBoxIDOrName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, a := range s.agents {
+		if !isManagerAgent(a) {
+			continue
+		}
+		if boxID := strings.TrimSpace(a.BoxID); boxID != "" {
+			return boxID
+		}
+	}
+	return ManagerName
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) {

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,20 +16,30 @@ func (s *Service) ensureRuntime(agentName string) (*boxlite.Runtime, error) {
 	if testEnsureRuntimeHook != nil {
 		return testEnsureRuntimeHook(s, agentName)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	agentName = strings.TrimSpace(agentName)
 	if agentName == "" {
 		return nil, fmt.Errorf("agent name is required")
 	}
-	if rt := s.runtimes[agentName]; rt != nil {
-		return rt, nil
-	}
-
 	homeDir, err := boxRuntimeHome(agentName)
 	if err != nil {
 		return nil, err
+	}
+	return s.ensureRuntimeAtHome(homeDir)
+}
+
+func (s *Service) ensureRuntimeAtHome(homeDir string) (*boxlite.Runtime, error) {
+	if testEnsureRuntimeAtHomeHook != nil {
+		return testEnsureRuntimeAtHomeHook(s, homeDir)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	homeDir = strings.TrimSpace(homeDir)
+	if homeDir == "" {
+		return nil, fmt.Errorf("runtime home is required")
+	}
+	if rt := s.runtimes[homeDir]; rt != nil {
+		return rt, nil
 	}
 
 	opts := []boxlite.RuntimeOption{boxlite.WithHomeDir(homeDir)}
@@ -36,8 +47,54 @@ func (s *Service) ensureRuntime(agentName string) (*boxlite.Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create boxlite runtime: %w", err)
 	}
-	s.runtimes[agentName] = rt
+	s.runtimes[homeDir] = rt
 	return rt, nil
+}
+
+func (s *Service) lookupBootstrapManager(ctx context.Context) (*boxlite.Runtime, *boxlite.Box, error) {
+	homeDir, err := boxRuntimeHome(ManagerName)
+	if err != nil {
+		return nil, nil, err
+	}
+	rt, err := s.ensureRuntimeAtHome(homeDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	keys := []string{s.bootstrapManagerBoxIDOrName()}
+	if keys[0] != ManagerName {
+		keys = append(keys, ManagerName)
+	}
+	for _, key := range keys {
+		box, err := s.getBox(ctx, rt, key)
+		if err == nil {
+			return rt, box, nil
+		}
+		if !boxlite.IsNotFound(err) {
+			return nil, nil, err
+		}
+	}
+	return rt, nil, nil
+}
+
+func (s *Service) getBox(ctx context.Context, rt *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+	if testGetBoxHook != nil {
+		return testGetBoxHook(s, ctx, rt, idOrName)
+	}
+	return rt.Get(ctx, idOrName)
+}
+
+func (s *Service) startBox(ctx context.Context, box *boxlite.Box) error {
+	if testStartBoxHook != nil {
+		return testStartBoxHook(s, ctx, box)
+	}
+	return box.Start(ctx)
+}
+
+func (s *Service) boxInfo(ctx context.Context, box *boxlite.Box) (*boxlite.BoxInfo, error) {
+	if testBoxInfoHook != nil {
+		return testBoxInfoHook(s, ctx, box)
+	}
+	return box.Info(ctx)
 }
 
 func boxRuntimeHome(agentName string) (string, error) {

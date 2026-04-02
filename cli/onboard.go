@@ -50,11 +50,7 @@ func (a *App) runOnboard(args []string, globals GlobalOptions) error {
 	if err != nil {
 		return err
 	}
-	runtimeHome, err := config.DefaultRuntimeHome()
-	if err != nil {
-		return err
-	}
-	if err := agent.EnsureBootstrapState(context.Background(), agentsPath, runtimeHome, cfg.Server, cfg.LLM, cfg.PicoClaw, cfg.Bootstrap.ManagerImage, *forceRecreateManager); err != nil {
+	if err := agent.EnsureBootstrapState(context.Background(), agentsPath, cfg.Server, cfg.LLM, cfg.PicoClaw, cfg.Bootstrap.ManagerImage, *forceRecreateManager); err != nil {
 		return err
 	}
 

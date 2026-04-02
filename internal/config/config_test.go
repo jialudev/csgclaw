@@ -17,22 +17,6 @@ func TestDefaultDirUsesSharedAppDirName(t *testing.T) {
 	}
 }
 
-func TestDefaultRuntimeHomeUsesFixedBoxliteHome(t *testing.T) {
-	runtimeHome, err := DefaultRuntimeHome()
-	if err != nil {
-		t.Fatalf("DefaultRuntimeHome() error = %v", err)
-	}
-
-	if got, want := filepath.Base(runtimeHome), RuntimeHomeDirName; got != want {
-		t.Fatalf("filepath.Base(DefaultRuntimeHome()) = %q, want %q", got, want)
-	}
-
-	parent := filepath.Dir(runtimeHome)
-	if got, want := filepath.Base(parent), AppDirName; got != want {
-		t.Fatalf("filepath.Base(filepath.Dir(DefaultRuntimeHome())) = %q, want %q", got, want)
-	}
-}
-
 func TestDefaultAgentsPathUsesDomainSubdirectory(t *testing.T) {
 	path, err := DefaultAgentsPath()
 	if err != nil {

@@ -100,14 +100,6 @@ func DefaultIMStatePath() (string, error) {
 	return filepath.Join(dir, StateFileName), nil
 }
 
-func DefaultRuntimeHome() (string, error) {
-	dir, err := DefaultDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, RuntimeHomeDirName), nil
-}
-
 func LoadDefault() (Config, error) {
 	path, err := DefaultPath()
 	if err != nil {
