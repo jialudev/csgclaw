@@ -136,6 +136,7 @@ Usage:
   csgclaw serve [-d|--daemon] [flags]
   csgclaw start [-d|--daemon] [flags]
   csgclaw stop [flags]
+  csgclaw agent list [flags]
   csgclaw agent create [flags]
   csgclaw agent delete <id> [flags]
   csgclaw agent status [id] [flags]

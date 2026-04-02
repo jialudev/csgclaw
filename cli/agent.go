@@ -14,6 +14,8 @@ func (a *App) runAgent(ctx context.Context, args []string, globals GlobalOptions
 	}
 
 	switch args[0] {
+	case "list":
+		return a.runAgentList(ctx, args[1:], globals)
 	case "create":
 		return a.runAgentCreate(ctx, args[1:], globals)
 	case "delete":
@@ -23,6 +25,29 @@ func (a *App) runAgent(ctx context.Context, args []string, globals GlobalOptions
 	default:
 		return fmt.Errorf("unknown agent subcommand %q", args[0])
 	}
+}
+
+func (a *App) runAgentList(ctx context.Context, args []string, globals GlobalOptions) error {
+	fs := flag.NewFlagSet("agent list", flag.ContinueOnError)
+	fs.SetOutput(a.stderr)
+
+	filter := fs.String("filter", "", "filter by state")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if len(fs.Args()) != 0 {
+		return fmt.Errorf("agent list does not accept positional arguments")
+	}
+
+	client := NewAPIClient(globals.Endpoint, globals.Token, a.httpClient)
+	agents, err := client.ListAgents(ctx)
+	if err != nil {
+		return err
+	}
+	if *filter != "" {
+		agents = filterAgentsByStatus(agents, *filter)
+	}
+	return a.renderAgents(globals.Output, agents)
 }
 
 func (a *App) runAgentCreate(ctx context.Context, args []string, globals GlobalOptions) error {
@@ -72,8 +97,6 @@ func (a *App) runAgentDelete(ctx context.Context, args []string, globals GlobalO
 func (a *App) runAgentStatus(ctx context.Context, args []string, globals GlobalOptions) error {
 	fs := flag.NewFlagSet("agent status", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
-
-	filter := fs.String("filter", "", "filter by state")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -92,14 +115,7 @@ func (a *App) runAgentStatus(ctx context.Context, args []string, globals GlobalO
 		return a.renderAgents(globals.Output, []agent.Agent{got})
 	}
 
-	agents, err := client.ListAgents(ctx)
-	if err != nil {
-		return err
-	}
-	if *filter != "" {
-		agents = filterAgentsByStatus(agents, *filter)
-	}
-	return a.renderAgents(globals.Output, agents)
+	return a.runAgentList(ctx, args, globals)
 }
 
 func (a *App) renderAgents(output string, agents []agent.Agent) error {

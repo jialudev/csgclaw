@@ -42,11 +42,11 @@
   - [x] A01-6 新增 `room list/create/delete` 命令文件与注册逻辑，全部走 `/api/v1/rooms`。
   - [x] A01-7 新增 `user list/kick` 命令文件与注册逻辑，全部走 `/api/v1/users`。
   - [x] A01-8 更新 [`cli/app.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/app.go) 的 usage，明确暴露 `agent`、`room`、`user` 命令树，避免文档已完成但二进制帮助信息仍不可见。
-  - [ ] A01-9 补齐 `agent list`。
+  - [x] A01-9 补齐 `agent list`。
   - [ ] A01-10 补齐 `agent logs`。
 补充核对（2026-04-01）：
 
-- [`cli/agent.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/agent.go) 已补齐 `agent create`、`agent delete` 和原有 `agent status`，当前剩余缺口是 `agent logs`。
+- [`cli/agent.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/agent.go) 已补齐 `agent list`、`agent create`、`agent delete` 和原有 `agent status`，当前剩余缺口是 `agent logs`。
 - [`cli/room.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/room.go) 与 [`cli/user.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/user.go) 已新增，分别承载 `room` 与 `user` 命令树。
 - [`cli/app.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/app.go) 已注册 `room`、`user` 顶层入口，并在 usage 中暴露对应子命令。
 
@@ -63,11 +63,11 @@
   - [x] A02-5 把各资源命令的请求/响应格式固定到 CLI 层，并补 table/json 的最小渲染实现；至少让 `room list`、`user list` 和 `agent status` 的输出风格一致。
   - [x] A02-6 为新增资源命令补 CLI 级测试，优先覆盖“是否发往正确 HTTP 路径”和“全局 flag 是否生效”，防止只接上命令名但没有真正走 HTTP。
   - [x] A02-7 在 [`cli/http_client.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/http_client.go) 中补齐 `GetAgentLogs` 方法
-  - [ ] A02-8 在 `cli/http_client.go` 中补齐 `ListAgents` 方法。
+  - [x] A02-8 在 `cli/http_client.go` 中补齐 `ListAgents` 方法。
 
 补充核对（2026-04-01）：
 
-- [`cli/http_client.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/http_client.go) 已提供 `CreateAgent`、`DeleteAgent`、`GetAgentLogs`、`ListRooms`、`CreateRoom`、`DeleteRoom`、`ListUsers`、`KickUser` 等资源方法；当前剩余缺口是 `agent logs` 子命令入口尚未接上该方法。
+- [`cli/http_client.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/http_client.go) 已提供 `ListAgents`、`CreateAgent`、`DeleteAgent`、`GetAgentLogs`、`ListRooms`、`CreateRoom`、`DeleteRoom`、`ListUsers`、`KickUser` 等资源方法；当前剩余缺口是 `agent logs` 子命令入口尚未接上该方法。
 - [`cli/http_client.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/http_client.go) 已统一错误提取逻辑，并补了房间/用户表格渲染，资源命令的输出风格已基本对齐。
 - [`cli/app_test.go`](/Users/russellluo/Projects/work/opencsg/projects/csgclaw/cli/app_test.go) 已补覆盖新增命令、usage 文案以及 API 错误消息提取的 CLI 级测试。
 

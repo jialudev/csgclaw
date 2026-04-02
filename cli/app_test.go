@@ -9,8 +9,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"csgclaw/internal/agent"
 )
 
 func TestExecuteAgentStatusUsesHTTPClient(t *testing.T) {
@@ -32,6 +35,60 @@ func TestExecuteAgentStatusUsesHTTPClient(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"id": "u-alice"`) {
 		t.Fatalf("stdout = %q, want JSON agent payload", stdout.String())
+	}
+}
+
+func TestExecuteAgentListUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/agents" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"u-alice","name":"alice","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z"}]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "list"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running")
+}
+
+func TestRenderAgentsTableAlignsLongColumns(t *testing.T) {
+	var buf bytes.Buffer
+	agents := []agent.Agent{
+		{ID: "u-manager", Name: "manager", Role: "manager", Status: "running"},
+		{ID: "u-dev", Name: "dev", Role: "worker", Status: "running"},
+		{ID: "u-alex", Name: "alex", Role: "worker", Status: "running"},
+	}
+
+	if err := renderAgentsTable(&buf, agents); err != nil {
+		t.Fatalf("renderAgentsTable() error = %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("line count = %d, want 4; output=%q", len(lines), buf.String())
+	}
+
+	re := regexp.MustCompile(`^(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)$`)
+	if re.FindStringSubmatchIndex(lines[0]) == nil {
+		t.Fatalf("header not aligned: %q", lines[0])
+	}
+	wantStarts := fieldStartIndexes(lines[0])
+	for i, line := range lines[1:] {
+		if re.FindStringSubmatchIndex(line) == nil {
+			t.Fatalf("row %d not aligned: %q", i+1, line)
+		}
+		if gotStarts := fieldStartIndexes(line); !slicesEqualInts(gotStarts, wantStarts) {
+			t.Fatalf("row %d columns not aligned with header:\nheader=%q\nrow=%q", i+1, lines[0], line)
+		}
 	}
 }
 
@@ -73,9 +130,7 @@ func TestExecuteAgentCreateUsesHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "u-alice\talice\tworker\trunning") {
-		t.Fatalf("stdout = %q, want table row for created agent", stdout.String())
-	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running")
 }
 
 func TestExecuteAgentDeleteUsesHTTPClient(t *testing.T) {
@@ -119,9 +174,7 @@ func TestExecuteAgentStatusByIDUsesHTTPClient(t *testing.T) {
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "status", "u-alice"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "u-alice\talice\tworker\trunning") {
-		t.Fatalf("stdout = %q, want table row for u-alice", stdout.String())
-	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running")
 }
 
 func TestExecuteRoomListUsesHTTPClient(t *testing.T) {
@@ -143,9 +196,7 @@ func TestExecuteRoomListUsesHTTPClient(t *testing.T) {
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "room", "list"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "room-1\talpha\t2\t1") {
-		t.Fatalf("stdout = %q, want table row for room", stdout.String())
-	}
+	assertTableHasRow(t, stdout.String(), "room-1", "alpha", "2", "1")
 }
 
 func TestExecuteRoomCreateUsesHTTPClient(t *testing.T) {
@@ -233,9 +284,7 @@ func TestExecuteUserListUsesHTTPClient(t *testing.T) {
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "user", "list"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "u-alice\tAlice\talice\tWorker\ttrue") {
-		t.Fatalf("stdout = %q, want table row for user", stdout.String())
-	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "Alice", "alice", "Worker", "true")
 }
 
 func TestExecuteUserKickUsesHTTPClient(t *testing.T) {
@@ -278,6 +327,7 @@ func TestUsageIncludesAgentRoomUserTrees(t *testing.T) {
 
 	got := stderr.String()
 	for _, want := range []string{
+		"csgclaw agent list [flags]",
 		"csgclaw agent create [flags]",
 		"csgclaw room list [flags]",
 		"csgclaw user kick <id> [flags]",
@@ -376,6 +426,56 @@ func TestExecuteAgentStatusErrorUsesJSONMessageWithoutHTTPStatusCode(t *testing.
 	if strings.Contains(strings.ToLower(err.Error()), "http") || strings.Contains(err.Error(), "400") {
 		t.Fatalf("Execute() error = %q, should not include HTTP status details", err.Error())
 	}
+}
+
+func assertTableHasRow(t *testing.T, table string, want ...string) {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSpace(table), "\n") {
+		if slicesEqual(strings.Fields(line), want) {
+			return
+		}
+	}
+	t.Fatalf("table = %q, want row %v", table, want)
+}
+
+func slicesEqual(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func fieldStartIndexes(line string) []int {
+	var starts []int
+	inField := false
+	for i, r := range line {
+		if r != ' ' && !inField {
+			starts = append(starts, i)
+			inField = true
+			continue
+		}
+		if r == ' ' {
+			inField = false
+		}
+	}
+	return starts
+}
+
+func slicesEqualInts(got, want []int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

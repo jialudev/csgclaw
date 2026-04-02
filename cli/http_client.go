@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"text/tabwriter"
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/im"
@@ -190,31 +191,32 @@ func writeJSON(w io.Writer, v any) error {
 }
 
 func renderAgentsTable(w io.Writer, agents []agent.Agent) error {
-	var buf bytes.Buffer
-	fmt.Fprintln(&buf, "ID\tNAME\tROLE\tSTATUS")
+	tw := newTableWriter(w)
+	fmt.Fprintln(tw, "ID\tNAME\tROLE\tSTATUS")
 	for _, a := range agents {
-		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\n", a.ID, a.Name, a.Role, a.Status)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.ID, a.Name, a.Role, a.Status)
 	}
-	_, err := w.Write(buf.Bytes())
-	return err
+	return tw.Flush()
 }
 
 func renderRoomsTable(w io.Writer, rooms []im.Room) error {
-	var buf bytes.Buffer
-	fmt.Fprintln(&buf, "ID\tTITLE\tPARTICIPANTS\tMESSAGES")
+	tw := newTableWriter(w)
+	fmt.Fprintln(tw, "ID\tTITLE\tPARTICIPANTS\tMESSAGES")
 	for _, room := range rooms {
-		fmt.Fprintf(&buf, "%s\t%s\t%d\t%d\n", room.ID, room.Title, len(room.Participants), len(room.Messages))
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%d\n", room.ID, room.Title, len(room.Participants), len(room.Messages))
 	}
-	_, err := w.Write(buf.Bytes())
-	return err
+	return tw.Flush()
 }
 
 func renderUsersTable(w io.Writer, users []im.User) error {
-	var buf bytes.Buffer
-	fmt.Fprintln(&buf, "ID\tNAME\tHANDLE\tROLE\tONLINE")
+	tw := newTableWriter(w)
+	fmt.Fprintln(tw, "ID\tNAME\tHANDLE\tROLE\tONLINE")
 	for _, user := range users {
-		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%t\n", user.ID, user.Name, user.Handle, user.Role, user.IsOnline)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\n", user.ID, user.Name, user.Handle, user.Role, user.IsOnline)
 	}
-	_, err := w.Write(buf.Bytes())
-	return err
+	return tw.Flush()
+}
+
+func newTableWriter(w io.Writer) *tabwriter.Writer {
+	return tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 }
