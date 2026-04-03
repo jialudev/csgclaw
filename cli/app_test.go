@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"csgclaw/internal/agent"
+	appversion "csgclaw/internal/version"
 )
 
 func TestExecuteAgentStatusUsesHTTPClient(t *testing.T) {
@@ -361,6 +362,46 @@ func TestRootHelpIncludesAvailableCommands(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("help = %q, want substring %q", got, want)
 		}
+	}
+}
+
+func TestExecuteVersionFlagPrintsVersion(t *testing.T) {
+	originalVersion := appversion.Version
+	appversion.Version = "1.2.3-test"
+	t.Cleanup(func() { appversion.Version = originalVersion })
+
+	var stdout bytes.Buffer
+	app := &App{
+		stdout:     &stdout,
+		stderr:     &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--version"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := strings.TrimSpace(stdout.String()), "csgclaw version 1.2.3-test"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestExecuteVersionFlagShortFormPrintsVersion(t *testing.T) {
+	originalVersion := appversion.Version
+	appversion.Version = "1.2.3-test"
+	t.Cleanup(func() { appversion.Version = originalVersion })
+
+	var stdout bytes.Buffer
+	app := &App{
+		stdout:     &stdout,
+		stderr:     &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+	}
+
+	if err := app.Execute(context.Background(), []string{"-V"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := strings.TrimSpace(stdout.String()), "csgclaw version 1.2.3-test"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }
 

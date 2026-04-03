@@ -3,7 +3,11 @@ BIN_DIR ?= bin
 BIN ?= $(BIN_DIR)/$(APP)
 DIST_DIR ?= dist
 GOCACHE ?= $(CURDIR)/.gocache
-VERSION ?= dev
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_PKG ?= csgclaw/internal/version
+LDFLAGS ?= -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$(COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)
 
 GO ?= go
 GOFMT ?= gofmt
@@ -11,7 +15,7 @@ GOFMT ?= gofmt
 ONBOARD_BASE_URL ?= http://127.0.0.1:4000
 ONBOARD_API_KEY ?= sk-1234567890
 ONBOARD_MODEL_ID ?= minimax-m2.7
-ONBOARD_MANAGER_IMAGE ?= ghcr.io/russellluo/picoclaw:2026.4.2
+ONBOARD_MANAGER_IMAGE ?= ghcr.io/russellluo/picoclaw:2026.4.3.2
 
 IMAGE ?= ghcr.io/russellluo/picoclaw
 TAG ?= 2025.3.25
@@ -48,13 +52,13 @@ test: boxlite-setup
 
 build: boxlite-setup
 	mkdir -p $(BIN_DIR)
-	env GOCACHE=$(GOCACHE) $(GO) build -o $(BIN) ./cmd/csgclaw
+	env GOCACHE=$(GOCACHE) $(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/csgclaw
 
 run: boxlite-setup
-	env GOCACHE=$(GOCACHE) $(GO) run ./cmd/csgclaw start
+	env GOCACHE=$(GOCACHE) $(GO) run -ldflags "$(LDFLAGS)" ./cmd/csgclaw start
 
 onboard: boxlite-setup
-	env GOCACHE=$(GOCACHE) $(GO) run ./cmd/csgclaw onboard \
+	env GOCACHE=$(GOCACHE) $(GO) run -ldflags "$(LDFLAGS)" ./cmd/csgclaw onboard \
 		--base-url $(ONBOARD_BASE_URL) \
 		--api-key $(ONBOARD_API_KEY) \
 		--model-id $(ONBOARD_MODEL_ID) \
@@ -62,12 +66,12 @@ onboard: boxlite-setup
 
 package: boxlite-setup
 	mkdir -p $(DIST_DIR)
-	VERSION=$(VERSION) DIST_DIR=$(DIST_DIR) APP=$(APP) GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh $$(go env GOOS) $$(go env GOARCH)
+	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=$(APP) GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh $$(go env GOOS) $$(go env GOARCH)
 
 release: boxlite-setup
 	mkdir -p $(DIST_DIR)
-	VERSION=$(VERSION) DIST_DIR=$(DIST_DIR) APP=$(APP) GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh darwin arm64
-	VERSION=$(VERSION) DIST_DIR=$(DIST_DIR) APP=$(APP) GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh linux amd64
+	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=$(APP) GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh darwin arm64
+	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=$(APP) GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh linux amd64
 
 clean:
 	rm -rf $(BIN_DIR) $(DIST_DIR) $(GOCACHE)

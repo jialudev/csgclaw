@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	appversion "csgclaw/internal/version"
 )
 
 type App struct {
@@ -26,6 +28,7 @@ type GlobalOptions struct {
 	Token    string
 	Output   string
 	Config   string
+	Version  bool
 }
 
 func New() *App {
@@ -40,6 +43,10 @@ func (a *App) Execute(ctx context.Context, args []string) error {
 	globals, rest, err := a.parseGlobalOptions(args)
 	if err != nil {
 		return err
+	}
+	if globals.Version {
+		a.printVersion()
+		return nil
 	}
 	if len(rest) == 0 {
 		a.usage()
@@ -92,6 +99,8 @@ func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error)
 	fs.StringVar(&opts.Token, "token", "", "API authentication token")
 	fs.StringVar(&opts.Output, "output", "table", "output format: table or json")
 	fs.StringVar(&opts.Config, "config", "", "path to config file")
+	fs.BoolVar(&opts.Version, "version", false, "print version and exit")
+	fs.BoolVar(&opts.Version, "V", false, "print version and exit")
 
 	globalArgs, rest := splitLeadingFlags(args)
 	if err := fs.Parse(globalArgs); err != nil {
@@ -146,6 +155,7 @@ func (a *App) usage() {
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Examples:")
 	fmt.Fprintln(a.stderr, "  csgclaw -h")
+	fmt.Fprintln(a.stderr, "  csgclaw --version")
 	fmt.Fprintln(a.stderr, "  csgclaw serve -h")
 	fmt.Fprintln(a.stderr, "  csgclaw agent -h")
 	fmt.Fprintln(a.stderr, "  csgclaw agent create -h")
@@ -155,6 +165,11 @@ func (a *App) usage() {
 	fmt.Fprintln(a.stderr, "  --token string      API authentication token")
 	fmt.Fprintln(a.stderr, "  --output string     Output format: table or json")
 	fmt.Fprintln(a.stderr, "  --config string     Path to config file")
+	fmt.Fprintln(a.stderr, "  --version, -V       Print version and exit")
+}
+
+func (a *App) printVersion() {
+	fmt.Fprintf(a.stdout, "csgclaw version %s\n", appversion.Current())
 }
 
 func (a *App) usageCommandGroup(command string, summary string, usageLine string, subcommands []string) {

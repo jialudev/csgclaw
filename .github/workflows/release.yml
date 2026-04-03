@@ -47,6 +47,13 @@ jobs:
           fi
           echo "value=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve build metadata
+        id: build_meta
+        shell: bash
+        run: |
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Fetch BoxLite native library
         shell: bash
         working-directory: third_party/boxlite-go
@@ -59,6 +66,8 @@ jobs:
         run: |
           chmod +x scripts/package-release.sh
           VERSION="${{ steps.version.outputs.value }}" \
+          COMMIT="${{ steps.build_meta.outputs.commit }}" \
+          BUILD_TIME="${{ steps.build_meta.outputs.build_time }}" \
           DIST_DIR=dist \
           APP=csgclaw \
           GOCACHE="${{ github.workspace }}/.gocache" \
