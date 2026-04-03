@@ -746,7 +746,7 @@ func TestHandlePicoClawRoutesRequireAuthorization(t *testing.T) {
 		picoclaw: im.NewPicoClawBridge(config.PicoClawConfig{AccessToken: "secret"}),
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"chat_id":"room-1","text":"hello"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"room_id":"room-1","text":"hello"}`))
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
@@ -760,7 +760,7 @@ func TestHandlePicoClawSendMessageRequiresIMService(t *testing.T) {
 		picoclaw: im.NewPicoClawBridge(config.PicoClawConfig{}),
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"chat_id":"room-1","text":"hello"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"room_id":"room-1","text":"hello"}`))
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 

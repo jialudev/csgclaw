@@ -99,7 +99,7 @@ func (h *Handler) handlePicoClawSendMessage(w http.ResponseWriter, r *http.Reque
 	}
 
 	message, err := h.im.DeliverMessage(im.DeliverMessageRequest{
-		ChatID:   req.ChatID,
+		RoomID:   req.RoomID,
 		SenderID: botID,
 		Content:  req.Text,
 	})
@@ -107,7 +107,7 @@ func (h *Handler) handlePicoClawSendMessage(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.publishMessageCreated(req.ChatID, botID, message)
+	h.publishMessageCreated(req.RoomID, botID, message)
 	writeJSON(w, http.StatusOK, map[string]string{"message_id": message.ID})
 }
 

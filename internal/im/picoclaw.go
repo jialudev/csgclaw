@@ -17,7 +17,7 @@ type PicoClawBridge struct {
 
 type PicoClawEvent struct {
 	MessageID string         `json:"message_id"`
-	ChatID    string         `json:"chat_id"`
+	RoomID    string         `json:"room_id"`
 	ChatType  string         `json:"chat_type"`
 	Sender    PicoClawSender `json:"sender"`
 	Text      string         `json:"text"`
@@ -32,7 +32,7 @@ type PicoClawSender struct {
 }
 
 type PicoClawSendMessageRequest struct {
-	ChatID string `json:"chat_id"`
+	RoomID string `json:"room_id"`
 	Text   string `json:"text"`
 }
 
@@ -90,7 +90,7 @@ func (b *PicoClawBridge) PublishMessageEvent(room Room, sender User, message Mes
 	for botID, subs := range targets {
 		evt := PicoClawEvent{
 			MessageID: message.ID,
-			ChatID:    room.ID,
+			RoomID:    room.ID,
 			ChatType:  chatTypeForRoom(room),
 			Sender: PicoClawSender{
 				ID:          sender.ID,

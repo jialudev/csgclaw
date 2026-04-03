@@ -16,6 +16,9 @@ func (s *Service) createGatewayBox(ctx context.Context, rt *boxlite.Runtime, ima
 	if testCreateGatewayBoxHook != nil {
 		return testCreateGatewayBoxHook(s, ctx, rt, image, name, botID, modelID)
 	}
+	if !runtimeValid(rt) {
+		return nil, nil, fmt.Errorf("invalid boxlite runtime")
+	}
 	boxOpts, err := s.gatewayBoxOptions(name, botID, modelID)
 	if err != nil {
 		return nil, nil, err
@@ -39,6 +42,9 @@ func (s *Service) createGatewayBox(ctx context.Context, rt *boxlite.Runtime, ima
 func (s *Service) forceRemoveBox(ctx context.Context, rt *boxlite.Runtime, idOrName string) error {
 	if testForceRemoveBoxHook != nil {
 		return testForceRemoveBoxHook(s, ctx, rt, idOrName)
+	}
+	if !runtimeValid(rt) {
+		return fmt.Errorf("invalid boxlite runtime")
 	}
 	return rt.ForceRemove(ctx, idOrName)
 }

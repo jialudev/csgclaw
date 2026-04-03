@@ -58,7 +58,7 @@ type CreateMessageRequest struct {
 }
 
 type DeliverMessageRequest struct {
-	ChatID    string `json:"chat_id"`
+	RoomID    string `json:"room_id"`
 	SenderID  string `json:"sender_id,omitempty"`
 	Content   string `json:"text"`
 	MessageID string `json:"message_id,omitempty"`
@@ -554,11 +554,11 @@ func (s *Service) CreateMessage(req CreateMessageRequest) (Message, error) {
 }
 
 func (s *Service) DeliverMessage(req DeliverMessageRequest) (Message, error) {
-	chatID := strings.TrimSpace(req.ChatID)
+	roomID := strings.TrimSpace(req.RoomID)
 	senderID := strings.TrimSpace(req.SenderID)
 	content := strings.TrimSpace(req.Content)
-	if chatID == "" {
-		return Message{}, fmt.Errorf("chat_id is required")
+	if roomID == "" {
+		return Message{}, fmt.Errorf("room_id is required")
 	}
 	if content == "" {
 		return Message{}, fmt.Errorf("text is required")
@@ -573,7 +573,7 @@ func (s *Service) DeliverMessage(req DeliverMessageRequest) (Message, error) {
 	if _, ok := s.users[senderID]; !ok {
 		return Message{}, fmt.Errorf("sender not found")
 	}
-	room, ok := s.rooms[chatID]
+	room, ok := s.rooms[roomID]
 	if !ok {
 		return Message{}, fmt.Errorf("room not found")
 	}

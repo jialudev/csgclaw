@@ -45,8 +45,8 @@ cd ~/.picoclaw/workspace/skills/manager-worker-dispatch
 python scripts/manager_worker_api.py list-workers
 python scripts/manager_worker_api.py create-worker --name alex --description "qa regression testing"
 python scripts/manager_worker_api.py join-worker --room-id room-123 --worker-id u-alex
-python scripts/manager_worker_api.py send-message --bot-id u-manager --room-id room-123 --text "@alex 你来进行测试，验证登录流程并记录回归风险"
-python scripts/manager_worker_api.py ensure-and-dispatch --room-id room-123 --bot-id u-manager --name bob --description "frontend ui styling interaction" --task "你来写前端代码，实现设置页 UI" --dry-run
+python scripts/manager_worker_api.py send-message --room-id room-123 --text "@alex 你来进行测试，验证登录流程并记录回归风险"
+python scripts/manager_worker_api.py ensure-and-dispatch --room-id room-123 --name bob --description "frontend ui styling interaction" --task "你来写前端代码，实现设置页 UI" --dry-run
 ```
 
 Read `references/api-contract.md` before changing endpoint names, payload fields, or environment variables.

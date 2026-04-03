@@ -58,6 +58,37 @@ func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
 	}
 }
 
+func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		nil,
+	)
+	defer ResetTestHooks()
+
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = svc.CreateWorker(context.Background(), CreateRequest{Name: "alice"})
+	if err == nil {
+		t.Fatal("CreateWorker() error = nil, want invalid runtime error")
+	}
+	if !strings.Contains(err.Error(), "invalid boxlite runtime") {
+		t.Fatalf("CreateWorker() error = %q, want invalid runtime error", err)
+	}
+}
+
+func TestRuntimeValidRejectsNilAndZeroValue(t *testing.T) {
+	var nilRT *boxlite.Runtime
+	if runtimeValid(nilRT) {
+		t.Fatal("runtimeValid(nil) = true, want false")
+	}
+	if runtimeValid(&boxlite.Runtime{}) {
+		t.Fatal("runtimeValid(zero runtime) = true, want false")
+	}
+}
+
 func TestListWorkersFiltersUnifiedAgents(t *testing.T) {
 	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
 	if err != nil {
@@ -469,6 +500,11 @@ func TestLookupBootstrapManagerUsesPerAgentHome(t *testing.T) {
 	wantHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, ManagerName, config.RuntimeHomeDirName)
 	if rt == nil {
 		t.Fatal("lookupBootstrapManager() runtime = nil, want non-nil")
+	}
+	if info, err := os.Stat(wantHome); err != nil {
+		t.Fatalf("os.Stat(runtime home) error = %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("runtime home is not a directory: %q", wantHome)
 	}
 	if got, want := len(svc.runtimes), 0; got != want {
 		t.Fatalf("len(svc.runtimes) = %d, want %d when runtime creation is hooked", got, want)

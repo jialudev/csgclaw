@@ -128,7 +128,7 @@ curl -N \
 
 ```text
 event: message
-data: {"message_id":"msg-1","chat_id":"room-1","chat_type":"direct","sender":{"id":"u-admin","username":"admin","display_name":"Admin"},"text":"hello","timestamp":"1710000000000"}
+data: {"message_id":"msg-1","room_id":"room-1","chat_type":"direct","sender":{"id":"u-admin","username":"admin","display_name":"Admin"},"text":"hello","timestamp":"1710000000000"}
 ```
 
 说明：
@@ -146,7 +146,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "chat_id": "room-1",
+  "room_id": "room-1",
   "text": "hello from picoclaw"
 }
 ```
@@ -158,7 +158,7 @@ curl -X POST \
   -H 'Authorization: Bearer your-shared-token' \
   -H 'Content-Type: application/json' \
   http://127.0.0.1:18080/api/bots/u-manager/messages/send \
-  -d '{"chat_id":"room-1","text":"hello from picoclaw"}'
+  -d '{"room_id":"room-1","text":"hello from picoclaw"}'
 ```
 
 响应：
@@ -173,7 +173,7 @@ curl -X POST \
 
 - 该接口会把消息写入指定会话
 - 消息发送者固定为路径里的 `bot_id`
-- `chat_id` 必须是当前 IM 中已存在的会话 ID
+- `room_id` 必须是当前 IM 中已存在的会话 ID
 
 ## 3. WebUI 的配合方式
 

@@ -66,7 +66,7 @@ Accept: text/event-stream
 
 ```text
 event: message
-data: {"message_id":"msg-1","chat_id":"room-1","chat_type":"direct","sender":{"id":"u-admin","username":"admin","display_name":"Admin"},"text":"hello","timestamp":"1710000000000"}
+data: {"message_id":"msg-1","room_id":"room-1","chat_type":"direct","sender":{"id":"u-admin","username":"admin","display_name":"Admin"},"text":"hello","timestamp":"1710000000000"}
 ```
 
 ### 3.2 事件字段
@@ -76,7 +76,7 @@ data: {"message_id":"msg-1","chat_id":"room-1","chat_type":"direct","sender":{"i
 ```json
 {
   "message_id": "msg-1",
-  "chat_id": "room-1",
+  "room_id": "room-1",
   "chat_type": "direct",
   "sender": {
     "id": "u-admin",
@@ -92,7 +92,7 @@ data: {"message_id":"msg-1","chat_id":"room-1","chat_type":"direct","sender":{"i
 关键字段：
 
 - `message_id`
-- `chat_id`
+- `room_id`
 - `chat_type`
 - `sender.id`
 - `text`
@@ -116,10 +116,10 @@ if evt.ChatType == "group" {
 
 c.HandleMessage(
     ctx,
-    bus.Peer{Kind: peerKind, ID: evt.ChatID},
+    bus.Peer{Kind: peerKind, ID: evt.RoomID},
     evt.MessageID,
     evt.Sender.ID,
-    evt.ChatID,
+    evt.RoomID,
     evt.Text,
     nil,
     map[string]string{
@@ -130,7 +130,7 @@ c.HandleMessage(
 
 这里的重点是：
 
-- `Peer.ID` 使用 `chat_id`
+- `Peer.ID` 使用 `room_id`
 - `sender_id` 使用 `sender.id`
 - `content` 使用 `text`
 
@@ -144,7 +144,7 @@ Authorization: Bearer your-shared-token
 Content-Type: application/json
 
 {
-  "chat_id": "room-1",
+  "room_id": "room-1",
   "text": "hello from picoclaw"
 }
 ```
@@ -159,7 +159,7 @@ Content-Type: application/json
 
 建议：
 
-- `msg.ChatID` 直接映射到请求里的 `chat_id`
+- `msg.RoomID` 直接映射到请求里的 `room_id`
 - `msg.Content` 直接映射到请求里的 `text`
 
 ## 6. 当前实现边界
@@ -199,6 +199,6 @@ Content-Type: application/json
 
 如果 PicoClaw 发不回消息，优先检查：
 
-- `chat_id` 是否真实存在
+- `room_id` 是否真实存在
 - `bot_id` 是否存在于 IM 用户列表
 - `text` 是否为空

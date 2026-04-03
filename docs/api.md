@@ -348,7 +348,7 @@ Kick 指定用户。
 : connected
 
 event: message
-data: {"message_id":"msg-1","chat_id":"room-1","chat_type":"direct","sender":{"id":"u-admin","username":"admin","display_name":"Admin"},"text":"hello","timestamp":"1743139200000"}
+data: {"message_id":"msg-1","room_id":"room-1","chat_type":"direct","sender":{"id":"u-admin","username":"admin","display_name":"Admin"},"text":"hello","timestamp":"1743139200000"}
 ```
 
 说明：
@@ -366,7 +366,7 @@ bot 向指定会话发送消息。
 
 ```json
 {
-  "chat_id": "room-1",
+  "room_id": "room-1",
   "text": "hello from bot"
 }
 ```
@@ -382,5 +382,5 @@ bot 向指定会话发送消息。
 说明：
 
 - 消息发送者固定为路径中的 `bot_id`
-- `chat_id` 必须是已存在会话
+- `room_id` 必须是已存在会话
 - `text` 不能为空

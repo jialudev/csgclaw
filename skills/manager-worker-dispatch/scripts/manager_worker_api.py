@@ -307,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     send_message = subparsers.add_parser("send-message", help="Send a bot message to a room.")
     add_common_args(send_message)
-    send_message.add_argument("--bot-id", required=True, help="Bot id used as message sender.")
+    send_message.add_argument("--bot-id", default="u-manager", help="Bot id used as message sender.")
     send_message.add_argument("--room-id", required=True, help="Room id.")
     send_message.add_argument("--text", required=True, help="Message text.")
     send_message.set_defaults(func=cmd_send_message)
@@ -318,7 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_common_args(ensure_dispatch)
     ensure_dispatch.add_argument("--room-id", required=True, help="Room id.")
-    ensure_dispatch.add_argument("--bot-id", required=True, help="Bot id used as message sender.")
+    ensure_dispatch.add_argument("--bot-id", default="u-manager", help="Bot id used as message sender.")
     ensure_dispatch.add_argument("--role", default="worker", help="Worker role when creating. Default: worker.")
     ensure_dispatch.add_argument("--name", required=True, help="Worker name if creation is needed.")
     ensure_dispatch.add_argument("--task", required=True, help="Task description.")

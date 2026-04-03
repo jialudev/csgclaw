@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	boxlite "github.com/RussellLuo/boxlite/sdks/go"
@@ -28,16 +29,20 @@ func (s *Service) ensureRuntime(agentName string) (*boxlite.Runtime, error) {
 }
 
 func (s *Service) ensureRuntimeAtHome(homeDir string) (*boxlite.Runtime, error) {
-	if testEnsureRuntimeAtHomeHook != nil {
-		return testEnsureRuntimeAtHomeHook(s, homeDir)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	homeDir = strings.TrimSpace(homeDir)
 	if homeDir == "" {
 		return nil, fmt.Errorf("runtime home is required")
 	}
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create runtime home: %w", err)
+	}
+	if testEnsureRuntimeAtHomeHook != nil {
+		return testEnsureRuntimeAtHomeHook(s, homeDir)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if rt := s.runtimes[homeDir]; rt != nil {
 		return rt, nil
 	}
@@ -95,6 +100,26 @@ func (s *Service) boxInfo(ctx context.Context, box *boxlite.Box) (*boxlite.BoxIn
 		return testBoxInfoHook(s, ctx, box)
 	}
 	return box.Info(ctx)
+}
+
+func runtimeValid(rt *boxlite.Runtime) bool {
+	if rt == nil {
+		return false
+	}
+
+	v := reflect.ValueOf(rt)
+	if v.Kind() != reflect.Ptr || v.IsNil() {
+		return false
+	}
+	elem := v.Elem()
+	if !elem.IsValid() {
+		return false
+	}
+	handle := elem.FieldByName("handle")
+	if !handle.IsValid() || handle.Kind() != reflect.Ptr {
+		return false
+	}
+	return !handle.IsNil()
 }
 
 func boxRuntimeHome(agentName string) (string, error) {
