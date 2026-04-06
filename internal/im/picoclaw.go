@@ -155,7 +155,3 @@ func chatTypeForRoom(room Room) string {
 	}
 	return "group"
 }
-
-func chatTypeForConversation(conv Conversation) string {
-	return chatTypeForRoom(conv)
-}
