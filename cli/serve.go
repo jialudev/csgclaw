@@ -20,6 +20,12 @@ import (
 	"csgclaw/internal/server"
 )
 
+var (
+	runServer         = server.Run
+	newAgentServiceFn = newAgentService
+	newIMServiceFn    = newIMService
+)
+
 func (a *App) runServe(ctx context.Context, args []string, globals GlobalOptions) error {
 	fs := a.newCommandFlagSet("serve", "csgclaw serve [-d|--daemon] [flags]", "Start the local HTTP server.")
 	daemon := fs.Bool("daemon", false, "run server in background")
@@ -50,7 +56,7 @@ func (a *App) runServe(ctx context.Context, args []string, globals GlobalOptions
 	if *daemon {
 		return a.serveBackground(cfg, globals, *logPath, *pidPath)
 	}
-	return a.serveForeground(cfg)
+	return a.serveForeground(ctx, cfg)
 }
 
 func (a *App) runInternalServe(ctx context.Context, args []string, globals GlobalOptions) error {
@@ -81,18 +87,18 @@ func (a *App) runInternalServe(ctx context.Context, args []string, globals Globa
 
 	var svc *agent.Service
 	if cfg.LLM != (config.LLMConfig{}) {
-		svc, err = newAgentService(cfg)
+		svc, err = newAgentServiceFn(cfg)
 		if err != nil {
 			return err
 		}
 	}
-	imSvc, err := newIMService()
+	imSvc, err := newIMServiceFn()
 	if err != nil {
 		return err
 	}
 	imBus := im.NewBus()
 
-	return server.Run(server.Options{
+	return runServer(server.Options{
 		ListenAddr: cfg.Server.ListenAddr,
 		Service:    svc,
 		IM:         imSvc,
@@ -102,12 +108,12 @@ func (a *App) runInternalServe(ctx context.Context, args []string, globals Globa
 	})
 }
 
-func (a *App) serveForeground(cfg config.Config) error {
-	svc, err := newAgentService(cfg)
+func (a *App) serveForeground(ctx context.Context, cfg config.Config) error {
+	svc, err := newAgentServiceFn(cfg)
 	if err != nil {
 		return err
 	}
-	imSvc, err := newIMService()
+	imSvc, err := newIMServiceFn()
 	if err != nil {
 		return err
 	}
@@ -117,12 +123,13 @@ func (a *App) serveForeground(cfg config.Config) error {
 	fmt.Fprintf(a.stdout, "CSGClaw IM is available at: %s\n", imURL)
 	fmt.Fprintln(a.stdout, "Open this URL in your browser after startup.")
 
-	return server.Run(server.Options{
+	return runServer(server.Options{
 		ListenAddr: cfg.Server.ListenAddr,
 		Service:    svc,
 		IM:         imSvc,
 		IMBus:      imBus,
 		PicoClaw:   im.NewPicoClawBridge(cfg.PicoClaw),
+		Context:    ctx,
 	})
 }
 
