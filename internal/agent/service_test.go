@@ -291,12 +291,21 @@ func TestDeletePrefersBoxIDOverName(t *testing.T) {
 }
 
 func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
-	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
-		nil,
-	)
+	rt := &boxlite.Runtime{}
+	SetTestHooks(func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
 	defer ResetTestHooks()
 	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) error {
+		return nil
+	}
+	var closeRuntimeCalls int
+	testCloseRuntimeHook = func(_ *Service, home string, got *boxlite.Runtime) error {
+		if got != rt {
+			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
+		}
+		if !strings.HasSuffix(home, filepath.Join("alice", config.RuntimeHomeDirName)) {
+			t.Fatalf("closeRuntime() home = %q, want alice runtime home", home)
+		}
+		closeRuntimeCalls++
 		return nil
 	}
 	defer func() {
@@ -322,13 +331,16 @@ func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boxRuntimeHome() error = %v", err)
 	}
-	svc.runtimes[runtimeHome] = &boxlite.Runtime{}
+	svc.runtimes[runtimeHome] = rt
 
 	if err := svc.Delete(context.Background(), "u-alice"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 	if _, ok := svc.runtimes[runtimeHome]; ok {
 		t.Fatalf("Delete() kept runtime cache for %q", runtimeHome)
+	}
+	if closeRuntimeCalls != 1 {
+		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
 	}
 }
 
@@ -358,6 +370,112 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 	}
 	if got.BoxID != "box-alice" {
 		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "box-alice")
+	}
+}
+
+func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
+	rt := &boxlite.Runtime{}
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil },
+		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return &boxlite.Box{}, &boxlite.BoxInfo{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	var closeCalls int
+	var closeRuntimeCalls int
+	testCloseBoxHook = func(_ *Service, _ *boxlite.Box) error {
+		closeCalls++
+		return nil
+	}
+	testCloseRuntimeHook = func(_ *Service, _ string, got *boxlite.Runtime) error {
+		if got != rt {
+			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
+		}
+		closeRuntimeCalls++
+		return nil
+	}
+
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateRequest{Name: "alice"})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.BoxID != "box-alice" {
+		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "box-alice")
+	}
+	if closeCalls != 1 {
+		t.Fatalf("closeBox() calls = %d, want %d", closeCalls, 1)
+	}
+	if closeRuntimeCalls != 1 {
+		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
+	}
+}
+
+func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
+	rt := &boxlite.Runtime{}
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil },
+		nil,
+	)
+	defer ResetTestHooks()
+
+	var closeCalls int
+	var closeRuntimeCalls int
+	testCreateBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, _ ...boxlite.BoxOption) (*boxlite.Box, error) {
+		return &boxlite.Box{}, nil
+	}
+	testCloseBoxHook = func(_ *Service, _ *boxlite.Box) error {
+		closeCalls++
+		return nil
+	}
+	testCloseRuntimeHook = func(_ *Service, _ string, got *boxlite.Runtime) error {
+		if got != rt {
+			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
+		}
+		closeRuntimeCalls++
+		return nil
+	}
+
+	svc, err := NewService(
+		config.LLMConfig{BaseURL: "http://127.0.0.1:4000", APIKey: "sk-test", ModelID: "model-1"},
+		config.ServerConfig{},
+		config.PicoClawConfig{},
+		"",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.Create(context.Background(), CreateRequest{
+		ID:    "agent-1",
+		Name:  "alice",
+		Image: "test-image",
+		Role:  RoleAgent,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if got.ID != "agent-1" {
+		t.Fatalf("Create().ID = %q, want %q", got.ID, "agent-1")
+	}
+	if closeCalls != 1 {
+		t.Fatalf("closeBox() calls = %d, want %d", closeCalls, 1)
+	}
+	if closeRuntimeCalls != 1 {
+		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
 	}
 }
 
@@ -426,6 +544,61 @@ func TestEnsureBootstrapStateForceRecreatePrefersStoredManagerBoxID(t *testing.T
 	}
 	if got.BoxID != "box-new" {
 		t.Fatalf("Agent().BoxID = %q, want %q", got.BoxID, "box-new")
+	}
+}
+
+func TestEnsureBootstrapStateClosesManagerBoxHandleAfterCreate(t *testing.T) {
+	rt := &boxlite.Runtime{}
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil },
+		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return &boxlite.Box{}, &boxlite.BoxInfo{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	}
+
+	var closeCalls int
+	var closeRuntimeCalls int
+	testCloseBoxHook = func(_ *Service, _ *boxlite.Box) error {
+		closeCalls++
+		return nil
+	}
+	testCloseRuntimeHook = func(_ *Service, _ string, got *boxlite.Runtime) error {
+		if got != rt {
+			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
+		}
+		closeRuntimeCalls++
+		return nil
+	}
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, config.LLMConfig{}, config.PicoClawConfig{}, "", false); err != nil {
+		t.Fatalf("EnsureBootstrapState() error = %v", err)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("closeBox() calls = %d, want %d", closeCalls, 1)
+	}
+	if closeRuntimeCalls != 1 {
+		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
+	}
+
+	reloaded, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() reload error = %v", err)
+	}
+	if got, want := len(reloaded.runtimes), 0; got != want {
+		t.Fatalf("len(reloaded.runtimes) = %d, want %d", got, want)
 	}
 }
 

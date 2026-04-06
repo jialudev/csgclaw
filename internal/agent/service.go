@@ -36,6 +36,9 @@ var (
 	testGetBoxHook              func(*Service, context.Context, *boxlite.Runtime, string) (*boxlite.Box, error)
 	testStartBoxHook            func(*Service, context.Context, *boxlite.Box) error
 	testBoxInfoHook             func(*Service, context.Context, *boxlite.Box) (*boxlite.BoxInfo, error)
+	testCloseBoxHook            func(*Service, *boxlite.Box) error
+	testCloseRuntimeHook        func(*Service, string, *boxlite.Runtime) error
+	testCreateBoxHook           func(*Service, context.Context, *boxlite.Runtime, string, ...boxlite.BoxOption) (*boxlite.Box, error)
 	testCreateGatewayBoxHook    func(*Service, context.Context, *boxlite.Runtime, string, string, string, string) (*boxlite.Box, *boxlite.BoxInfo, error)
 	testForceRemoveBoxHook      func(*Service, context.Context, *boxlite.Runtime, string) error
 )
@@ -63,6 +66,9 @@ func ResetTestHooks() {
 	testGetBoxHook = nil
 	testStartBoxHook = nil
 	testBoxInfoHook = nil
+	testCloseBoxHook = nil
+	testCloseRuntimeHook = nil
+	testCreateBoxHook = nil
 	testCreateGatewayBoxHook = nil
 	testForceRemoveBoxHook = nil
 }
@@ -75,12 +81,7 @@ type Service struct {
 	state        string
 	mu           sync.RWMutex
 	runtimes     map[string]*boxlite.Runtime
-	boxes        map[string]closer
 	agents       map[string]Agent
-}
-
-type closer interface {
-	Close() error
 }
 
 func NewService(llm config.LLMConfig, server config.ServerConfig, pico config.PicoClawConfig, managerImage, statePath string) (*Service, error) {
@@ -94,7 +95,6 @@ func NewService(llm config.LLMConfig, server config.ServerConfig, pico config.Pi
 		managerImage: managerImage,
 		state:        statePath,
 		runtimes:     make(map[string]*boxlite.Runtime),
-		boxes:        make(map[string]closer),
 		agents:       make(map[string]Agent),
 	}
 	if err := svc.load(); err != nil {
@@ -116,6 +116,13 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 	if err != nil {
 		return err
 	}
+	runtimeHome, err := boxRuntimeHome(ManagerName)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = svc.closeRuntime(runtimeHome, rt)
+	}()
 	if forceRecreate {
 		log.Printf("force recreating bootstrap manager box %q", ManagerName)
 		managerBoxIDOrName := svc.bootstrapManagerBoxIDOrName()
@@ -162,6 +169,9 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 			return fmt.Errorf("read bootstrap manager box info: %w", err)
 		}
 	}
+	defer func() {
+		_ = svc.closeBox(box)
+	}()
 
 	svc.mu.Lock()
 	defer svc.mu.Unlock()
@@ -182,7 +192,6 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 		}
 	}
 	svc.agents[manager.ID] = manager
-	svc.boxes[manager.ID] = box
 	return svc.saveLocked()
 }
 
@@ -239,6 +248,13 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	if err != nil {
 		return Agent{}, err
 	}
+	runtimeHome, err := boxRuntimeHome(name)
+	if err != nil {
+		return Agent{}, err
+	}
+	defer func() {
+		_ = s.closeRuntime(runtimeHome, rt)
+	}()
 
 	if modelID == "" {
 		modelID = s.llm.ModelID
@@ -248,8 +264,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	if err != nil {
 		return Agent{}, err
 	}
-	box, err := rt.Create(ctx, image,
+	boxOpts := []boxlite.BoxOption{
 		boxlite.WithName(name),
+		boxlite.WithDetach(true),
 		boxlite.WithAutoRemove(false),
 		boxlite.WithEnv("CSGCLAW_LLM_BASE_URL", s.llm.BaseURL),
 		boxlite.WithEnv("CSGCLAW_LLM_API_KEY", s.llm.APIKey),
@@ -258,10 +275,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 		boxlite.WithEnv("OPENAI_API_KEY", s.llm.APIKey),
 		boxlite.WithEnv("OPENAI_MODEL", modelID),
 		boxlite.WithVolume(projectsRoot, boxProjectsDir),
-	)
+	}
+	box, err := s.createBox(ctx, rt, image, boxOpts...)
 	if err != nil {
 		return Agent{}, fmt.Errorf("create boxlite agent: %w", err)
 	}
+	defer func() {
+		_ = s.closeBox(box)
+	}()
 
 	createdAt := req.CreatedAt.UTC()
 	if req.CreatedAt.IsZero() {
@@ -283,7 +304,6 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	}
 
 	s.mu.Lock()
-	s.boxes[id] = box
 	s.agents[id] = agent
 	err = s.saveLocked()
 	s.mu.Unlock()
@@ -312,7 +332,6 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 
 	s.mu.RLock()
 	existing, ok := s.agents[id]
-	box := s.boxes[id]
 	s.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("agent %q not found", id)
@@ -325,8 +344,9 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if box != nil {
-		_ = box.Close()
+	runtimeHome, err := boxRuntimeHome(existing.Name)
+	if err != nil {
+		return err
 	}
 	boxIDOrName := strings.TrimSpace(existing.BoxID)
 	if boxIDOrName == "" {
@@ -336,7 +356,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		if err := s.forceRemoveBox(ctx, rt, boxIDOrName); err != nil && !boxlite.IsNotFound(err) {
 			return fmt.Errorf("remove agent box: %w", err)
 		}
-		_ = rt.Close()
+		_ = s.closeRuntime(runtimeHome, rt)
 	}
 
 	agentHome, err := agentHomeDir(existing.Name)
@@ -355,8 +375,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("agent %q not found", id)
 	}
 	delete(s.agents, id)
-	delete(s.boxes, id)
-	runtimeHome, err := boxRuntimeHome(current.Name)
+	runtimeHome, err = boxRuntimeHome(current.Name)
 	if err != nil {
 		return err
 	}
@@ -407,6 +426,13 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	if err != nil {
 		return Agent{}, err
 	}
+	runtimeHome, err := boxRuntimeHome(name)
+	if err != nil {
+		return Agent{}, err
+	}
+	defer func() {
+		_ = s.closeRuntime(runtimeHome, rt)
+	}()
 	if modelID == "" {
 		modelID = s.llm.ModelID
 	}
@@ -415,16 +441,19 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	if err != nil {
 		return Agent{}, fmt.Errorf("create worker box: %w", err)
 	}
+	fmt.Printf("created worker box: %s\n", name)
+	defer func() {
+		fmt.Printf("releasing handle of box: %s\n", name)
+		_ = s.closeBox(box)
+	}()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if _, ok := s.agents[id]; ok {
-		_ = box.Close()
 		return Agent{}, fmt.Errorf("agent id %q already exists", id)
 	}
 	if s.hasNameLocked(name) {
-		_ = box.Close()
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
 	}
 
@@ -439,12 +468,9 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 		ModelID:     modelID,
 		Role:        RoleWorker,
 	}
-	s.boxes[worker.ID] = box
 	s.agents[worker.ID] = worker
 	if err := s.saveLocked(); err != nil {
-		delete(s.boxes, worker.ID)
 		delete(s.agents, worker.ID)
-		_ = box.Close()
 		return Agent{}, err
 	}
 	return *cloneAgent(&worker), nil
@@ -467,10 +493,6 @@ func (s *Service) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for id, box := range s.boxes {
-		_ = box.Close()
-		delete(s.boxes, id)
-	}
 	var closeErr error
 	for name, rt := range s.runtimes {
 		if err := rt.Close(); err != nil && closeErr == nil {

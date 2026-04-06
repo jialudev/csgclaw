@@ -102,6 +102,39 @@ func (s *Service) boxInfo(ctx context.Context, box *boxlite.Box) (*boxlite.BoxIn
 	return box.Info(ctx)
 }
 
+func (s *Service) createBox(ctx context.Context, rt *boxlite.Runtime, image string, opts ...boxlite.BoxOption) (*boxlite.Box, error) {
+	if testCreateBoxHook != nil {
+		return testCreateBoxHook(s, ctx, rt, image, opts...)
+	}
+	return rt.Create(ctx, image, opts...)
+}
+
+func (s *Service) closeBox(box *boxlite.Box) error {
+	if box == nil {
+		return nil
+	}
+	if testCloseBoxHook != nil {
+		return testCloseBoxHook(s, box)
+	}
+	return box.Close()
+}
+
+func (s *Service) closeRuntime(homeDir string, rt *boxlite.Runtime) error {
+	if rt == nil {
+		return nil
+	}
+	s.mu.Lock()
+	if cached := s.runtimes[homeDir]; cached == rt {
+		delete(s.runtimes, homeDir)
+	}
+	s.mu.Unlock()
+
+	if testCloseRuntimeHook != nil {
+		return testCloseRuntimeHook(s, homeDir, rt)
+	}
+	return rt.Close()
+}
+
 func runtimeValid(rt *boxlite.Runtime) bool {
 	if rt == nil {
 		return false

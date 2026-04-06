@@ -28,12 +28,12 @@ func (s *Service) createGatewayBox(ctx context.Context, rt *boxlite.Runtime, ima
 		return nil, nil, fmt.Errorf("create gateway box: %w", err)
 	}
 	if err := box.Start(ctx); err != nil {
-		_ = box.Close()
+		_ = s.closeBox(box)
 		return nil, nil, fmt.Errorf("start gateway box: %w", err)
 	}
 	info, err := box.Info(ctx)
 	if err != nil {
-		_ = box.Close()
+		_ = s.closeBox(box)
 		return nil, nil, fmt.Errorf("read gateway box info: %w", err)
 	}
 	return box, info, nil
