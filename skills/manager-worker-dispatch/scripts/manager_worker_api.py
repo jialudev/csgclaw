@@ -326,7 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
     ensure_dispatch.add_argument("--id", help="Optional worker id when creating.")
     ensure_dispatch.add_argument("--description", required=True, help="Worker capability description used for matching and creation.")
     ensure_dispatch.add_argument("--model-id", help="Optional model id when creating.")
-    ensure_dispatch.add_argument("--inviter-id", default="u-admin", help="Inviter id. Default: u-admin.")
+    ensure_dispatch.add_argument("--inviter-id", default="u-manager", help="Inviter id. Default: u-manager.")
     ensure_dispatch.add_argument("--locale", help="Optional locale, for example zh-CN.")
     ensure_dispatch.set_defaults(func=cmd_ensure_and_dispatch)
 
