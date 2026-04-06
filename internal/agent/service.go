@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -41,6 +42,7 @@ var (
 	testCreateBoxHook           func(*Service, context.Context, *boxlite.Runtime, string, ...boxlite.BoxOption) (*boxlite.Box, error)
 	testCreateGatewayBoxHook    func(*Service, context.Context, *boxlite.Runtime, string, string, string, string) (*boxlite.Box, *boxlite.BoxInfo, error)
 	testForceRemoveBoxHook      func(*Service, context.Context, *boxlite.Runtime, string) error
+	testRunBoxCommandHook       func(*Service, context.Context, *boxlite.Box, string, []string, io.Writer) (int, error)
 )
 
 // SetTestHooks installs lightweight hooks for tests that need to bypass runtime/box creation.
@@ -71,6 +73,17 @@ func ResetTestHooks() {
 	testCreateBoxHook = nil
 	testCreateGatewayBoxHook = nil
 	testForceRemoveBoxHook = nil
+	testRunBoxCommandHook = nil
+}
+
+// TestOnlySetGetBoxHook installs a test hook for box lookup.
+func TestOnlySetGetBoxHook(hook func(*Service, context.Context, *boxlite.Runtime, string) (*boxlite.Box, error)) {
+	testGetBoxHook = hook
+}
+
+// TestOnlySetRunBoxCommandHook installs a test hook for command execution inside a box.
+func TestOnlySetRunBoxCommandHook(hook func(*Service, context.Context, *boxlite.Box, string, []string, io.Writer) (int, error)) {
+	testRunBoxCommandHook = hook
 }
 
 type Service struct {
@@ -324,6 +337,66 @@ func (s *Service) Agent(id string) (Agent, bool) {
 	return *cloneAgent(&a), true
 }
 
+func (s *Service) resolveAgentBox(ctx context.Context, rt *boxlite.Runtime, got Agent) (*boxlite.Box, string, error) {
+	keys := make([]string, 0, 2)
+	if boxID := strings.TrimSpace(got.BoxID); boxID != "" {
+		keys = append(keys, boxID)
+	}
+	if name := strings.TrimSpace(got.Name); name != "" {
+		if len(keys) == 0 || keys[0] != name {
+			keys = append(keys, name)
+		}
+	}
+	if len(keys) == 0 {
+		return nil, "", fmt.Errorf("agent box identifier is required")
+	}
+
+	var lastNotFound error
+	for _, key := range keys {
+		box, err := s.getBox(ctx, rt, key)
+		if err == nil {
+			return box, key, nil
+		}
+		if boxlite.IsNotFound(err) {
+			lastNotFound = err
+			continue
+		}
+		return nil, "", fmt.Errorf("get agent box: %w", err)
+	}
+	if lastNotFound != nil {
+		return nil, strings.TrimSpace(got.BoxID), lastNotFound
+	}
+	return nil, "", fmt.Errorf("agent box %q not found", got.Name)
+}
+
+func (s *Service) refreshAgentBoxID(id string, got Agent, resolvedKey string, box *boxlite.Box) error {
+	if box == nil {
+		return nil
+	}
+	if strings.TrimSpace(got.BoxID) != "" && strings.TrimSpace(got.BoxID) == strings.TrimSpace(resolvedKey) {
+		return nil
+	}
+
+	info, err := s.boxInfo(context.Background(), box)
+	if err != nil {
+		return fmt.Errorf("read agent box info: %w", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current, ok := s.agents[id]
+	if !ok {
+		return nil
+	}
+	if strings.TrimSpace(current.BoxID) == info.ID {
+		return nil
+	}
+	current.BoxID = info.ID
+	s.agents[id] = current
+	return s.saveLocked()
+}
+
 func (s *Service) Delete(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -348,11 +421,14 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	boxIDOrName := strings.TrimSpace(existing.BoxID)
-	if boxIDOrName == "" {
-		boxIDOrName = existing.Name
-	}
 	if rt != nil {
+		boxIDOrName := strings.TrimSpace(existing.BoxID)
+		if boxIDOrName == "" {
+			boxIDOrName = existing.Name
+		}
+		if _, resolvedKey, resolveErr := s.resolveAgentBox(ctx, rt, existing); resolveErr == nil && strings.TrimSpace(resolvedKey) != "" {
+			boxIDOrName = resolvedKey
+		}
 		if err := s.forceRemoveBox(ctx, rt, boxIDOrName); err != nil && !boxlite.IsNotFound(err) {
 			return fmt.Errorf("remove agent box: %w", err)
 		}
@@ -487,6 +563,69 @@ func (s *Service) ListWorkers() []Agent {
 		}
 	}
 	return sortedAgentsFromMap(workers)
+}
+
+func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("agent id is required")
+	}
+	if w == nil {
+		return fmt.Errorf("log writer is required")
+	}
+	if lines <= 0 {
+		lines = 20
+	}
+
+	got, ok := s.Agent(id)
+	if !ok {
+		return fmt.Errorf("agent %q not found", id)
+	}
+
+	rt, err := s.ensureRuntime(got.Name)
+	if err != nil {
+		return err
+	}
+	runtimeHome, err := boxRuntimeHome(got.Name)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = s.closeRuntime(runtimeHome, rt)
+	}()
+
+	box, resolvedKey, err := s.resolveAgentBox(ctx, rt, got)
+	if err != nil {
+		if boxlite.IsNotFound(err) {
+			boxIDOrName := strings.TrimSpace(got.BoxID)
+			if boxIDOrName == "" {
+				boxIDOrName = got.Name
+			}
+			return fmt.Errorf("agent box %q not found", boxIDOrName)
+		}
+		return err
+	}
+	defer func() {
+		_ = s.closeBox(box)
+	}()
+	if err := s.refreshAgentBoxID(id, got, resolvedKey, box); err != nil {
+		return err
+	}
+
+	args := []string{"-n", fmt.Sprintf("%d", lines)}
+	if follow {
+		args = append(args, "-f")
+	}
+	args = append(args, boxPicoClawDir+"/gateway.log")
+
+	exitCode, err := s.runBoxCommand(ctx, box, "tail", args, w)
+	if err != nil {
+		return err
+	}
+	if exitCode != 0 {
+		return fmt.Errorf("tail exited with code %d", exitCode)
+	}
+	return nil
 }
 
 func (s *Service) Close() error {

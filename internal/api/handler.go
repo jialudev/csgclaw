@@ -106,8 +106,23 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/agents/"))
-	if id == "" || strings.Contains(id, "/") {
+	path := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/agents/"))
+	if path == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if id, ok := strings.CutSuffix(path, "/logs"); ok {
+		id = strings.TrimSpace(id)
+		if id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		h.handleAgentLogs(w, r, id)
+		return
+	}
+
+	id := path
+	if strings.Contains(id, "/") {
 		http.NotFound(w, r)
 		return
 	}
@@ -132,6 +147,71 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleAgentLogs(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	lines := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("lines")); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &lines); err != nil || lines <= 0 {
+			http.Error(w, "invalid lines value", http.StatusBadRequest)
+			return
+		}
+	}
+	follow := parseBoolQuery(r.URL.Query().Get("follow"))
+
+	logWriter := io.Writer(w)
+	if follow {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming is not supported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		logWriter = flushWriter{ResponseWriter: w, flusher: flusher}
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if err := h.svc.StreamLogs(r.Context(), id, follow, lines, logWriter); err != nil {
+		if !parseBoolQuery(r.URL.Query().Get("follow")) {
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "not found") {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		if _, writeErr := io.WriteString(w, err.Error()+"\n"); writeErr != nil {
+			return
+		}
+	}
+}
+
+type flushWriter struct {
+	http.ResponseWriter
+	flusher http.Flusher
+}
+
+func (w flushWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(p)
+	if n > 0 {
+		w.flusher.Flush()
+	}
+	return n, err
+}
+
+func parseBoolQuery(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
 	}
 }
 

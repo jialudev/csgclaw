@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -22,11 +24,6 @@ type APIClient struct {
 	endpoint string
 	token    string
 	client   HTTPClient
-}
-
-type AgentLogs struct {
-	ID    string   `json:"id"`
-	Lines []string `json:"lines"`
 }
 
 func NewAPIClient(endpoint, token string, client HTTPClient) *APIClient {
@@ -68,12 +65,39 @@ func (c *APIClient) DeleteAgent(ctx context.Context, id string) error {
 	return c.doNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+id)
 }
 
-func (c *APIClient) GetAgentLogs(ctx context.Context, id string) (AgentLogs, error) {
-	var logs AgentLogs
-	if err := c.getJSON(ctx, "/api/v1/agents/"+id+"/logs", &logs); err != nil {
-		return AgentLogs{}, err
+func (c *APIClient) StreamAgentLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {
+	values := url.Values{}
+	if follow {
+		values.Set("follow", "true")
 	}
-	return logs, nil
+	if lines > 0 {
+		values.Set("lines", strconv.Itoa(lines))
+	}
+
+	path := "/api/v1/agents/" + id + "/logs"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+path, nil)
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return extractAPIError(resp)
+	}
+	_, err = io.Copy(w, resp.Body)
+	return err
 }
 
 func (c *APIClient) ListRooms(ctx context.Context) ([]im.Room, error) {

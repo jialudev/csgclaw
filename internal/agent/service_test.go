@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,6 +292,66 @@ func TestDeletePrefersBoxIDOverName(t *testing.T) {
 	}
 }
 
+func TestDeleteFallsBackToNameWhenStoredBoxIDIsStale(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		nil,
+	)
+	defer ResetTestHooks()
+
+	var lookedUp []string
+	var removed string
+	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+		lookedUp = append(lookedUp, idOrName)
+		if idOrName == "alice" {
+			return &boxlite.Box{}, nil
+		}
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	}
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) error {
+		removed = idOrName
+		return nil
+	}
+	defer func() {
+		testGetBoxHook = nil
+		testForceRemoveBoxHook = nil
+	}()
+
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		BoxID:     "box-stale",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	agentHome, err := agentHomeDir("alice")
+	if err != nil {
+		t.Fatalf("agentHomeDir() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(agentHome, config.RuntimeHomeDirName), 0o755); err != nil {
+		t.Fatalf("os.MkdirAll(agent runtime) error = %v", err)
+	}
+
+	if err := svc.Delete(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if strings.Join(lookedUp, ",") != "box-stale,alice" {
+		t.Fatalf("getBox() keys = %q, want stale box id then name fallback", lookedUp)
+	}
+	if removed != "alice" {
+		t.Fatalf("ForceRemove() target = %q, want %q", removed, "alice")
+	}
+}
+
 func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
 	rt := &boxlite.Runtime{}
 	SetTestHooks(func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
@@ -420,6 +482,117 @@ func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
 	}
 	if closeRuntimeCalls != 1 {
 		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
+	}
+}
+
+func TestStreamLogsUsesStoredBoxIDAndTailArgs(t *testing.T) {
+	rt := &boxlite.Runtime{}
+	SetTestHooks(func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
+	defer ResetTestHooks()
+
+	var gotBoxID string
+	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+		gotBoxID = idOrName
+		return &boxlite.Box{}, nil
+	}
+	var gotName string
+	var gotArgs []string
+	testRunBoxCommandHook = func(_ *Service, _ context.Context, _ *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+		gotName = name
+		gotArgs = append([]string(nil), args...)
+		_, _ = fmt.Fprint(w, "line-1\n")
+		return 0, nil
+	}
+	defer func() {
+		testGetBoxHook = nil
+		testRunBoxCommandHook = nil
+	}()
+
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		BoxID:     "box-123",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	var out strings.Builder
+	if err := svc.StreamLogs(context.Background(), "u-alice", true, 50, &out); err != nil {
+		t.Fatalf("StreamLogs() error = %v", err)
+	}
+	if gotBoxID != "box-123" {
+		t.Fatalf("getBox() idOrName = %q, want %q", gotBoxID, "box-123")
+	}
+	if gotName != "tail" {
+		t.Fatalf("runBoxCommand() name = %q, want %q", gotName, "tail")
+	}
+	if strings.Join(gotArgs, " ") != "-n 50 -f /home/picoclaw/.picoclaw/gateway.log" {
+		t.Fatalf("runBoxCommand() args = %q", gotArgs)
+	}
+	if out.String() != "line-1\n" {
+		t.Fatalf("output = %q, want streamed log line", out.String())
+	}
+}
+
+func TestStreamLogsFallsBackToNameAndRefreshesStoredBoxID(t *testing.T) {
+	rt := &boxlite.Runtime{}
+	SetTestHooks(func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
+	defer ResetTestHooks()
+
+	var gotKeys []string
+	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+		gotKeys = append(gotKeys, idOrName)
+		if idOrName == "alice" {
+			return &boxlite.Box{}, nil
+		}
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	}
+	testBoxInfoHook = func(_ *Service, _ context.Context, _ *boxlite.Box) (*boxlite.BoxInfo, error) {
+		return &boxlite.BoxInfo{ID: "box-new"}, nil
+	}
+	testRunBoxCommandHook = func(_ *Service, _ context.Context, _ *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+		_, _ = fmt.Fprint(w, "line-1\n")
+		return 0, nil
+	}
+	defer func() {
+		testGetBoxHook = nil
+		testBoxInfoHook = nil
+		testRunBoxCommandHook = nil
+	}()
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	svc, err := NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		BoxID:     "box-stale",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	var out strings.Builder
+	if err := svc.StreamLogs(context.Background(), "u-alice", false, 20, &out); err != nil {
+		t.Fatalf("StreamLogs() error = %v", err)
+	}
+	if strings.Join(gotKeys, ",") != "box-stale,alice" {
+		t.Fatalf("getBox() keys = %q, want stale box id then name fallback", gotKeys)
+	}
+	got, ok := svc.Agent("u-alice")
+	if !ok {
+		t.Fatal("Agent() missing u-alice after StreamLogs()")
+	}
+	if got.BoxID != "box-new" {
+		t.Fatalf("Agent().BoxID = %q, want %q", got.BoxID, "box-new")
 	}
 }
 

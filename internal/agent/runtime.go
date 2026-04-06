@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -107,6 +108,19 @@ func (s *Service) createBox(ctx context.Context, rt *boxlite.Runtime, image stri
 		return testCreateBoxHook(s, ctx, rt, image, opts...)
 	}
 	return rt.Create(ctx, image, opts...)
+}
+
+func (s *Service) runBoxCommand(ctx context.Context, box *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+	if testRunBoxCommandHook != nil {
+		return testRunBoxCommandHook(s, ctx, box, name, args, w)
+	}
+	cmd := box.Command(name, args...)
+	cmd.Stdout = w
+	cmd.Stderr = w
+	if err := cmd.Run(ctx); err != nil {
+		return 0, err
+	}
+	return cmd.ExitCode(), nil
 }
 
 func (s *Service) closeBox(box *boxlite.Box) error {

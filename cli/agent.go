@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 
 	"csgclaw/internal/agent"
 )
@@ -14,6 +15,7 @@ func (a *App) runAgent(ctx context.Context, args []string, globals GlobalOptions
 			"list               List agents",
 			"create             Create an agent",
 			"delete <id>        Delete an agent",
+			"logs <id>          Show agent logs",
 			"status [id]        Show one agent or list all agents",
 		})
 		return flag.ErrHelp
@@ -23,6 +25,7 @@ func (a *App) runAgent(ctx context.Context, args []string, globals GlobalOptions
 			"list               List agents",
 			"create             Create an agent",
 			"delete <id>        Delete an agent",
+			"logs <id>          Show agent logs",
 			"status [id]        Show one agent or list all agents",
 		})
 		return flag.ErrHelp
@@ -35,6 +38,8 @@ func (a *App) runAgent(ctx context.Context, args []string, globals GlobalOptions
 		return a.runAgentCreate(ctx, args[1:], globals)
 	case "delete":
 		return a.runAgentDelete(ctx, args[1:], globals)
+	case "logs":
+		return a.runAgentLogs(ctx, args[1:], globals)
 	case "status":
 		return a.runAgentStatus(ctx, args[1:], globals)
 	default:
@@ -42,6 +47,7 @@ func (a *App) runAgent(ctx context.Context, args []string, globals GlobalOptions
 			"list               List agents",
 			"create             Create an agent",
 			"delete <id>        Delete an agent",
+			"logs <id>          Show agent logs",
 			"status [id]        Show one agent or list all agents",
 		})
 		return fmt.Errorf("unknown agent subcommand %q", args[0])
@@ -108,6 +114,52 @@ func (a *App) runAgentDelete(ctx context.Context, args []string, globals GlobalO
 
 	client := NewAPIClient(globals.Endpoint, globals.Token, a.httpClient)
 	return client.DeleteAgent(ctx, rest[0])
+}
+
+func (a *App) runAgentLogs(ctx context.Context, args []string, globals GlobalOptions) error {
+	fs := a.newCommandFlagSet("agent logs", "csgclaw agent logs <id> [-f] [-n lines]", "Show agent logs.")
+	follow := fs.Bool("f", false, "follow log output")
+	fs.BoolVar(follow, "follow", false, "follow log output")
+	lines := fs.Int("n", 20, "number of lines to show")
+	flagArgs, rest := splitAgentLogsArgs(args)
+	if err := fs.Parse(flagArgs); err != nil {
+		return err
+	}
+	if len(rest) != 1 {
+		return fmt.Errorf("agent logs requires exactly one id")
+	}
+	if *lines <= 0 {
+		return fmt.Errorf("agent logs requires -n to be greater than 0")
+	}
+
+	client := NewAPIClient(globals.Endpoint, globals.Token, a.httpClient)
+	return client.StreamAgentLogs(ctx, rest[0], *follow, *lines, a.stdout)
+}
+
+func splitAgentLogsArgs(args []string) ([]string, []string) {
+	flagArgs := make([]string, 0, len(args))
+	rest := make([]string, 0, len(args))
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-f", arg == "--follow", strings.HasPrefix(arg, "--follow="):
+			flagArgs = append(flagArgs, arg)
+		case arg == "-n":
+			flagArgs = append(flagArgs, arg)
+			if i+1 < len(args) {
+				i++
+				flagArgs = append(flagArgs, args[i])
+			}
+		case strings.HasPrefix(arg, "-n="):
+			flagArgs = append(flagArgs, arg)
+		case strings.HasPrefix(arg, "-"):
+			flagArgs = append(flagArgs, arg)
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return flagArgs, rest
 }
 
 func (a *App) runAgentStatus(ctx context.Context, args []string, globals GlobalOptions) error {

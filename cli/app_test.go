@@ -178,6 +178,35 @@ func TestExecuteAgentStatusByIDUsesHTTPClient(t *testing.T) {
 	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running")
 }
 
+func TestExecuteAgentLogsUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/agents/u-alice/logs?follow=true&lines=80" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice/logs?follow=true&lines=80")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     http.StatusText(http.StatusOK),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("line-1\nline-2\n")),
+			}, nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "logs", "u-alice", "-f", "-n", "80"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if stdout.String() != "line-1\nline-2\n" {
+		t.Fatalf("stdout = %q, want streamed logs", stdout.String())
+	}
+}
+
 func TestExecuteRoomListUsesHTTPClient(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{

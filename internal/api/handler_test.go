@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -173,6 +174,59 @@ func TestHandleAgentsGetByIDNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleAgentLogsStreamsGatewayLog(t *testing.T) {
+	rt := &boxlite.Runtime{}
+	agent.SetTestHooks(func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
+	defer agent.ResetTestHooks()
+
+	agentSvc := mustNewSeededService(t, []agent.Agent{
+		{ID: "u-alice", Name: "alice", BoxID: "box-123", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+
+	var gotBoxID string
+	var gotCmd string
+	var gotArgs []string
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+		gotBoxID = idOrName
+		return &boxlite.Box{}, nil
+	})
+	agent.TestOnlySetRunBoxCommandHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+		gotCmd = name
+		gotArgs = append([]string(nil), args...)
+		_, _ = io.WriteString(w, "hello\nworld\n")
+		return 0, nil
+	})
+	defer func() {
+		agent.TestOnlySetGetBoxHook(nil)
+		agent.TestOnlySetRunBoxCommandHook(nil)
+	}()
+
+	srv := &Handler{svc: agentSvc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/u-alice/logs?follow=true&lines=80", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if gotBoxID != "box-123" {
+		t.Fatalf("getBox() idOrName = %q, want %q", gotBoxID, "box-123")
+	}
+	if gotCmd != "tail" {
+		t.Fatalf("command = %q, want %q", gotCmd, "tail")
+	}
+	if strings.Join(gotArgs, " ") != "-n 80 -f /home/picoclaw/.picoclaw/gateway.log" {
+		t.Fatalf("args = %q", gotArgs)
+	}
+	if rec.Body.String() != "hello\nworld\n" {
+		t.Fatalf("body = %q, want streamed logs", rec.Body.String())
+	}
+	if !rec.Flushed {
+		t.Fatal("response was not flushed for follow=true")
 	}
 }
 
