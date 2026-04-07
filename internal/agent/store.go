@@ -41,40 +41,64 @@ func (w legacyWorker) toAgent() Agent {
 }
 
 func (s *Service) load() error {
+	agents, err := s.readState()
+	if err != nil {
+		return err
+	}
+	for id, a := range agents {
+		s.agents[id] = a
+	}
+	return nil
+}
+
+func (s *Service) Reload() error {
+	agents, err := s.readState()
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agents = agents
+	return nil
+}
+
+func (s *Service) readState() (map[string]Agent, error) {
+	agents := make(map[string]Agent)
 	if s.state == "" {
-		return nil
+		return agents, nil
 	}
 
 	data, err := os.ReadFile(s.state)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return agents, nil
 		}
-		return fmt.Errorf("read agent state: %w", err)
+		return nil, fmt.Errorf("read agent state: %w", err)
 	}
 
 	var state persistedState
 	if err := json.Unmarshal(data, &state); err == nil && state.isObject() {
 		for _, a := range state.Agents {
 			normalized := s.normalizeLoadedAgent(a)
-			s.agents[normalized.ID] = normalized
+			agents[normalized.ID] = normalized
 		}
 		for _, w := range state.Workers {
 			normalized := s.normalizeLoadedAgent(w.toAgent())
-			s.agents[normalized.ID] = normalized
+			agents[normalized.ID] = normalized
 		}
-		return nil
+		return agents, nil
 	}
 
-	var agents []Agent
-	if err := json.Unmarshal(data, &agents); err != nil {
-		return fmt.Errorf("decode agent state: %w", err)
+	var decoded []Agent
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return nil, fmt.Errorf("decode agent state: %w", err)
 	}
-	for _, a := range agents {
+	for _, a := range decoded {
 		normalized := s.normalizeLoadedAgent(a)
-		s.agents[normalized.ID] = normalized
+		agents[normalized.ID] = normalized
 	}
-	return nil
+	return agents, nil
 }
 
 func (s *Service) saveLocked() error {

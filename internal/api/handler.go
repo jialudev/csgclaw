@@ -92,6 +92,10 @@ func (h *Handler) handleAgents(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		if err := h.svc.Reload(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		writeJSON(w, http.StatusOK, h.svc.List())
 	case http.MethodPost:
 		h.handleCreateWorker(w, r)
@@ -129,6 +133,10 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		if err := h.svc.Reload(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		a, ok := h.svc.Agent(id)
 		if !ok {
 			http.Error(w, "agent not found", http.StatusNotFound)
@@ -153,6 +161,10 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleAgentLogs(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := h.svc.Reload(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

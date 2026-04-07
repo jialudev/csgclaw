@@ -163,6 +163,35 @@ func TestHandleAgentsGetByIDReturnsAgent(t *testing.T) {
 	}
 }
 
+func TestHandleAgentsGetByIDReloadsStateBeforeLookup(t *testing.T) {
+	svc, statePath := mustNewSeededServiceWithPath(t, []agent.Agent{
+		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{ID: "u-bob", Name: "bob", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/u-bob", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-bob" || got.Name != "bob" {
+		t.Fatalf("agent = %+v, want u-bob/bob", got)
+	}
+}
+
 func TestHandleAgentsGetByIDNotFound(t *testing.T) {
 	svc := mustNewSeededService(t, nil)
 
@@ -227,6 +256,48 @@ func TestHandleAgentLogsStreamsGatewayLog(t *testing.T) {
 	}
 	if !rec.Flushed {
 		t.Fatal("response was not flushed for follow=true")
+	}
+}
+
+func TestHandleAgentLogsReloadsStateBeforeStreaming(t *testing.T) {
+	rt := &boxlite.Runtime{}
+	agent.SetTestHooks(func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
+	defer agent.ResetTestHooks()
+
+	agentSvc, statePath := mustNewSeededServiceWithPath(t, []agent.Agent{
+		{ID: "u-manager", Name: "manager", BoxID: "box-old", Role: agent.RoleManager, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{ID: "u-manager", Name: "manager", BoxID: "box-new", Role: agent.RoleManager, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+
+	var gotBoxID string
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+		gotBoxID = idOrName
+		return &boxlite.Box{}, nil
+	})
+	agent.TestOnlySetRunBoxCommandHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Box, _ string, _ []string, w io.Writer) (int, error) {
+		_, _ = io.WriteString(w, "line-1\n")
+		return 0, nil
+	})
+	defer func() {
+		agent.TestOnlySetGetBoxHook(nil)
+		agent.TestOnlySetRunBoxCommandHook(nil)
+	}()
+
+	srv := &Handler{svc: agentSvc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/u-manager/logs", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if gotBoxID != "box-new" {
+		t.Fatalf("getBox() idOrName = %q, want %q", gotBoxID, "box-new")
 	}
 }
 
@@ -836,27 +907,38 @@ func mustNewService(t *testing.T) *agent.Service {
 func mustNewSeededService(t *testing.T, agents []agent.Agent) *agent.Service {
 	t.Helper()
 
+	svc, _ := mustNewSeededServiceWithPath(t, agents)
+	return svc
+}
+
+func mustNewSeededServiceWithPath(t *testing.T, agents []agent.Agent) (*agent.Service, string) {
+	t.Helper()
+
 	if agents == nil {
 		agents = []agent.Agent{}
 	}
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	data, err := json.Marshal(map[string]any{
-		"agents": agents,
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal() error = %v", err)
-	}
-	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
-		t.Fatalf("os.WriteFile() error = %v", err)
+	if err := writeSeededAgents(statePath, agents); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
 	}
 
 	svc, err := agent.NewService(config.LLMConfig{}, config.ServerConfig{}, config.PicoClawConfig{}, "", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
-	return svc
+	return svc, statePath
+}
+
+func writeSeededAgents(statePath string, agents []agent.Agent) error {
+	data, err := json.Marshal(map[string]any{
+		"agents": agents,
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(statePath, append(data, '\n'), 0o600)
 }
 
 func containsParticipant(participants []string, want string) bool {
