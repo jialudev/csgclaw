@@ -432,6 +432,12 @@ body::after {
 }
 
 .conversation-item {
+  position: relative;
+  width: 100%;
+  border-radius: 18px;
+}
+
+.conversation-item-main {
   width: 100%;
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
@@ -442,14 +448,66 @@ body::after {
   border-radius: 18px;
   text-align: left;
   cursor: pointer;
+  font: inherit;
+  color: inherit;
   transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
-.conversation-item:hover,
-.conversation-item.active {
+.conversation-item:hover .conversation-item-main,
+.conversation-item.active .conversation-item-main {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(43, 109, 246, 0.08));
   transform: translateY(-1px);
   box-shadow: var(--shadow-soft);
+}
+
+.conversation-delete-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(148, 33, 33, 0.86);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition: opacity 160ms ease, transform 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.conversation-item:hover .conversation-delete-button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.conversation-delete-button:hover {
+  background: rgba(254, 226, 226, 0.96);
+  color: #b91c1c;
+}
+
+.conversation-delete-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.14);
+}
+
+.conversation-delete-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+}
+
+.conversation-delete-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .avatar {
@@ -651,6 +709,22 @@ body::after {
 
 .sidebar-nav-label {
   white-space: nowrap;
+}
+
+.sidebar-nav-count {
+  margin-left: auto;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(43, 109, 246, 0.12);
+  color: var(--primary-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .sidebar-rail-nav {

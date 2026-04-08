@@ -40,6 +40,7 @@ const messages = {
     noMessages: "还没有消息，发一条开始吧。",
     noVisibleMessages: "工具调用已隐藏，当前没有可显示的消息。",
     createRoom: "创建房间",
+    deleteRoom: "删除房间",
     conversationLabel: "房间",
     participants: "成员",
     mentionBadge: "@ 提及",
@@ -110,6 +111,7 @@ const messages = {
     noMessages: "No messages yet. Start this room.",
     noVisibleMessages: "Tool calls are hidden, and there are no visible messages in this room.",
     createRoom: "New Room",
+    deleteRoom: "Delete Room",
     conversationLabel: "Room",
     participants: "participants",
     mentionBadge: "@ mention",
@@ -322,6 +324,42 @@ function RoomPlusIcon() {
   `;
 }
 
+function TrashIcon() {
+  return html`
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M9.5 4.75h5a1.5 1.5 0 0 1 1.5 1.5v.5h3"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-width="1.8"
+      />
+      <path
+        d="M5 6.75h14"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-width="1.8"
+      />
+      <path
+        d="M8 9.5v6.75M12 9.5v6.75M16 9.5v6.75"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-width="1.8"
+      />
+      <path
+        d="M7.25 6.75l.63 10.11A2 2 0 0 0 9.87 18.75h4.26a2 2 0 0 0 1.99-1.89L16.75 6.75"
+        fill="none"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.8"
+      />
+    </svg>
+  `;
+}
+
 function RoomsIcon() {
   return html`
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -432,6 +470,7 @@ function App() {
     () => data?.conversations ?? [],
     [data],
   );
+  const roomCount = conversations.length;
 
   const mentionState = useMemo(() => getMentionState(draft, composerSelectionStart), [draft, composerSelectionStart]);
   const mentionCandidates = useMemo(() => {
@@ -570,6 +609,28 @@ function App() {
     setShowInvite(false);
   }
 
+  async function deleteRoom(roomID) {
+    if (!data || !roomID) {
+      return;
+    }
+
+    const resp = await fetch(`/api/v1/rooms/${roomID}`, {
+      method: "DELETE",
+    });
+    if (!resp.ok) {
+      setComposerError(localizeError(await resp.text(), t));
+      return;
+    }
+
+    const remainingConversations = conversations.filter((item) => item.id !== roomID);
+    setData((current) => removeConversationFromData(current, roomID));
+    setComposerError("");
+    setSubmitError("");
+    if (activeConversationId === roomID) {
+      setActiveConversationId(remainingConversations[0]?.id ?? "");
+    }
+  }
+
   function applyMention(user) {
     const state = getMentionState(draft, composerSelectionStart);
     if (!state) {
@@ -680,12 +741,13 @@ function App() {
                 <button
                   className="sidebar-nav-button active"
                   aria-current="page"
-                  aria-label=${t("conversationSection")}
+                  aria-label=${`${t("conversationSection")} (${roomCount})`}
                   title=${t("conversationSection")}
                   onClick=${() => setIsSidebarCollapsed(false)}
                 >
                   <span className="sidebar-nav-icon" aria-hidden="true"><${RoomsIcon} /></span>
                   <span className="sidebar-nav-label">${t("conversationSection")}</span>
+                  <span className="sidebar-nav-count" aria-hidden="true">${roomCount}</span>
                 </button>
               </nav>
             </div>
@@ -700,6 +762,7 @@ function App() {
               locale=${locale}
               t=${t}
               onSelect=${setActiveConversationId}
+              onDelete=${deleteRoom}
             />
           </div>
         </aside>
@@ -971,7 +1034,7 @@ function App() {
   `;
 }
 
-function ConversationSection({ title, items, activeConversationId, currentUserID, usersById, locale, t, onSelect }) {
+function ConversationSection({ title, items, activeConversationId, currentUserID, usersById, locale, t, onSelect, onDelete }) {
   if (!items.length) {
     return null;
   }
@@ -988,22 +1051,37 @@ function ConversationSection({ title, items, activeConversationId, currentUserID
           ? displayUser.accent_hex
           : "#2563eb";
         return html`
-          <button
+          <div
             key=${conversation.id}
             className=${`conversation-item ${conversation.id === activeConversationId ? "active" : ""}`}
-            onClick=${() => onSelect(conversation.id)}
           >
-            <div className="avatar" style=${{ background: `linear-gradient(135deg, ${color}, #10233f)` }}>${avatar}</div>
-            <div className="conversation-main">
-              <div className="conversation-head">
-                <div className="conversation-name truncate">${conversation.title}</div>
-                <div className="section-label">${formatTime(lastMessage?.created_at, locale)}</div>
+            <button
+              className="conversation-item-main"
+              onClick=${() => onSelect(conversation.id)}
+            >
+              <div className="avatar" style=${{ background: `linear-gradient(135deg, ${color}, #10233f)` }}>${avatar}</div>
+              <div className="conversation-main">
+                <div className="conversation-head">
+                  <div className="conversation-name truncate">${conversation.title}</div>
+                  <div className="section-label">${formatTime(lastMessage?.created_at, locale)}</div>
+                </div>
+                <div className="conversation-preview truncate">
+                  ${formatConversationPreview(lastMessage, conversation, currentUserID, usersById, locale, t)}
+                </div>
               </div>
-              <div className="conversation-preview truncate">
-                ${formatConversationPreview(lastMessage, conversation, currentUserID, usersById, locale, t)}
-              </div>
-            </div>
-          </button>
+            </button>
+            <button
+              className="conversation-delete-button"
+              aria-label=${`${t("deleteRoom")} ${conversation.title}`}
+              title=${`${t("deleteRoom")} ${conversation.title}`}
+              onClick=${(event) => {
+                event.stopPropagation();
+                onDelete(conversation.id);
+              }}
+            >
+              <span className="conversation-delete-icon" aria-hidden="true"><${TrashIcon} /></span>
+            </button>
+          </div>
         `;
       })}
     </section>
@@ -1226,6 +1304,16 @@ function upsertUserInData(current, user) {
     : [...current.users, user];
   users.sort((a, b) => a.name.localeCompare(b.name));
   return { ...current, users };
+}
+
+function removeConversationFromData(current, conversationID) {
+  if (!current || !conversationID) {
+    return current;
+  }
+
+  const conversations = current.conversations.filter((item) => item.id !== conversationID);
+  const rooms = (current.rooms ?? []).filter((item) => item.id !== conversationID);
+  return { ...current, conversations, rooms };
 }
 
 function sortConversations(conversations) {
