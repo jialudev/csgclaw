@@ -954,8 +954,23 @@ function App() {
                         onScroll=${(event) => syncComposerScroll(event.target)}
                         onSelect=${(event) => syncComposerSelection(event.target)}
                       />
+                      <button
+                        type="button"
+                        className="composer-send-button"
+                        aria-label=${t("send")}
+                        title=${t("send")}
+                        disabled=${!draft.trim()}
+                        onClick=${sendMessage}
+                      >
+                        <span className="composer-send-main" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <path
+                              d="M 4.22 3.12 L 19.78 10.88 Q 22 12 19.78 13.12 L 4.22 20.88 Q 2 22 2 19.5 L 2 16.5 Q 2 14 4.4 13.32 L 7.56 12.41 Q 9 12 7.56 11.59 L 4.4 10.67 Q 2 10 2 7.5 L 2 4.5 Q 2 2 4.22 3.12 Z"
+                            />
+                          </svg>
+                        </span>
+                      </button>
                     </div>
-                    <button className="send-button" disabled=${!draft.trim()} onClick=${sendMessage}>${t("send")}</button>
                   </div>
                   ${composerError ? html`<div className="form-error composer-error">${composerError}</div>` : null}
                   <div className="composer-tip">${t("composerTip")}</div>
