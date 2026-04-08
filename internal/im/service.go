@@ -903,7 +903,7 @@ func normalizeLocale(locale string) string {
 }
 
 func formatRoomSubtitle(count int) string {
-	return fmt.Sprintf("%d members", count)
+	return ""
 }
 
 func formatConversationSubtitle(count int) string {

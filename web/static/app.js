@@ -73,7 +73,6 @@ const messages = {
     offline: "离线",
     justNow: "刚刚",
     minutesAgo: "{count} 分钟前",
-    roomMembers: "{count} 名成员",
     roles: {
       admin: "管理员",
       manager: "经理",
@@ -144,7 +143,6 @@ const messages = {
     offline: "offline",
     justNow: "just now",
     minutesAgo: "{count} min ago",
-    roomMembers: "{count} members",
     roles: {
       admin: "admin",
       manager: "manager",
@@ -357,6 +355,7 @@ function App() {
   const [mentionIndex, setMentionIndex] = useState(0);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showMemberList, setShowMemberList] = useState(false);
   const [roomTitle, setRoomTitle] = useState("");
   const [roomDescription, setRoomDescription] = useState("");
   const [roomMemberIDs, setRoomMemberIDs] = useState([]);
@@ -434,18 +433,6 @@ function App() {
     [data],
   );
 
-  const onlineCount = useMemo(
-    () => data?.users.filter((user) => user.is_online).length ?? 0,
-    [data],
-  );
-
-  const activeConversationOnlineCount = useMemo(
-    () => (activeConversation?.participants ?? [])
-      .map((id) => usersById.get(id))
-      .filter((user) => user?.is_online).length,
-    [activeConversation, usersById],
-  );
-
   const mentionState = useMemo(() => getMentionState(draft, composerSelectionStart), [draft, composerSelectionStart]);
   const mentionCandidates = useMemo(() => {
     if (!data || !mentionState) {
@@ -481,6 +468,10 @@ function App() {
       setSubmitError("");
     }
   }, [showInvite]);
+
+  useEffect(() => {
+    setShowMemberList(false);
+  }, [activeConversationId]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -633,6 +624,9 @@ function App() {
   const inviteCandidates = activeConversation
     ? data.users.filter((user) => !activeConversation.participants.includes(user.id))
     : [];
+  const activeConversationMembers = activeConversation
+    ? activeConversation.participants.map((id) => usersById.get(id)).filter(Boolean)
+    : [];
   return html`
     <${React.Fragment}>
       <div className=${`app-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -695,20 +689,6 @@ function App() {
                 </button>
               </nav>
             </div>
-            <div className="sidebar-stats" aria-label=${t("yourView")}>
-              <div className="stat-pill">
-                <span className="section-label">${t("activeNow")}</span>
-                <strong>${onlineCount}</strong>
-              </div>
-              <div className="stat-pill">
-                <span className="section-label">${t("totalThreads")}</span>
-                <strong>${data.conversations.length}</strong>
-              </div>
-              <div className="stat-pill">
-                <span className="section-label">${t("teamMembers")}</span>
-                <strong>${data.users.length}</strong>
-              </div>
-            </div>
           </div>
           <div className="conversation-list">
             <${ConversationSection}
@@ -766,14 +746,38 @@ function App() {
                   <div className="chat-header-main">
                     <div className="chat-title-bar">
                       <div className="chat-title-row">
-                        <div className="chat-title truncate">${activeConversation.title}</div>
-                        <div className="title-badge" title=${t("roomMembers", { count: activeConversation.participants.length })}>
-                          <span className="title-badge-icon"><${UsersIcon} /></span>
-                          <span>${activeConversation.participants.length}</span>
-                        </div>
-                        <div className="title-badge" title=${activeConversationOnlineCount.toString()}>
-                          <span className="status-dot" aria-hidden="true"></span>
-                          <span>${activeConversationOnlineCount}</span>
+                        <div className="chat-title-group">
+                          <div className="chat-title truncate">${activeConversation.title}</div>
+                          <div className="header-menu">
+                            <button
+                              className=${`member-badge-button ${showMemberList ? "active" : ""}`}
+                              aria-label=${t("membersTitle")}
+                              aria-pressed=${showMemberList}
+                              title=${t("membersTitle")}
+                              onClick=${() => setShowMemberList((value) => !value)}
+                            >
+                              <span className="icon-button-mark" aria-hidden="true"><${UsersIcon} /></span>
+                              <span className="member-badge-count">${activeConversationMembers.length}</span>
+                            </button>
+                            ${showMemberList
+                              ? html`
+                                  <div className="header-popover members-popover">
+                                    <div className="header-popover-title">${t("membersTitle")}</div>
+                                    <div className="members-popover-list">
+                                      ${activeConversationMembers.map((user) => html`
+                                        <div key=${user.id} className="member-row">
+                                          <div className="avatar" style=${{ background: `linear-gradient(135deg, ${user.accent_hex}, #10233f)` }}>${user.avatar}</div>
+                                          <div className="member-row-main">
+                                            <div className="member-row-name">${user.name}</div>
+                                            <div className="member-row-meta">@${user.handle} · ${localizeRole(user.role, t)}</div>
+                                          </div>
+                                        </div>
+                                      `)}
+                                    </div>
+                                  </div>
+                                `
+                              : null}
+                          </div>
                         </div>
                       </div>
                       <div className="chat-title-actions">
@@ -1141,40 +1145,14 @@ function isTwoPersonConversation(conversation) {
 }
 
 function getConversationSubtitle(conversation, currentUserID, usersById, locale, t) {
-  if (!isTwoPersonConversation(conversation)) {
-    return t("roomMembers", { count: conversation.participants.length });
-  }
-  const user = resolveConversationUser(conversation, currentUserID, usersById);
-  return formatPresence(user, locale, t);
+  return "";
 }
 
 function getConversationDescription(conversation, currentUserID, usersById, locale, t) {
   if (!isTwoPersonConversation(conversation)) {
-    return conversation.description || t("roomMembers", { count: conversation.participants.length });
+    return conversation.description || "";
   }
   return "";
-}
-
-function formatPresence(user, locale, t) {
-  if (!user) return "";
-  if (user.is_online) {
-    return t("online");
-  }
-  const minutes = parseLastSeenMinutes(user.last_seen);
-  if (minutes === 0) {
-    return t("justNow");
-  }
-  if (typeof minutes === "number") {
-    return t("minutesAgo", { count: minutes });
-  }
-  return locale === "zh" ? user.last_seen : t("offline");
-}
-
-function parseLastSeenMinutes(lastSeen) {
-  if (!lastSeen) return null;
-  if (lastSeen.includes("刚")) return 0;
-  const match = lastSeen.match(/(\d+)/);
-  return match ? Number(match[1]) : null;
 }
 
 function formatTime(value, locale) {
