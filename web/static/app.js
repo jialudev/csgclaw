@@ -402,6 +402,7 @@ function App() {
   const [composerError, setComposerError] = useState("");
   const [loadingError, setLoadingError] = useState("");
   const textareaRef = useRef(null);
+  const composerHighlightRef = useRef(null);
   const messageListRef = useRef(null);
 
   useEffect(() => {
@@ -519,6 +520,7 @@ function App() {
     }
     el.style.height = "0px";
     el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+    syncComposerScroll(el);
   }, [draft]);
 
   useEffect(() => {
@@ -650,6 +652,15 @@ function App() {
 
   function syncComposerSelection(target) {
     setComposerSelectionStart(target.selectionStart ?? target.value.length);
+  }
+
+  function syncComposerScroll(target) {
+    const highlight = composerHighlightRef.current;
+    if (!highlight || !target) {
+      return;
+    }
+    highlight.scrollTop = target.scrollTop;
+    highlight.scrollLeft = target.scrollLeft;
   }
 
   function onComposerKeyDown(event) {
@@ -924,19 +935,26 @@ function App() {
                       `
                     : null}
                   <div className="composer-box">
-                    <textarea
-                      ref=${textareaRef}
-                      value=${draft}
-                      placeholder=${t("inputPlaceholder")}
-                      onInput=${(event) => {
-                        setDraft(event.target.value);
-                        syncComposerSelection(event.target);
-                      }}
-                      onClick=${(event) => syncComposerSelection(event.target)}
-                      onKeyDown=${onComposerKeyDown}
-                      onKeyUp=${(event) => syncComposerSelection(event.target)}
-                      onSelect=${(event) => syncComposerSelection(event.target)}
-                    />
+                    <div className="composer-input-wrap">
+                      <div ref=${composerHighlightRef} className="composer-highlight" aria-hidden="true">
+                        ${renderComposerHighlight(draft)}
+                      </div>
+                      <textarea
+                        ref=${textareaRef}
+                        value=${draft}
+                        placeholder=${t("inputPlaceholder")}
+                        onInput=${(event) => {
+                          setDraft(event.target.value);
+                          syncComposerSelection(event.target);
+                          syncComposerScroll(event.target);
+                        }}
+                        onClick=${(event) => syncComposerSelection(event.target)}
+                        onKeyDown=${onComposerKeyDown}
+                        onKeyUp=${(event) => syncComposerSelection(event.target)}
+                        onScroll=${(event) => syncComposerScroll(event.target)}
+                        onSelect=${(event) => syncComposerSelection(event.target)}
+                      />
+                    </div>
                     <button className="send-button" disabled=${!draft.trim()} onClick=${sendMessage}>${t("send")}</button>
                   </div>
                   ${composerError ? html`<div className="form-error composer-error">${composerError}</div>` : null}
@@ -1145,6 +1163,40 @@ function getMentionState(text, selection) {
     start: cursor - match[2].length - 1,
     end: cursor,
   };
+}
+
+function renderComposerHighlight(text) {
+  if (!text) {
+    return "\u00A0";
+  }
+
+  const parts = [];
+  const mentionPattern = /(^|\s)(@[a-zA-Z0-9._-]+)/g;
+  let cursor = 0;
+  let match = mentionPattern.exec(text);
+
+  while (match) {
+    const prefix = match[1];
+    const mention = match[2];
+    const start = match.index;
+    const mentionStart = start + prefix.length;
+
+    if (cursor < start) {
+      parts.push(text.slice(cursor, start));
+    }
+    if (prefix) {
+      parts.push(prefix);
+    }
+    parts.push(html`<span key=${`${mentionStart}-${mention}`} className="composer-mention">${mention}</span>`);
+    cursor = mentionStart + mention.length;
+    match = mentionPattern.exec(text);
+  }
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+
+  return parts;
 }
 
 function isToolCallMessage(content) {
