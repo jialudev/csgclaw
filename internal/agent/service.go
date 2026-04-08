@@ -517,9 +517,7 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	if err != nil {
 		return Agent{}, fmt.Errorf("create worker box: %w", err)
 	}
-	fmt.Printf("created worker box: %s\n", name)
 	defer func() {
-		fmt.Printf("releasing handle of box: %s\n", name)
 		_ = s.closeBox(box)
 	}()
 
