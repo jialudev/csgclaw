@@ -117,3 +117,7 @@ Manager：已记录，Bob 先修接口，字段确认后 Alice 再更新展示
 ## 致谢
 
 CSGClaw 的思路受到了 HiClaw 在多智能体协作体验方面探索的启发。在具体实现上，CSGClaw 更强调轻量化运行时、本地易用性，以及不绑定单一通信通道的产品路线。
+
+## 许可证
+
+CSGClaw 采用 Apache License 2.0 许可发布。具体内容见 [LICENSE](LICENSE)。

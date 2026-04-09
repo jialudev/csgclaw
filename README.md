@@ -117,3 +117,7 @@ Many multi-agent systems are tightly coupled to one messaging protocol. CSGClaw 
 ## Acknowledgement
 
 CSGClaw is informed by ideas explored in HiClaw around multi-agent usability, while placing stronger emphasis on lightweight runtime, easier local startup, and a platform model not bound to a single communication channel.
+
+## License
+
+CSGClaw is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
