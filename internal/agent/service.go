@@ -87,7 +87,7 @@ func TestOnlySetRunBoxCommandHook(hook func(*Service, context.Context, *boxlite.
 }
 
 type Service struct {
-	llm          config.LLMConfig
+	model        config.ModelConfig
 	server       config.ServerConfig
 	managerImage string
 	state        string
@@ -96,12 +96,12 @@ type Service struct {
 	agents       map[string]Agent
 }
 
-func NewService(llm config.LLMConfig, server config.ServerConfig, managerImage, statePath string) (*Service, error) {
+func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string) (*Service, error) {
 	if managerImage == "" {
 		managerImage = config.DefaultManagerImage
 	}
 	svc := &Service{
-		llm:          llm,
+		model:        model,
 		server:       server,
 		managerImage: managerImage,
 		state:        statePath,
@@ -114,8 +114,8 @@ func NewService(llm config.LLMConfig, server config.ServerConfig, managerImage, 
 	return svc, nil
 }
 
-func EnsureBootstrapState(ctx context.Context, statePath string, server config.ServerConfig, llm config.LLMConfig, managerImage string, forceRecreate bool) error {
-	svc, err := NewService(llm, server, managerImage, statePath)
+func EnsureBootstrapState(ctx context.Context, statePath string, server config.ServerConfig, model config.ModelConfig, managerImage string, forceRecreate bool) error {
+	svc, err := NewService(model, server, managerImage, statePath)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 				}
 			}
 		}()
-		box, info, err = svc.createGatewayBox(ctx, rt, svc.managerImage, ManagerName, ManagerUserID, llm.ModelID)
+		box, info, err = svc.createGatewayBox(ctx, rt, svc.managerImage, ManagerName, ManagerUserID, model.ModelID)
 		close(progressDone)
 		if err != nil {
 			return fmt.Errorf("create bootstrap manager box: %w", err)
@@ -194,7 +194,7 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 		BoxID:     info.ID,
 		Status:    string(info.State),
 		CreatedAt: info.CreatedAt.UTC(),
-		ModelID:   llm.ModelID,
+		ModelID:   model.ModelID,
 		Role:      RoleManager,
 	}
 	for id, a := range svc.agents {
@@ -268,7 +268,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	}()
 
 	if modelID == "" {
-		modelID = s.llm.ModelID
+		modelID = s.model.ModelID
 	}
 
 	projectsRoot, err := ensureAgentProjectsRoot()
@@ -279,11 +279,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 		boxlite.WithName(name),
 		boxlite.WithDetach(true),
 		boxlite.WithAutoRemove(false),
-		boxlite.WithEnv("CSGCLAW_LLM_BASE_URL", s.llm.BaseURL),
-		boxlite.WithEnv("CSGCLAW_LLM_API_KEY", s.llm.APIKey),
+		boxlite.WithEnv("CSGCLAW_LLM_BASE_URL", s.model.BaseURL),
+		boxlite.WithEnv("CSGCLAW_LLM_API_KEY", s.model.APIKey),
 		boxlite.WithEnv("CSGCLAW_LLM_MODEL_ID", modelID),
-		boxlite.WithEnv("OPENAI_BASE_URL", s.llm.BaseURL),
-		boxlite.WithEnv("OPENAI_API_KEY", s.llm.APIKey),
+		boxlite.WithEnv("OPENAI_BASE_URL", s.model.BaseURL),
+		boxlite.WithEnv("OPENAI_API_KEY", s.model.APIKey),
 		boxlite.WithEnv("OPENAI_MODEL", modelID),
 		boxlite.WithVolume(projectsRoot, boxProjectsDir),
 	}
@@ -508,7 +508,7 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 		_ = s.closeRuntime(runtimeHome, rt)
 	}()
 	if modelID == "" {
-		modelID = s.llm.ModelID
+		modelID = s.model.ModelID
 	}
 
 	box, info, err := s.createGatewayBox(ctx, rt, s.managerImage, name, id, modelID)

@@ -50,6 +50,9 @@ func (a *App) runServe(ctx context.Context, args []string, globals GlobalOptions
 	if err != nil {
 		return err
 	}
+	if err := validateModelConfig(cfg); err != nil {
+		return err
+	}
 	if globals.Endpoint != "" {
 		cfg.Server.AdvertiseBaseURL = strings.TrimRight(globals.Endpoint, "/")
 	}
@@ -78,20 +81,20 @@ func (a *App) runInternalServe(ctx context.Context, args []string, globals Globa
 		defer removePIDFile(*pidPath)
 	}
 
-	cfg, err := loadConfigAllowMissing(*configPathFlag)
+	cfg, err := loadConfig(*configPathFlag)
 	if err != nil {
+		return err
+	}
+	if err := validateModelConfig(cfg); err != nil {
 		return err
 	}
 	if globals.Endpoint != "" {
 		cfg.Server.AdvertiseBaseURL = strings.TrimRight(globals.Endpoint, "/")
 	}
 
-	var svc *agent.Service
-	if cfg.LLM != (config.LLMConfig{}) {
-		svc, err = newAgentServiceFn(cfg)
-		if err != nil {
-			return err
-		}
+	svc, err := newAgentServiceFn(cfg)
+	if err != nil {
+		return err
 	}
 	imSvc, err := newIMServiceFn()
 	if err != nil {
@@ -310,23 +313,6 @@ func loadConfig(path string) (config.Config, error) {
 	return config.Load(path)
 }
 
-func loadConfigAllowMissing(path string) (config.Config, error) {
-	cfg, err := loadConfig(path)
-	if err == nil {
-		return cfg, nil
-	}
-
-	var pathErr *os.PathError
-	if strings.Contains(err.Error(), "run `csgclaw onboard` first") || errors.As(err, &pathErr) {
-		return config.Config{
-			Server: config.ServerConfig{
-				ListenAddr: config.DefaultListenAddr,
-			},
-		}, nil
-	}
-	return config.Config{}, err
-}
-
 func configPath(path string) (string, error) {
 	if path != "" {
 		return path, nil
@@ -334,12 +320,40 @@ func configPath(path string) (string, error) {
 	return config.DefaultPath()
 }
 
+func validateModelConfig(cfg config.Config) error {
+	missing := cfg.Model.MissingFields()
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"model config is incomplete (%s); run `csgclaw onboard --base-url <url> --api-key <key> --model-id <model>`",
+		strings.Join(missingModelFlags(missing), ", "),
+	)
+}
+
+func missingModelFlags(fields []string) []string {
+	flags := make([]string, 0, len(fields))
+	for _, field := range fields {
+		switch field {
+		case "base_url":
+			flags = append(flags, "--base-url")
+		case "api_key":
+			flags = append(flags, "--api-key")
+		case "model_id":
+			flags = append(flags, "--model-id")
+		default:
+			flags = append(flags, field)
+		}
+	}
+	return flags
+}
+
 func newAgentService(cfg config.Config) (*agent.Service, error) {
 	agentsPath, err := config.DefaultAgentsPath()
 	if err != nil {
 		return nil, err
 	}
-	return agent.NewService(cfg.LLM, cfg.Server, cfg.Bootstrap.ManagerImage, agentsPath)
+	return agent.NewService(cfg.Model, cfg.Server, cfg.Bootstrap.ManagerImage, agentsPath)
 }
 
 func newIMService() (*im.Service, error) {

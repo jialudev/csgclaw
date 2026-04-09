@@ -51,20 +51,20 @@ func (s *Service) forceRemoveBox(ctx context.Context, rt *boxlite.Runtime, idOrN
 
 func (s *Service) gatewayBoxOptions(name, botID, modelID string) ([]boxlite.BoxOption, error) {
 	if strings.TrimSpace(modelID) == "" {
-		modelID = s.llm.ModelID
+		modelID = s.model.ModelID
 	}
-	envVars := picoclawBoxEnvVars(resolveManagerBaseURL(s.server), s.server.AccessToken, botID, s.llm)
+	envVars := picoclawBoxEnvVars(resolveManagerBaseURL(s.server), s.server.AccessToken, botID, s.model)
 	opts := []boxlite.BoxOption{
 		boxlite.WithName(name),
 		boxlite.WithDetach(true),
 		boxlite.WithAutoRemove(false),
 		//boxlite.WithPort(managerHostPort, managerGuestPort),
 		boxlite.WithEnv("HOME", "/home/picoclaw"),
-		boxlite.WithEnv("CSGCLAW_LLM_BASE_URL", s.llm.BaseURL),
-		boxlite.WithEnv("CSGCLAW_LLM_API_KEY", s.llm.APIKey),
+		boxlite.WithEnv("CSGCLAW_LLM_BASE_URL", s.model.BaseURL),
+		boxlite.WithEnv("CSGCLAW_LLM_API_KEY", s.model.APIKey),
 		boxlite.WithEnv("CSGCLAW_LLM_MODEL_ID", modelID),
-		boxlite.WithEnv("OPENAI_BASE_URL", s.llm.BaseURL),
-		boxlite.WithEnv("OPENAI_API_KEY", s.llm.APIKey),
+		boxlite.WithEnv("OPENAI_BASE_URL", s.model.BaseURL),
+		boxlite.WithEnv("OPENAI_API_KEY", s.model.APIKey),
 		boxlite.WithEnv("OPENAI_MODEL", modelID),
 	}
 	for key, value := range envVars {
@@ -78,7 +78,7 @@ func (s *Service) gatewayBoxOptions(name, botID, modelID string) ([]boxlite.BoxO
 		//boxlite.WithCmd("sleep", "infinity"),
 	)
 
-	//hostPicoClawRoot, err := ensureAgentPicoClawConfig(name, botID, s.server, s.llm)
+	//hostPicoClawRoot, err := ensureAgentPicoClawConfig(name, botID, s.server, s.model)
 	//if err != nil {
 	//	return nil, err
 	//}
@@ -111,17 +111,17 @@ func ensureAgentProjectsRoot() (string, error) {
 	return hostProjectsRoot, nil
 }
 
-func picoclawBoxEnvVars(baseURL, accessToken, botID string, llm config.LLMConfig) map[string]string {
+func picoclawBoxEnvVars(baseURL, accessToken, botID string, model config.ModelConfig) map[string]string {
 	return map[string]string{
 		"CSGCLAW_BASE_URL":                       baseURL,
 		"CSGCLAW_ACCESS_TOKEN":                   accessToken,
 		"PICOCLAW_CHANNELS_CSGCLAW_BASE_URL":     baseURL,
 		"PICOCLAW_CHANNELS_CSGCLAW_ACCESS_TOKEN": accessToken,
 		"PICOCLAW_CHANNELS_CSGCLAW_BOT_ID":       botID,
-		"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME":    llm.ModelID,
-		"PICOCLAW_CUSTOM_MODEL_NAME":             llm.ModelID,
-		"PICOCLAW_CUSTOM_MODEL_ID":               llm.ModelID,
-		"PICOCLAW_CUSTOM_MODEL_API_KEY":          llm.APIKey,
-		"PICOCLAW_CUSTOM_MODEL_BASE_URL":         llm.BaseURL,
+		"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME":    model.ModelID,
+		"PICOCLAW_CUSTOM_MODEL_NAME":             model.ModelID,
+		"PICOCLAW_CUSTOM_MODEL_ID":               model.ModelID,
+		"PICOCLAW_CUSTOM_MODEL_API_KEY":          model.APIKey,
+		"PICOCLAW_CUSTOM_MODEL_BASE_URL":         model.BaseURL,
 	}
 }

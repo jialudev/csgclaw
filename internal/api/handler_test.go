@@ -974,7 +974,7 @@ func TestHandlePicoClawSendMessageRequiresIMService(t *testing.T) {
 func mustNewService(t *testing.T) *agent.Service {
 	t.Helper()
 
-	svc, err := agent.NewService(config.LLMConfig{}, config.ServerConfig{}, "", "")
+	svc, err := agent.NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1001,7 +1001,7 @@ func mustNewSeededServiceWithPath(t *testing.T, agents []agent.Agent) (*agent.Se
 		t.Fatalf("writeSeededAgents() error = %v", err)
 	}
 
-	svc, err := agent.NewService(config.LLMConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := agent.NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

@@ -53,7 +53,7 @@ func TestLoadAppliesDefaultManagerImage(t *testing.T) {
 listen_addr = "127.0.0.1:18080"
 advertise_base_url = "http://127.0.0.1:18080"
 
-[llm]
+[model]
 base_url = "http://127.0.0.1:4000"
 api_key = "sk"
 model_id = "minimax-m2.7"
@@ -83,7 +83,7 @@ func TestSaveWritesAccessTokenUnderServerSection(t *testing.T) {
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
 		},
-		LLM: LLMConfig{
+		Model: ModelConfig{
 			BaseURL: "http://127.0.0.1:4000",
 			APIKey:  "sk",
 			ModelID: "minimax-m2.7",
@@ -107,5 +107,14 @@ func TestSaveWritesAccessTokenUnderServerSection(t *testing.T) {
 	}
 	if strings.Contains(content, "[picoclaw]") {
 		t.Fatalf("saved config should not contain [picoclaw] section:\n%s", content)
+	}
+}
+
+func TestLLMConfigMissingFields(t *testing.T) {
+	missing := (ModelConfig{}).MissingFields()
+	got := strings.Join(missing, ",")
+	want := "base_url,api_key,model_id"
+	if got != want {
+		t.Fatalf("MissingFields() = %q, want %q", got, want)
 	}
 }

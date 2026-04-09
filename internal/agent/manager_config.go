@@ -20,11 +20,11 @@ var defaultManagerPicoClawConfig []byte
 //go:embed defaults/manager-security.yml
 var defaultManagerSecurityConfig string
 
-func ensureManagerPicoClawConfig(server config.ServerConfig, llm config.LLMConfig) (string, error) {
-	return ensureAgentPicoClawConfig(ManagerName, "u-manager", server, llm)
+func ensureManagerPicoClawConfig(server config.ServerConfig, model config.ModelConfig) (string, error) {
+	return ensureAgentPicoClawConfig(ManagerName, "u-manager", server, model)
 }
 
-func ensureAgentPicoClawConfig(agentName, botID string, server config.ServerConfig, llm config.LLMConfig) (string, error) {
+func ensureAgentPicoClawConfig(agentName, botID string, server config.ServerConfig, model config.ModelConfig) (string, error) {
 	hostRoot, err := agentPicoClawRoot(agentName)
 	if err != nil {
 		return "", err
@@ -33,7 +33,7 @@ func ensureAgentPicoClawConfig(agentName, botID string, server config.ServerConf
 		return "", fmt.Errorf("create manager picoclaw logs dir: %w", err)
 	}
 
-	data, err := renderAgentPicoClawConfig(botID, server, llm)
+	data, err := renderAgentPicoClawConfig(botID, server, model)
 	if err != nil {
 		return "", err
 	}
@@ -41,7 +41,7 @@ func ensureAgentPicoClawConfig(agentName, botID string, server config.ServerConf
 	if err := os.WriteFile(configPath, append(data, '\n'), 0o600); err != nil {
 		return "", fmt.Errorf("write manager picoclaw config: %w", err)
 	}
-	securityData := renderManagerSecurityConfig(llm)
+	securityData := renderManagerSecurityConfig(model)
 	securityPath := filepath.Join(hostRoot, ".security.yml")
 	if err := os.WriteFile(securityPath, []byte(securityData), 0o600); err != nil {
 		return "", fmt.Errorf("write manager security config: %w", err)
@@ -61,17 +61,17 @@ func agentPicoClawRoot(agentName string) (string, error) {
 	return filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, agentName, hostPicoClawDir), nil
 }
 
-func renderManagerPicoClawConfig(server config.ServerConfig, llm config.LLMConfig) ([]byte, error) {
-	return renderAgentPicoClawConfig("u-manager", server, llm)
+func renderManagerPicoClawConfig(server config.ServerConfig, model config.ModelConfig) ([]byte, error) {
+	return renderAgentPicoClawConfig("u-manager", server, model)
 }
 
-func renderAgentPicoClawConfig(botID string, server config.ServerConfig, llm config.LLMConfig) ([]byte, error) {
+func renderAgentPicoClawConfig(botID string, server config.ServerConfig, model config.ModelConfig) ([]byte, error) {
 	var cfg map[string]any
 	if err := json.Unmarshal(defaultManagerPicoClawConfig, &cfg); err != nil {
 		return nil, fmt.Errorf("decode embedded manager picoclaw config: %w", err)
 	}
 
-	if err := updateModelList(cfg, llm); err != nil {
+	if err := updateModelList(cfg, model); err != nil {
 		return nil, err
 	}
 	if err := updateCSGClawChannel(cfg, botID, server); err != nil {
@@ -85,7 +85,7 @@ func renderAgentPicoClawConfig(botID string, server config.ServerConfig, llm con
 	return data, nil
 }
 
-func updateModelList(cfg map[string]any, llm config.LLMConfig) error {
+func updateModelList(cfg map[string]any, modelCfg config.ModelConfig) error {
 	modelList, ok := cfg["model_list"].([]any)
 	if !ok || len(modelList) == 0 {
 		return fmt.Errorf("embedded manager picoclaw config is missing model_list[0]")
@@ -94,15 +94,15 @@ func updateModelList(cfg map[string]any, llm config.LLMConfig) error {
 	if !ok {
 		return fmt.Errorf("embedded manager picoclaw config has invalid model_list[0]")
 	}
-	if llm.ModelID != "" {
-		model["model_name"] = llm.ModelID
-		model["model"] = llm.ModelID
+	if modelCfg.ModelID != "" {
+		model["model_name"] = modelCfg.ModelID
+		model["model"] = modelCfg.ModelID
 	}
-	if llm.BaseURL != "" {
-		model["api_base"] = strings.TrimRight(llm.BaseURL, "/")
+	if modelCfg.BaseURL != "" {
+		model["api_base"] = strings.TrimRight(modelCfg.BaseURL, "/")
 	}
-	if llm.APIKey != "" {
-		model["api_key"] = llm.APIKey
+	if modelCfg.APIKey != "" {
+		model["api_key"] = modelCfg.APIKey
 	}
 	return nil
 }
@@ -209,15 +209,9 @@ func ipv4FromAddr(addr net.Addr) string {
 	}
 }
 
-func renderManagerSecurityConfig(llm config.LLMConfig) string {
-	modelID := llm.ModelID
-	if modelID == "" {
-		modelID = config.DefaultLLMModelID
-	}
-	apiKey := llm.APIKey
-	if apiKey == "" {
-		apiKey = config.DefaultLLMAPIKey
-	}
+func renderManagerSecurityConfig(model config.ModelConfig) string {
+	modelID := model.ModelID
+	apiKey := model.APIKey
 
 	content := strings.ReplaceAll(defaultManagerSecurityConfig, "__MODEL_ID__", modelID)
 	content = strings.ReplaceAll(content, "__API_KEY__", apiKey)

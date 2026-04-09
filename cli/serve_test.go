@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"csgclaw/internal/agent"
@@ -73,5 +74,18 @@ func TestAPIBaseURLPrefersAdvertiseBaseURL(t *testing.T) {
 	want := "http://example.test/base"
 	if got != want {
 		t.Fatalf("apiBaseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestValidateModelConfigRequiresOnboardWhenIncomplete(t *testing.T) {
+	err := validateModelConfig(config.Config{})
+	if err == nil {
+		t.Fatal("validateModelConfig() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "csgclaw onboard") {
+		t.Fatalf("validateModelConfig() error = %q, want onboard guidance", err)
+	}
+	if !strings.Contains(err.Error(), "--base-url") || !strings.Contains(err.Error(), "--api-key") || !strings.Contains(err.Error(), "--model-id") {
+		t.Fatalf("validateModelConfig() error = %q, want missing model flags", err)
 	}
 }

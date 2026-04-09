@@ -11,7 +11,7 @@ import (
 
 type Config struct {
 	Server    ServerConfig
-	LLM       LLMConfig
+	Model     ModelConfig
 	Bootstrap BootstrapConfig
 }
 
@@ -21,7 +21,7 @@ type ServerConfig struct {
 	AccessToken      string
 }
 
-type LLMConfig struct {
+type ModelConfig struct {
 	BaseURL string
 	APIKey  string
 	ModelID string
@@ -40,12 +40,23 @@ const (
 	IMDirName          = "im"
 
 	DefaultListenAddr   = "0.0.0.0:18080"
-	DefaultLLMBaseURL   = "http://127.0.0.1:4000"
-	DefaultLLMAPIKey    = "sk-1234567890"
-	DefaultLLMModelID   = "minimax-m2.7"
 	DefaultAccessToken  = "your_access_token"
 	DefaultManagerImage = "ghcr.io/russellluo/picoclaw:2026.4.8.1"
 )
+
+func (c ModelConfig) MissingFields() []string {
+	var missing []string
+	if strings.TrimSpace(c.BaseURL) == "" {
+		missing = append(missing, "base_url")
+	}
+	if strings.TrimSpace(c.APIKey) == "" {
+		missing = append(missing, "api_key")
+	}
+	if strings.TrimSpace(c.ModelID) == "" {
+		missing = append(missing, "model_id")
+	}
+	return missing
+}
 
 func DefaultDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -142,14 +153,14 @@ func Load(path string) (Config, error) {
 			case "access_token":
 				cfg.Server.AccessToken = value
 			}
-		case "llm":
+		case "model":
 			switch key {
 			case "base_url":
-				cfg.LLM.BaseURL = value
+				cfg.Model.BaseURL = value
 			case "api_key":
-				cfg.LLM.APIKey = value
+				cfg.Model.APIKey = value
 			case "model_id":
-				cfg.LLM.ModelID = value
+				cfg.Model.ModelID = value
 			}
 		case "bootstrap":
 			switch key {
@@ -186,14 +197,14 @@ listen_addr = %q
 advertise_base_url = %q
 access_token = %q
 
-[llm]
+[model]
 base_url = %q
 api_key = %q
 model_id = %q
 
 [bootstrap]
 manager_image = %q
-`, c.Server.ListenAddr, c.Server.AdvertiseBaseURL, c.Server.AccessToken, c.LLM.BaseURL, c.LLM.APIKey, c.LLM.ModelID, c.Bootstrap.ManagerImage)
+`, c.Server.ListenAddr, c.Server.AdvertiseBaseURL, c.Server.AccessToken, c.Model.BaseURL, c.Model.APIKey, c.Model.ModelID, c.Bootstrap.ManagerImage)
 
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)

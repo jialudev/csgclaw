@@ -217,7 +217,7 @@ listen_addr = "0.0.0.0:18080"
 advertise_base_url = ""
 access_token = "your-shared-token"
 
-[llm]
+[model]
 base_url = "http://127.0.0.1:4000"
 api_key = "sk-please-change-me"
 model_id = "gpt-4o-mini"

@@ -9,7 +9,7 @@ import (
 )
 
 func TestRenderManagerSecurityConfig(t *testing.T) {
-	got := renderManagerSecurityConfig(config.LLMConfig{
+	got := renderManagerSecurityConfig(config.ModelConfig{
 		ModelID: "minimax-m2.7",
 		APIKey:  "sk-1234567890",
 	})
