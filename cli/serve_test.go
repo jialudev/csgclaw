@@ -46,7 +46,17 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	}
 	cfg := config.Config{
 		Server: config.ServerConfig{
+			ListenAddr:       "127.0.0.1:18080",
 			AdvertiseBaseURL: "http://example.test",
+			AccessToken:      "pc-secret",
+		},
+		Model: config.ModelConfig{
+			BaseURL: "http://llm.test",
+			APIKey:  "sk-secret",
+			ModelID: "model-test",
+		},
+		Bootstrap: config.BootstrapConfig{
+			ManagerImage: "ghcr.io/example/manager:latest",
 		},
 	}
 
@@ -55,6 +65,43 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("runServer was not called")
+	}
+
+	got := app.stdout.(*bytes.Buffer).String()
+	for _, want := range []string{
+		"effective config:\n",
+		`listen_addr = "127.0.0.1:18080"`,
+		`advertise_base_url = "http://example.test"`,
+		`api_key = "sk*****et"`,
+		`access_token = "pc*****et"`,
+		"CSGClaw IM is available at: http://example.test/",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("stdout missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "sk-secret") {
+		t.Fatalf("stdout leaked model API key:\n%s", got)
+	}
+	if strings.Contains(got, "pc-secret") {
+		t.Fatalf("stdout leaked server access token:\n%s", got)
+	}
+}
+
+func TestPartiallyMaskSecret(t *testing.T) {
+	cases := map[string]string{
+		"":          "",
+		"abc":       "***",
+		"abcd":      "****",
+		"abcde":     "ab*de",
+		"abcdef":    "ab**ef",
+		"sk-secret": "sk*****et",
+	}
+
+	for input, want := range cases {
+		if got := partiallyMaskSecret(input); got != want {
+			t.Fatalf("partiallyMaskSecret(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 
