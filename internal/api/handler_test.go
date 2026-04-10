@@ -457,7 +457,7 @@ func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
 				{ID: "u-admin", Name: "admin", Handle: "admin"},
 				{ID: "u-manager", Name: "manager", Handle: "manager"},
 			},
-			Conversations: []im.Conversation{
+			Rooms: []im.Room{
 				{
 					ID:           "room-1",
 					Title:        "Room One",
@@ -498,7 +498,7 @@ func TestHandleIMAgentJoinReturnsCompactSuccessPayload(t *testing.T) {
 				{ID: "u-admin", Name: "admin", Handle: "admin"},
 				{ID: "u-alice", Name: "Alice", Handle: "alice"},
 			},
-			Conversations: []im.Conversation{
+			Rooms: []im.Room{
 				{
 					ID:           "room-1",
 					Title:        "Room One",
@@ -637,7 +637,7 @@ func TestHandleRoomsReturnsConversationList(t *testing.T) {
 			Users: []im.User{
 				{ID: "u-alice", Name: "Alice", Handle: "alice"},
 			},
-			Conversations: []im.Conversation{
+			Rooms: []im.Room{
 				{
 					ID:           "room-1",
 					Title:        "Room One",
@@ -700,7 +700,7 @@ func TestHandleMessagesReturnsConversationMessages(t *testing.T) {
 	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
-			Conversations: []im.Conversation{
+			Rooms: []im.Room{
 				{
 					ID:           "room-1",
 					Title:        "Room One",
@@ -760,7 +760,7 @@ func TestHandleMessagesPostCreatesMessage(t *testing.T) {
 				{ID: "u-admin", Name: "admin", Handle: "admin"},
 				{ID: "u-manager", Name: "manager", Handle: "manager"},
 			},
-			Conversations: []im.Conversation{
+			Rooms: []im.Room{
 				{
 					ID:           "room-1",
 					Title:        "Room One",
@@ -882,7 +882,7 @@ func TestHandleUsersDeleteKicksUser(t *testing.T) {
 				{ID: "u-admin", Name: "admin", Handle: "admin", IsOnline: true},
 				{ID: "u-alice", Name: "Alice", Handle: "alice", IsOnline: true},
 			},
-			Conversations: []im.Conversation{
+			Rooms: []im.Room{
 				{
 					ID:           "room-1",
 					Title:        "Room One",
@@ -924,7 +924,7 @@ func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
 	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
-			Conversations: []im.Conversation{
+			Rooms: []im.Room{
 				{ID: "room-1", Title: "Room One", Participants: []string{"u-admin", "u-manager"}},
 			},
 		}),

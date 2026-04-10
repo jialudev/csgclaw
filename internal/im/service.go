@@ -1,9 +1,11 @@
 package im
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -56,7 +58,6 @@ type Bootstrap struct {
 	CurrentUserID      string   `json:"current_user_id"`
 	Users              []User   `json:"users"`
 	Rooms              []Room   `json:"rooms,omitempty"`
-	Conversations      []Room   `json:"conversations,omitempty"`
 	InviteDraftUserIDs []string `json:"invite_draft_user_ids,omitempty"`
 }
 
@@ -119,6 +120,24 @@ type Service struct {
 
 var mentionPattern = regexp.MustCompile(`(^|[^\w])@([a-zA-Z0-9._-]+)`)
 
+const sessionsDirName = "sessions"
+
+type persistedBootstrap struct {
+	CurrentUserID      string          `json:"current_user_id"`
+	Users              []User          `json:"users"`
+	Rooms              []persistedRoom `json:"rooms,omitempty"`
+	InviteDraftUserIDs []string        `json:"invite_draft_user_ids,omitempty"`
+}
+
+type persistedRoom struct {
+	ID           string   `json:"id"`
+	Title        string   `json:"title"`
+	Subtitle     string   `json:"subtitle"`
+	Description  string   `json:"description,omitempty"`
+	Participants []string `json:"participants"`
+	Messages     string   `json:"messages"`
+}
+
 func NewService() *Service {
 	return NewServiceFromBootstrap(DefaultBootstrap())
 }
@@ -172,9 +191,13 @@ func LoadBootstrap(path string) (Bootstrap, error) {
 		return Bootstrap{}, fmt.Errorf("read im bootstrap: %w", err)
 	}
 
-	var state Bootstrap
-	if err := json.Unmarshal(data, &state); err != nil {
+	var persisted persistedBootstrap
+	if err := json.Unmarshal(data, &persisted); err != nil {
 		return Bootstrap{}, fmt.Errorf("decode im bootstrap: %w", err)
+	}
+	state, err := loadPersistedBootstrap(path, persisted)
+	if err != nil {
+		return Bootstrap{}, err
 	}
 	return normalizeBootstrap(state), nil
 }
@@ -186,7 +209,17 @@ func SaveBootstrap(path string, state Bootstrap) error {
 		return fmt.Errorf("create im state dir: %w", err)
 	}
 
-	data, err := json.MarshalIndent(state, "", "  ")
+	sessionsDir := filepath.Join(filepath.Dir(path), sessionsDirName)
+	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
+		return fmt.Errorf("create im sessions dir: %w", err)
+	}
+
+	persisted, err := savePersistedBootstrap(path, state)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(persisted, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode im bootstrap: %w", err)
 	}
@@ -196,6 +229,185 @@ func SaveBootstrap(path string, state Bootstrap) error {
 		return fmt.Errorf("write im bootstrap: %w", err)
 	}
 	return nil
+}
+
+func loadPersistedBootstrap(path string, persisted persistedBootstrap) (Bootstrap, error) {
+	state := Bootstrap{
+		CurrentUserID:      persisted.CurrentUserID,
+		Users:              append([]User(nil), persisted.Users...),
+		InviteDraftUserIDs: append([]string(nil), persisted.InviteDraftUserIDs...),
+	}
+
+	rooms, err := loadPersistedRooms(path, persisted.Rooms)
+	if err != nil {
+		return Bootstrap{}, err
+	}
+	state.Rooms = cloneRooms(rooms)
+	return state, nil
+}
+
+func loadPersistedRooms(statePath string, rooms []persistedRoom) ([]Room, error) {
+	if len(rooms) == 0 {
+		return nil, nil
+	}
+
+	loaded := make([]Room, 0, len(rooms))
+	for _, room := range rooms {
+		messages, err := loadRoomMessages(statePath, room.ID, room.Messages)
+		if err != nil {
+			return nil, err
+		}
+		loaded = append(loaded, Room{
+			ID:           room.ID,
+			Title:        room.Title,
+			Subtitle:     room.Subtitle,
+			Description:  room.Description,
+			Participants: append([]string(nil), room.Participants...),
+			Messages:     messages,
+		})
+	}
+	return loaded, nil
+}
+
+func loadRoomMessages(statePath, roomID, relativePath string) ([]Message, error) {
+	relativePath = strings.TrimSpace(relativePath)
+	if relativePath == "" {
+		return nil, nil
+	}
+	if filepath.Ext(relativePath) != ".jsonl" {
+		return nil, fmt.Errorf("decode room %s messages: expected jsonl session path", roomID)
+	}
+	return loadMessagesJSONL(filepath.Join(filepath.Dir(statePath), filepath.FromSlash(relativePath)))
+}
+
+func loadMessagesJSONL(path string) ([]Message, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("open im session: %w", err)
+	}
+	defer file.Close()
+
+	var messages []Message
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var message Message
+		if err := json.Unmarshal([]byte(line), &message); err != nil {
+			return nil, fmt.Errorf("decode im session line: %w", err)
+		}
+		messages = append(messages, message)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read im session: %w", err)
+	}
+	return messages, nil
+}
+
+func savePersistedBootstrap(statePath string, state Bootstrap) (persistedBootstrap, error) {
+	persisted := persistedBootstrap{
+		CurrentUserID:      state.CurrentUserID,
+		Users:              append([]User(nil), state.Users...),
+		InviteDraftUserIDs: append([]string(nil), state.InviteDraftUserIDs...),
+	}
+
+	rooms, err := savePersistedRooms(statePath, state.Rooms)
+	if err != nil {
+		return persistedBootstrap{}, err
+	}
+	persisted.Rooms = rooms
+
+	if err := cleanupSessionFiles(statePath, rooms); err != nil {
+		return persistedBootstrap{}, err
+	}
+	return persisted, nil
+}
+
+func savePersistedRooms(statePath string, rooms []Room) ([]persistedRoom, error) {
+	if len(rooms) == 0 {
+		return nil, nil
+	}
+
+	persisted := make([]persistedRoom, 0, len(rooms))
+	for _, room := range rooms {
+		relativePath := sessionRelativePath(room.ID)
+		if err := saveMessagesJSONL(filepath.Join(filepath.Dir(statePath), filepath.FromSlash(relativePath)), room.Messages); err != nil {
+			return nil, err
+		}
+		persisted = append(persisted, persistedRoom{
+			ID:           room.ID,
+			Title:        room.Title,
+			Subtitle:     room.Subtitle,
+			Description:  room.Description,
+			Participants: append([]string(nil), room.Participants...),
+			Messages:     relativePath,
+		})
+	}
+	return persisted, nil
+}
+
+func saveMessagesJSONL(path string, messages []Message) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create im session dir: %w", err)
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create im session: %w", err)
+	}
+	defer file.Close()
+
+	for _, message := range messages {
+		data, err := json.Marshal(message)
+		if err != nil {
+			return fmt.Errorf("encode im session message: %w", err)
+		}
+		if _, err := file.Write(data); err != nil {
+			return fmt.Errorf("write im session: %w", err)
+		}
+		if _, err := io.WriteString(file, "\n"); err != nil {
+			return fmt.Errorf("write im session newline: %w", err)
+		}
+	}
+	return nil
+}
+
+func cleanupSessionFiles(statePath string, rooms []persistedRoom) error {
+	sessionsDir := filepath.Join(filepath.Dir(statePath), sessionsDirName)
+	entries, err := os.ReadDir(sessionsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read im sessions dir: %w", err)
+	}
+
+	keep := make(map[string]struct{}, len(rooms))
+	for _, room := range rooms {
+		keep[filepath.Base(sessionRelativePath(room.ID))] = struct{}{}
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if _, ok := keep[entry.Name()]; ok {
+			continue
+		}
+		if err := os.Remove(filepath.Join(sessionsDir, entry.Name())); err != nil {
+			return fmt.Errorf("remove stale im session: %w", err)
+		}
+	}
+	return nil
+}
+
+func sessionRelativePath(roomID string) string {
+	return filepath.ToSlash(filepath.Join(sessionsDirName, roomID+".jsonl"))
 }
 
 func EnsureBootstrapState(path string) error {
@@ -214,22 +426,11 @@ func normalizeBootstrap(state Bootstrap) Bootstrap {
 		state.CurrentUserID = DefaultBootstrap().CurrentUserID
 	}
 	state.Users = ensureUsers(state.Users)
-	state.Rooms = normalizeRooms(state.Rooms, state.Conversations)
+	state.Rooms = cloneRooms(state.Rooms)
 	if !containsUserID(state.Users, state.CurrentUserID) {
 		state.CurrentUserID = defaultCurrentUserID(state.Users)
 	}
 	return state
-}
-
-func normalizeRooms(rooms, conversations []Room) []Room {
-	switch {
-	case len(rooms) > 0:
-		return cloneRooms(rooms)
-	case len(conversations) > 0:
-		return cloneRooms(conversations)
-	default:
-		return nil
-	}
 }
 
 func ensureUsers(users []User) []User {

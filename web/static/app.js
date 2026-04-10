@@ -453,7 +453,7 @@ function App() {
   }, [data]);
 
   const activeConversation = useMemo(
-    () => data?.conversations.find((item) => item.id === activeConversationId) ?? null,
+    () => data?.rooms.find((item) => item.id === activeConversationId) ?? null,
     [data, activeConversationId],
   );
 
@@ -467,11 +467,11 @@ function App() {
     return activeConversation.messages.filter((message) => !isToolCallMessage(message.content));
   }, [activeConversation, showToolCalls]);
 
-  const conversations = useMemo(
-    () => data?.conversations ?? [],
+  const rooms = useMemo(
+    () => data?.rooms ?? [],
     [data],
   );
-  const roomCount = conversations.length;
+  const roomCount = rooms.length;
 
   const mentionState = useMemo(() => getMentionState(draft, composerSelectionStart), [draft, composerSelectionStart]);
   const mentionCandidates = useMemo(() => {
@@ -624,12 +624,12 @@ function App() {
       return;
     }
 
-    const remainingConversations = conversations.filter((item) => item.id !== roomID);
+    const remainingRooms = rooms.filter((item) => item.id !== roomID);
     setData((current) => removeConversationFromData(current, roomID));
     setComposerError("");
     setSubmitError("");
     if (activeConversationId === roomID) {
-      setActiveConversationId(remainingConversations[0]?.id ?? "");
+      setActiveConversationId(remainingRooms[0]?.id ?? "");
     }
   }
 
@@ -766,7 +766,7 @@ function App() {
           <div className="conversation-list">
             <${ConversationSection}
               title=${t("conversationSection")}
-              items=${conversations}
+              items=${rooms}
               activeConversationId=${activeConversationId}
               currentUserID=${data.current_user_id}
               usersById=${usersById}
@@ -1336,16 +1336,16 @@ function appendMessageToData(current, conversationID, message) {
     return current;
   }
 
-  const conversations = current.conversations.map((conversation) => {
-    if (conversation.id !== conversationID) {
-      return conversation;
+  const rooms = current.rooms.map((room) => {
+    if (room.id !== conversationID) {
+      return room;
     }
-    if (conversation.messages.some((item) => item.id === message.id)) {
-      return conversation;
+    if (room.messages.some((item) => item.id === message.id)) {
+      return room;
     }
-    return { ...conversation, messages: [...conversation.messages, message] };
+    return { ...room, messages: [...room.messages, message] };
   });
-  return { ...current, conversations: sortConversations(conversations) };
+  return { ...current, rooms: sortConversations(rooms) };
 }
 
 function upsertConversationInData(current, conversation) {
@@ -1353,11 +1353,11 @@ function upsertConversationInData(current, conversation) {
     return current;
   }
 
-  const existing = current.conversations.some((item) => item.id === conversation.id);
-  const conversations = existing
-    ? current.conversations.map((item) => (item.id === conversation.id ? conversation : item))
-    : [conversation, ...current.conversations];
-  return { ...current, conversations: sortConversations(conversations) };
+  const existing = current.rooms.some((item) => item.id === conversation.id);
+  const rooms = existing
+    ? current.rooms.map((item) => (item.id === conversation.id ? conversation : item))
+    : [conversation, ...current.rooms];
+  return { ...current, rooms: sortConversations(rooms) };
 }
 
 function upsertUserInData(current, user) {
@@ -1378,9 +1378,8 @@ function removeConversationFromData(current, conversationID) {
     return current;
   }
 
-  const conversations = current.conversations.filter((item) => item.id !== conversationID);
-  const rooms = (current.rooms ?? []).filter((item) => item.id !== conversationID);
-  return { ...current, conversations, rooms };
+  const rooms = current.rooms.filter((item) => item.id !== conversationID);
+  return { ...current, rooms };
 }
 
 function sortConversations(conversations) {
@@ -1391,8 +1390,7 @@ function normalizeIMData(payload) {
   if (!payload) {
     return payload;
   }
-  const rooms = payload.rooms ?? [];
-  return { ...payload, rooms, conversations: rooms };
+  return { ...payload, rooms: payload.rooms ?? [] };
 }
 
 function toggleSelection(current, id) {

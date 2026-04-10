@@ -1,6 +1,10 @@
 package im
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -127,7 +131,7 @@ func TestListRoomsUsersAndMessages(t *testing.T) {
 			{ID: "u-zed", Name: "Zed", Handle: "zed", Role: "Worker"},
 			{ID: "u-alice", Name: "Alice", Handle: "alice", Role: "Worker"},
 		},
-		Conversations: []Conversation{
+		Rooms: []Room{
 			{
 				ID:           "room-1",
 				Title:        "First",
@@ -178,7 +182,7 @@ func TestListRoomsUsersAndMessages(t *testing.T) {
 func TestDeleteRoomRemovesRoom(t *testing.T) {
 	svc := NewServiceFromBootstrap(Bootstrap{
 		CurrentUserID: "u-admin",
-		Conversations: []Conversation{
+		Rooms: []Room{
 			{ID: "room-1", Title: "Room One", Participants: []string{"u-admin", "u-manager"}},
 		},
 	})
@@ -199,7 +203,7 @@ func TestKickUserRemovesUserFromStateConversationsAndMessages(t *testing.T) {
 			{ID: "u-alice", Name: "Alice", Handle: "alice"},
 			{ID: "u-bob", Name: "Bob", Handle: "bob"},
 		},
-		Conversations: []Conversation{
+		Rooms: []Room{
 			{
 				ID:           "room-group",
 				Title:        "Group",
@@ -246,5 +250,161 @@ func TestKickUserRejectsCurrentUser(t *testing.T) {
 
 	if err := svc.KickUser("u-admin"); err == nil {
 		t.Fatal("KickUser(current user) error = nil, want error")
+	}
+}
+
+func TestSaveBootstrapSplitsRoomMessagesIntoSessionFiles(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	createdAt := time.Date(2026, 4, 9, 4, 31, 18, 753589000, time.UTC)
+
+	state := Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []User{
+			{ID: "u-admin", Name: "admin", Handle: "admin"},
+			{ID: "u-manager", Name: "manager", Handle: "manager"},
+		},
+		Rooms: []Room{
+			{
+				ID:           "room-1775709078753586000",
+				Title:        "0409-1231",
+				Participants: []string{"u-admin", "u-manager"},
+				Messages: []Message{
+					{
+						ID:        "msg-1775709078753589000",
+						SenderID:  "u-admin",
+						Kind:      MessageKindEvent,
+						Content:   "",
+						Event:     &EventPayload{Key: "room_created"},
+						CreatedAt: createdAt,
+					},
+				},
+			},
+		},
+	}
+
+	if err := SaveBootstrap(statePath, state); err != nil {
+		t.Fatalf("SaveBootstrap() error = %v", err)
+	}
+
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(state.json) error = %v", err)
+	}
+
+	var persisted struct {
+		Rooms []struct {
+			ID       string `json:"id"`
+			Messages string `json:"messages"`
+		} `json:"rooms"`
+	}
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatalf("Unmarshal(state.json) error = %v", err)
+	}
+	if len(persisted.Rooms) != 1 {
+		t.Fatalf("len(rooms) = %d, want 1", len(persisted.Rooms))
+	}
+	if persisted.Rooms[0].Messages != "sessions/room-1775709078753586000.jsonl" {
+		t.Fatalf("room.messages = %q, want session path", persisted.Rooms[0].Messages)
+	}
+	if strings.Contains(string(data), "\"sender_id\"") {
+		t.Fatalf("state.json = %s, want room messages stored out of line", string(data))
+	}
+
+	sessionPath := filepath.Join(dir, "sessions", "room-1775709078753586000.jsonl")
+	sessionData, err := os.ReadFile(sessionPath)
+	if err != nil {
+		t.Fatalf("ReadFile(session) error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(sessionData)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("session lines = %d, want 1", len(lines))
+	}
+
+	var message Message
+	if err := json.Unmarshal([]byte(lines[0]), &message); err != nil {
+		t.Fatalf("Unmarshal(session line) error = %v", err)
+	}
+	if message.ID != "msg-1775709078753589000" {
+		t.Fatalf("message.ID = %q, want saved message", message.ID)
+	}
+}
+
+func TestLoadBootstrapSupportsExternalSessionFiles(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+
+	stateJSON := `{
+  "current_user_id": "u-admin",
+  "users": [
+    {"id": "u-admin", "name": "admin", "handle": "admin"},
+    {"id": "u-manager", "name": "manager", "handle": "manager"}
+  ],
+  "rooms": [
+    {
+      "id": "room-1",
+      "title": "alpha",
+      "subtitle": "",
+      "participants": ["u-admin", "u-manager"],
+      "messages": "sessions/room-1.jsonl"
+    }
+  ]
+}`
+	if err := os.WriteFile(statePath, []byte(stateJSON), 0o600); err != nil {
+		t.Fatalf("WriteFile(state.json) error = %v", err)
+	}
+
+	sessionLine := `{"id":"msg-1","sender_id":"u-admin","kind":"message","content":"hello","created_at":"2026-04-09T04:31:18.753589Z","mentions":["u-manager"]}` + "\n"
+	if err := os.MkdirAll(filepath.Join(dir, "sessions"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(sessions) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sessions", "room-1.jsonl"), []byte(sessionLine), 0o600); err != nil {
+		t.Fatalf("WriteFile(session) error = %v", err)
+	}
+
+	state, err := LoadBootstrap(statePath)
+	if err != nil {
+		t.Fatalf("LoadBootstrap() error = %v", err)
+	}
+	if len(state.Rooms) != 1 {
+		t.Fatalf("len(Rooms) = %d, want 1", len(state.Rooms))
+	}
+	if len(state.Rooms[0].Messages) != 1 || state.Rooms[0].Messages[0].ID != "msg-1" {
+		t.Fatalf("room.Messages = %+v, want msg-1 from session file", state.Rooms[0].Messages)
+	}
+}
+
+func TestLoadBootstrapRejectsLegacyInlineMessages(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+
+	stateJSON := `{
+  "current_user_id": "u-admin",
+  "users": [
+    {"id": "u-admin", "name": "admin", "handle": "admin"},
+    {"id": "u-manager", "name": "manager", "handle": "manager"}
+  ],
+  "rooms": [
+    {
+      "id": "room-1",
+      "title": "alpha",
+      "subtitle": "",
+      "participants": ["u-admin", "u-manager"],
+      "messages": [
+        {"id":"msg-1","sender_id":"u-admin","kind":"message","content":"hello","created_at":"2026-04-09T04:31:18.753589Z","mentions":null}
+      ]
+    }
+  ]
+}`
+	if err := os.WriteFile(statePath, []byte(stateJSON), 0o600); err != nil {
+		t.Fatalf("WriteFile(state.json) error = %v", err)
+	}
+
+	_, err := LoadBootstrap(statePath)
+	if err == nil {
+		t.Fatal("LoadBootstrap() error = nil, want legacy inline messages rejected")
+	}
+	if !strings.Contains(err.Error(), "decode im bootstrap") {
+		t.Fatalf("LoadBootstrap() error = %v, want decode im bootstrap error", err)
 	}
 }

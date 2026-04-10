@@ -93,7 +93,7 @@ ok
 ### `GET /api/v1/im/bootstrap`
 
 获取 IM 初始化数据，供 WebUI 首次加载使用。
-响应会同时返回 `rooms` 和兼容字段 `conversations`；新增调用方应优先读取 `rooms`。
+响应返回 `rooms`。
 
 响应示例：
 
@@ -111,8 +111,7 @@ ok
       "accent_hex": "#dc2626"
     }
   ],
-  "rooms": [],
-  "conversations": []
+  "rooms": []
 }
 ```
 
