@@ -20,6 +20,7 @@ type App struct {
 	stopFunc   func([]string, GlobalOptions) error
 	agentFunc  func(context.Context, []string, GlobalOptions) error
 	roomFunc   func(context.Context, []string, GlobalOptions) error
+	memberFunc func(context.Context, []string, GlobalOptions) error
 	userFunc   func(context.Context, []string, GlobalOptions) error
 }
 
@@ -76,6 +77,11 @@ func (a *App) Execute(ctx context.Context, args []string) error {
 			return a.roomFunc(ctx, rest[1:], globals)
 		}
 		return a.runRoom(ctx, rest[1:], globals)
+	case "member":
+		if a.memberFunc != nil {
+			return a.memberFunc(ctx, rest[1:], globals)
+		}
+		return a.runMember(ctx, rest[1:], globals)
 	case "user":
 		if a.userFunc != nil {
 			return a.userFunc(ctx, rest[1:], globals)
@@ -150,6 +156,7 @@ func (a *App) usage() {
 	fmt.Fprintln(a.stderr, "  stop     Stop the local HTTP server")
 	fmt.Fprintln(a.stderr, "  agent    Manage agents")
 	fmt.Fprintln(a.stderr, "  room     Manage IM rooms")
+	fmt.Fprintln(a.stderr, "  member   Manage IM room members")
 	fmt.Fprintln(a.stderr, "  user     Manage IM users")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Examples:")

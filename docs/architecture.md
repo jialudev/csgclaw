@@ -91,6 +91,7 @@ CSGClaw/
 │   ├── stop.go                  # csgclaw stop: reads pid file, sends SIGTERM
 │   ├── agent.go                 # csgclaw agent: create/delete/status/logs
 │   ├── room.go                  # csgclaw room: list/create/delete
+│   ├── member.go                # csgclaw member: channel-specific room membership
 │   ├── user.go                  # csgclaw user: list/kick
 │   └── message.go               # csgclaw message: send/history
 │
@@ -146,6 +147,12 @@ DELETE /api/v1/users/:id         Kick a user
 POST   /api/v1/messages          Send a message
 GET    /api/v1/messages          Fetch message history
 
+# Channels
+GET    /api/v1/channels/feishu/rooms                     List Feishu rooms
+POST   /api/v1/channels/feishu/rooms                     Create a Feishu room
+POST   /api/v1/channels/feishu/rooms/:room_id/members    Add Feishu room members
+GET    /api/v1/channels/feishu/rooms/:room_id/members    List Feishu room members
+
 # WebSocket
 WS     /api/v1/ws                Real-time message push
 ```
@@ -171,6 +178,9 @@ csgclaw
 │   ├── list
 │   ├── create
 │   └── delete <id>
+
+├── member
+│   └── create
 
 ├── user
 │   ├── list
@@ -258,6 +268,18 @@ Fetch or stream agent logs from Boxlite stdout/stderr.
 ```
 --name string         Room display name
 --max-members int     Maximum member capacity
+```
+
+#### `csgclaw member create`
+
+Add a user to a channel room. Feishu is wired to `/api/v1/channels/feishu/rooms/:room_id/members`; other channels, including the built-in `csgclaw` channel, are intentionally rejected for now.
+
+```
+--channel string      Channel name: feishu
+--room-id string      Target room ID
+--user-id string      User ID to add
+--inviter-id string   Inviter user ID
+--locale string       Room locale
 ```
 
 #### `csgclaw user list`

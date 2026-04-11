@@ -282,6 +282,60 @@ func TestExecuteUserCreateFeishuUsesChannelRoute(t *testing.T) {
 	assertTableHasRow(t, stdout.String(), "fsu-alice", "Alice", "alice", "worker", "true")
 }
 
+func TestExecuteMemberCreateFeishuUsesChannelRoomMembersRoute(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/rooms/oc_alpha/members" {
+				t.Fatalf("url = %q, want feishu room members route", req.URL.String())
+			}
+
+			var payload map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			userIDs, ok := payload["user_ids"].([]any)
+			if !ok || len(userIDs) != 1 || userIDs[0] != "ou_alice" {
+				t.Fatalf("payload[user_ids] = %#v, want [ou_alice]", payload["user_ids"])
+			}
+			if payload["inviter_id"] != "u-manager" {
+				t.Fatalf("payload[inviter_id] = %#v, want u-manager", payload["inviter_id"])
+			}
+			return jsonResponse(http.StatusOK, `{"id":"oc_alpha","title":"alpha","participants":["u-manager","ou_alice"],"messages":[]}`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "member", "create", "--channel", "feishu", "--room-id", "oc_alpha", "--user-id", "ou_alice", "--inviter-id", "u-manager"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "oc_alpha", "alpha", "2", "0")
+}
+
+func TestExecuteMemberCreateCsgclawUnsupported(t *testing.T) {
+	app := &App{
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"member", "create", "--channel", "csgclaw", "--room-id", "room-1", "--user-id", "u-alice"})
+	if err == nil {
+		t.Fatal("Execute() error = nil, want unsupported channel")
+	}
+	if !strings.Contains(err.Error(), "currently supports --channel feishu") {
+		t.Fatalf("Execute() error = %v, want feishu-only error", err)
+	}
+}
+
 func TestExecuteRoomCreateUsesHTTPClient(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{
@@ -413,6 +467,7 @@ func TestUsageIncludesTopLevelCommandIndex(t *testing.T) {
 		"Available Commands:",
 		"agent    Manage agents",
 		"room     Manage IM rooms",
+		"member   Manage IM room members",
 		"user     Manage IM users",
 	} {
 		if !strings.Contains(got, want) {
@@ -439,6 +494,7 @@ func TestRootHelpIncludesAvailableCommands(t *testing.T) {
 		"Available Commands:",
 		"agent    Manage agents",
 		"room     Manage IM rooms",
+		"member   Manage IM room members",
 		"user     Manage IM users",
 	} {
 		if !strings.Contains(got, want) {

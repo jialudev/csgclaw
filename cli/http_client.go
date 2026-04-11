@@ -134,6 +134,18 @@ func (c *APIClient) CreateRoomByChannel(ctx context.Context, channel string, req
 	return created, nil
 }
 
+func (c *APIClient) AddRoomMemberByChannel(ctx context.Context, channel string, req im.AddRoomMembersRequest) (im.Room, error) {
+	var updated im.Room
+	path, err := memberCreatePath(channel, req.RoomID)
+	if err != nil {
+		return im.Room{}, err
+	}
+	if err := c.doJSON(ctx, http.MethodPost, path, req, &updated); err != nil {
+		return im.Room{}, err
+	}
+	return updated, nil
+}
+
 func (c *APIClient) DeleteRoom(ctx context.Context, id string) error {
 	return c.doNoContent(ctx, http.MethodDelete, "/api/v1/rooms/"+id)
 }
@@ -172,6 +184,24 @@ func channelPath(channelName, resource string) (string, error) {
 		return "/api/v1/" + resource, nil
 	case "feishu":
 		return "/api/v1/channels/feishu/" + resource, nil
+	default:
+		return "", fmt.Errorf("unsupported channel %q", channelName)
+	}
+}
+
+func memberCreatePath(channelName, roomID string) (string, error) {
+	channelName = strings.ToLower(strings.TrimSpace(channelName))
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		return "", fmt.Errorf("room_id is required")
+	}
+
+	switch channelName {
+	case "feishu":
+		return "/api/v1/channels/feishu/rooms/" + url.PathEscape(roomID) + "/members", nil
+	case "", "csgclaw":
+		// TODO: Wire csgclaw member creation when the CLI command is ready to use the internal IM invite API.
+		return "", fmt.Errorf("member create currently supports --channel feishu")
 	default:
 		return "", fmt.Errorf("unsupported channel %q", channelName)
 	}
