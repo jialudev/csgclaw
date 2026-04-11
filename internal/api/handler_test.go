@@ -165,7 +165,7 @@ func TestHandleFeishuUsersCreateAndList(t *testing.T) {
 func TestHandleFeishuRoomsMembers(t *testing.T) {
 	feishu := channel.NewFeishuServiceWithCreateChatAndAddMembers(
 		map[string]channel.FeishuAppConfig{
-			"fsu-admin": {AppID: "admin-app-id", AppSecret: "app-secret", AdminOpenID: "ou_admin"},
+			"u-manager": {AppID: "manager-app-id", AppSecret: "app-secret", AdminOpenID: "ou_admin"},
 			"fsu-alice": {AppID: "alice-app-id", AppSecret: "alice-secret"},
 		},
 		func(_ context.Context, _ channel.FeishuAppConfig, req channel.FeishuCreateChatRequest) (channel.FeishuCreateChatResponse, error) {

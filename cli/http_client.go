@@ -146,6 +146,18 @@ func (c *APIClient) AddRoomMemberByChannel(ctx context.Context, channel string, 
 	return updated, nil
 }
 
+func (c *APIClient) ListRoomMembersByChannel(ctx context.Context, channel, roomID string) ([]im.User, error) {
+	var users []im.User
+	path, err := roomMembersPath(channel, roomID, "list")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.getJSON(ctx, path, &users); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 func (c *APIClient) DeleteRoom(ctx context.Context, id string) error {
 	return c.doNoContent(ctx, http.MethodDelete, "/api/v1/rooms/"+id)
 }
@@ -190,6 +202,10 @@ func channelPath(channelName, resource string) (string, error) {
 }
 
 func memberCreatePath(channelName, roomID string) (string, error) {
+	return roomMembersPath(channelName, roomID, "create")
+}
+
+func roomMembersPath(channelName, roomID, operation string) (string, error) {
 	channelName = strings.ToLower(strings.TrimSpace(channelName))
 	roomID = strings.TrimSpace(roomID)
 	if roomID == "" {
@@ -200,8 +216,8 @@ func memberCreatePath(channelName, roomID string) (string, error) {
 	case "feishu":
 		return "/api/v1/channels/feishu/rooms/" + url.PathEscape(roomID) + "/members", nil
 	case "", "csgclaw":
-		// TODO: Wire csgclaw member creation when the CLI command is ready to use the internal IM invite API.
-		return "", fmt.Errorf("member create currently supports --channel feishu")
+		// TODO: Wire csgclaw room member management when the CLI command is ready to use the internal IM invite API.
+		return "", fmt.Errorf("member %s currently supports --channel feishu", operation)
 	default:
 		return "", fmt.Errorf("unsupported channel %q", channelName)
 	}

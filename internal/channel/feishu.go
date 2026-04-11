@@ -17,6 +17,8 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
+const feishuManagerAppUserID = "u-manager"
+
 type FeishuCreateUserRequest struct {
 	ID     string `json:"id,omitempty"`
 	Name   string `json:"name"`
@@ -54,14 +56,17 @@ type FeishuAddChatMembersRequest struct {
 
 type FeishuAddChatMembersFunc func(context.Context, FeishuAppConfig, FeishuAddChatMembersRequest) error
 
+type FeishuListChatMembersFunc func(context.Context, FeishuAppConfig, string) ([]im.User, error)
+
 type FeishuService struct {
-	mu             sync.RWMutex
-	users          map[string]im.User
-	byHandle       map[string]string
-	rooms          map[string]*im.Room
-	apps           map[string]FeishuAppConfig
-	createChat     FeishuCreateChatFunc
-	addChatMembers FeishuAddChatMembersFunc
+	mu              sync.RWMutex
+	users           map[string]im.User
+	byHandle        map[string]string
+	rooms           map[string]*im.Room
+	apps            map[string]FeishuAppConfig
+	createChat      FeishuCreateChatFunc
+	addChatMembers  FeishuAddChatMembersFunc
+	listChatMembers FeishuListChatMembersFunc
 }
 
 func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
@@ -72,12 +77,13 @@ func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
 		}
 	}
 	return &FeishuService{
-		users:          make(map[string]im.User),
-		byHandle:       make(map[string]string),
-		rooms:          make(map[string]*im.Room),
-		apps:           configuredApps,
-		createChat:     defaultFeishuCreateChat,
-		addChatMembers: defaultFeishuAddChatMembers,
+		users:           make(map[string]im.User),
+		byHandle:        make(map[string]string),
+		rooms:           make(map[string]*im.Room),
+		apps:            configuredApps,
+		createChat:      defaultFeishuCreateChat,
+		addChatMembers:  defaultFeishuAddChatMembers,
+		listChatMembers: defaultFeishuListChatMembers,
 	}
 }
 
@@ -295,6 +301,66 @@ func defaultFeishuAddChatMembers(ctx context.Context, app FeishuAppConfig, req F
 	return nil
 }
 
+func defaultFeishuListChatMembers(ctx context.Context, app FeishuAppConfig, chatID string) ([]im.User, error) {
+	client := lark.NewClient(app.AppID, app.AppSecret)
+	members := make([]im.User, 0)
+	pageToken := ""
+
+	for {
+		reqBuilder := larkim.NewGetChatMembersReqBuilder().
+			ChatId(chatID).
+			MemberIdType("open_id").
+			PageSize(100)
+		if pageToken != "" {
+			reqBuilder.PageToken(pageToken)
+		}
+
+		resp, err := client.Im.V1.ChatMembers.Get(ctx, reqBuilder.Build())
+		if err != nil {
+			return nil, fmt.Errorf("list feishu chat members: %w", err)
+		}
+		if !resp.Success() {
+			return nil, fmt.Errorf("list feishu chat members: code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+		}
+		if resp.Data == nil {
+			return nil, fmt.Errorf("list feishu chat members: empty response data")
+		}
+
+		for _, item := range resp.Data.Items {
+			if item == nil {
+				continue
+			}
+			memberID := strings.TrimSpace(larkcore.StringValue(item.MemberId))
+			if memberID == "" {
+				continue
+			}
+			name := strings.TrimSpace(larkcore.StringValue(item.Name))
+			if name == "" {
+				name = memberID
+			}
+			members = append(members, im.User{
+				ID:        memberID,
+				Name:      name,
+				Handle:    deriveHandle(name, memberID),
+				Role:      "member",
+				Avatar:    initials(name),
+				IsOnline:  true,
+				AccentHex: accentHexForID(memberID),
+			})
+		}
+
+		if !larkcore.BoolValue(resp.Data.HasMore) {
+			break
+		}
+		pageToken = strings.TrimSpace(larkcore.StringValue(resp.Data.PageToken))
+		if pageToken == "" {
+			break
+		}
+	}
+
+	return members, nil
+}
+
 func (s *FeishuService) ListRooms() []im.Room {
 	// Mock implementation. Real Feishu support should call the external Feishu API.
 	s.mu.RLock()
@@ -395,24 +461,34 @@ func (s *FeishuService) AddRoomMembers(req im.AddRoomMembersRequest) (im.Room, e
 }
 
 func (s *FeishuService) ListRoomMembers(roomID string) ([]im.User, error) {
-	// Mock implementation. Real Feishu support should call the external Feishu API.
 	roomID = strings.TrimSpace(roomID)
 	if roomID == "" {
 		return nil, fmt.Errorf("room_id is required")
 	}
 
+	app, err := s.appConfigForRoom(roomID)
+	if err != nil {
+		return nil, err
+	}
+
+	members, err := s.listChatMembers(context.Background(), app, roomID)
+	if err != nil {
+		return nil, err
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	room, ok := s.rooms[roomID]
-	if !ok {
-		return nil, fmt.Errorf("room not found")
-	}
-	users := make([]im.User, 0, len(room.Participants))
-	for _, userID := range room.Participants {
-		if user, ok := s.users[userID]; ok {
-			users = append(users, user)
+	users := make([]im.User, 0, len(members))
+	for _, member := range members {
+		if localUser, ok := s.users[member.ID]; ok {
+			if member.Name != "" {
+				localUser.Name = member.Name
+			}
+			users = append(users, localUser)
+			continue
 		}
+		users = append(users, member)
 	}
 	slices.SortFunc(users, func(a, b im.User) int { return strings.Compare(a.Name, b.Name) })
 	return users, nil
@@ -446,14 +522,13 @@ func (s *FeishuService) appConfigForCreator(creatorID string) (FeishuAppConfig, 
 }
 
 func (s *FeishuService) appConfigForCreatorLocked(creatorID string) (FeishuAppConfig, error) {
-	creatorID = strings.TrimSpace(creatorID)
-	if creatorID == "" {
-		return FeishuAppConfig{}, fmt.Errorf("creator_id is required")
-	}
+	return s.managerAppConfigLocked()
+}
 
-	app, ok := s.apps[creatorID]
+func (s *FeishuService) managerAppConfigLocked() (FeishuAppConfig, error) {
+	app, ok := s.apps[feishuManagerAppUserID]
 	if !ok {
-		return FeishuAppConfig{}, fmt.Errorf("feishu app is not configured for creator_id %q", creatorID)
+		return FeishuAppConfig{}, fmt.Errorf("feishu app is not configured for %q", feishuManagerAppUserID)
 	}
 	if strings.TrimSpace(app.AppID) == "" {
 		return FeishuAppConfig{}, fmt.Errorf("feishu app_id is required")
@@ -466,6 +541,13 @@ func (s *FeishuService) appConfigForCreatorLocked(creatorID string) (FeishuAppCo
 		AppSecret:   strings.TrimSpace(app.AppSecret),
 		AdminOpenID: strings.TrimSpace(app.AdminOpenID),
 	}, nil
+}
+
+func (s *FeishuService) appConfigForRoom(roomID string) (FeishuAppConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.managerAppConfigLocked()
 }
 
 func (s *FeishuService) appIDForMemberLocked(memberID string) (string, error) {
