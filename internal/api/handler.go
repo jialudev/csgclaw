@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
 )
 
@@ -18,6 +19,7 @@ type Handler struct {
 	im       *im.Service
 	imBus    *im.Bus
 	picoclaw *im.PicoClawBridge
+	feishu   *channel.FeishuService
 }
 
 type imBootstrapResponse struct {
@@ -55,12 +57,13 @@ type addRoomMembersRequest struct {
 	Locale    string   `json:"locale"`
 }
 
-func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge) *Handler {
+func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService) *Handler {
 	return &Handler{
 		svc:      svc,
 		im:       imSvc,
 		imBus:    imBus,
 		picoclaw: picoclaw,
+		feishu:   feishu,
 	}
 }
 

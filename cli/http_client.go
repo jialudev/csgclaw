@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 )
@@ -102,16 +103,32 @@ func (c *APIClient) StreamAgentLogs(ctx context.Context, id string, follow bool,
 }
 
 func (c *APIClient) ListRooms(ctx context.Context) ([]im.Room, error) {
+	return c.ListRoomsByChannel(ctx, "csgclaw")
+}
+
+func (c *APIClient) ListRoomsByChannel(ctx context.Context, channel string) ([]im.Room, error) {
 	var rooms []im.Room
-	if err := c.getJSON(ctx, "/api/v1/rooms", &rooms); err != nil {
+	path, err := channelPath(channel, "rooms")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.getJSON(ctx, path, &rooms); err != nil {
 		return nil, err
 	}
 	return rooms, nil
 }
 
 func (c *APIClient) CreateRoom(ctx context.Context, req im.CreateRoomRequest) (im.Room, error) {
+	return c.CreateRoomByChannel(ctx, "csgclaw", req)
+}
+
+func (c *APIClient) CreateRoomByChannel(ctx context.Context, channel string, req im.CreateRoomRequest) (im.Room, error) {
 	var created im.Room
-	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/rooms", req, &created); err != nil {
+	path, err := channelPath(channel, "rooms")
+	if err != nil {
+		return im.Room{}, err
+	}
+	if err := c.doJSON(ctx, http.MethodPost, path, req, &created); err != nil {
 		return im.Room{}, err
 	}
 	return created, nil
@@ -122,15 +139,42 @@ func (c *APIClient) DeleteRoom(ctx context.Context, id string) error {
 }
 
 func (c *APIClient) ListUsers(ctx context.Context) ([]im.User, error) {
+	return c.ListUsersByChannel(ctx, "csgclaw")
+}
+
+func (c *APIClient) ListUsersByChannel(ctx context.Context, channel string) ([]im.User, error) {
 	var users []im.User
-	if err := c.getJSON(ctx, "/api/v1/users", &users); err != nil {
+	path, err := channelPath(channel, "users")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.getJSON(ctx, path, &users); err != nil {
 		return nil, err
 	}
 	return users, nil
 }
 
+func (c *APIClient) CreateFeishuUser(ctx context.Context, req channel.FeishuCreateUserRequest) (im.User, error) {
+	var created im.User
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/channels/feishu/users", req, &created); err != nil {
+		return im.User{}, err
+	}
+	return created, nil
+}
+
 func (c *APIClient) KickUser(ctx context.Context, id string) error {
 	return c.doNoContent(ctx, http.MethodDelete, "/api/v1/users/"+id)
+}
+
+func channelPath(channelName, resource string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(channelName)) {
+	case "", "csgclaw":
+		return "/api/v1/" + resource, nil
+	case "feishu":
+		return "/api/v1/channels/feishu/" + resource, nil
+	default:
+		return "", fmt.Errorf("unsupported channel %q", channelName)
+	}
 }
 
 func (c *APIClient) getJSON(ctx context.Context, path string, out any) error {

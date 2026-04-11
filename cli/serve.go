@@ -10,21 +10,24 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/server"
 )
 
 var (
-	runServer         = server.Run
-	newAgentServiceFn = newAgentService
-	newIMServiceFn    = newIMService
+	runServer          = server.Run
+	newAgentServiceFn  = newAgentService
+	newIMServiceFn     = newIMService
+	newFeishuServiceFn = newFeishuService
 )
 
 func (a *App) runServe(ctx context.Context, args []string, globals GlobalOptions) error {
@@ -101,7 +104,11 @@ func (a *App) runInternalServe(ctx context.Context, args []string, globals Globa
 	if err != nil {
 		return err
 	}
-	return a.startServer(ctx, cfg, svc, imSvc)
+	feishuSvc, err := newFeishuServiceFn(cfg)
+	if err != nil {
+		return err
+	}
+	return a.startServer(ctx, cfg, svc, imSvc, feishuSvc)
 }
 
 func (a *App) serveForeground(ctx context.Context, cfg config.Config) error {
@@ -113,6 +120,10 @@ func (a *App) serveForeground(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	feishuSvc, err := newFeishuServiceFn(cfg)
+	if err != nil {
+		return err
+	}
 	apiURL := apiBaseURL(cfg.Server)
 	imURL := imOpenURL(apiURL)
 
@@ -120,7 +131,7 @@ func (a *App) serveForeground(ctx context.Context, cfg config.Config) error {
 	fmt.Fprintf(a.stdout, "CSGClaw IM is available at: %s\n", imURL)
 	fmt.Fprintln(a.stdout, "Open this URL in your browser after startup.")
 
-	return a.startServer(ctx, cfg, svc, imSvc)
+	return a.startServer(ctx, cfg, svc, imSvc, feishuSvc)
 }
 
 func (a *App) serveBackground(cfg config.Config, globals GlobalOptions, logPath, pidPath string) error {
@@ -288,7 +299,7 @@ func apiBaseURL(server config.ServerConfig) string {
 	return fmt.Sprintf("http://%s:%s", host, port)
 }
 
-func (a *App) startServer(ctx context.Context, cfg config.Config, svc *agent.Service, imSvc *im.Service) error {
+func (a *App) startServer(ctx context.Context, cfg config.Config, svc *agent.Service, imSvc *im.Service, feishuSvc *channel.FeishuService) error {
 	imBus := im.NewBus()
 	return runServer(server.Options{
 		ListenAddr: cfg.Server.ListenAddr,
@@ -296,6 +307,7 @@ func (a *App) startServer(ctx context.Context, cfg config.Config, svc *agent.Ser
 		IM:         imSvc,
 		IMBus:      imBus,
 		PicoClaw:   im.NewPicoClawBridge(cfg.Server.AccessToken),
+		Feishu:     feishuSvc,
 		Context:    ctx,
 	})
 }
@@ -305,7 +317,7 @@ func (a *App) printEffectiveConfig(cfg config.Config) {
 }
 
 func formatEffectiveConfig(cfg config.Config) string {
-	return fmt.Sprintf(`[server]
+	content := fmt.Sprintf(`[server]
 listen_addr = %q
 advertise_base_url = %q
 access_token = %q
@@ -318,6 +330,23 @@ model_id = %q
 [bootstrap]
 manager_image = %q
 `, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Model.BaseURL, partiallyMaskSecret(cfg.Model.APIKey), cfg.Model.ModelID, cfg.Bootstrap.ManagerImage)
+
+	if len(cfg.Channels.Feishu) > 0 {
+		names := make([]string, 0, len(cfg.Channels.Feishu))
+		for name := range cfg.Channels.Feishu {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			feishu := cfg.Channels.Feishu[name]
+			content += fmt.Sprintf(`
+[channels.feishu.%s]
+app_id = %q
+app_secret = %q
+`, name, feishu.AppID, partiallyMaskSecret(feishu.AppSecret))
+		}
+	}
+	return content
 }
 
 func partiallyMaskSecret(value string) string {
@@ -387,4 +416,19 @@ func newIMService() (*im.Service, error) {
 		return nil, err
 	}
 	return im.NewServiceFromPath(imStatePath)
+}
+
+func newFeishuService(cfg config.Config) (*channel.FeishuService, error) {
+	return channel.NewFeishuService(feishuAppsFromConfig(cfg.Channels.Feishu)), nil
+}
+
+func feishuAppsFromConfig(cfg map[string]config.FeishuConfig) map[string]channel.FeishuAppConfig {
+	apps := make(map[string]channel.FeishuAppConfig, len(cfg))
+	for name, app := range cfg {
+		apps[name] = channel.FeishuAppConfig{
+			AppID:     app.AppID,
+			AppSecret: app.AppSecret,
+		}
+	}
+	return apps
 }

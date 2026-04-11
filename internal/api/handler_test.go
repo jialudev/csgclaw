@@ -15,6 +15,7 @@ import (
 	boxlite "github.com/RussellLuo/boxlite/sdks/go"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 )
@@ -134,6 +135,72 @@ func TestEnsureWorkerIMStatePublishesBootstrapRoom(t *testing.T) {
 	}
 	if third.Sender == nil || third.Sender.ID != "u-admin" {
 		t.Fatalf("third event.Sender = %+v, want u-admin", third.Sender)
+	}
+}
+
+func TestHandleFeishuUsersCreateAndList(t *testing.T) {
+	srv := &Handler{feishu: channel.NewFeishuService()}
+
+	createReq := strings.NewReader(`{"id":"fsu-alice","name":"Alice","handle":"alice","role":"worker"}`)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/channels/feishu/users", createReq))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/users", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got []im.User
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "fsu-alice" || got[0].Handle != "alice" {
+		t.Fatalf("users = %+v, want fsu-alice", got)
+	}
+}
+
+func TestHandleFeishuRoomsMembers(t *testing.T) {
+	feishu := channel.NewFeishuService()
+	if _, err := feishu.CreateUser(channel.FeishuCreateUserRequest{ID: "fsu-admin", Name: "Admin"}); err != nil {
+		t.Fatalf("CreateUser(admin) error = %v", err)
+	}
+	if _, err := feishu.CreateUser(channel.FeishuCreateUserRequest{ID: "fsu-alice", Name: "Alice"}); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
+	srv := &Handler{feishu: feishu}
+
+	createReq := strings.NewReader(`{"title":"alpha","creator_id":"fsu-admin"}`)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/channels/feishu/rooms", createReq))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var room im.Room
+	if err := json.NewDecoder(rec.Body).Decode(&room); err != nil {
+		t.Fatalf("decode room: %v", err)
+	}
+
+	addReq := strings.NewReader(`{"user_ids":["fsu-alice"]}`)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/channels/feishu/rooms/"+room.ID+"/members", addReq))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("add status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/rooms/"+room.ID+"/members", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("members status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var members []im.User
+	if err := json.NewDecoder(rec.Body).Decode(&members); err != nil {
+		t.Fatalf("decode members: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("members = %+v, want two users", members)
 	}
 }
 

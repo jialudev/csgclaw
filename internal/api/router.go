@@ -5,6 +5,7 @@ import "net/http"
 func (h *Handler) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	h.registerCoreRoutes(mux)
+	h.registerChannelRoutes(mux)
 	h.registerPicoClawRoutes(mux)
 	return mux
 }
@@ -30,4 +31,10 @@ func (h *Handler) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/im/conversations/members", h.handleIMRoomMembers)
 	mux.HandleFunc("/api/v1/im/rooms", h.handleIMRooms)
 	mux.HandleFunc("/api/v1/im/rooms/invite", h.handleIMRoomMembers)
+}
+
+func (h *Handler) registerChannelRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/v1/channels/feishu/users", h.handleFeishuUsers)
+	mux.HandleFunc("/api/v1/channels/feishu/rooms", h.handleFeishuRooms)
+	mux.HandleFunc("/api/v1/channels/feishu/rooms/", h.handleFeishuRoomByID)
 }

@@ -229,6 +229,59 @@ func TestExecuteRoomListUsesHTTPClient(t *testing.T) {
 	assertTableHasRow(t, stdout.String(), "room-1", "alpha", "2", "1")
 }
 
+func TestExecuteRoomListFeishuUsesChannelRoute(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/rooms" {
+				t.Fatalf("url = %q, want feishu rooms route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"fsroom-1","title":"alpha","participants":["fsu-admin"],"messages":[]}]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "room", "list", "--channel", "feishu"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "fsroom-1", "alpha", "1", "0")
+}
+
+func TestExecuteUserCreateFeishuUsesChannelRoute(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/users" {
+				t.Fatalf("url = %q, want feishu users route", req.URL.String())
+			}
+
+			var payload map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if payload["name"] != "Alice" || payload["handle"] != "alice" {
+				t.Fatalf("payload = %#v, want Alice/alice", payload)
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"fsu-alice","name":"Alice","handle":"alice","role":"worker","is_online":true}`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "user", "create", "--channel", "feishu", "--name", "Alice", "--handle", "alice", "--role", "worker"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "fsu-alice", "Alice", "alice", "worker", "true")
+}
+
 func TestExecuteRoomCreateUsesHTTPClient(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{
@@ -505,6 +558,26 @@ func TestExecuteStartIsRejected(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "  serve    Start the local HTTP server") {
 		t.Fatalf("stderr = %q, want serve command in usage", stderr.String())
+	}
+}
+
+func TestExecutePluralRoomAndUserCommandsAreRejected(t *testing.T) {
+	for _, command := range []string{"rooms", "users"} {
+		t.Run(command, func(t *testing.T) {
+			app := &App{
+				stdout:     &bytes.Buffer{},
+				stderr:     &bytes.Buffer{},
+				httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+			}
+
+			err := app.Execute(context.Background(), []string{command, "list"})
+			if err == nil {
+				t.Fatal("Execute() error = nil, want unknown command")
+			}
+			if !strings.Contains(err.Error(), `unknown command "`+command+`"`) {
+				t.Fatalf("Execute() error = %v, want unknown command %q", err, command)
+			}
+		})
 	}
 }
 

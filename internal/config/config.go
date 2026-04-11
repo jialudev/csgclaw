@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -14,6 +15,7 @@ type Config struct {
 	Server    ServerConfig
 	Model     ModelConfig
 	Bootstrap BootstrapConfig
+	Channels  ChannelsConfig
 }
 
 type ServerConfig struct {
@@ -32,6 +34,15 @@ type BootstrapConfig struct {
 	ManagerImage string
 }
 
+type ChannelsConfig struct {
+	Feishu map[string]FeishuConfig
+}
+
+type FeishuConfig struct {
+	AppID     string
+	AppSecret string
+}
+
 const (
 	AppDirName         = ".csgclaw"
 	RuntimeHomeDirName = "boxlite"
@@ -39,6 +50,7 @@ const (
 	StateFileName      = "state.json"
 	AgentsDirName      = "agents"
 	IMDirName          = "im"
+	ChannelsDirName    = "channels"
 
 	DefaultHTTPPort     = "18080"
 	DefaultAccessToken  = "your_access_token"
@@ -127,6 +139,14 @@ func DefaultIMStatePath() (string, error) {
 	return filepath.Join(dir, StateFileName), nil
 }
 
+func DefaultChannelDir(name string) (string, error) {
+	dir, err := DefaultDomainDir(ChannelsDirName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
+
 func LoadDefault() (Config, error) {
 	path, err := DefaultPath()
 	if err != nil {
@@ -164,8 +184,8 @@ func Load(path string) (Config, error) {
 
 		key = strings.TrimSpace(key)
 		value = strings.Trim(strings.TrimSpace(value), `"`)
-		switch section {
-		case "server":
+		switch {
+		case section == "server":
 			switch key {
 			case "listen_addr":
 				cfg.Server.ListenAddr = value
@@ -174,7 +194,7 @@ func Load(path string) (Config, error) {
 			case "access_token":
 				cfg.Server.AccessToken = value
 			}
-		case "model":
+		case section == "model":
 			switch key {
 			case "base_url":
 				cfg.Model.BaseURL = value
@@ -183,11 +203,27 @@ func Load(path string) (Config, error) {
 			case "model_id":
 				cfg.Model.ModelID = value
 			}
-		case "bootstrap":
+		case section == "bootstrap":
 			switch key {
 			case "manager_image":
 				cfg.Bootstrap.ManagerImage = value
 			}
+		case strings.HasPrefix(section, "channels.feishu."):
+			name := strings.TrimPrefix(section, "channels.feishu.")
+			if name == "" {
+				return Config{}, fmt.Errorf("invalid feishu channel section: %q", section)
+			}
+			if cfg.Channels.Feishu == nil {
+				cfg.Channels.Feishu = make(map[string]FeishuConfig)
+			}
+			feishu := cfg.Channels.Feishu[name]
+			switch key {
+			case "app_id":
+				feishu.AppID = value
+			case "app_secret":
+				feishu.AppSecret = value
+			}
+			cfg.Channels.Feishu[name] = feishu
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -226,6 +262,22 @@ model_id = %q
 [bootstrap]
 manager_image = %q
 `, c.Server.ListenAddr, c.Server.AdvertiseBaseURL, c.Server.AccessToken, c.Model.BaseURL, c.Model.APIKey, c.Model.ModelID, c.Bootstrap.ManagerImage)
+
+	if len(c.Channels.Feishu) > 0 {
+		names := make([]string, 0, len(c.Channels.Feishu))
+		for name := range c.Channels.Feishu {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			feishu := c.Channels.Feishu[name]
+			content += fmt.Sprintf(`
+[channels.feishu.%s]
+app_id = %q
+app_secret = %q
+`, name, feishu.AppID, feishu.AppSecret)
+		}
+	}
 
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)

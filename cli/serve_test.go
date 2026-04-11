@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/server"
@@ -16,10 +17,12 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	origRunServer := runServer
 	origNewAgentService := newAgentServiceFn
 	origNewIMService := newIMServiceFn
+	origNewFeishuService := newFeishuServiceFn
 	t.Cleanup(func() {
 		runServer = origRunServer
 		newAgentServiceFn = origNewAgentService
 		newIMServiceFn = origNewIMService
+		newFeishuServiceFn = origNewFeishuService
 	})
 
 	ctx := context.WithValue(context.Background(), struct{}{}, "serve-context")
@@ -28,6 +31,12 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		return nil, nil
 	}
 	newIMServiceFn = func() (*im.Service, error) {
+		return nil, nil
+	}
+	newFeishuServiceFn = func(cfg config.Config) (*channel.FeishuService, error) {
+		if got, want := cfg.Channels.Feishu["manager"].AppID, "cli_manager"; got != want {
+			t.Fatalf("manager app_id = %q, want %q", got, want)
+		}
 		return nil, nil
 	}
 
@@ -58,6 +67,14 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		Bootstrap: config.BootstrapConfig{
 			ManagerImage: "ghcr.io/example/manager:latest",
 		},
+		Channels: config.ChannelsConfig{
+			Feishu: map[string]config.FeishuConfig{
+				"manager": {
+					AppID:     "cli_manager",
+					AppSecret: "manager-secret",
+				},
+			},
+		},
 	}
 
 	if err := app.serveForeground(ctx, cfg); err != nil {
@@ -74,6 +91,9 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`advertise_base_url = "http://example.test"`,
 		`api_key = "sk*****et"`,
 		`access_token = "pc*****et"`,
+		`[channels.feishu.manager]`,
+		`app_id = "cli_manager"`,
+		`app_secret = "ma**********et"`,
 		"CSGClaw IM is available at: http://example.test/",
 	} {
 		if !strings.Contains(got, want) {
@@ -85,6 +105,9 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	}
 	if strings.Contains(got, "pc-secret") {
 		t.Fatalf("stdout leaked server access token:\n%s", got)
+	}
+	if strings.Contains(got, "manager-secret") {
+		t.Fatalf("stdout leaked feishu app secret:\n%s", got)
 	}
 }
 

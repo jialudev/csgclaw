@@ -7,6 +7,7 @@ import (
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/api"
+	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
 )
 
@@ -16,6 +17,7 @@ type Options struct {
 	IM         *im.Service
 	IMBus      *im.Bus
 	PicoClaw   *im.PicoClawBridge
+	Feishu     *channel.FeishuService
 	Context    context.Context
 }
 
@@ -24,7 +26,7 @@ func Run(opts Options) error {
 		opts.Context = context.Background()
 	}
 
-	handler := api.NewHandler(opts.Service, opts.IM, opts.IMBus, opts.PicoClaw)
+	handler := api.NewHandler(opts.Service, opts.IM, opts.IMBus, opts.PicoClaw, opts.Feishu)
 	mux := handler.Routes()
 	mux.Handle("/", uiHandler())
 

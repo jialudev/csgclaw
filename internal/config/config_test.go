@@ -74,6 +74,49 @@ model_id = "minimax-m2.7"
 	}
 }
 
+func TestLoadSupportsNamedFeishuChannelConfigs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+
+[model]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+model_id = "minimax-m2.7"
+
+[channels.feishu.manager]
+app_id = "cli_manager"
+app_secret = "manager-secret"
+
+[channels.feishu.dev]
+app_id = "cli_dev"
+app_secret = "dev-secret"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if got, want := cfg.Channels.Feishu["manager"].AppID, "cli_manager"; got != want {
+		t.Fatalf("manager app_id = %q, want %q", got, want)
+	}
+	if got, want := cfg.Channels.Feishu["manager"].AppSecret, "manager-secret"; got != want {
+		t.Fatalf("manager app_secret = %q, want %q", got, want)
+	}
+	if got, want := cfg.Channels.Feishu["dev"].AppID, "cli_dev"; got != want {
+		t.Fatalf("dev app_id = %q, want %q", got, want)
+	}
+	if got, want := cfg.Channels.Feishu["dev"].AppSecret, "dev-secret"; got != want {
+		t.Fatalf("dev app_secret = %q, want %q", got, want)
+	}
+}
+
 func TestSaveWritesAccessTokenUnderServerSection(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -91,6 +134,18 @@ func TestSaveWritesAccessTokenUnderServerSection(t *testing.T) {
 		Bootstrap: BootstrapConfig{
 			ManagerImage: "img",
 		},
+		Channels: ChannelsConfig{
+			Feishu: map[string]FeishuConfig{
+				"manager": {
+					AppID:     "cli_manager",
+					AppSecret: "manager-secret",
+				},
+				"dev": {
+					AppID:     "cli_dev",
+					AppSecret: "dev-secret",
+				},
+			},
+		},
 	}
 
 	if err := cfg.Save(path); err != nil {
@@ -107,6 +162,18 @@ func TestSaveWritesAccessTokenUnderServerSection(t *testing.T) {
 	}
 	if strings.Contains(content, "[picoclaw]") {
 		t.Fatalf("saved config should not contain [picoclaw] section:\n%s", content)
+	}
+	for _, want := range []string{
+		"[channels.feishu.dev]",
+		`app_id = "cli_dev"`,
+		`app_secret = "dev-secret"`,
+		"[channels.feishu.manager]",
+		`app_id = "cli_manager"`,
+		`app_secret = "manager-secret"`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("saved config missing %q:\n%s", want, content)
+		}
 	}
 }
 

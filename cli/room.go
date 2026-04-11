@@ -46,6 +46,7 @@ func (a *App) runRoom(ctx context.Context, args []string, globals GlobalOptions)
 
 func (a *App) runRoomList(ctx context.Context, args []string, globals GlobalOptions) error {
 	fs := a.newCommandFlagSet("room list", "csgclaw room list [flags]", "List rooms.")
+	channelName := fs.String("channel", "csgclaw", "channel name: csgclaw or feishu")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ func (a *App) runRoomList(ctx context.Context, args []string, globals GlobalOpti
 	}
 
 	client := NewAPIClient(globals.Endpoint, globals.Token, a.httpClient)
-	rooms, err := client.ListRooms(ctx)
+	rooms, err := client.ListRoomsByChannel(ctx, *channelName)
 	if err != nil {
 		return err
 	}
@@ -63,6 +64,7 @@ func (a *App) runRoomList(ctx context.Context, args []string, globals GlobalOpti
 
 func (a *App) runRoomCreate(ctx context.Context, args []string, globals GlobalOptions) error {
 	fs := a.newCommandFlagSet("room create", "csgclaw room create [flags]", "Create a room.")
+	channelName := fs.String("channel", "csgclaw", "channel name: csgclaw or feishu")
 	title := fs.String("title", "", "room title")
 	description := fs.String("description", "", "room description")
 	creatorID := fs.String("creator-id", "", "room creator id")
@@ -76,7 +78,7 @@ func (a *App) runRoomCreate(ctx context.Context, args []string, globals GlobalOp
 	}
 
 	client := NewAPIClient(globals.Endpoint, globals.Token, a.httpClient)
-	room, err := client.CreateRoom(ctx, im.CreateRoomRequest{
+	room, err := client.CreateRoomByChannel(ctx, *channelName, im.CreateRoomRequest{
 		Title:          *title,
 		Description:    *description,
 		CreatorID:      *creatorID,
