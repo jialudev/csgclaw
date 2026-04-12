@@ -311,6 +311,9 @@ func apiBaseURL(server config.ServerConfig) string {
 
 func (a *App) startServer(ctx context.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, feishuSvc *channel.FeishuService) error {
 	imBus := im.NewBus()
+	if botSvc != nil {
+		botSvc.SetDependencies(svc, imSvc, feishuSvc)
+	}
 	return runServer(server.Options{
 		ListenAddr: cfg.Server.ListenAddr,
 		Service:    svc,

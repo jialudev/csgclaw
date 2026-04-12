@@ -316,9 +316,170 @@ func TestHandleBotsListRequiresService(t *testing.T) {
 	}
 }
 
+func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return nil, &boxlite.BoxInfo{
+				ID:        "box-" + name,
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+				Name:      name,
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer agent.ResetTestHooks()
+
+	agentSvc, _ := mustNewSeededServiceWithPath(t, nil)
+	imSvc := im.NewService()
+	store, err := bot.NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("bot.NewMemoryStore() error = %v", err)
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("bot.NewServiceWithDependencies() error = %v", err)
+	}
+	srv := &Handler{
+		svc:    agentSvc,
+		botSvc: botSvc,
+		im:     imSvc,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created bot.Bot
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if created.ID != "u-alice" || created.AgentID != "u-alice" || created.UserID != "u-alice" {
+		t.Fatalf("created bot = %+v, want u-alice IDs", created)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/bots?channel=csgclaw", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list bots status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var bots []bot.Bot
+	if err := json.NewDecoder(rec.Body).Decode(&bots); err != nil {
+		t.Fatalf("decode bots response: %v", err)
+	}
+	if len(bots) != 1 || bots[0].ID != "u-alice" {
+		t.Fatalf("bots = %+v, want u-alice", bots)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/agents", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list agents status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var agents []agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&agents); err != nil {
+		t.Fatalf("decode agents response: %v", err)
+	}
+	if len(agents) != 1 || agents[0].ID != "u-alice" {
+		t.Fatalf("agents = %+v, want u-alice", agents)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/users", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list users status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var users []im.User
+	if err := json.NewDecoder(rec.Body).Decode(&users); err != nil {
+		t.Fatalf("decode users response: %v", err)
+	}
+	if !containsUser(users, "u-alice") {
+		t.Fatalf("users = %+v, want u-alice", users)
+	}
+}
+
+func TestHandleBotsCreateFeishuWorker(t *testing.T) {
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			return nil, &boxlite.BoxInfo{
+				ID:        "box-" + name,
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+				Name:      name,
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer agent.ResetTestHooks()
+
+	agentSvc, _ := mustNewSeededServiceWithPath(t, nil)
+	feishuSvc := channel.NewFeishuService()
+	store, err := bot.NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("bot.NewMemoryStore() error = %v", err)
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, nil, feishuSvc)
+	if err != nil {
+		t.Fatalf("bot.NewServiceWithDependencies() error = %v", err)
+	}
+	srv := &Handler{
+		svc:    agentSvc,
+		botSvc: botSvc,
+		feishu: feishuSvc,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"feishu"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created bot.Bot
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if created.ID != "u-alice" || created.AgentID != "u-alice" || created.UserID != "u-alice" || created.Channel != "feishu" {
+		t.Fatalf("created bot = %+v, want feishu u-alice IDs", created)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/bots?channel=feishu", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list bots status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var bots []bot.Bot
+	if err := json.NewDecoder(rec.Body).Decode(&bots); err != nil {
+		t.Fatalf("decode bots response: %v", err)
+	}
+	if len(bots) != 1 || bots[0].ID != "u-alice" {
+		t.Fatalf("bots = %+v, want u-alice", bots)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/users", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list feishu users status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var users []im.User
+	if err := json.NewDecoder(rec.Body).Decode(&users); err != nil {
+		t.Fatalf("decode users response: %v", err)
+	}
+	if !containsUser(users, "u-alice") {
+		t.Fatalf("feishu users = %+v, want u-alice", users)
+	}
+}
+
 func TestHandleBotsListRejectsUnsupportedMethod(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, nil)}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/bots", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -1226,6 +1387,15 @@ func writeSeededAgents(statePath string, agents []agent.Agent) error {
 func containsParticipant(participants []string, want string) bool {
 	for _, participant := range participants {
 		if participant == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsUser(users []im.User, want string) bool {
+	for _, user := range users {
+		if user.ID == want {
 			return true
 		}
 	}

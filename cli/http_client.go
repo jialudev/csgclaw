@@ -64,6 +64,14 @@ func (c *APIClient) ListBots(ctx context.Context, channel string) ([]bot.Bot, er
 	return bots, nil
 }
 
+func (c *APIClient) CreateBot(ctx context.Context, req bot.CreateRequest) (bot.Bot, error) {
+	var created bot.Bot
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/bots", req, &created); err != nil {
+		return bot.Bot{}, err
+	}
+	return created, nil
+}
+
 func (c *APIClient) GetAgent(ctx context.Context, id string) (agent.Agent, error) {
 	var got agent.Agent
 	if err := c.getJSON(ctx, "/api/v1/agents/"+id, &got); err != nil {

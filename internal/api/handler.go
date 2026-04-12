@@ -64,6 +64,9 @@ func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *
 }
 
 func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService) *Handler {
+	if botSvc != nil {
+		botSvc.SetDependencies(svc, imSvc, feishu)
+	}
 	return &Handler{
 		svc:      svc,
 		botSvc:   botSvc,
@@ -96,21 +99,34 @@ func (h *Handler) handleWorkers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 	if h.botSvc == nil {
 		http.Error(w, "bot service is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
-	bots, err := h.botSvc.List(r.URL.Query().Get("channel"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	switch r.Method {
+	case http.MethodGet:
+		bots, err := h.botSvc.List(r.URL.Query().Get("channel"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, bots)
+	case http.MethodPost:
+		var req bot.CreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+			return
+		}
+		created, err := h.botSvc.Create(r.Context(), req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusCreated, created)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-	writeJSON(w, http.StatusOK, bots)
 }
 
 func (h *Handler) handleAgents(w http.ResponseWriter, r *http.Request) {

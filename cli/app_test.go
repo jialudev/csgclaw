@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/bot"
 	appversion "csgclaw/internal/version"
 )
 
@@ -104,6 +105,86 @@ func TestExecuteBotListFeishuUsesChannelQuery(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"id": "bot-feishu"`) || !strings.Contains(stdout.String(), `"channel": "feishu"`) {
 		t.Fatalf("stdout = %q, want JSON bot payload", stdout.String())
+	}
+}
+
+func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/bots" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/bots")
+			}
+			var payload bot.CreateRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if payload.Name != "alice" || payload.Role != "worker" || payload.Channel != "csgclaw" {
+				t.Fatalf("payload = %+v, want alice worker csgclaw", payload)
+			}
+			if payload.Description != "test lead" || payload.ModelID != "gpt-test" {
+				t.Fatalf("payload = %+v, want description/model_id", payload)
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","role":"worker","channel":"csgclaw","agent_id":"u-alice","user_id":"u-alice","created_at":"2026-04-12T09:00:00Z"}`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "create", "--name", "alice", "--description", "test lead", "--role", "worker", "--model-id", "gpt-test"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "csgclaw", "u-alice", "u-alice")
+}
+
+func TestExecuteBotCreateFeishuSendsChannelPayload(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			var payload bot.CreateRequest
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if payload.ID != "u-alice" || payload.Name != "alice" || payload.Role != "worker" || payload.Channel != "feishu" {
+				t.Fatalf("payload = %+v, want u-alice alice worker feishu", payload)
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","role":"worker","channel":"feishu","agent_id":"u-alice","user_id":"u-alice","created_at":"2026-04-12T09:00:00Z"}`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "bot", "create", "--id", "u-alice", "--name", "alice", "--role", "worker", "--channel", "feishu"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"id": "u-alice"`) || !strings.Contains(stdout.String(), `"channel": "feishu"`) {
+		t.Fatalf("stdout = %q, want JSON feishu bot payload", stdout.String())
+	}
+}
+
+func TestExecuteBotCreateRequiresNameAndRole(t *testing.T) {
+	app := &App{
+		stdout:     &bytes.Buffer{},
+		stderr:     &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "create", "--role", "worker"})
+	if err == nil || !strings.Contains(err.Error(), "requires --name") {
+		t.Fatalf("Execute(missing name) error = %v, want --name error", err)
+	}
+
+	err = app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "create", "--name", "alice"})
+	if err == nil || !strings.Contains(err.Error(), "requires --role") {
+		t.Fatalf("Execute(missing role) error = %v, want --role error", err)
 	}
 }
 
@@ -679,6 +760,7 @@ func TestBotHelpIncludesSubcommands(t *testing.T) {
 		"Manage bots.",
 		"csgclaw bot <subcommand> [flags]",
 		"list               List bots",
+		"create             Create a bot",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("help = %q, want substring %q", got, want)
