@@ -77,18 +77,41 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Bot, error) {
 	if err != nil {
 		return Bot{}, err
 	}
-	if normalized.Role != string(RoleWorker) {
-		return Bot{}, fmt.Errorf("bot create supports role %q only", RoleWorker)
-	}
 	if s.agents == nil {
 		return Bot{}, fmt.Errorf("agent service is required")
 	}
-	if normalized.ID != "" {
+	if normalized.ID != "" && normalized.Role != string(RoleManager) {
 		if _, ok := s.store.Get(normalized.ID); ok {
 			return Bot{}, fmt.Errorf("bot id %q already exists", normalized.ID)
 		}
 	}
 
+	switch normalized.Role {
+	case string(RoleManager):
+		return s.createManager(ctx, normalized, false)
+	case string(RoleWorker):
+		return s.createWorker(ctx, normalized)
+	default:
+		return Bot{}, fmt.Errorf("role must be one of %q or %q", RoleManager, RoleWorker)
+	}
+}
+
+func (s *Service) CreateManager(ctx context.Context, req CreateRequest, forceRecreateAgent bool) (Bot, error) {
+	if s == nil || s.store == nil {
+		return Bot{}, fmt.Errorf("bot store is required")
+	}
+	req.Role = string(RoleManager)
+	normalized, err := NormalizeCreateRequest(req)
+	if err != nil {
+		return Bot{}, err
+	}
+	if s.agents == nil {
+		return Bot{}, fmt.Errorf("agent service is required")
+	}
+	return s.createManager(ctx, normalized, forceRecreateAgent)
+}
+
+func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (Bot, error) {
 	created, err := s.agents.CreateWorker(ctx, agent.CreateRequest{
 		ID:          normalized.ID,
 		Name:        normalized.Name,
@@ -129,6 +152,53 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Bot, error) {
 	return b, nil
 }
 
+func (s *Service) createManager(ctx context.Context, normalized CreateRequest, forceRecreateAgent bool) (Bot, error) {
+	if normalized.ID != "" && normalized.ID != agent.ManagerUserID {
+		return Bot{}, fmt.Errorf("manager bot id must be %q", agent.ManagerUserID)
+	}
+
+	manager, ok := s.agents.Agent(agent.ManagerUserID)
+	if forceRecreateAgent || !ok || strings.ToLower(strings.TrimSpace(manager.Role)) != agent.RoleManager {
+		ensured, err := s.agents.EnsureManager(ctx, forceRecreateAgent)
+		if err != nil {
+			return Bot{}, err
+		}
+		manager = ensured
+	}
+
+	userID, err := s.ensureChannelUser(normalized.Channel, manager)
+	if err != nil {
+		return Bot{}, err
+	}
+
+	createdAt := manager.CreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	b := Bot{
+		ID:        manager.ID,
+		Name:      normalized.Name,
+		Role:      string(RoleManager),
+		Channel:   normalized.Channel,
+		AgentID:   manager.ID,
+		UserID:    userID,
+		CreatedAt: createdAt,
+	}
+	if existing, ok := s.store.Get(b.ID); ok {
+		if existing.Channel != normalized.Channel {
+			return Bot{}, fmt.Errorf("bot id %q already exists", b.ID)
+		}
+		if err := s.store.Save(b); err != nil {
+			return Bot{}, err
+		}
+		return b, nil
+	}
+	if err := s.store.Save(b); err != nil {
+		return Bot{}, err
+	}
+	return b, nil
+}
+
 func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (string, error) {
 	switch channelName {
 	case string(ChannelCSGClaw):
@@ -142,12 +212,15 @@ func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (st
 			Role:   displayRole(created.Role),
 		})
 		if err != nil {
-			return "", fmt.Errorf("agent created but failed to ensure im user: %w", err)
+			return "", fmt.Errorf("failed to ensure im user: %w", err)
 		}
 		return user.ID, nil
 	case string(ChannelFeishu):
 		if s.feishu == nil {
 			return "", fmt.Errorf("feishu service is required")
+		}
+		if user, ok := findFeishuUserByID(s.feishu.ListUsers(), created.ID); ok {
+			return user.ID, nil
 		}
 		// Keep Feishu mock users keyed by the agent ID for now. Future real
 		// open_id/app_id mappings belong in bot/channel state, not agent state.
@@ -158,12 +231,22 @@ func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (st
 			Role:   displayRole(created.Role),
 		})
 		if err != nil {
-			return "", fmt.Errorf("agent created but failed to create feishu user: %w", err)
+			return "", fmt.Errorf("failed to create feishu user: %w", err)
 		}
 		return user.ID, nil
 	default:
 		return "", fmt.Errorf("channel must be one of %q or %q", ChannelCSGClaw, ChannelFeishu)
 	}
+}
+
+func findFeishuUserByID(users []im.User, id string) (im.User, bool) {
+	id = strings.TrimSpace(id)
+	for _, user := range users {
+		if user.ID == id {
+			return user, true
+		}
+	}
+	return im.User{}, false
 }
 
 func deriveAgentHandle(a agent.Agent) string {

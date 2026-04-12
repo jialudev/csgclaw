@@ -123,25 +123,34 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 		_ = svc.Close()
 	}()
 
-	rt, box, err := svc.lookupBootstrapManager(ctx)
+	_, err = svc.EnsureManager(ctx, forceRecreate)
+	return err
+}
+
+func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent, error) {
+	if s == nil {
+		return Agent{}, fmt.Errorf("agent service is required")
+	}
+
+	rt, box, err := s.lookupBootstrapManager(ctx)
 	if err != nil {
-		return err
+		return Agent{}, err
 	}
 	runtimeHome, err := boxRuntimeHome(ManagerName)
 	if err != nil {
-		return err
+		return Agent{}, err
 	}
 	defer func() {
-		_ = svc.closeRuntime(runtimeHome, rt)
+		_ = s.closeRuntime(runtimeHome, rt)
 	}()
 	if forceRecreate {
 		log.Printf("force recreating bootstrap manager box %q", ManagerName)
-		managerBoxIDOrName := svc.bootstrapManagerBoxIDOrName()
-		if err := svc.forceRemoveBox(ctx, rt, managerBoxIDOrName); err != nil {
+		managerBoxIDOrName := s.bootstrapManagerBoxIDOrName()
+		if err := s.forceRemoveBox(ctx, rt, managerBoxIDOrName); err != nil {
 			if boxlite.IsNotFound(err) {
 				log.Printf("bootstrap manager box %q (%q) does not exist yet; continuing", ManagerName, managerBoxIDOrName)
 			} else {
-				return fmt.Errorf("force remove bootstrap manager box %q (%q): %w", ManagerName, managerBoxIDOrName, err)
+				return Agent{}, fmt.Errorf("force remove bootstrap manager box %q (%q): %w", ManagerName, managerBoxIDOrName, err)
 			}
 		} else {
 			log.Printf("bootstrap manager box %q (%q) removed", ManagerName, managerBoxIDOrName)
@@ -150,7 +159,7 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 	}
 	var info *boxlite.BoxInfo
 	if box == nil {
-		log.Printf("bootstrap manager box %q not found, creating it with image %q", ManagerName, svc.managerImage)
+		log.Printf("bootstrap manager box %q not found, creating it with image %q", ManagerName, s.managerImage)
 		log.Printf("if the image is not present locally, the first pull may take a while")
 		progressDone := make(chan struct{})
 		go func() {
@@ -161,49 +170,52 @@ func EnsureBootstrapState(ctx context.Context, statePath string, server config.S
 				case <-progressDone:
 					return
 				case <-ticker.C:
-					log.Printf("still creating bootstrap manager box %q with image %q; image download may still be in progress", ManagerName, svc.managerImage)
+					log.Printf("still creating bootstrap manager box %q with image %q; image download may still be in progress", ManagerName, s.managerImage)
 				}
 			}
 		}()
-		box, info, err = svc.createGatewayBox(ctx, rt, svc.managerImage, ManagerName, ManagerUserID, model.ModelID)
+		box, info, err = s.createGatewayBox(ctx, rt, s.managerImage, ManagerName, ManagerUserID, s.model.ModelID)
 		close(progressDone)
 		if err != nil {
-			return fmt.Errorf("create bootstrap manager box: %w", err)
+			return Agent{}, fmt.Errorf("create bootstrap manager box: %w", err)
 		}
 		log.Printf("bootstrap manager box %q created", ManagerName)
 	} else {
-		if err := svc.startBox(ctx, box); err != nil {
-			return fmt.Errorf("start bootstrap manager box: %w", err)
+		if err := s.startBox(ctx, box); err != nil {
+			return Agent{}, fmt.Errorf("start bootstrap manager box: %w", err)
 		}
-		info, err = svc.boxInfo(ctx, box)
+		info, err = s.boxInfo(ctx, box)
 		if err != nil {
-			return fmt.Errorf("read bootstrap manager box info: %w", err)
+			return Agent{}, fmt.Errorf("read bootstrap manager box info: %w", err)
 		}
 	}
 	defer func() {
-		_ = svc.closeBox(box)
+		_ = s.closeBox(box)
 	}()
 
-	svc.mu.Lock()
-	defer svc.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	manager := Agent{
 		ID:        ManagerUserID,
 		Name:      ManagerName,
-		Image:     svc.managerImage,
+		Image:     s.managerImage,
 		BoxID:     info.ID,
 		Status:    string(info.State),
 		CreatedAt: info.CreatedAt.UTC(),
-		ModelID:   model.ModelID,
+		ModelID:   s.model.ModelID,
 		Role:      RoleManager,
 	}
-	for id, a := range svc.agents {
+	for id, a := range s.agents {
 		if isManagerAgent(a) && id != manager.ID {
-			delete(svc.agents, id)
+			delete(s.agents, id)
 		}
 	}
-	svc.agents[manager.ID] = manager
-	return svc.saveLocked()
+	s.agents[manager.ID] = manager
+	if err := s.saveLocked(); err != nil {
+		return Agent{}, err
+	}
+	return *cloneAgent(&manager), nil
 }
 
 func (s *Service) bootstrapManagerBoxIDOrName() string {

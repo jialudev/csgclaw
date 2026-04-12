@@ -477,6 +477,104 @@ func TestHandleBotsCreateFeishuWorker(t *testing.T) {
 	}
 }
 
+func TestHandleBotsCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
+	agentSvc := mustNewSeededService(t, []agent.Agent{
+		{
+			ID:        agent.ManagerUserID,
+			Name:      agent.ManagerName,
+			Role:      agent.RoleManager,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	})
+	imSvc := im.NewService()
+	store, err := bot.NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("bot.NewMemoryStore() error = %v", err)
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("bot.NewServiceWithDependencies() error = %v", err)
+	}
+	srv := &Handler{
+		svc:    agentSvc,
+		botSvc: botSvc,
+		im:     imSvc,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"manager","role":"manager","channel":"csgclaw"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created bot.Bot
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if created.ID != agent.ManagerUserID || created.AgentID != agent.ManagerUserID || created.UserID != agent.ManagerUserID || created.Role != string(bot.RoleManager) {
+		t.Fatalf("created bot = %+v, want manager u-manager IDs", created)
+	}
+}
+
+func TestHandleBotsCreateManagerBootstrapsMissingAgent(t *testing.T) {
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			if name != agent.ManagerName {
+				t.Fatalf("create gateway name = %q, want manager", name)
+			}
+			if botID != agent.ManagerUserID {
+				t.Fatalf("create gateway botID = %q, want u-manager", botID)
+			}
+			return &boxlite.Box{}, &boxlite.BoxInfo{
+				ID:        "box-manager",
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+				Name:      name,
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer agent.ResetTestHooks()
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	})
+
+	agentSvc := mustNewSeededService(t, nil)
+	imSvc := im.NewService()
+	store, err := bot.NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("bot.NewMemoryStore() error = %v", err)
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("bot.NewServiceWithDependencies() error = %v", err)
+	}
+	srv := &Handler{
+		svc:    agentSvc,
+		botSvc: botSvc,
+		im:     imSvc,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"manager","role":"manager","channel":"csgclaw"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created bot.Bot
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if created.ID != agent.ManagerUserID || created.AgentID != agent.ManagerUserID || created.UserID != agent.ManagerUserID {
+		t.Fatalf("created bot = %+v, want u-manager IDs", created)
+	}
+}
+
 func TestHandleBotsListRejectsUnsupportedMethod(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, nil)}
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/bots", strings.NewReader(`{}`))

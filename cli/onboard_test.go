@@ -7,20 +7,21 @@ import (
 	"strings"
 	"testing"
 
+	"csgclaw/internal/bot"
 	"csgclaw/internal/config"
 )
 
 func TestRunOnboardRequiresLLMFlagsForFirstTimeSetup(t *testing.T) {
-	origEnsureBootstrapState := agentEnsureBootstrapState
+	origCreateManager := botCreateManager
 	origEnsureIMBootstrapState := imEnsureBootstrapState
 	t.Cleanup(func() {
-		agentEnsureBootstrapState = origEnsureBootstrapState
+		botCreateManager = origCreateManager
 		imEnsureBootstrapState = origEnsureIMBootstrapState
 	})
 
-	agentEnsureBootstrapState = func(context.Context, string, config.ServerConfig, config.ModelConfig, string, bool) error {
-		t.Fatal("agent bootstrap should not run when config is incomplete")
-		return nil
+	botCreateManager = func(context.Context, string, string, config.Config, bool) (bot.Bot, error) {
+		t.Fatal("bot manager create should not run when config is incomplete")
+		return bot.Bot{}, nil
 	}
 	imEnsureBootstrapState = func(string) error {
 		t.Fatal("IM bootstrap should not run when config is incomplete")
@@ -42,20 +43,20 @@ func TestRunOnboardRequiresLLMFlagsForFirstTimeSetup(t *testing.T) {
 }
 
 func TestRunOnboardReusesExistingLLMConfig(t *testing.T) {
-	origEnsureBootstrapState := agentEnsureBootstrapState
+	origCreateManager := botCreateManager
 	origEnsureIMBootstrapState := imEnsureBootstrapState
 	t.Cleanup(func() {
-		agentEnsureBootstrapState = origEnsureBootstrapState
+		botCreateManager = origCreateManager
 		imEnsureBootstrapState = origEnsureIMBootstrapState
 	})
 
 	callCount := 0
-	agentEnsureBootstrapState = func(_ context.Context, _ string, _ config.ServerConfig, model config.ModelConfig, _ string, _ bool) error {
+	botCreateManager = func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
 		callCount++
-		if model.BaseURL != "http://llm.test" || model.APIKey != "secret" || model.ModelID != "gpt-test" {
-			t.Fatalf("model config = %#v, want preserved values", model)
+		if cfg.Model.BaseURL != "http://llm.test" || cfg.Model.APIKey != "secret" || cfg.Model.ModelID != "gpt-test" {
+			t.Fatalf("model config = %#v, want preserved values", cfg.Model)
 		}
-		return nil
+		return bot.Bot{}, nil
 	}
 	imEnsureBootstrapState = func(string) error { return nil }
 

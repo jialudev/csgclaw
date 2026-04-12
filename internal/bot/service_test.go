@@ -2,6 +2,9 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -218,16 +221,193 @@ func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	}
 }
 
+func TestServiceCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        agent.ManagerUserID,
+			Name:      agent.ManagerName,
+			Role:      agent.RoleManager,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+			ModelID:   "default-model",
+		},
+	})
+	imSvc := im.NewService()
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	got, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelCSGClaw),
+	})
+	if err != nil {
+		t.Fatalf("Create(manager) error = %v", err)
+	}
+	if got.ID != agent.ManagerUserID || got.AgentID != agent.ManagerUserID || got.UserID != agent.ManagerUserID {
+		t.Fatalf("Create(manager) = %+v, want u-manager IDs", got)
+	}
+	if got.Role != string(RoleManager) || got.Channel != string(ChannelCSGClaw) {
+		t.Fatalf("Create(manager) = %+v, want manager csgclaw", got)
+	}
+	if !containsUser(imSvc.ListUsers(), agent.ManagerUserID) {
+		t.Fatalf("users = %+v, want u-manager", imSvc.ListUsers())
+	}
+}
+
+func TestServiceCreateCSGClawManagerReusesExistingBotAndRestoresMissingUser(t *testing.T) {
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        agent.ManagerUserID,
+			Name:      agent.ManagerName,
+			Role:      agent.RoleManager,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	})
+	imSvc := im.NewService()
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	if _, err := svc.Create(context.Background(), CreateRequest{
+		ID:      agent.ManagerUserID,
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelCSGClaw),
+	}); err != nil {
+		t.Fatalf("first Create(manager) error = %v", err)
+	}
+	if err := imSvc.KickUser(agent.ManagerUserID); err != nil {
+		t.Fatalf("KickUser(manager) error = %v", err)
+	}
+	if containsUser(imSvc.ListUsers(), agent.ManagerUserID) {
+		t.Fatalf("users = %+v, want u-manager removed before second create", imSvc.ListUsers())
+	}
+
+	got, err := svc.Create(context.Background(), CreateRequest{
+		ID:      agent.ManagerUserID,
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelCSGClaw),
+	})
+	if err != nil {
+		t.Fatalf("second Create(manager) error = %v", err)
+	}
+	if got.ID != agent.ManagerUserID || got.UserID != agent.ManagerUserID {
+		t.Fatalf("second Create(manager) = %+v, want u-manager", got)
+	}
+	if !containsUser(imSvc.ListUsers(), agent.ManagerUserID) {
+		t.Fatalf("users = %+v, want u-manager restored", imSvc.ListUsers())
+	}
+}
+
+func TestServiceCreateFeishuManagerEnsuresExistingUser(t *testing.T) {
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        agent.ManagerUserID,
+			Name:      agent.ManagerName,
+			Role:      agent.RoleManager,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	})
+	feishuSvc := channel.NewFeishuService()
+	if _, err := feishuSvc.CreateUser(channel.FeishuCreateUserRequest{ID: agent.ManagerUserID, Name: "manager"}); err != nil {
+		t.Fatalf("CreateUser(manager) error = %v", err)
+	}
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, nil, feishuSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	got, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelFeishu),
+	})
+	if err != nil {
+		t.Fatalf("Create(feishu manager) error = %v", err)
+	}
+	if got.ID != agent.ManagerUserID || got.UserID != agent.ManagerUserID || got.Channel != string(ChannelFeishu) {
+		t.Fatalf("Create(feishu manager) = %+v, want u-manager feishu", got)
+	}
+}
+
+func TestServiceCreateManagerBootstrapsMissingAgent(t *testing.T) {
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			if name != agent.ManagerName {
+				t.Fatalf("create gateway name = %q, want manager", name)
+			}
+			if botID != agent.ManagerUserID {
+				t.Fatalf("create gateway botID = %q, want u-manager", botID)
+			}
+			return &boxlite.Box{}, &boxlite.BoxInfo{
+				ID:        "box-manager",
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+				Name:      name,
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer agent.ResetTestHooks()
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
+		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	})
+
+	agentSvc := mustNewSeededAgentService(t, nil)
+	imSvc := im.NewService()
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	got, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelCSGClaw),
+	})
+	if err != nil {
+		t.Fatalf("Create(manager) error = %v", err)
+	}
+	if got.ID != agent.ManagerUserID || got.AgentID != agent.ManagerUserID || got.UserID != agent.ManagerUserID {
+		t.Fatalf("Create(manager) = %+v, want u-manager IDs", got)
+	}
+	if _, ok := agentSvc.Agent(agent.ManagerUserID); !ok {
+		t.Fatal("manager agent was not bootstrapped")
+	}
+}
+
 func TestServiceCreateRejectsUnsupportedCombination(t *testing.T) {
 	svc := mustNewBotService(t, nil)
 
 	_, err := svc.Create(context.Background(), CreateRequest{
-		Name:    "alice",
+		ID:      "custom-manager",
+		Name:    "manager",
 		Role:    string(RoleManager),
 		Channel: string(ChannelCSGClaw),
 	})
-	if err == nil || !strings.Contains(err.Error(), `role "worker" only`) {
-		t.Fatalf("Create(manager) error = %v, want unsupported role", err)
+	if err == nil || !strings.Contains(err.Error(), "agent service is required") {
+		t.Fatalf("Create(manager without agent service) error = %v, want agent service error", err)
 	}
 
 	_, err = svc.Create(context.Background(), CreateRequest{
@@ -237,6 +417,30 @@ func TestServiceCreateRejectsUnsupportedCombination(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "channel must be one of") {
 		t.Fatalf("Create(feishu) error = %v, want unsupported channel", err)
+	}
+}
+
+func TestServiceCreateManagerRejectsCustomID(t *testing.T) {
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{ID: agent.ManagerUserID, Name: agent.ManagerName, Role: agent.RoleManager},
+	})
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, im.NewService())
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	_, err = svc.Create(context.Background(), CreateRequest{
+		ID:      "bot-manager",
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelCSGClaw),
+	})
+	if err == nil || !strings.Contains(err.Error(), `manager bot id must be "u-manager"`) {
+		t.Fatalf("Create(manager custom ID) error = %v, want manager ID error", err)
 	}
 }
 
@@ -258,6 +462,28 @@ func mustNewBotService(t *testing.T, bots []Bot) *Service {
 	svc, err := NewService(store)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
+	}
+	return svc
+}
+
+func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Service {
+	t.Helper()
+
+	if agents == nil {
+		agents = []agent.Agent{}
+	}
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(map[string]any{"agents": agents})
+	if err != nil {
+		t.Fatalf("marshal agents: %v", err)
+	}
+	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
+		t.Fatalf("write agents: %v", err)
+	}
+	svc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("agent.NewService() error = %v", err)
 	}
 	return svc
 }

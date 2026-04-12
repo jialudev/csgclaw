@@ -4,15 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/bot"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 )
 
 var (
-	agentEnsureBootstrapState = agent.EnsureBootstrapState
-	imEnsureBootstrapState    = im.EnsureBootstrapState
+	botCreateManager       = createOnboardManagerBot
+	imEnsureBootstrapState = im.EnsureBootstrapState
 )
 
 func (a *App) runOnboard(args []string, globals GlobalOptions) error {
@@ -70,15 +72,14 @@ func (a *App) runOnboard(args []string, globals GlobalOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := agentEnsureBootstrapState(context.Background(), agentsPath, cfg.Server, cfg.Model, cfg.Bootstrap.ManagerImage, *forceRecreateManager); err != nil {
-		return err
-	}
-
 	imStatePath, err := config.DefaultIMStatePath()
 	if err != nil {
 		return err
 	}
 	if err := imEnsureBootstrapState(imStatePath); err != nil {
+		return err
+	}
+	if _, err := botCreateManager(context.Background(), agentsPath, imStatePath, cfg, *forceRecreateManager); err != nil {
 		return err
 	}
 
@@ -90,6 +91,34 @@ func (a *App) runOnboard(args []string, globals GlobalOptions) error {
 		fmt.Fprintln(a.stdout, "manager box was force-recreated")
 	}
 	return nil
+}
+
+func createOnboardManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config, forceRecreateManager bool) (bot.Bot, error) {
+	agentSvc, err := agent.NewService(cfg.Model, cfg.Server, cfg.Bootstrap.ManagerImage, agentsPath)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	defer func() {
+		_ = agentSvc.Close()
+	}()
+
+	imSvc, err := im.NewServiceFromPath(imStatePath)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	store, err := bot.NewStore(filepath.Join(filepath.Dir(imStatePath), "bots.json"))
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	return botSvc.CreateManager(ctx, bot.CreateRequest{
+		Name:    agent.ManagerName,
+		Role:    string(bot.RoleManager),
+		Channel: string(bot.ChannelCSGClaw),
+	}, forceRecreateManager)
 }
 
 func loadOnboardConfig(path string) (config.Config, bool, error) {
