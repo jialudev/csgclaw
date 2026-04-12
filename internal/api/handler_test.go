@@ -1018,10 +1018,20 @@ func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
 	defer agent.ResetTestHooks()
 
 	svc := mustNewService(t)
-	srv := &Handler{
-		svc: svc,
-		im:  im.NewService(),
+	store, err := bot.NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("bot.NewMemoryStore() error = %v", err)
 	}
+	botSvc, err := bot.NewServiceWithDependencies(store, svc, nil)
+	if err != nil {
+		t.Fatalf("bot.NewServiceWithDependencies() error = %v", err)
+	}
+	srv := &Handler{
+		svc:    svc,
+		botSvc: botSvc,
+		im:     im.NewService(),
+	}
+	botSvc.SetDependencies(svc, srv.im)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workers", strings.NewReader(`{"name":"bob"}`))
 	rec := httptest.NewRecorder()
 
@@ -1036,6 +1046,13 @@ func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
 	}
 	if got.ID != "u-bob" || got.Role != agent.RoleWorker {
 		t.Fatalf("agent = %+v, want worker alias result", got)
+	}
+	bots, err := botSvc.List(string(bot.ChannelCSGClaw))
+	if err != nil {
+		t.Fatalf("botSvc.List() error = %v", err)
+	}
+	if len(bots) != 1 || bots[0].ID != "u-bob" || bots[0].Role != string(bot.RoleWorker) {
+		t.Fatalf("bots = %+v, want u-bob worker bot", bots)
 	}
 	rooms := srv.im.ListRooms()
 	var workerRoom *im.Room

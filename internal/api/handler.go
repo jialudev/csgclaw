@@ -92,7 +92,7 @@ func (h *Handler) handleWorkers(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, h.svc.ListWorkers())
 	case http.MethodPost:
-		h.handleCreateWorker(w, r)
+		h.handleCreateWorkerAlias(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -143,7 +143,7 @@ func (h *Handler) handleAgents(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, h.svc.List())
 	case http.MethodPost:
-		h.handleCreateWorker(w, r)
+		h.handleCreateAgentWorker(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -272,7 +272,7 @@ func parseBoolQuery(v string) bool {
 	}
 }
 
-func (h *Handler) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request) {
 	var req agent.CreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
@@ -285,6 +285,49 @@ func (h *Handler) handleCreateWorker(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := h.ensureWorkerIMState(created); err != nil {
+		http.Error(w, fmt.Sprintf("agent created but failed to ensure im user: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (h *Handler) handleCreateWorkerAlias(w http.ResponseWriter, r *http.Request) {
+	if h.botSvc == nil {
+		http.Error(w, "bot service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req agent.CreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	createdBot, err := h.botSvc.Create(r.Context(), bot.CreateRequest{
+		ID:          req.ID,
+		Name:        req.Name,
+		Description: req.Description,
+		Role:        string(bot.RoleWorker),
+		Channel:     string(bot.ChannelCSGClaw),
+		ModelID:     req.ModelID,
+	})
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "failed to ensure im user") {
+			status = http.StatusBadGateway
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	created, ok := h.svc.Agent(createdBot.AgentID)
+	if !ok {
+		http.Error(w, "worker agent created through bot service but not found", http.StatusInternalServerError)
+		return
+	}
+
 	if err := h.ensureWorkerIMState(created); err != nil {
 		http.Error(w, fmt.Sprintf("agent created but failed to ensure im user: %v", err), http.StatusBadGateway)
 		return
