@@ -9,6 +9,7 @@ fi
 GOOS_TARGET="$1"
 GOARCH_TARGET="$2"
 APP="${APP:-csgclaw}"
+CMD_PATH="${CMD_PATH:-./cmd/${APP}}"
 VERSION="${VERSION:-dev}"
 COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
 BUILD_TIME="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
@@ -30,7 +31,7 @@ if [ "$GOOS_TARGET" = "windows" ]; then
 fi
 
 env GOOS="$GOOS_TARGET" GOARCH="$GOARCH_TARGET" GOCACHE="$GOCACHE" \
-  go build -ldflags "${LDFLAGS}" -o "${tmpdir}/${binary_name}" ./cmd/csgclaw
+  go build -ldflags "${LDFLAGS}" -o "${tmpdir}/${binary_name}" "${CMD_PATH}"
 
 archive_base="${APP}_${VERSION}_${GOOS_TARGET}_${GOARCH_TARGET}"
 

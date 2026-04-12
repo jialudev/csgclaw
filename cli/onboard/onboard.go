@@ -1,11 +1,13 @@
-package cli
+package onboard
 
 import (
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/config"
@@ -13,12 +15,26 @@ import (
 )
 
 var (
-	botCreateManager       = createOnboardManagerBot
-	imEnsureBootstrapState = im.EnsureBootstrapState
+	CreateManagerBot       = createManagerBot
+	EnsureIMBootstrapState = im.EnsureBootstrapState
 )
 
-func (a *App) runOnboard(args []string, globals GlobalOptions) error {
-	fs := a.newCommandFlagSet("onboard", "csgclaw onboard [flags]", "Initialize local config and bootstrap state.")
+type cmd struct{}
+
+func NewCmd() command.Command {
+	return cmd{}
+}
+
+func (cmd) Name() string {
+	return "onboard"
+}
+
+func (cmd) Summary() string {
+	return "Initialize local config and bootstrap state."
+}
+
+func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
+	fs := run.NewFlagSet("onboard", run.Program+" onboard [flags]", c.Summary())
 	baseURL := fs.String("base-url", "", "LLM provider base URL")
 	apiKey := fs.String("api-key", "", "LLM provider API key")
 	modelID := fs.String("model-id", "", "LLM model identifier")
@@ -76,24 +92,24 @@ func (a *App) runOnboard(args []string, globals GlobalOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := imEnsureBootstrapState(imStatePath); err != nil {
+	if err := EnsureIMBootstrapState(imStatePath); err != nil {
 		return err
 	}
-	if _, err := botCreateManager(context.Background(), agentsPath, imStatePath, cfg, *forceRecreateManager); err != nil {
+	if _, err := CreateManagerBot(ctx, agentsPath, imStatePath, cfg, *forceRecreateManager); err != nil {
 		return err
 	}
 
-	fmt.Fprintf(a.stdout, "initialized config at %s\n", path)
-	fmt.Fprintf(a.stdout, "ensured bootstrap agent %q with image %q\n", agent.ManagerName, cfg.Bootstrap.ManagerImage)
-	fmt.Fprintf(a.stdout, "ensured IM members %q and %q\n", "admin", "manager")
-	fmt.Fprintln(a.stdout, "cleared IM invite draft data")
+	fmt.Fprintf(run.Stdout, "initialized config at %s\n", path)
+	fmt.Fprintf(run.Stdout, "ensured bootstrap agent %q with image %q\n", agent.ManagerName, cfg.Bootstrap.ManagerImage)
+	fmt.Fprintf(run.Stdout, "ensured IM members %q and %q\n", "admin", "manager")
+	fmt.Fprintln(run.Stdout, "cleared IM invite draft data")
 	if *forceRecreateManager {
-		fmt.Fprintln(a.stdout, "manager box was force-recreated")
+		fmt.Fprintln(run.Stdout, "manager box was force-recreated")
 	}
 	return nil
 }
 
-func createOnboardManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config, forceRecreateManager bool) (bot.Bot, error) {
+func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config, forceRecreateManager bool) (bot.Bot, error) {
 	agentSvc, err := agent.NewService(cfg.Model, cfg.Server, cfg.Bootstrap.ManagerImage, agentsPath)
 	if err != nil {
 		return bot.Bot{}, err
@@ -134,4 +150,39 @@ func loadOnboardConfig(path string) (config.Config, bool, error) {
 		return config.Config{}, false, err
 	}
 	return cfg, true, nil
+}
+
+func configPath(path string) (string, error) {
+	if path != "" {
+		return path, nil
+	}
+	return config.DefaultPath()
+}
+
+func validateModelConfig(cfg config.Config) error {
+	missing := cfg.Model.MissingFields()
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"model config is incomplete (%s); run `csgclaw onboard --base-url <url> --api-key <key> --model-id <model>`",
+		strings.Join(missingModelFlags(missing), ", "),
+	)
+}
+
+func missingModelFlags(fields []string) []string {
+	flags := make([]string, 0, len(fields))
+	for _, field := range fields {
+		switch field {
+		case "base_url":
+			flags = append(flags, "--base-url")
+		case "api_key":
+			flags = append(flags, "--api-key")
+		case "model_id":
+			flags = append(flags, "--model-id")
+		default:
+			flags = append(flags, field)
+		}
+	}
+	return flags
 }

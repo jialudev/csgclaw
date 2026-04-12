@@ -1,4 +1,4 @@
-package cli
+package csgcli
 
 import (
 	"context"
@@ -9,21 +9,18 @@ import (
 	"os"
 	"strings"
 
-	agentcmd "csgclaw/cli/agent"
-	"csgclaw/cli/bot"
 	"csgclaw/cli/command"
+	"csgclaw/cli/bot"
 	"csgclaw/cli/member"
-	onboardcmd "csgclaw/cli/onboard"
 	"csgclaw/cli/room"
-	servecmd "csgclaw/cli/serve"
-	usercmd "csgclaw/cli/user"
+	"csgclaw/internal/apiclient"
 	appversion "csgclaw/internal/version"
 )
 
 type App struct {
 	stdout     io.Writer
 	stderr     io.Writer
-	httpClient HTTPClient
+	httpClient apiclient.HTTPClient
 	commands   map[string]command.Command
 	order      []command.Command
 }
@@ -32,7 +29,6 @@ type GlobalOptions struct {
 	Endpoint string
 	Token    string
 	Output   string
-	Config   string
 	Version  bool
 }
 
@@ -60,15 +56,9 @@ func (a *App) AddCommand(commands ...command.Command) {
 
 func (a *App) registerDefaultCommands() {
 	a.AddCommand(
-		onboardcmd.NewCmd(),
-		servecmd.NewServeCmd(),
-		servecmd.NewStopCmd(),
-		agentcmd.NewCmd(),
-		usercmd.NewCmd(),
 		bot.NewCmd(),
 		room.NewCmd(),
 		member.NewCmd(),
-		servecmd.NewInternalServeCmd(),
 	)
 }
 
@@ -102,7 +92,7 @@ func (a *App) Execute(ctx context.Context, args []string) error {
 }
 
 func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error) {
-	fs := flag.NewFlagSet("csgclaw", flag.ContinueOnError)
+	fs := flag.NewFlagSet("csgcli", flag.ContinueOnError)
 	fs.SetOutput(a.stderr)
 	fs.Usage = a.usage
 
@@ -110,7 +100,6 @@ func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error)
 	fs.StringVar(&opts.Endpoint, "endpoint", "", "HTTP server endpoint")
 	fs.StringVar(&opts.Token, "token", "", "API authentication token")
 	fs.StringVar(&opts.Output, "output", "table", "output format: table or json")
-	fs.StringVar(&opts.Config, "config", "", "path to config file")
 	fs.BoolVar(&opts.Version, "version", false, "print version and exit")
 	fs.BoolVar(&opts.Version, "V", false, "print version and exit")
 
@@ -143,7 +132,7 @@ func splitLeadingFlags(args []string) ([]string, []string) {
 
 func consumesValue(arg string) bool {
 	switch arg {
-	case "--endpoint", "--token", "--output", "--config":
+	case "--endpoint", "--token", "--output":
 		return true
 	default:
 		return false
@@ -152,36 +141,30 @@ func consumesValue(arg string) bool {
 
 func (a *App) usage() {
 	a.ensureDefaultCommands()
-	fmt.Fprintln(a.stderr, "csgclaw manages local CSGClaw agents.")
+	fmt.Fprintln(a.stderr, "csgcli is a lite CSGClaw CLI for bots, rooms, and members.")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Usage:")
-	fmt.Fprintln(a.stderr, "  csgclaw [global-flags] <command> [args]")
+	fmt.Fprintln(a.stderr, "  csgcli [global-flags] <command> [args]")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Available Commands:")
 	for _, cmd := range a.order {
-		if hidden, ok := cmd.(interface{ Hidden() bool }); ok && hidden.Hidden() {
-			continue
-		}
 		fmt.Fprintf(a.stderr, "  %-8s %s\n", cmd.Name(), cmd.Summary())
 	}
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Examples:")
-	fmt.Fprintln(a.stderr, "  csgclaw -h")
-	fmt.Fprintln(a.stderr, "  csgclaw --version")
-	fmt.Fprintln(a.stderr, "  csgclaw serve -h")
-	fmt.Fprintln(a.stderr, "  csgclaw agent -h")
-	fmt.Fprintln(a.stderr, "  csgclaw agent create -h")
+	fmt.Fprintln(a.stderr, "  csgcli -h")
+	fmt.Fprintln(a.stderr, "  csgcli --version")
+	fmt.Fprintln(a.stderr, "  csgcli bot list --channel feishu")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Global flags:")
 	fmt.Fprintln(a.stderr, "  --endpoint string   HTTP server endpoint")
 	fmt.Fprintln(a.stderr, "  --token string      API authentication token")
 	fmt.Fprintln(a.stderr, "  --output string     Output format: table or json")
-	fmt.Fprintln(a.stderr, "  --config string     Path to config file")
 	fmt.Fprintln(a.stderr, "  --version, -V       Print version and exit")
 }
 
 func (a *App) printVersion() {
-	fmt.Fprintf(a.stdout, "csgclaw version %s\n", appversion.Current())
+	fmt.Fprintf(a.stdout, "csgcli version %s\n", appversion.Current())
 }
 
 func (a *App) usageCommandGroup(command string, summary string, usageLine string, subcommands []string) {
@@ -193,7 +176,7 @@ func (a *App) usageCommandGroup(command string, summary string, usageLine string
 		fmt.Fprintf(a.stderr, "  %s\n", line)
 	}
 	fmt.Fprintln(a.stderr)
-	fmt.Fprintf(a.stderr, "Run `csgclaw %s <subcommand> -h` for subcommand details.\n", command)
+	fmt.Fprintf(a.stderr, "Run `csgcli %s <subcommand> -h` for subcommand details.\n", command)
 }
 
 func (a *App) newCommandFlagSet(name string, usageLine string, summary string) *flag.FlagSet {
@@ -231,13 +214,12 @@ func (g GlobalOptions) commandOptions() command.GlobalOptions {
 		Endpoint: g.Endpoint,
 		Token:    g.Token,
 		Output:   g.Output,
-		Config:   g.Config,
 	}
 }
 
 func (a *App) commandContext() *command.Context {
 	return &command.Context{
-		Program:    "csgclaw",
+		Program:    "csgcli",
 		Stdout:     a.stdout,
 		Stderr:     a.stderr,
 		HTTPClient: a.httpClient,

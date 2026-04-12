@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"csgclaw/internal/apiclient"
 )
 
 type Config struct {
@@ -53,7 +55,7 @@ const (
 	IMDirName          = "im"
 	ChannelsDirName    = "channels"
 
-	DefaultHTTPPort     = "18080"
+	DefaultHTTPPort     = apiclient.DefaultHTTPPort
 	DefaultAccessToken  = "your_access_token"
 	DefaultManagerImage = "ghcr.io/russellluo/picoclaw:2026.4.8.1"
 )
@@ -63,7 +65,7 @@ func DefaultListenAddr() string {
 }
 
 func DefaultAPIBaseURL() string {
-	return "http://" + net.JoinHostPort("127.0.0.1", DefaultHTTPPort)
+	return apiclient.DefaultAPIBaseURL()
 }
 
 func ListenPort(listenAddr string) string {

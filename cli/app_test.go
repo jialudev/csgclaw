@@ -847,12 +847,12 @@ func TestRunStopRejectsInvalidPIDFile(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	err := app.runStop([]string{"--pid", pidPath}, GlobalOptions{})
+	err := app.Execute(context.Background(), []string{"stop", "--pid", pidPath})
 	if err == nil {
-		t.Fatal("runStop() error = nil, want parse failure")
+		t.Fatal("Execute() error = nil, want parse failure")
 	}
 	if !strings.Contains(err.Error(), "parse pid file") {
-		t.Fatalf("runStop() error = %q, want parse pid file", err)
+		t.Fatalf("Execute() error = %q, want parse pid file", err)
 	}
 }
 

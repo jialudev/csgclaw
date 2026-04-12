@@ -13,44 +13,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"csgclaw/internal/apitypes"
 )
 
-type User struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Handle    string `json:"handle"`
-	Role      string `json:"role"`
-	Avatar    string `json:"avatar"`
-	IsOnline  bool   `json:"is_online"`
-	LastSeen  string `json:"last_seen,omitempty"`
-	AccentHex string `json:"accent_hex"`
-}
+type User = apitypes.User
 
-type Message struct {
-	ID        string        `json:"id"`
-	SenderID  string        `json:"sender_id"`
-	Kind      string        `json:"kind,omitempty"`
-	Content   string        `json:"content"`
-	Event     *EventPayload `json:"event,omitempty"`
-	CreatedAt time.Time     `json:"created_at"`
-	Mentions  []string      `json:"mentions"`
-}
+type Message = apitypes.Message
 
-type EventPayload struct {
-	Key       string   `json:"key"`
-	ActorID   string   `json:"actor_id,omitempty"`
-	Title     string   `json:"title,omitempty"`
-	TargetIDs []string `json:"target_ids,omitempty"`
-}
+type EventPayload = apitypes.EventPayload
 
-type Room struct {
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Subtitle     string    `json:"subtitle"`
-	Description  string    `json:"description,omitempty"`
-	Participants []string  `json:"participants"`
-	Messages     []Message `json:"messages"`
-}
+type Room = apitypes.Room
 
 type Conversation = Room
 
@@ -74,22 +47,11 @@ type DeliverMessageRequest struct {
 	MessageID string `json:"message_id,omitempty"`
 }
 
-type CreateRoomRequest struct {
-	Title          string   `json:"title"`
-	Description    string   `json:"description"`
-	CreatorID      string   `json:"creator_id"`
-	ParticipantIDs []string `json:"participant_ids"`
-	Locale         string   `json:"locale"`
-}
+type CreateRoomRequest = apitypes.CreateRoomRequest
 
 type CreateConversationRequest = CreateRoomRequest
 
-type AddRoomMembersRequest struct {
-	RoomID    string   `json:"room_id,omitempty"`
-	InviterID string   `json:"inviter_id"`
-	UserIDs   []string `json:"user_ids"`
-	Locale    string   `json:"locale"`
-}
+type AddRoomMembersRequest = apitypes.AddRoomMembersRequest
 
 type AddConversationMembersRequest = AddRoomMembersRequest
 

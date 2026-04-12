@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
+
+	"csgclaw/internal/apitypes"
 )
 
 type Role string
@@ -21,24 +22,9 @@ const (
 	ChannelFeishu  Channel = "feishu"
 )
 
-type Bot struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	Channel   string    `json:"channel"`
-	AgentID   string    `json:"agent_id"`
-	UserID    string    `json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
-}
+type Bot = apitypes.Bot
 
-type CreateRequest struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Role        string `json:"role"`
-	Channel     string `json:"channel,omitempty"`
-	ModelID     string `json:"model_id,omitempty"`
-}
+type CreateRequest = apitypes.CreateBotRequest
 
 func NormalizeCreateRequest(req CreateRequest) (CreateRequest, error) {
 	req.ID = strings.TrimSpace(req.ID)

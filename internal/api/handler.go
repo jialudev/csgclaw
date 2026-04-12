@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/apitypes"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
@@ -113,7 +114,7 @@ func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, bots)
 	case http.MethodPost:
-		var req bot.CreateRequest
+		var req apitypes.CreateBotRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 			return
@@ -537,7 +538,7 @@ func (h *Handler) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
-	var req im.CreateRoomRequest
+	var req apitypes.CreateRoomRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return

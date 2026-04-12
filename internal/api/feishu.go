@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"csgclaw/internal/apitypes"
 	"csgclaw/internal/channel"
-	"csgclaw/internal/im"
 )
 
 func (h *Handler) handleFeishuUsers(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +51,7 @@ func (h *Handler) handleFeishuRooms(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, rooms)
 	case http.MethodPost:
-		var req im.CreateRoomRequest
+		var req apitypes.CreateRoomRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 			return
@@ -92,7 +92,7 @@ func (h *Handler) handleFeishuRoomByID(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, members)
 	case http.MethodPost:
-		var req im.AddRoomMembersRequest
+		var req apitypes.AddRoomMembersRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 			return

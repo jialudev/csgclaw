@@ -1,4 +1,4 @@
-package cli
+package serve
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
@@ -15,32 +16,32 @@ import (
 )
 
 func TestServeForegroundPassesContextToServer(t *testing.T) {
-	origRunServer := runServer
-	origNewAgentService := newAgentServiceFn
-	origNewBotService := newBotServiceFn
-	origNewIMService := newIMServiceFn
-	origNewFeishuService := newFeishuServiceFn
+	origRunServer := RunServer
+	origNewAgentService := NewAgentService
+	origNewBotService := NewBotService
+	origNewIMService := NewIMService
+	origNewFeishuService := NewFeishuService
 	t.Cleanup(func() {
-		runServer = origRunServer
-		newAgentServiceFn = origNewAgentService
-		newBotServiceFn = origNewBotService
-		newIMServiceFn = origNewIMService
-		newFeishuServiceFn = origNewFeishuService
+		RunServer = origRunServer
+		NewAgentService = origNewAgentService
+		NewBotService = origNewBotService
+		NewIMService = origNewIMService
+		NewFeishuService = origNewFeishuService
 	})
 
 	ctx := context.WithValue(context.Background(), struct{}{}, "serve-context")
 
-	newAgentServiceFn = func(config.Config) (*agent.Service, error) {
+	NewAgentService = func(config.Config) (*agent.Service, error) {
 		return nil, nil
 	}
-	newIMServiceFn = func() (*im.Service, error) {
+	NewIMService = func() (*im.Service, error) {
 		return nil, nil
 	}
 	wantBotSvc := &bot.Service{}
-	newBotServiceFn = func() (*bot.Service, error) {
+	NewBotService = func() (*bot.Service, error) {
 		return wantBotSvc, nil
 	}
-	newFeishuServiceFn = func(cfg config.Config) (*channel.FeishuService, error) {
+	NewFeishuService = func(cfg config.Config) (*channel.FeishuService, error) {
 		if got, want := cfg.Channels.Feishu["manager"].AppID, "cli_manager"; got != want {
 			t.Fatalf("manager app_id = %q, want %q", got, want)
 		}
@@ -48,7 +49,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	}
 
 	called := false
-	runServer = func(opts server.Options) error {
+	RunServer = func(opts server.Options) error {
 		called = true
 		if opts.Context != ctx {
 			t.Fatalf("Context = %v, want %v", opts.Context, ctx)
@@ -59,10 +60,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		return nil
 	}
 
-	app := &App{
-		stdout: &bytes.Buffer{},
-		stderr: &bytes.Buffer{},
-	}
+	run := testContext()
 	cfg := config.Config{
 		Server: config.ServerConfig{
 			ListenAddr:       "127.0.0.1:18080",
@@ -88,14 +86,14 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		},
 	}
 
-	if err := app.serveForeground(ctx, cfg); err != nil {
+	if err := serveForeground(ctx, run, cfg); err != nil {
 		t.Fatalf("serveForeground() error = %v", err)
 	}
 	if !called {
-		t.Fatal("runServer was not called")
+		t.Fatal("RunServer was not called")
 	}
 
-	got := app.stdout.(*bytes.Buffer).String()
+	got := run.Stdout.(*bytes.Buffer).String()
 	for _, want := range []string{
 		"effective config:\n",
 		`listen_addr = "127.0.0.1:18080"`,
@@ -177,5 +175,13 @@ func TestValidateModelConfigRequiresOnboardWhenIncomplete(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--base-url") || !strings.Contains(err.Error(), "--api-key") || !strings.Contains(err.Error(), "--model-id") {
 		t.Fatalf("validateModelConfig() error = %q, want missing model flags", err)
+	}
+}
+
+func testContext() *command.Context {
+	return &command.Context{
+		Program: "csgclaw",
+		Stdout:  &bytes.Buffer{},
+		Stderr:  &bytes.Buffer{},
 	}
 }
