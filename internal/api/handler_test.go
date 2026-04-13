@@ -1270,7 +1270,7 @@ func TestHandleFeishuMessagesPostSendsMessage(t *testing.T) {
 			if req.ChatID != "oc_alpha" || req.Content != "hello" {
 				t.Fatalf("send request = %+v, want chat/content", req)
 			}
-			return channel.FeishuSendMessageResponse{MessageID: "om_1"}, nil
+			return channel.FeishuSendMessageResponse{MessageID: "om_1", SenderOpenID: "ou_manager"}, nil
 		},
 	)
 	srv := &Handler{feishu: feishuSvc}
@@ -1287,8 +1287,80 @@ func TestHandleFeishuMessagesPostSendsMessage(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.ID != "om_1" || got.SenderID != "u-manager" || got.Content != "hello" {
+	if got.ID != "om_1" || got.SenderID != "ou_manager" || got.Content != "hello" {
 		t.Fatalf("message = %+v, want feishu message response", got)
+	}
+}
+
+func TestHandleFeishuEventsStreamsMessageBusEvents(t *testing.T) {
+	feishuSvc := channel.NewFeishuService()
+	srv := &Handler{feishu: feishuSvc, serverAccessToken: "secret"}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/bots/u-manager/events", nil).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		srv.Routes().ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	feishuSvc.MessageBus().Publish(channel.FeishuMessageEvent{
+		Type:   channel.FeishuMessageEventTypeMessageCreated,
+		RoomID: "oc_ignored",
+		Message: &im.Message{
+			ID:       "om_ignored",
+			SenderID: "ou_manager",
+			Content:  "hello @worker",
+			Mentions: []string{"u-worker"},
+		},
+	})
+	feishuSvc.MessageBus().Publish(channel.FeishuMessageEvent{
+		Type:   channel.FeishuMessageEventTypeMessageCreated,
+		RoomID: "oc_alpha",
+		Message: &im.Message{
+			ID:       "om_1",
+			SenderID: "ou_manager",
+			Content:  "hello @alice",
+			Mentions: []string{"u-manager"},
+		},
+	})
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"type":"message.created"`) {
+		t.Fatalf("body = %q, want message.created event", body)
+	}
+	if !strings.Contains(body, `"room_id":"oc_alpha"`) {
+		t.Fatalf("body = %q, want room_id", body)
+	}
+	if strings.Contains(body, "om_ignored") || strings.Contains(body, "oc_ignored") {
+		t.Fatalf("body = %q, want only u-manager events", body)
+	}
+	if !strings.Contains(body, `"id":"om_1"`) {
+		t.Fatalf("body = %q, want message id", body)
+	}
+}
+
+func TestHandleFeishuEventsRequiresAuthorization(t *testing.T) {
+	srv := &Handler{
+		feishu:            channel.NewFeishuService(),
+		serverAccessToken: "secret",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/bots/u-manager/events", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

@@ -13,14 +13,15 @@ import (
 )
 
 type Options struct {
-	ListenAddr string
-	Service    *agent.Service
-	Bot        *bot.Service
-	IM         *im.Service
-	IMBus      *im.Bus
-	PicoClaw   *im.PicoClawBridge
-	Feishu     *channel.FeishuService
-	Context    context.Context
+	ListenAddr  string
+	Service     *agent.Service
+	Bot         *bot.Service
+	IM          *im.Service
+	IMBus       *im.Bus
+	PicoClaw    *im.PicoClawBridge
+	Feishu      *channel.FeishuService
+	AccessToken string
+	Context     context.Context
 }
 
 func Run(opts Options) error {
@@ -28,7 +29,7 @@ func Run(opts Options) error {
 		opts.Context = context.Background()
 	}
 
-	handler := api.NewHandlerWithBot(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.PicoClaw, opts.Feishu)
+	handler := api.NewHandlerWithBotAndAccessToken(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.PicoClaw, opts.Feishu, opts.AccessToken)
 	mux := handler.Routes()
 	mux.Handle("/", uiHandler())
 

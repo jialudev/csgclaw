@@ -35,6 +35,7 @@ func (h *Handler) registerCoreRoutes(mux *http.ServeMux) {
 }
 
 func (h *Handler) registerChannelRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/v1/channels/feishu/bots/", h.handleFeishuBotByID)
 	mux.HandleFunc("/api/v1/channels/feishu/users", h.handleFeishuUsers)
 	mux.HandleFunc("/api/v1/channels/feishu/rooms", h.handleFeishuRooms)
 	mux.HandleFunc("/api/v1/channels/feishu/rooms/", h.handleFeishuRoomByID)

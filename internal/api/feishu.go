@@ -3,12 +3,112 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/channel"
 )
+
+func (h *Handler) handleFeishuBotByID(w http.ResponseWriter, r *http.Request) {
+	botID, ok := parseFeishuBotEventsPath(r.URL.Path)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleFeishuEvents(w, r, botID)
+}
+
+func (h *Handler) handleFeishuEvents(w http.ResponseWriter, r *http.Request, botID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.validateServerAccessToken(r.Header.Get("Authorization")) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if h.feishu == nil || h.feishu.MessageBus() == nil {
+		http.Error(w, "feishu events are not configured", http.StatusServiceUnavailable)
+		return
+	}
+	botOpenID, err := h.feishu.ResolveBotOpenID(r.Context(), botID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("resolve feishu bot open_id: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	events, cancel := h.feishu.MessageBus().Subscribe()
+	defer cancel()
+
+	_, _ = io.WriteString(w, ": connected\n\n")
+	flusher.Flush()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
+			if !feishuEventMentions(evt, botOpenID) {
+				continue
+			}
+			data, err := json.Marshal(evt)
+			if err != nil {
+				return
+			}
+			if _, err := io.WriteString(w, "data: "); err != nil {
+				return
+			}
+			if _, err := w.Write(data); err != nil {
+				return
+			}
+			if _, err := io.WriteString(w, "\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+func feishuEventMentions(evt channel.FeishuMessageEvent, botOpenID string) bool {
+	botOpenID = strings.TrimSpace(botOpenID)
+	if botOpenID == "" || evt.Message == nil {
+		return false
+	}
+	for _, mention := range evt.Message.Mentions {
+		if strings.TrimSpace(mention) == botOpenID {
+			return true
+		}
+	}
+	return false
+}
+
+func parseFeishuBotEventsPath(path string) (string, bool) {
+	const prefix = "/api/v1/channels/feishu/bots/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	botID, suffix, ok := strings.Cut(rest, "/")
+	if !ok || strings.TrimSpace(botID) == "" || suffix != "events" {
+		return "", false
+	}
+	return botID, true
+}
 
 func (h *Handler) handleFeishuUsers(w http.ResponseWriter, r *http.Request) {
 	if h.feishu == nil {

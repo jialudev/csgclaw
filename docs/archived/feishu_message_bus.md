@@ -1,0 +1,3 @@
+- [x] 1. 在internal/channel/bus.go中增加一个FeishuMessageBus（类似internal/im/events.go中的Bus），在NewFeishuService中初始化
+- [x] 2. 在internal/channel/feishu.go中defaultFeishuSendMessage()发送消息时，如果是带有mention的消息，则往FeishuMessageBus里Publish发一份
+- [ ] 3. 新增一个/api/v1/channels/feishu/bots/{id}/events的sse接口,可以Subscribe订阅FeishuMessageBus并从其中获取message

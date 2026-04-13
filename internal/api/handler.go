@@ -17,12 +17,13 @@ import (
 )
 
 type Handler struct {
-	svc      *agent.Service
-	botSvc   *bot.Service
-	im       *im.Service
-	imBus    *im.Bus
-	picoclaw *im.PicoClawBridge
-	feishu   *channel.FeishuService
+	svc               *agent.Service
+	botSvc            *bot.Service
+	im                *im.Service
+	imBus             *im.Bus
+	picoclaw          *im.PicoClawBridge
+	feishu            *channel.FeishuService
+	serverAccessToken string
 }
 
 type imBootstrapResponse struct {
@@ -66,17 +67,29 @@ func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *
 }
 
 func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService) *Handler {
+	return NewHandlerWithBotAndAccessToken(svc, botSvc, imSvc, imBus, picoclaw, feishu, "")
+}
+
+func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, serverAccessToken string) *Handler {
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishu)
 	}
 	return &Handler{
-		svc:      svc,
-		botSvc:   botSvc,
-		im:       imSvc,
-		imBus:    imBus,
-		picoclaw: picoclaw,
-		feishu:   feishu,
+		svc:               svc,
+		botSvc:            botSvc,
+		im:                imSvc,
+		imBus:             imBus,
+		picoclaw:          picoclaw,
+		feishu:            feishu,
+		serverAccessToken: serverAccessToken,
 	}
+}
+
+func (h *Handler) validateServerAccessToken(authHeader string) bool {
+	if strings.TrimSpace(h.serverAccessToken) == "" {
+		return true
+	}
+	return authHeader == "Bearer "+h.serverAccessToken
 }
 
 func (h *Handler) handleHealthz(w http.ResponseWriter, _ *http.Request) {

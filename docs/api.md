@@ -6,7 +6,7 @@
 
 - 内容类型：除 SSE 接口外，请求和响应均为 `application/json`
 - 时间格式：使用 RFC3339 / ISO8601，例如 `2026-03-28T12:00:00Z`
-- 认证：大部分接口当前不需要认证；仅 `/api/bots/*` 需要 `Authorization: Bearer <token>`
+- 认证：大部分接口当前不需要认证；`/api/bots/*` 和 `GET /api/v1/channels/feishu/bots/{id}/events` 需要 `Authorization: Bearer <token>`
 - 错误返回：失败时通常返回纯文本错误信息，不是统一 JSON 结构
 
 ## 1. 基础接口
@@ -124,7 +124,7 @@ ok
 ```text
 : connected
 
-data: {"type":"message.created","room_id":"room-1","conversation_id":"room-1","message":{"id":"msg-1","sender_id":"u-admin","content":"hello","created_at":"2026-03-28T12:00:00Z","mentions":[]},"sender":{"id":"u-admin","name":"Admin","handle":"admin","role":"Admin","avatar":"AD","is_online":true,"accent_hex":"#dc2626"}}
+data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","sender_id":"u-admin","content":"hello","created_at":"2026-04-13T11:15:01.848093Z","mentions":["u-alice"]},"sender":{"id":"u-admin","name":"Admin","handle":"admin","role":"Admin","avatar":"AD","is_online":true,"accent_hex":"#dc2626"}}
 ```
 
 当前事件类型：
@@ -132,11 +132,6 @@ data: {"type":"message.created","room_id":"room-1","conversation_id":"room-1","m
 - `message.created`
 - `room.created`
 - `room.members_added`
-
-兼容说明：
-
-- SSE 事件仍会同时携带 `conversation_id` / `conversation` 兼容字段
-- WebUI 和新调用方应优先使用 `room_id` / `room`
 
 ### `POST /api/v1/im/messages`
 
@@ -147,7 +142,6 @@ data: {"type":"message.created","room_id":"room-1","conversation_id":"room-1","m
 ```json
 {
   "room_id": "room-1",
-  "conversation_id": "room-1",
   "sender_id": "u-admin",
   "content": "hello @alice"
 }
@@ -169,8 +163,7 @@ data: {"type":"message.created","room_id":"room-1","conversation_id":"room-1","m
 
 说明：
 
-- `room_id` 或 `conversation_id` 二选一；新增调用方应优先传 `room_id`
-- `sender_id`、`content` 必填
+- `room_id`、`sender_id`、`content` 必填
 - `content` 中的 `@handle` 会解析为 `mentions`
 
 ### `POST /api/v1/im/conversations`
@@ -224,7 +217,6 @@ data: {"type":"message.created","room_id":"room-1","conversation_id":"room-1","m
 ```json
 {
   "room_id": "room-1",
-  "conversation_id": "room-1",
   "inviter_id": "u-admin",
   "user_ids": ["u-alice", "u-bob"],
   "locale": "zh-CN"
@@ -235,8 +227,7 @@ data: {"type":"message.created","room_id":"room-1","conversation_id":"room-1","m
 
 说明：
 
-- `room_id` 或 `conversation_id` 二选一；新增调用方应优先传 `room_id`
-- `inviter_id`、`user_ids` 必填
+- `room_id`、`inviter_id`、`user_ids` 必填
 - `inviter_id` 必须已经在 room 内
 - 若没有任何新成员被加入，会返回 `400 Bad Request`
 
@@ -278,7 +269,7 @@ Kick 指定用户。
 
 ### `GET /api/v1/messages`
 
-获取指定会话的消息历史。查询参数支持 `conversation_id` 或 `room_id` 二选一。
+获取指定会话的消息历史。查询参数为 `room_id`。
 
 ### `POST /api/v1/messages`
 
@@ -293,19 +284,9 @@ Kick 指定用户。
 ```json
 {
   "agent_id": "u-alice",
-  "conversation_id": "room-1",
+  "room_id": "room-1",
   "inviter_id": "u-admin",
   "locale": "zh-CN"
-}
-```
-
-也支持使用 `room_id`：
-
-```json
-{
-  "agent_id": "u-alice",
-  "room_id": "room-1",
-  "inviter_id": "u-admin"
 }
 ```
 
@@ -313,11 +294,36 @@ Kick 指定用户。
 
 说明：
 
-- `conversation_id` 和 `room_id` 二选一，不能同时传
+- `agent_id`、`room_id` 必填
 - `inviter_id` 为空时，服务端默认使用 `u-admin`
 - 若 `agent_id` 不存在，返回 `404 Not Found`
 
-## 5. 兼容别名接口
+## 5. Feishu Channel 接口
+
+### `GET /api/v1/channels/feishu/bots/{id}/events`
+
+订阅指定 Feishu bot 的 channel message bus 事件流，返回 `text/event-stream`。例如：
+
+```http
+GET /api/v1/channels/feishu/bots/u-manager/events
+```
+
+服务端只会推送 `mentions` 包含该 bot 对应 Feishu `open_id` 的消息事件。
+
+返回示例：
+
+```text
+: connected
+
+data: {"type":"message.created","room_id":"oc_f778","message":{"id":"om_x100","sender_id":"ou_323c","kind":"message","content":"what skills are available?","created_at":"2026-04-13T11:15:01.848093Z","mentions":["ou_2074"]}}
+```
+
+认证要求：
+
+- 请求头必须带 `Authorization: Bearer <token>`
+- token 来自 `~/.csgclaw/config.toml` 中的 `[server].access_token`
+
+## 6. 兼容别名接口
 
 当前以下接口是同义路由，行为与上文一致：
 
@@ -327,7 +333,7 @@ Kick 指定用户。
 - `POST /api/v1/im/rooms` 等价于 `POST /api/v1/im/conversations`
 - `POST /api/v1/im/rooms/invite` 等价于 `POST /api/v1/im/conversations/members`
 
-## 6. PicoClaw Bot 接口
+## 7. PicoClaw Bot 接口
 
 这组接口用于 PicoClaw 与 IM 的双向通信。
 

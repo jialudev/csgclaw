@@ -463,8 +463,8 @@ csgclaw bot list -channel feishu
 - [x] 6. `POST /api/v1/bots` 支持 `worker + csgclaw`。
 - [x] 7. `POST /api/v1/bots` 支持 `worker + feishu`。
 - [x] 8. `csgclaw bot create`。
-- [ ] 9. manager bot 先绑定现有 manager，再评估是否支持创建 manager box。
-- [ ] 10. `/api/v1/workers` 复用 bot service，作为兼容入口保留。
+- [x] 9. manager bot 先绑定现有 manager，再评估是否支持创建 manager box。
+- [x] 10. `/api/v1/workers` 复用 bot service，作为兼容入口保留。
 - [ ] 11. 更新 API/README 文档和手工验证。
 
 ## 每步完成标准

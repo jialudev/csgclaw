@@ -266,14 +266,15 @@ func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, bot
 		botSvc.SetDependencies(svc, imSvc, feishuSvc)
 	}
 	return RunServer(server.Options{
-		ListenAddr: cfg.Server.ListenAddr,
-		Service:    svc,
-		Bot:        botSvc,
-		IM:         imSvc,
-		IMBus:      imBus,
-		PicoClaw:   im.NewPicoClawBridge(cfg.Server.AccessToken),
-		Feishu:     feishuSvc,
-		Context:    ctx,
+		ListenAddr:  cfg.Server.ListenAddr,
+		Service:     svc,
+		Bot:         botSvc,
+		IM:          imSvc,
+		IMBus:       imBus,
+		PicoClaw:    im.NewPicoClawBridge(cfg.Server.AccessToken),
+		Feishu:      feishuSvc,
+		AccessToken: cfg.Server.AccessToken,
+		Context:     ctx,
 	})
 }
 

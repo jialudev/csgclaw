@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"csgclaw/internal/im"
 )
@@ -20,6 +21,14 @@ func TestFeishuServiceDoesNotPersistState(t *testing.T) {
 
 	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Fatalf("state.json exists after Feishu operation; stat error = %v", err)
+	}
+}
+
+func TestFeishuServiceInitializesMessageBus(t *testing.T) {
+	svc := NewFeishuService()
+
+	if svc.MessageBus() == nil {
+		t.Fatal("MessageBus() = nil, want initialized bus")
 	}
 }
 
@@ -81,7 +90,7 @@ func TestFeishuSendMessageUsesSenderAppAndStoresLocalMessage(t *testing.T) {
 		func(_ context.Context, app FeishuAppConfig, req FeishuSendMessageRequest) (FeishuSendMessageResponse, error) {
 			gotApp = app
 			gotReq = req
-			return FeishuSendMessageResponse{MessageID: "om_1"}, nil
+			return FeishuSendMessageResponse{MessageID: "om_1", SenderOpenID: "ou_manager"}, nil
 		},
 	)
 	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager"}}
@@ -101,7 +110,7 @@ func TestFeishuSendMessageUsesSenderAppAndStoresLocalMessage(t *testing.T) {
 	if gotReq.ChatID != "oc_alpha" || gotReq.Content != "hello" || gotReq.UUID == "" {
 		t.Fatalf("send request = %+v, want chat/content/uuid", gotReq)
 	}
-	if message.ID != "om_1" || message.SenderID != "u-manager" || message.Content != "hello" {
+	if message.ID != "om_1" || message.SenderID != "ou_manager" || message.Content != "hello" {
 		t.Fatalf("message = %+v, want sent message", message)
 	}
 	if len(svc.rooms["oc_alpha"].Messages) != 1 || svc.rooms["oc_alpha"].Messages[0].ID != "om_1" {
@@ -118,7 +127,7 @@ func TestFeishuSendMessageResolvesMentionApp(t *testing.T) {
 		},
 		func(_ context.Context, _ FeishuAppConfig, req FeishuSendMessageRequest) (FeishuSendMessageResponse, error) {
 			gotReq = req
-			return FeishuSendMessageResponse{MessageID: "om_mention"}, nil
+			return FeishuSendMessageResponse{MessageID: "om_mention", SenderOpenID: "ou_manager", MentionOpenID: "ou_dev"}, nil
 		},
 	)
 	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager", "u-dev"}}
@@ -136,8 +145,83 @@ func TestFeishuSendMessageResolvesMentionApp(t *testing.T) {
 	if gotReq.MentionID != "u-dev" || gotReq.MentionAppConfig.AppID != "cli_dev" || gotReq.MentionAppConfig.AppSecret != "dev-secret" {
 		t.Fatalf("send request = %+v, want mention app config", gotReq)
 	}
-	if len(message.Mentions) != 1 || message.Mentions[0] != "u-dev" {
-		t.Fatalf("message mentions = %+v, want u-dev", message.Mentions)
+	if message.SenderID != "ou_manager" {
+		t.Fatalf("message sender_id = %q, want ou_manager", message.SenderID)
+	}
+	if len(message.Mentions) != 1 || message.Mentions[0] != "ou_dev" {
+		t.Fatalf("message mentions = %+v, want ou_dev", message.Mentions)
+	}
+}
+
+func TestFeishuSendMessageWithMentionPublishesMessageEvent(t *testing.T) {
+	svc := NewFeishuServiceWithSendMessage(
+		map[string]FeishuAppConfig{
+			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
+			"u-dev":     {AppID: "cli_dev", AppSecret: "dev-secret"},
+		},
+		func(_ context.Context, _ FeishuAppConfig, _ FeishuSendMessageRequest) (FeishuSendMessageResponse, error) {
+			return FeishuSendMessageResponse{MessageID: "om_mention", SenderOpenID: "ou_manager", MentionOpenID: "ou_dev"}, nil
+		},
+	)
+	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager", "u-dev"}}
+	events, cancel := svc.MessageBus().Subscribe()
+	defer cancel()
+
+	message, err := svc.SendMessage(im.CreateMessageRequest{
+		RoomID:    "oc_alpha",
+		SenderID:  "u-manager",
+		Content:   "hello",
+		MentionID: "u-dev",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	select {
+	case evt := <-events:
+		if evt.Type != FeishuMessageEventTypeMessageCreated {
+			t.Fatalf("event type = %q, want %q", evt.Type, FeishuMessageEventTypeMessageCreated)
+		}
+		if evt.RoomID != "oc_alpha" {
+			t.Fatalf("event room_id = %q, want oc_alpha", evt.RoomID)
+		}
+		if evt.Message == nil || evt.Message.ID != message.ID {
+			t.Fatalf("event message = %+v, want message %q", evt.Message, message.ID)
+		}
+		if evt.Message.SenderID != "ou_manager" {
+			t.Fatalf("event sender_id = %q, want ou_manager", evt.Message.SenderID)
+		}
+		if len(evt.Message.Mentions) != 1 || evt.Message.Mentions[0] != "ou_dev" {
+			t.Fatalf("event mentions = %+v, want ou_dev", evt.Message.Mentions)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for feishu message event")
+	}
+}
+
+func TestFeishuSendMessageWithoutMentionDoesNotPublishMessageEvent(t *testing.T) {
+	svc := NewFeishuServiceWithSendMessage(
+		map[string]FeishuAppConfig{"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"}},
+		func(_ context.Context, _ FeishuAppConfig, _ FeishuSendMessageRequest) (FeishuSendMessageResponse, error) {
+			return FeishuSendMessageResponse{MessageID: "om_plain", SenderOpenID: "ou_manager"}, nil
+		},
+	)
+	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager"}}
+	events, cancel := svc.MessageBus().Subscribe()
+	defer cancel()
+
+	if _, err := svc.SendMessage(im.CreateMessageRequest{
+		RoomID:   "oc_alpha",
+		SenderID: "u-manager",
+		Content:  "hello",
+	}); err != nil {
+		t.Fatalf("SendMessage() error = %v", err)
+	}
+
+	select {
+	case evt := <-events:
+		t.Fatalf("unexpected event = %+v", evt)
+	case <-time.After(20 * time.Millisecond):
 	}
 }
 
