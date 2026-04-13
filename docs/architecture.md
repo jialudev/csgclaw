@@ -27,48 +27,36 @@ This keeps execution concerns in `agent`, messaging concerns in `im` / `channel`
 ## System Diagram
 
 ```text
-                  ┌──────────────────┐
-                  │  csgclaw CLI     │
-                  └────────┬─────────┘
-                           │ HTTP
-                  ┌────────▼─────────┐
-                  │  HTTP Server     │
-                  │  internal/server │
-                  └────────┬─────────┘
-                           │
-                  ┌────────▼─────────┐
-                  │  API Handlers    │
-                  │  internal/api    │
-                  └───┬─────────┬────┘
-                      │         │
-          ┌───────────▼───┐ ┌───▼─────────────────┐
-          │ Bot Service   │ │ IM / Channel APIs   │
-          │ internal/bot  │ │ internal/im         │
-          │               │ │ internal/channel    │
-          └──────┬────────┘ └─────────┬───────────┘
-                 │                    │
-        ┌────────▼────────┐  ┌────────▼────────────┐
-        │ Agent Service   │  │ Channel Backends    │
-        │ internal/agent  │  │ csgclaw / feishu    │
-        └────────┬────────┘  └────────┬────────────┘
-                 │                    │
-             ┌───▼────┐          ┌────▼─────┐
-             │BoxLite │          │Storage   │
-             └────────┘          └──────────┘
-
-                  ┌──────────────────┐
-                  │ Web UI           │
-                  │ web/static       │
-                  └──────────────────┘
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│ csgclaw CLI │   │ csgcli CLI  │   │ Web UI      │
+└──────┬──────┘   └──────┬──────┘   └──────┬──────┘
+       └─────────────────┼─────────────────┘
+                         │ HTTP
+                ┌────────▼─────────┐
+                │ Local HTTP API   │
+                │ and Web Server   │
+                └───┬─────────┬────┘
+                    │         │
+        ┌───────────▼───┐ ┌───▼─────────────────┐
+        │ Bot Service   │ │ IM / Channel APIs   │
+        └──────┬────────┘ └─────────┬───────────┘
+               │                    │
+      ┌────────▼────────┐  ┌────────▼────────────┐
+      │ Agent Service   │  │ Channel Backends    │
+      └────────┬────────┘  └────────┬────────────┘
+               │                    │
+           ┌───▼────┐          ┌────▼─────┐
+           │BoxLite │          │Storage   │
+           └────────┘          └──────────┘
 ```
 
-The Web UI is served by the HTTP server and uses the same API surface as the CLI.
+The Web UI is served by the local HTTP server and uses the same API surface as the CLIs. At the implementation level, `internal/server` owns server lifecycle and static UI wiring, while `internal/api` owns route registration and request/response handling.
 
 ---
 
 ## Design Rules
 
-- `cmd/csgclaw` stays thin. It should only start the CLI entrypoint.
+- `cmd/csgclaw` and `cmd/csgcli` stay thin. They should only start their CLI entrypoints.
 - `cli` owns command parsing, HTTP calls, and output formatting.
 - `internal/api` owns HTTP request/response handling only.
 - `internal/bot` owns bot creation and listing. It coordinates `agent` and channel user creation.
@@ -83,7 +71,10 @@ The Web UI is served by the HTTP server and uses the same API surface as the CLI
 
 ```text
 cmd/csgclaw/            CLI entrypoint
+cmd/csgcli/             lite CLI entrypoint
 cli/                    command flows and user-facing output
+cli/csgcli/             csgcli app wiring and global flag handling
+cli/message/            shared message command implementation for csgclaw and csgcli
 internal/server/        local HTTP server and static UI wiring
 internal/api/           HTTP handlers and route registration
 internal/bot/           bot lifecycle and agent/user binding
@@ -159,6 +150,7 @@ GET    /api/v1/channels/feishu/rooms
 POST   /api/v1/channels/feishu/rooms
 GET    /api/v1/channels/feishu/rooms/{room_id}/members
 POST   /api/v1/channels/feishu/rooms/{room_id}/members
+POST   /api/v1/channels/feishu/messages
 ```
 
 `POST /api/v1/bots` should be handled as a bot use case:
@@ -177,7 +169,11 @@ The API layer should not directly duplicate bot orchestration logic.
 
 ## CLI
 
-The CLI is a thin HTTP client. It should not call stores, BoxLite, or channel SDKs directly.
+Both CLIs are thin HTTP clients. They should not call stores, BoxLite, or channel SDKs directly.
+
+`csgclaw` is the full local management CLI for human operators. It owns onboarding, server lifecycle, agent runtime commands, and the shared bot/room/member/user/message workflows.
+
+`csgcli` is the lightweight CLI primarily intended for agents and scripts. It exposes only the bot, room, member, and message workflows that agents need for collaboration, and does not manage onboarding, the local server lifecycle, or agent runtime directly.
 
 ```text
 csgclaw
@@ -196,35 +192,77 @@ csgclaw
 │   ├── list
 │   └── create
 ├── member
+│   ├── list
 │   └── create
-└── user
-    └── list
+├── user
+│   └── list
+└── message
+
+csgcli
+├── bot
+│   ├── list
+│   └── create
+├── room
+│   ├── list
+│   └── create
+├── member
+│   ├── list
+│   └── create
+└── message
 ```
 
 ### Bot Commands
 
 ```text
-csgclaw bot list   -channel <csgclaw|feishu>
-csgclaw bot create -channel <csgclaw|feishu>
+csgclaw bot list   --channel <csgclaw|feishu>
+csgclaw bot create --channel <csgclaw|feishu>
+csgcli  bot list   --channel <csgclaw|feishu>
+csgcli  bot create --channel <csgclaw|feishu>
 ```
 
-`-channel` defaults to `csgclaw`.
+`--channel` defaults to `csgclaw`.
 
 Expected behavior:
 
-- `csgclaw bot list -channel csgclaw` calls `GET /api/v1/bots?channel=csgclaw`
-- `csgclaw bot list -channel feishu` calls `GET /api/v1/bots?channel=feishu`
-- `csgclaw bot create -channel csgclaw` calls `POST /api/v1/bots`
-- `csgclaw bot create -channel feishu` calls `POST /api/v1/bots`
+- `csgclaw bot list --channel csgclaw` calls `GET /api/v1/bots?channel=csgclaw`
+- `csgclaw bot list --channel feishu` calls `GET /api/v1/bots?channel=feishu`
+- `csgclaw bot create --channel csgclaw` calls `POST /api/v1/bots`
+- `csgclaw bot create --channel feishu` calls `POST /api/v1/bots`
+- `csgcli bot list --channel csgclaw` calls `GET /api/v1/bots?channel=csgclaw`
+- `csgcli bot list --channel feishu` calls `GET /api/v1/bots?channel=feishu`
+- `csgcli bot create --channel csgclaw` calls `POST /api/v1/bots`
+- `csgcli bot create --channel feishu` calls `POST /api/v1/bots`
 
 The selected channel is part of the request payload or query string, not a separate CLI implementation path.
+
+### Message Command
+
+`message` is available in both CLIs as a thin wrapper over the message API.
+
+```text
+csgclaw message --channel <csgclaw|feishu> --room-id <id> --sender-id <id> --content <text> [--mention-id <id>]
+csgcli  message --channel <csgclaw|feishu> --room-id <id> --sender-id <id> --content <text> [--mention-id <id>]
+```
+
+Expected behavior:
+
+- `csgclaw message --room-id room-1 --sender-id u-admin --content hello` calls `POST /api/v1/messages`
+- `csgclaw message --channel feishu --room-id oc_alpha --sender-id u-manager --content hello` calls `POST /api/v1/channels/feishu/messages`
+- `csgcli message --room-id room-1 --sender-id u-admin --content hello` calls `POST /api/v1/messages`
+- `csgcli message --channel feishu --room-id oc_alpha --sender-id u-manager --content hello` calls `POST /api/v1/channels/feishu/messages`
+
+Validation rules:
+
+- `--channel` defaults to `csgclaw`.
+- `--room-id`, `--sender-id`, and `--content` are required.
+- `--mention-id` is optional and is forwarded as part of the create-message request.
 
 ---
 
 ## Creation Flow
 
 ```text
-csgclaw bot create -channel feishu
+csgclaw bot create --channel feishu
   └─► POST /api/v1/bots
         └─► internal/bot.Create
               ├─► internal/agent creates BoxLite-backed agent
