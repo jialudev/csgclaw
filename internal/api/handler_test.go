@@ -229,6 +229,34 @@ func TestHandleFeishuRoomsMembers(t *testing.T) {
 	}
 }
 
+func TestHandleRoomsMembersListsCsgclawParticipants(t *testing.T) {
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "Admin", Handle: "admin", Role: "admin"},
+			{ID: "u-alice", Name: "Alice", Handle: "alice", Role: "worker"},
+		},
+		Rooms: []im.Room{
+			{ID: "room-1", Title: "Ops", Participants: []string{"u-admin", "u-alice"}},
+		},
+	})
+	srv := &Handler{im: imSvc}
+
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/rooms/room-1/members", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("members status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var members []im.User
+	if err := json.NewDecoder(rec.Body).Decode(&members); err != nil {
+		t.Fatalf("decode members: %v", err)
+	}
+	if len(members) != 2 || members[0].ID != "u-admin" || members[1].ID != "u-alice" {
+		t.Fatalf("members = %+v, want room participants", members)
+	}
+}
+
 func TestHandleBotsListReturnsAllBots(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, []bot.Bot{
 		{

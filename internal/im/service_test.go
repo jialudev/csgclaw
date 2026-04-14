@@ -53,6 +53,27 @@ func TestEnsureWorkerUserRejectsDuplicateHandle(t *testing.T) {
 	}
 }
 
+func TestListMembersReturnsRoomParticipants(t *testing.T) {
+	svc := NewServiceFromBootstrap(Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []User{
+			{ID: "u-admin", Name: "Admin", Handle: "admin", Role: "admin"},
+			{ID: "u-alice", Name: "Alice", Handle: "alice", Role: "worker"},
+		},
+		Rooms: []Room{
+			{ID: "room-1", Title: "Ops", Participants: []string{"u-admin", "u-alice"}},
+		},
+	})
+
+	members, err := svc.ListMembers("room-1")
+	if err != nil {
+		t.Fatalf("ListMembers() error = %v", err)
+	}
+	if len(members) != 2 || members[0].ID != "u-admin" || members[1].ID != "u-alice" {
+		t.Fatalf("ListMembers() = %+v, want room participants in participant order", members)
+	}
+}
+
 func TestAddAgentToRoomSupportsRoomID(t *testing.T) {
 	svc := NewService()
 

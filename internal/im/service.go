@@ -587,6 +587,31 @@ func (s *Service) ListUsers() []User {
 	return users
 }
 
+func (s *Service) ListMembers(roomID string) ([]User, error) {
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		return nil, fmt.Errorf("room_id is required")
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	room, ok := s.rooms[roomID]
+	if !ok {
+		return nil, fmt.Errorf("room not found")
+	}
+
+	users := make([]User, 0, len(room.Participants))
+	for _, userID := range room.Participants {
+		user, ok := s.users[userID]
+		if !ok {
+			return nil, fmt.Errorf("participant user not found: %s", userID)
+		}
+		users = append(users, user)
+	}
+	return users, nil
+}
+
 func (s *Service) ListMessages(roomID string) ([]Message, error) {
 	roomID = strings.TrimSpace(roomID)
 	if roomID == "" {

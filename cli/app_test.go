@@ -579,23 +579,27 @@ func TestExecuteMemberListFeishuUsesChannelRoomMembersRoute(t *testing.T) {
 	assertTableHasRow(t, stdout.String(), "ou_alice", "Alice", "alice", "worker", "true")
 }
 
-func TestExecuteMemberListCsgclawUnsupported(t *testing.T) {
+func TestExecuteMemberListCsgclawUsesRoomMembersRoute(t *testing.T) {
+	var stdout bytes.Buffer
 	app := &App{
-		stdout: &bytes.Buffer{},
+		stdout: &stdout,
 		stderr: &bytes.Buffer{},
 		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
-			return nil, nil
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/rooms/room-1/members" {
+				t.Fatalf("url = %q, want csgclaw room members route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"u-alice","name":"Alice","handle":"alice","role":"worker","is_online":true}]`), nil
 		}),
 	}
 
-	err := app.Execute(context.Background(), []string{"member", "list", "--channel", "csgclaw", "--room-id", "room-1"})
-	if err == nil {
-		t.Fatal("Execute() error = nil, want unsupported channel")
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "member", "list", "--channel", "csgclaw", "--room-id", "room-1"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "currently supports --channel feishu") {
-		t.Fatalf("Execute() error = %v, want feishu-only error", err)
-	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "Alice", "alice", "worker", "true")
 }
 
 func TestExecuteMemberCreateCsgclawUnsupported(t *testing.T) {

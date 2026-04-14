@@ -500,9 +500,14 @@ func (h *Handler) handleRoomByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/rooms/"))
-	if id == "" || strings.Contains(id, "/") {
+	id, membersPath := parseRoomMembersPath(r.URL.Path)
+	if id == "" {
 		http.NotFound(w, r)
+		return
+	}
+
+	if membersPath {
+		h.handleRoomMembersByID(w, r, id)
 		return
 	}
 
@@ -520,6 +525,24 @@ func (h *Handler) handleRoomByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleRoomMembersByID(w http.ResponseWriter, r *http.Request, roomID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	members, err := h.im.ListMembers(roomID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, "room not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, members)
 }
 
 func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
@@ -793,6 +816,21 @@ func (r addRoomMembersRequest) toServiceRequest() (im.AddRoomMembersRequest, err
 		UserIDs:   r.UserIDs,
 		Locale:    r.Locale,
 	}, nil
+}
+
+func parseRoomMembersPath(path string) (string, bool) {
+	rest := strings.Trim(strings.TrimPrefix(path, "/api/v1/rooms/"), "/")
+	if rest == "" {
+		return "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) == 1 {
+		return parts[0], false
+	}
+	if len(parts) == 2 && parts[1] == "members" {
+		return parts[0], true
+	}
+	return "", false
 }
 
 func (h *Handler) ensureWorkerIMState(created agent.Agent) error {
