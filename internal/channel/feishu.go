@@ -199,6 +199,7 @@ func (s *FeishuService) CreateUser(req FeishuCreateUserRequest) (im.User, error)
 		Avatar:    avatar,
 		IsOnline:  true,
 		AccentHex: accentHexForID(id),
+		CreatedAt: time.Now().UTC(),
 	}
 	s.users[id] = user
 	s.byHandle[handle] = id

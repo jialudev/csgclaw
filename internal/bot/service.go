@@ -80,12 +80,6 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Bot, error) {
 	if s.agents == nil {
 		return Bot{}, fmt.Errorf("agent service is required")
 	}
-	if normalized.ID != "" && normalized.Role != string(RoleManager) {
-		if _, ok := s.store.Get(normalized.ID); ok {
-			return Bot{}, fmt.Errorf("bot id %q already exists", normalized.ID)
-		}
-	}
-
 	switch normalized.Role {
 	case string(RoleManager):
 		return s.createManager(ctx, normalized, false)
@@ -112,25 +106,36 @@ func (s *Service) CreateManager(ctx context.Context, req CreateRequest, forceRec
 }
 
 func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (Bot, error) {
-	created, err := s.agents.CreateWorker(ctx, agent.CreateRequest{
-		ID:          normalized.ID,
-		Name:        normalized.Name,
-		Description: normalized.Description,
-		Role:        agent.RoleWorker,
-		ModelID:     normalized.ModelID,
-	})
-	if err != nil {
-		return Bot{}, err
+	created, ok := s.agents.Agent(workerAgentID(normalized))
+	if ok {
+		if strings.ToLower(strings.TrimSpace(created.Role)) != agent.RoleWorker {
+			return Bot{}, fmt.Errorf("agent id %q already exists with role %q", created.ID, created.Role)
+		}
+	} else {
+		var err error
+		created, err = s.agents.CreateWorker(ctx, agent.CreateRequest{
+			ID:          normalized.ID,
+			Name:        normalized.Name,
+			Description: normalized.Description,
+			Role:        agent.RoleWorker,
+			ModelID:     normalized.ModelID,
+		})
+		if err != nil {
+			return Bot{}, err
+		}
 	}
 
-	userID, err := s.ensureChannelUser(normalized.Channel, created)
+	userID, userCreatedAt, err := s.ensureChannelUser(normalized.Channel, created)
 	if err != nil {
 		// TODO: compensate by deleting the agent/box created above once agent deletion
 		// semantics are safe to call from bot creation.
 		return Bot{}, err
 	}
 
-	createdAt := created.CreatedAt.UTC()
+	createdAt := userCreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = created.CreatedAt.UTC()
+	}
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
@@ -143,8 +148,13 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 		UserID:    userID,
 		CreatedAt: createdAt,
 	}
-	if _, ok := s.store.Get(b.ID); ok {
-		return Bot{}, fmt.Errorf("bot id %q already exists", b.ID)
+	if _, ok, err := s.store.GetByChannelID(b.Channel, b.ID); err != nil {
+		return Bot{}, err
+	} else if ok {
+		if err := s.store.Save(b); err != nil {
+			return Bot{}, err
+		}
+		return b, nil
 	}
 	if err := s.store.Save(b); err != nil {
 		return Bot{}, err
@@ -166,12 +176,15 @@ func (s *Service) createManager(ctx context.Context, normalized CreateRequest, f
 		manager = ensured
 	}
 
-	userID, err := s.ensureChannelUser(normalized.Channel, manager)
+	userID, userCreatedAt, err := s.ensureChannelUser(normalized.Channel, manager)
 	if err != nil {
 		return Bot{}, err
 	}
 
-	createdAt := manager.CreatedAt.UTC()
+	createdAt := userCreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = manager.CreatedAt.UTC()
+	}
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
@@ -184,10 +197,9 @@ func (s *Service) createManager(ctx context.Context, normalized CreateRequest, f
 		UserID:    userID,
 		CreatedAt: createdAt,
 	}
-	if existing, ok := s.store.Get(b.ID); ok {
-		if existing.Channel != normalized.Channel {
-			return Bot{}, fmt.Errorf("bot id %q already exists", b.ID)
-		}
+	if _, ok, err := s.store.GetByChannelID(b.Channel, b.ID); err != nil {
+		return Bot{}, err
+	} else if ok {
 		if err := s.store.Save(b); err != nil {
 			return Bot{}, err
 		}
@@ -199,11 +211,18 @@ func (s *Service) createManager(ctx context.Context, normalized CreateRequest, f
 	return b, nil
 }
 
-func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (string, error) {
+func workerAgentID(req CreateRequest) string {
+	if id := strings.TrimSpace(req.ID); id != "" {
+		return id
+	}
+	return fmt.Sprintf("u-%s", strings.TrimSpace(req.Name))
+}
+
+func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (string, time.Time, error) {
 	switch channelName {
 	case string(ChannelCSGClaw):
 		if s.im == nil {
-			return "", fmt.Errorf("im service is required")
+			return "", time.Time{}, fmt.Errorf("im service is required")
 		}
 		user, _, err := s.im.EnsureAgentUser(im.EnsureAgentUserRequest{
 			ID:     created.ID,
@@ -212,15 +231,15 @@ func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (st
 			Role:   displayRole(created.Role),
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to ensure im user: %w", err)
+			return "", time.Time{}, fmt.Errorf("failed to ensure im user: %w", err)
 		}
-		return user.ID, nil
+		return user.ID, user.CreatedAt, nil
 	case string(ChannelFeishu):
 		if s.feishu == nil {
-			return "", fmt.Errorf("feishu service is required")
+			return "", time.Time{}, fmt.Errorf("feishu service is required")
 		}
 		if user, ok := findFeishuUserByID(s.feishu.ListUsers(), created.ID); ok {
-			return user.ID, nil
+			return user.ID, user.CreatedAt, nil
 		}
 		// Keep Feishu mock users keyed by the agent ID for now. Future real
 		// open_id/app_id mappings belong in bot/channel state, not agent state.
@@ -231,11 +250,11 @@ func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (st
 			Role:   displayRole(created.Role),
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to create feishu user: %w", err)
+			return "", time.Time{}, fmt.Errorf("failed to create feishu user: %w", err)
 		}
-		return user.ID, nil
+		return user.ID, user.CreatedAt, nil
 	default:
-		return "", fmt.Errorf("channel must be one of %q or %q", ChannelCSGClaw, ChannelFeishu)
+		return "", time.Time{}, fmt.Errorf("channel must be one of %q or %q", ChannelCSGClaw, ChannelFeishu)
 	}
 }
 

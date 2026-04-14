@@ -22,14 +22,15 @@ type CreateBotRequest struct {
 }
 
 type User struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Handle    string `json:"handle"`
-	Role      string `json:"role"`
-	Avatar    string `json:"avatar"`
-	IsOnline  bool   `json:"is_online"`
-	LastSeen  string `json:"last_seen,omitempty"`
-	AccentHex string `json:"accent_hex"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Handle    string    `json:"handle"`
+	Role      string    `json:"role"`
+	Avatar    string    `json:"avatar"`
+	IsOnline  bool      `json:"is_online"`
+	LastSeen  string    `json:"last_seen,omitempty"`
+	AccentHex string    `json:"accent_hex"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
 }
 
 type Message struct {

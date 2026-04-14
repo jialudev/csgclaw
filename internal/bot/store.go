@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -38,7 +39,7 @@ func NewMemoryStore(bots []Bot) (*Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		s.items[normalized.ID] = normalized
+		s.items[botStoreKey(normalized)] = normalized
 	}
 	return s, nil
 }
@@ -52,8 +53,27 @@ func (s *Store) List() []Bot {
 func (s *Store) Get(id string) (Bot, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	b, ok := s.items[id]
-	return b, ok
+	if b, ok := s.items[id]; ok {
+		return b, true
+	}
+	for _, b := range sortedBotsFromMap(s.items) {
+		if b.ID == id {
+			return b, true
+		}
+	}
+	return Bot{}, false
+}
+
+func (s *Store) GetByChannelID(channel, id string) (Bot, bool, error) {
+	normalizedChannel, err := NormalizeChannel(channel)
+	if err != nil {
+		return Bot{}, false, err
+	}
+	key := botStoreKeyParts(string(normalizedChannel), strings.TrimSpace(id))
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	b, ok := s.items[key]
+	return b, ok, nil
 }
 
 func (s *Store) Save(b Bot) error {
@@ -64,7 +84,7 @@ func (s *Store) Save(b Bot) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.items[normalized.ID] = normalized
+	s.items[botStoreKey(normalized)] = normalized
 	return s.saveLocked()
 }
 
@@ -114,7 +134,7 @@ func (s *Store) readState() (map[string]Bot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode bot state: %w", err)
 		}
-		items[normalized.ID] = normalized
+		items[botStoreKey(normalized)] = normalized
 	}
 	return items, nil
 }
@@ -137,4 +157,12 @@ func (s *Store) saveLocked() error {
 		return fmt.Errorf("write bot state: %w", err)
 	}
 	return nil
+}
+
+func botStoreKey(b Bot) string {
+	return botStoreKeyParts(b.Channel, b.ID)
+}
+
+func botStoreKeyParts(channel, id string) string {
+	return channel + "\x00" + id
 }

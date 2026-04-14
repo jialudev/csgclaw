@@ -112,14 +112,19 @@ func sortedBotsFromMap(items map[string]Bot) []Bot {
 	}
 	slices.SortFunc(bots, func(a, b Bot) int {
 		if a.CreatedAt.Equal(b.CreatedAt) {
-			switch {
-			case a.ID < b.ID:
-				return -1
-			case a.ID > b.ID:
+			if a.ID != b.ID {
+				if a.ID < b.ID {
+					return -1
+				}
 				return 1
-			default:
-				return 0
 			}
+			if a.Channel < b.Channel {
+				return -1
+			}
+			if a.Channel > b.Channel {
+				return 1
+			}
+			return 0
 		}
 		if a.CreatedAt.Before(b.CreatedAt) {
 			return -1

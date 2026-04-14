@@ -710,6 +710,7 @@ func (s *Service) EnsureAgentUser(req EnsureAgentUserRequest) (User, *Room, erro
 		Avatar:    initials(name),
 		IsOnline:  true,
 		AccentHex: accentHexForID(id),
+		CreatedAt: time.Now().UTC(),
 	}
 	s.users[id] = user
 	s.byHandle[strings.ToLower(handle)] = id

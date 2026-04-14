@@ -221,6 +221,85 @@ func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	}
 }
 
+func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
+	createCalls := 0
+	agent.SetTestHooks(
+		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID, _ string) (*boxlite.Box, *boxlite.BoxInfo, error) {
+			createCalls++
+			if name != "alice" {
+				t.Fatalf("create gateway name = %q, want alice", name)
+			}
+			if botID != "u-alice" {
+				t.Fatalf("create gateway botID = %q, want u-alice", botID)
+			}
+			return nil, &boxlite.BoxInfo{
+				ID:        "box-alice",
+				State:     boxlite.StateRunning,
+				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+				Name:      name,
+				Image:     "test-image",
+			}, nil
+		},
+	)
+	defer agent.ResetTestHooks()
+
+	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("agent.NewService() error = %v", err)
+	}
+	imSvc := im.NewService()
+	feishuSvc := channel.NewFeishuService()
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc, feishuSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	csgclawBot, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "alice",
+		Role:    string(RoleWorker),
+		Channel: string(ChannelCSGClaw),
+	})
+	if err != nil {
+		t.Fatalf("Create(csgclaw worker) error = %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	feishuBot, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "alice",
+		Role:    string(RoleWorker),
+		Channel: string(ChannelFeishu),
+	})
+	if err != nil {
+		t.Fatalf("Create(feishu worker) error = %v", err)
+	}
+	if createCalls != 1 {
+		t.Fatalf("create gateway calls = %d, want 1", createCalls)
+	}
+	if csgclawBot.ID != "u-alice" || feishuBot.ID != "u-alice" || csgclawBot.AgentID != feishuBot.AgentID {
+		t.Fatalf("created bots = %+v / %+v, want shared u-alice agent", csgclawBot, feishuBot)
+	}
+	if !feishuBot.CreatedAt.After(csgclawBot.CreatedAt) {
+		t.Fatalf("created_at = %v / %v, want feishu bot time after csgclaw channel user time", csgclawBot.CreatedAt, feishuBot.CreatedAt)
+	}
+	if !containsUser(imSvc.ListUsers(), "u-alice") {
+		t.Fatalf("im users = %+v, want u-alice", imSvc.ListUsers())
+	}
+	if !containsUser(feishuSvc.ListUsers(), "u-alice") {
+		t.Fatalf("feishu users = %+v, want u-alice", feishuSvc.ListUsers())
+	}
+	all, err := svc.List("")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("List() = %+v, want two channel bindings", all)
+	}
+}
+
 func TestServiceCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
 	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
 		{
@@ -257,6 +336,55 @@ func TestServiceCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
 	}
 	if !containsUser(imSvc.ListUsers(), agent.ManagerUserID) {
 		t.Fatalf("users = %+v, want u-manager", imSvc.ListUsers())
+	}
+}
+
+func TestServiceCreateManagerBindsSameAgentAcrossChannels(t *testing.T) {
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        agent.ManagerUserID,
+			Name:      agent.ManagerName,
+			Role:      agent.RoleManager,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+			ModelID:   "default-model",
+		},
+	})
+	imSvc := im.NewService()
+	feishuSvc := channel.NewFeishuService()
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc, feishuSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	csgclawBot, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelCSGClaw),
+	})
+	if err != nil {
+		t.Fatalf("Create(csgclaw manager) error = %v", err)
+	}
+	feishuBot, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "manager",
+		Role:    string(RoleManager),
+		Channel: string(ChannelFeishu),
+	})
+	if err != nil {
+		t.Fatalf("Create(feishu manager) error = %v", err)
+	}
+	if csgclawBot.ID != agent.ManagerUserID || feishuBot.ID != agent.ManagerUserID || csgclawBot.AgentID != feishuBot.AgentID {
+		t.Fatalf("created managers = %+v / %+v, want shared manager agent", csgclawBot, feishuBot)
+	}
+	all, err := svc.List("")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("List() = %+v, want two channel bindings", all)
 	}
 }
 
