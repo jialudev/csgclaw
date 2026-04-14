@@ -58,7 +58,7 @@ type FeishuAddChatMembersRequest struct {
 
 type FeishuAddChatMembersFunc func(context.Context, FeishuAppConfig, FeishuAddChatMembersRequest) error
 
-type FeishuListChatMembersFunc func(context.Context, FeishuAppConfig, string) ([]im.User, error)
+type FeishuListChatMembersFunc func(context.Context, FeishuAppConfig, map[string]FeishuAppConfig, string) ([]im.User, error)
 
 type FeishuListChatsFunc func(context.Context, FeishuAppConfig) ([]im.Room, error)
 
@@ -346,9 +346,10 @@ func defaultFeishuAddChatMembers(ctx context.Context, app FeishuAppConfig, req F
 	return nil
 }
 
-func defaultFeishuListChatMembers(ctx context.Context, app FeishuAppConfig, chatID string) ([]im.User, error) {
+func defaultFeishuListChatMembers(ctx context.Context, app FeishuAppConfig, apps map[string]FeishuAppConfig, chatID string) ([]im.User, error) {
 	client := lark.NewClient(app.AppID, app.AppSecret)
 	members := make([]im.User, 0)
+	memberIDs := make(map[string]struct{})
 	pageToken := ""
 
 	for {
@@ -379,10 +380,14 @@ func defaultFeishuListChatMembers(ctx context.Context, app FeishuAppConfig, chat
 			if memberID == "" {
 				continue
 			}
+			if _, ok := memberIDs[memberID]; ok {
+				continue
+			}
 			name := strings.TrimSpace(larkcore.StringValue(item.Name))
 			if name == "" {
 				name = memberID
 			}
+			memberIDs[memberID] = struct{}{}
 			members = append(members, im.User{
 				ID:        memberID,
 				Name:      name,
@@ -403,7 +408,94 @@ func defaultFeishuListChatMembers(ctx context.Context, app FeishuAppConfig, chat
 		}
 	}
 
+	botMembers, err := feishuBotMembersInChat(ctx, apps, chatID, memberIDs)
+	if err != nil {
+		return nil, err
+	}
+	members = append(members, botMembers...)
+
 	return members, nil
+}
+
+func feishuBotMembersInChat(ctx context.Context, apps map[string]FeishuAppConfig, chatID string, existingMemberIDs map[string]struct{}) ([]im.User, error) {
+	return feishuBotMembersInChatWithResolvers(ctx, apps, chatID, existingMemberIDs, fetchBotOpenID, feishuAppIsInChat)
+}
+
+func feishuBotMembersInChatWithResolvers(
+	ctx context.Context,
+	apps map[string]FeishuAppConfig,
+	chatID string,
+	existingMemberIDs map[string]struct{},
+	resolveBotOpenID func(context.Context, FeishuAppConfig) (string, error),
+	isInChat func(context.Context, FeishuAppConfig, string) (bool, error),
+) ([]im.User, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if existingMemberIDs == nil {
+		existingMemberIDs = make(map[string]struct{})
+	}
+
+	members := make([]im.User, 0, len(apps))
+	for botID, rawApp := range apps {
+		app, err := validateFeishuAppConfig(rawApp, botID)
+		if err != nil {
+			return nil, err
+		}
+
+		inChat, err := isInChat(ctx, app, chatID)
+		if err != nil {
+			return nil, fmt.Errorf("check feishu bot %q in chat %q: %w", botID, chatID, err)
+		}
+		if !inChat {
+			continue
+		}
+
+		openID, err := resolveBotOpenID(ctx, app)
+		if err != nil {
+			return nil, fmt.Errorf("resolve feishu bot %q open_id: %w", botID, err)
+		}
+		openID = strings.TrimSpace(openID)
+		if openID == "" {
+			return nil, fmt.Errorf("resolve feishu bot %q open_id: empty open_id", botID)
+		}
+		if _, ok := existingMemberIDs[openID]; ok {
+			continue
+		}
+		existingMemberIDs[openID] = struct{}{}
+
+		name := strings.TrimSpace(botID)
+		if name == "" {
+			name = openID
+		}
+		members = append(members, im.User{
+			ID:        openID,
+			Name:      name,
+			Handle:    deriveHandle(name, openID),
+			Role:      "member",
+			Avatar:    initials(name),
+			IsOnline:  true,
+			AccentHex: accentHexForID(openID),
+		})
+	}
+	return members, nil
+}
+
+func feishuAppIsInChat(ctx context.Context, app FeishuAppConfig, chatID string) (bool, error) {
+	client := lark.NewClient(app.AppID, app.AppSecret)
+	resp, err := client.Im.V1.ChatMembers.IsInChat(ctx, larkim.NewIsInChatChatMembersReqBuilder().
+		ChatId(chatID).
+		Build())
+	if err != nil {
+		return false, err
+	}
+	if !resp.Success() {
+		return false, fmt.Errorf("code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+	}
+	if resp.Data == nil {
+		return false, fmt.Errorf("empty response data")
+	}
+	return larkcore.BoolValue(resp.Data.IsInChat), nil
 }
 
 func defaultFeishuListChats(ctx context.Context, app FeishuAppConfig) ([]im.Room, error) {
@@ -776,7 +868,7 @@ func (s *FeishuService) ListRoomMembers(roomID string) ([]im.User, error) {
 		return nil, err
 	}
 
-	members, err := s.listChatMembers(context.Background(), app, roomID)
+	members, err := s.listChatMembers(context.Background(), app, s.AppConfigs(), roomID)
 	if err != nil {
 		return nil, err
 	}
