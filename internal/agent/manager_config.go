@@ -41,7 +41,7 @@ func ensureAgentPicoClawConfig(agentName, botID string, server config.ServerConf
 	if err := os.WriteFile(configPath, append(data, '\n'), 0o600); err != nil {
 		return "", fmt.Errorf("write manager picoclaw config: %w", err)
 	}
-	securityData := renderManagerSecurityConfig(model)
+	securityData := renderManagerSecurityConfig(server, model)
 	securityPath := filepath.Join(hostRoot, ".security.yml")
 	if err := os.WriteFile(securityPath, []byte(securityData), 0o600); err != nil {
 		return "", fmt.Errorf("write manager security config: %w", err)
@@ -71,7 +71,7 @@ func renderAgentPicoClawConfig(botID string, server config.ServerConfig, model c
 		return nil, fmt.Errorf("decode embedded manager picoclaw config: %w", err)
 	}
 
-	if err := updateModelList(cfg, model); err != nil {
+	if err := updateModelList(cfg, botID, server, model); err != nil {
 		return nil, err
 	}
 	if err := updateCSGClawChannel(cfg, botID, server); err != nil {
@@ -85,7 +85,7 @@ func renderAgentPicoClawConfig(botID string, server config.ServerConfig, model c
 	return data, nil
 }
 
-func updateModelList(cfg map[string]any, modelCfg config.ModelConfig) error {
+func updateModelList(cfg map[string]any, botID string, server config.ServerConfig, modelCfg config.ModelConfig) error {
 	modelList, ok := cfg["model_list"].([]any)
 	if !ok || len(modelList) == 0 {
 		return fmt.Errorf("embedded manager picoclaw config is missing model_list[0]")
@@ -98,11 +98,17 @@ func updateModelList(cfg map[string]any, modelCfg config.ModelConfig) error {
 		model["model_name"] = modelCfg.ModelID
 		model["model"] = modelCfg.ModelID
 	}
-	if modelCfg.BaseURL != "" {
-		model["api_base"] = strings.TrimRight(modelCfg.BaseURL, "/")
+	if agents, ok := cfg["agents"].(map[string]any); ok {
+		if defaults, ok := agents["defaults"].(map[string]any); ok && modelCfg.ModelID != "" {
+			defaults["model_name"] = modelCfg.ModelID
+		}
 	}
-	if modelCfg.APIKey != "" {
-		model["api_key"] = modelCfg.APIKey
+
+	if managerBaseURL := resolveManagerBaseURL(server); managerBaseURL != "" {
+		model["api_base"] = llmBridgeBaseURL(managerBaseURL, botID)
+	}
+	if server.AccessToken != "" {
+		model["api_key"] = server.AccessToken
 	}
 	return nil
 }
@@ -204,9 +210,12 @@ func ipv4FromAddr(addr net.Addr) string {
 	}
 }
 
-func renderManagerSecurityConfig(model config.ModelConfig) string {
+func renderManagerSecurityConfig(server config.ServerConfig, model config.ModelConfig) string {
 	modelID := model.ModelID
-	apiKey := model.APIKey
+	apiKey := strings.TrimSpace(server.AccessToken)
+	if apiKey == "" {
+		apiKey = model.APIKey
+	}
 
 	content := strings.ReplaceAll(defaultManagerSecurityConfig, "__MODEL_ID__", modelID)
 	content = strings.ReplaceAll(content, "__API_KEY__", apiKey)

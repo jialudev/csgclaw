@@ -2,6 +2,8 @@ package agent
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,7 +11,9 @@ import (
 )
 
 func TestRenderManagerSecurityConfig(t *testing.T) {
-	got := renderManagerSecurityConfig(config.ModelConfig{
+	got := renderManagerSecurityConfig(config.ServerConfig{
+		AccessToken: "shared-token",
+	}, config.ModelConfig{
 		ModelID: "minimax-m2.7",
 		APIKey:  "sk-1234567890",
 	})
@@ -18,7 +22,7 @@ func TestRenderManagerSecurityConfig(t *testing.T) {
 		"model_list:\n",
 		"  minimax-m2.7:0:\n",
 		"    api_keys:\n",
-		"      - sk-1234567890\n",
+		"      - shared-token\n",
 		"channels: {}\n",
 		"web: {}\n",
 		"skills: {}\n",
@@ -26,6 +30,81 @@ func TestRenderManagerSecurityConfig(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("renderManagerSecurityConfig() missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+func TestRenderAgentPicoClawConfigUsesBridgeModelEndpoint(t *testing.T) {
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	defer func() { localIPv4Resolver = localIPv4 }()
+
+	data, err := renderAgentPicoClawConfig("u-ux", config.ServerConfig{
+		ListenAddr:  "0.0.0.0:18080",
+		AccessToken: "shared-token",
+	}, config.ModelConfig{
+		Provider: config.ProviderLLMAPI,
+		ModelID:  "gpt-5.4",
+		BaseURL:  "https://cloud.infini-ai.com/maas/v1",
+		APIKey:   "sk-upstream",
+	})
+	if err != nil {
+		t.Fatalf("renderAgentPicoClawConfig() error = %v", err)
+	}
+
+	text := string(data)
+	for _, want := range []string{
+		`"model_name": "gpt-5.4"`,
+		`"api_base": "http://10.0.0.8:18080/api/bots/u-ux/llm"`,
+		`"api_key": "shared-token"`,
+		`"bot_id": "u-ux"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("renderAgentPicoClawConfig() missing %q in:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "cloud.infini-ai.com") {
+		t.Fatalf("renderAgentPicoClawConfig() leaked upstream base URL:\n%s", text)
+	}
+}
+
+func TestEnsureAgentPicoClawConfigUsesDirectoryMountRoot(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	root, err := ensureAgentPicoClawConfig("ux", "u-ux", config.ServerConfig{
+		ListenAddr:  "0.0.0.0:18080",
+		AccessToken: "shared-token",
+	}, config.ModelConfig{
+		ModelID: "gpt-5.4",
+	})
+	if err != nil {
+		t.Fatalf("ensureAgentPicoClawConfig() error = %v", err)
+	}
+
+	if info, err := os.Stat(root); err != nil {
+		t.Fatalf("os.Stat(root) error = %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("mount root %q is not a directory", root)
+	}
+	for _, path := range []string{
+		filepath.Join(root, hostPicoClawConfig),
+		filepath.Join(root, ".security.yml"),
+	} {
+		if info, err := os.Stat(path); err != nil {
+			t.Fatalf("os.Stat(%q) error = %v", path, err)
+		} else if info.IsDir() {
+			t.Fatalf("config artifact %q is unexpectedly a directory", path)
+		}
+	}
+
+	mounts := gatewayVolumeMounts(root, "/tmp/projects")
+	if len(mounts) != 2 {
+		t.Fatalf("gatewayVolumeMounts() len = %d, want 2", len(mounts))
+	}
+	if mounts[0].hostPath != root || mounts[0].guestPath != boxPicoClawDir {
+		t.Fatalf("gatewayVolumeMounts()[0] = %+v, want %q => %q", mounts[0], root, boxPicoClawDir)
+	}
+	if strings.HasSuffix(mounts[0].hostPath, hostPicoClawConfig) || strings.HasSuffix(mounts[0].hostPath, ".security.yml") {
+		t.Fatalf("gatewayVolumeMounts()[0].hostPath = %q, want directory mount root", mounts[0].hostPath)
 	}
 }
 

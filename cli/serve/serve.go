@@ -22,15 +22,23 @@ import (
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
+	"csgclaw/internal/llm"
 	"csgclaw/internal/server"
 )
 
 var (
-	RunServer        = server.Run
-	NewAgentService  = newAgentService
-	NewBotService    = newBotService
-	NewIMService     = newIMService
-	NewFeishuService = newFeishuService
+	RunServer              = server.Run
+	NewAgentService        = newAgentService
+	NewBotService          = newBotService
+	NewIMService           = newIMService
+	NewFeishuService       = newFeishuService
+	NewLLMService          = newLLMService
+	EnsureBootstrapManager = func(ctx context.Context, svc *agent.Service, forceRecreate bool) error {
+		if svc == nil {
+			return nil
+		}
+		return svc.EnsureBootstrapManager(ctx, forceRecreate)
+	}
 )
 
 type serveCmd struct{}
@@ -261,9 +269,16 @@ func serveBackground(run *command.Context, cfg config.Config, globals command.Gl
 }
 
 func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, feishuSvc *channel.FeishuService) error {
+	if err := EnsureBootstrapManager(ctx, svc, false); err != nil {
+		return err
+	}
 	imBus := im.NewBus()
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishuSvc)
+	}
+	llmSvc, err := NewLLMService(cfg, svc)
+	if err != nil {
+		return err
 	}
 	return RunServer(server.Options{
 		ListenAddr:  cfg.Server.ListenAddr,
@@ -273,6 +288,7 @@ func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, bot
 		IMBus:       imBus,
 		PicoClaw:    im.NewPicoClawBridge(cfg.Server.AccessToken),
 		Feishu:      feishuSvc,
+		LLM:         llmSvc,
 		AccessToken: cfg.Server.AccessToken,
 		Context:     ctx,
 	})
@@ -377,19 +393,18 @@ func printEffectiveConfig(run *command.Context, cfg config.Config) {
 }
 
 func formatEffectiveConfig(cfg config.Config) string {
+	llmCfg := effectiveLLMConfig(cfg)
 	content := fmt.Sprintf(`[server]
 listen_addr = %q
 advertise_base_url = %q
 access_token = %q
 
-[model]
-base_url = %q
-api_key = %q
-model_id = %q
-
 [bootstrap]
 manager_image = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Model.BaseURL, partiallyMaskSecret(cfg.Model.APIKey), cfg.Model.ModelID, cfg.Bootstrap.ManagerImage)
+
+[models]
+default = %q
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Bootstrap.ManagerImage, llmCfg.DefaultSelector()) + formatEffectiveProviders(llmCfg)
 
 	if strings.TrimSpace(cfg.Channels.FeishuAdminOpenID) != "" {
 		content += fmt.Sprintf(`
@@ -435,14 +450,17 @@ func loadConfig(path string) (config.Config, error) {
 }
 
 func validateModelConfig(cfg config.Config) error {
-	missing := cfg.Model.MissingFields()
-	if len(missing) == 0 {
-		return nil
+	if err := effectiveLLMConfig(cfg).Validate(); err != nil {
+		var validationErr *config.ModelValidationError
+		if errors.As(err, &validationErr) && len(validationErr.MissingFields) > 0 {
+			return fmt.Errorf(
+				"models config is incomplete (%s); run `csgclaw onboard --base-url <url> --api-key <key> --models <model[,model...]> [--reasoning-effort <effort>]`",
+				strings.Join(missingModelFlags(validationErr.MissingFields), ", "),
+			)
+		}
+		return fmt.Errorf("models config is invalid: %w", err)
 	}
-	return fmt.Errorf(
-		"model config is incomplete (%s); run `csgclaw onboard --base-url <url> --api-key <key> --model-id <model>`",
-		strings.Join(missingModelFlags(missing), ", "),
-	)
+	return nil
 }
 
 func missingModelFlags(fields []string) []string {
@@ -454,7 +472,9 @@ func missingModelFlags(fields []string) []string {
 		case "api_key":
 			flags = append(flags, "--api-key")
 		case "model_id":
-			flags = append(flags, "--model-id")
+			flags = append(flags, "--models")
+		case "default", "default_profile":
+			flags = append(flags, "--models")
 		default:
 			flags = append(flags, field)
 		}
@@ -467,7 +487,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agent.NewServiceWithChannels(cfg.Model, cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath)
+	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath)
 }
 
 func newIMService() (*im.Service, error) {
@@ -504,4 +524,70 @@ func feishuAppsFromConfig(cfg config.ChannelsConfig) map[string]channel.FeishuAp
 		}
 	}
 	return apps
+}
+
+func newLLMService(cfg config.Config, svc *agent.Service) (*llm.Service, error) {
+	if svc == nil {
+		return nil, nil
+	}
+	_, modelCfg, err := effectiveLLMConfig(cfg).Resolve("")
+	if err != nil {
+		return nil, err
+	}
+	return llm.NewService(modelCfg, svc), nil
+}
+
+func effectiveLLMConfig(cfg config.Config) config.LLMConfig {
+	if !cfg.Models.IsZero() {
+		return cfg.Models.Normalized()
+	}
+	if !cfg.LLM.IsZero() {
+		return cfg.LLM.Normalized()
+	}
+	return config.SingleProfileLLM(cfg.Model)
+}
+
+func formatEffectiveProviders(llmCfg config.LLMConfig) string {
+	llmCfg = llmCfg.Normalized()
+	var b strings.Builder
+	for _, name := range sortedProviderNames(llmCfg.Providers) {
+		provider := llmCfg.Providers[name].Resolved()
+		fmt.Fprintf(&b, `
+[models.providers.%s]
+base_url = %q
+api_key = %q
+models = %s
+`, name, provider.BaseURL, partiallyMaskSecret(provider.APIKey), formatModelList(provider.Models))
+		if provider.ReasoningEffort != "" {
+			fmt.Fprintf(&b, "reasoning_effort = %q\n", provider.ReasoningEffort)
+		}
+	}
+	return b.String()
+}
+
+func sortedProviderNames(providers map[string]config.ProviderConfig) []string {
+	names := make([]string, 0, len(providers))
+	for name := range providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func formatModelList(models []string) string {
+	if len(models) == 0 {
+		return "[]"
+	}
+	quoted := make([]string, 0, len(models))
+	for _, modelID := range models {
+		modelID = strings.TrimSpace(modelID)
+		if modelID == "" {
+			continue
+		}
+		quoted = append(quoted, strconv.Quote(modelID))
+	}
+	if len(quoted) == 0 {
+		return "[]"
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
 }

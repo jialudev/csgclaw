@@ -49,6 +49,10 @@ func (h *Handler) handlePicoClawBotRoutes(w http.ResponseWriter, r *http.Request
 		h.handlePicoClawEvents(w, r, botID)
 	case r.Method == http.MethodPost && action == "messages/send":
 		h.handlePicoClawSendMessage(w, r, botID)
+	case r.Method == http.MethodGet && (action == "llm/models" || action == "llm/v1/models"):
+		h.handlePicoClawModels(w, r, botID)
+	case r.Method == http.MethodPost && (action == "llm/chat/completions" || action == "llm/v1/chat/completions"):
+		h.handlePicoClawChatCompletions(w, r, botID)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -91,7 +95,6 @@ func (h *Handler) handlePicoClawSendMessage(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-
 	var req im.PicoClawSendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
@@ -126,7 +129,7 @@ func parsePicoClawBotPath(path string) (botID, action string, ok bool) {
 	botID = parts[0]
 	action = strings.Join(parts[1:], "/")
 	switch action {
-	case "events", "messages/send":
+	case "events", "messages/send", "llm/models", "llm/v1/models", "llm/chat/completions", "llm/v1/chat/completions":
 		return botID, action, true
 	default:
 		return "", "", false

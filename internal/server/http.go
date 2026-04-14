@@ -10,6 +10,7 @@ import (
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
+	"csgclaw/internal/llm"
 )
 
 type Options struct {
@@ -20,6 +21,7 @@ type Options struct {
 	IMBus       *im.Bus
 	PicoClaw    *im.PicoClawBridge
 	Feishu      *channel.FeishuService
+	LLM         *llm.Service
 	AccessToken string
 	Context     context.Context
 }
@@ -28,8 +30,7 @@ func Run(opts Options) error {
 	if opts.Context == nil {
 		opts.Context = context.Background()
 	}
-
-	handler := api.NewHandlerWithBotAndAccessToken(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.PicoClaw, opts.Feishu, opts.AccessToken)
+	handler := api.NewHandlerWithBotAndAccessToken(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.PicoClaw, opts.Feishu, opts.LLM, opts.AccessToken)
 	mux := handler.Routes()
 	mux.Handle("/", uiHandler())
 

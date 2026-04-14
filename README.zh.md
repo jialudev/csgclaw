@@ -34,11 +34,66 @@ go build ./cmd/csgclaw
 ## 快速开始
 
 ```bash
-csgclaw onboard --base-url <url> --api-key <key> --model-id <model>
+csgclaw onboard --base-url <url> --api-key <key> --models <model[,model...]> [--reasoning-effort <effort>]
 csgclaw serve
 ```
 
 执行后 CLI 会打印访问地址（例如 `http://127.0.0.1:18080/`），在浏览器中打开即可进入 IM 工作区。
+对于全新配置，`onboard` 会创建一个名为 `default` 的 provider，并把 `models.default` 设为 `default.<第一个模型>`。
+
+## Model Provider 配置示例
+
+### 远程 LLM API
+
+```toml
+[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+access_token = "your_access_token"
+
+[models]
+default = "remote.gpt-5.4"
+
+[models.providers.remote]
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-api-key"
+models = ["gpt-5.4"]
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.8.1"
+```
+
+### 通过 CLIProxyAPI 接入本地 Codex
+
+```toml
+[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+access_token = "your_access_token"
+
+[models]
+default = "codex.gpt-5.4"
+
+[models.providers.codex]
+base_url = "http://127.0.0.1:8317/v1"
+api_key = "local"
+models = ["gpt-5.4"]
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.8.1"
+```
+
+### Worker 覆盖示例
+
+```json
+{
+  "id": "u-reviewer",
+  "name": "reviewer",
+  "description": "code review worker",
+  "profile": "codex.gpt-5.4",
+  "role": "worker"
+}
+```
 
 ## 功能特性
 

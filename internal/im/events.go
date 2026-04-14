@@ -57,7 +57,6 @@ func (b *Bus) Publish(evt Event) {
 	if b == nil {
 		return
 	}
-
 	b.mu.Lock()
 	targets := make([]chan Event, 0, len(b.subscribers))
 	for _, ch := range b.subscribers {

@@ -14,6 +14,7 @@ import (
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
+	"csgclaw/internal/llm"
 )
 
 type Handler struct {
@@ -23,6 +24,7 @@ type Handler struct {
 	imBus             *im.Bus
 	picoclaw          *im.PicoClawBridge
 	feishu            *channel.FeishuService
+	llm               *llm.Service
 	serverAccessToken string
 }
 
@@ -62,15 +64,15 @@ type addRoomMembersRequest struct {
 	Locale    string   `json:"locale"`
 }
 
-func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService) *Handler {
-	return NewHandlerWithBot(svc, nil, imSvc, imBus, picoclaw, feishu)
+func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
+	return NewHandlerWithBotAndAccessToken(svc, nil, imSvc, imBus, picoclaw, feishu, llmSvc, "")
 }
 
-func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService) *Handler {
-	return NewHandlerWithBotAndAccessToken(svc, botSvc, imSvc, imBus, picoclaw, feishu, "")
+func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
+	return NewHandlerWithBotAndAccessToken(svc, botSvc, imSvc, imBus, picoclaw, feishu, llmSvc, "")
 }
 
-func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, serverAccessToken string) *Handler {
+func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string) *Handler {
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishu)
 	}
@@ -81,6 +83,7 @@ func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, im
 		imBus:             imBus,
 		picoclaw:          picoclaw,
 		feishu:            feishu,
+		llm:               llmSvc,
 		serverAccessToken: serverAccessToken,
 	}
 }
@@ -102,7 +105,6 @@ func (h *Handler) handleWorkers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-
 	switch r.Method {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, h.svc.ListWorkers())
@@ -149,7 +151,6 @@ func (h *Handler) handleAgents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-
 	switch r.Method {
 	case http.MethodGet:
 		if err := h.svc.Reload(); err != nil {
@@ -629,7 +630,6 @@ func (h *Handler) handleIMEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-
 	events, cancel := h.imBus.Subscribe()
 	defer cancel()
 
@@ -775,7 +775,6 @@ func (h *Handler) ensureWorkerIMState(created agent.Agent) error {
 	if h.im == nil {
 		return nil
 	}
-
 	user, room, err := h.im.EnsureAgentUser(im.EnsureAgentUserRequest{
 		ID:     created.ID,
 		Name:   created.Name,

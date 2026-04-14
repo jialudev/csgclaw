@@ -34,11 +34,66 @@ go build ./cmd/csgclaw
 ## Quick Start
 
 ```bash
-csgclaw onboard --base-url <url> --api-key <key> --model-id <model>
+csgclaw onboard --base-url <url> --api-key <key> --models <model[,model...]> [--reasoning-effort <effort>]
 csgclaw serve
 ```
 
 Open the printed URL (e.g. `http://127.0.0.1:18080/`) in your browser to enter the IM workspace.
+For a fresh config, `onboard` creates a single `default` provider and sets `models.default` to `default.<first-model>`.
+
+## Model Provider Examples
+
+### Remote LLM API
+
+```toml
+[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+access_token = "your_access_token"
+
+[models]
+default = "remote.gpt-5.4"
+
+[models.providers.remote]
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-api-key"
+models = ["gpt-5.4"]
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.8.1"
+```
+
+### Local Codex via CLIProxyAPI
+
+```toml
+[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+access_token = "your_access_token"
+
+[models]
+default = "codex.gpt-5.4"
+
+[models.providers.codex]
+base_url = "http://127.0.0.1:8317/v1"
+api_key = "local"
+models = ["gpt-5.4"]
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.8.1"
+```
+
+### Worker Override Example
+
+```json
+{
+  "id": "u-reviewer",
+  "name": "reviewer",
+  "description": "code review worker",
+  "profile": "codex.gpt-5.4",
+  "role": "worker"
+}
+```
 
 ## Features
 
