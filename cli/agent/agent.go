@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"csgclaw/cli/command"
-	agentmodel "csgclaw/internal/agent"
 	"csgclaw/internal/apiclient"
+	"csgclaw/internal/apitypes"
 )
 
 type cmd struct{}
@@ -97,7 +97,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		return fmt.Errorf("agent create does not accept positional arguments")
 	}
 
-	created, err := createAgent(ctx, run.APIClient(globals), agentmodel.CreateRequest{
+	created, err := createAgent(ctx, run.APIClient(globals), apitypes.CreateAgentRequest{
 		ID:          *id,
 		Name:        *name,
 		Description: *description,
@@ -106,7 +106,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	if err != nil {
 		return err
 	}
-	return command.RenderAgents(globals.Output, run.Stdout, []agentmodel.Agent{created})
+	return command.RenderAgents(globals.Output, run.Stdout, []apitypes.Agent{created})
 }
 
 func (c cmd) runDelete(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
@@ -163,38 +163,38 @@ func (c cmd) runStatus(ctx context.Context, run *command.Context, args []string,
 		if err != nil {
 			return err
 		}
-		return command.RenderAgents(globals.Output, run.Stdout, []agentmodel.Agent{got})
+		return command.RenderAgents(globals.Output, run.Stdout, []apitypes.Agent{got})
 	}
 
 	return c.runList(ctx, run, args, globals)
 }
 
-func listAgents(ctx context.Context, client *apiclient.Client) ([]agentmodel.Agent, error) {
-	var agents []agentmodel.Agent
+func listAgents(ctx context.Context, client *apiclient.Client) ([]apitypes.Agent, error) {
+	var agents []apitypes.Agent
 	if err := client.GetJSON(ctx, "/api/v1/agents", &agents); err != nil {
 		return nil, err
 	}
 	return agents, nil
 }
 
-func getAgent(ctx context.Context, client *apiclient.Client, id string) (agentmodel.Agent, error) {
-	var got agentmodel.Agent
+func getAgent(ctx context.Context, client *apiclient.Client, id string) (apitypes.Agent, error) {
+	var got apitypes.Agent
 	if err := client.GetJSON(ctx, "/api/v1/agents/"+id, &got); err != nil {
-		return agentmodel.Agent{}, err
+		return apitypes.Agent{}, err
 	}
 	return got, nil
 }
 
-func createAgent(ctx context.Context, client *apiclient.Client, req agentmodel.CreateRequest) (agentmodel.Agent, error) {
-	var created agentmodel.Agent
+func createAgent(ctx context.Context, client *apiclient.Client, req apitypes.CreateAgentRequest) (apitypes.Agent, error) {
+	var created apitypes.Agent
 	if err := client.DoJSON(ctx, http.MethodPost, "/api/v1/agents", req, &created); err != nil {
-		return agentmodel.Agent{}, err
+		return apitypes.Agent{}, err
 	}
 	return created, nil
 }
 
-func filterAgentsByStatus(agents []agentmodel.Agent, status string) []agentmodel.Agent {
-	filtered := make([]agentmodel.Agent, 0, len(agents))
+func filterAgentsByStatus(agents []apitypes.Agent, status string) []apitypes.Agent {
+	filtered := make([]apitypes.Agent, 0, len(agents))
 	for _, a := range agents {
 		if a.Status == status {
 			filtered = append(filtered, a)

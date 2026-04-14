@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"csgclaw/internal/agent"
+	"csgclaw/internal/apitypes"
 	"csgclaw/internal/bot"
 	appversion "csgclaw/internal/version"
 )
@@ -340,7 +340,7 @@ func TestExecuteMessageListReadsFromFeishuChannel(t *testing.T) {
 
 func TestRenderAgentsTableAlignsLongColumns(t *testing.T) {
 	var buf bytes.Buffer
-	agents := []agent.Agent{
+	agents := []apitypes.Agent{
 		{ID: "u-manager", Name: "manager", Role: "manager", Status: "running", Profile: "codex-main"},
 		{ID: "u-dev", Name: "dev", Role: "worker", Status: "running", Profile: "claude-main"},
 		{ID: "u-alex", Name: "alex", Role: "worker", Status: "running"},
@@ -373,7 +373,7 @@ func TestRenderAgentsTableAlignsLongColumns(t *testing.T) {
 func TestRenderAgentsTableUsesDashForMissingProfile(t *testing.T) {
 	var buf bytes.Buffer
 
-	if err := renderAgentsTable(&buf, []agent.Agent{{ID: "u-alice", Name: "alice", Role: "worker", Status: "running"}}); err != nil {
+	if err := renderAgentsTable(&buf, []apitypes.Agent{{ID: "u-alice", Name: "alice", Role: "worker", Status: "running"}}); err != nil {
 		t.Fatalf("renderAgentsTable() error = %v", err)
 	}
 

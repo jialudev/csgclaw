@@ -73,6 +73,14 @@ jobs:
           GOCACHE="${{ github.workspace }}/.gocache" \
           CGO_ENABLED=1 \
           ./scripts/package-release.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
+          VERSION="${{ steps.version.outputs.value }}" \
+          COMMIT="${{ steps.build_meta.outputs.commit }}" \
+          BUILD_TIME="${{ steps.build_meta.outputs.build_time }}" \
+          DIST_DIR=dist \
+          APP=csgclaw-cli \
+          GOCACHE="${{ github.workspace }}/.gocache" \
+          CGO_ENABLED=1 \
+          ./scripts/package-release.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2

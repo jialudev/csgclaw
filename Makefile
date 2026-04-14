@@ -8,6 +8,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 VERSION_PKG ?= csgclaw/internal/version
 LDFLAGS ?= -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$(COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)
+CLI_LDFLAGS ?= -s -w $(LDFLAGS)
 CMD_PATH ?= ./cmd/$(APP)
 
 GO ?= go
@@ -64,7 +65,7 @@ build-csgclaw: boxlite-setup
 
 build-csgclaw-cli:
 	mkdir -p $(BIN_DIR)
-	env GOCACHE=$(GOCACHE) $(GO) build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/csgclaw-cli ./cmd/csgclaw-cli
+	env GOCACHE=$(GOCACHE) $(GO) build -ldflags "$(CLI_LDFLAGS)" -o $(BIN_DIR)/csgclaw-cli ./cmd/csgclaw-cli
 
 build-all: build-csgclaw build-csgclaw-cli
 

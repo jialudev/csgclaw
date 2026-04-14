@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 
 	"csgclaw/cli/command"
-	"csgclaw/internal/agent"
 	"csgclaw/internal/apiclient"
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/channel"
@@ -26,26 +25,26 @@ func NewAPIClient(endpoint, token string, client HTTPClient) *APIClient {
 	return &APIClient{Client: apiclient.New(endpoint, token, client)}
 }
 
-func (c *APIClient) ListAgents(ctx context.Context) ([]agent.Agent, error) {
-	var agents []agent.Agent
+func (c *APIClient) ListAgents(ctx context.Context) ([]apitypes.Agent, error) {
+	var agents []apitypes.Agent
 	if err := c.GetJSON(ctx, "/api/v1/agents", &agents); err != nil {
 		return nil, err
 	}
 	return agents, nil
 }
 
-func (c *APIClient) GetAgent(ctx context.Context, id string) (agent.Agent, error) {
-	var got agent.Agent
+func (c *APIClient) GetAgent(ctx context.Context, id string) (apitypes.Agent, error) {
+	var got apitypes.Agent
 	if err := c.GetJSON(ctx, "/api/v1/agents/"+id, &got); err != nil {
-		return agent.Agent{}, err
+		return apitypes.Agent{}, err
 	}
 	return got, nil
 }
 
-func (c *APIClient) CreateAgent(ctx context.Context, req agent.CreateRequest) (agent.Agent, error) {
-	var created agent.Agent
+func (c *APIClient) CreateAgent(ctx context.Context, req apitypes.CreateAgentRequest) (apitypes.Agent, error) {
+	var created apitypes.Agent
 	if err := c.DoJSON(ctx, http.MethodPost, "/api/v1/agents", req, &created); err != nil {
-		return agent.Agent{}, err
+		return apitypes.Agent{}, err
 	}
 	return created, nil
 }
@@ -87,7 +86,7 @@ func writeJSON(w io.Writer, v any) error {
 	return command.WriteJSON(w, v)
 }
 
-func renderAgentsTable(w io.Writer, agents []agent.Agent) error {
+func renderAgentsTable(w io.Writer, agents []apitypes.Agent) error {
 	tw := newTableWriter(w)
 	fmt.Fprintln(tw, "ID\tNAME\tROLE\tSTATUS\tPROFILE")
 	for _, a := range agents {

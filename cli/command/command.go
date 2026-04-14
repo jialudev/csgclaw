@@ -9,7 +9,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"csgclaw/internal/agent"
 	"csgclaw/internal/apiclient"
 	"csgclaw/internal/apitypes"
 )
@@ -97,7 +96,7 @@ func RenderBots(output string, w io.Writer, bots []apitypes.Bot) error {
 	}
 }
 
-func RenderAgents(output string, w io.Writer, agents []agent.Agent) error {
+func RenderAgents(output string, w io.Writer, agents []apitypes.Agent) error {
 	switch output {
 	case "", "table":
 		return RenderAgentsTable(w, agents)
@@ -141,7 +140,7 @@ func RenderMessages(output string, w io.Writer, messages []apitypes.Message) err
 	}
 }
 
-func RenderAgentsTable(w io.Writer, agents []agent.Agent) error {
+func RenderAgentsTable(w io.Writer, agents []apitypes.Agent) error {
 	tw := NewTableWriter(w)
 	fmt.Fprintln(tw, "ID\tNAME\tROLE\tSTATUS\tPROFILE")
 	for _, a := range agents {

@@ -17,6 +17,9 @@ DIST_DIR="${DIST_DIR:-dist}"
 GOCACHE="${GOCACHE:-$(pwd)/.gocache}"
 VERSION_PKG="${VERSION_PKG:-csgclaw/internal/version}"
 LDFLAGS="-X ${VERSION_PKG}.Version=${VERSION} -X ${VERSION_PKG}.Commit=${COMMIT} -X ${VERSION_PKG}.BuildTime=${BUILD_TIME}"
+if [ "$APP" = "csgclaw-cli" ]; then
+  LDFLAGS="-s -w ${LDFLAGS}"
+fi
 
 mkdir -p "$DIST_DIR"
 
