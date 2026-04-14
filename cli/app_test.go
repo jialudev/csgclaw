@@ -228,7 +228,7 @@ func TestExecuteBotCreateRequiresNameAndRole(t *testing.T) {
 	}
 }
 
-func TestExecuteMessageSendsToDefaultChannel(t *testing.T) {
+func TestExecuteMessageCreateSendsToDefaultChannel(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{
 		stdout: &stdout,
@@ -251,14 +251,14 @@ func TestExecuteMessageSendsToDefaultChannel(t *testing.T) {
 		}),
 	}
 
-	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "message", "--room-id", "room-1", "--sender-id", "u-admin", "--content", "hello"})
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "message", "create", "--room-id", "room-1", "--sender-id", "u-admin", "--content", "hello"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	assertTableHasRow(t, stdout.String(), "msg-1", "u-admin", "message", "hello")
 }
 
-func TestExecuteMessageSendsToFeishuChannel(t *testing.T) {
+func TestExecuteMessageCreateSendsToFeishuChannel(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{
 		stdout: &stdout,
@@ -281,12 +281,60 @@ func TestExecuteMessageSendsToFeishuChannel(t *testing.T) {
 		}),
 	}
 
-	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "message", "--channel", "feishu", "--room-id", "oc_alpha", "--sender-id", "u-manager", "--content", "hello", "--mention-id", "u-dev"})
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "message", "create", "--channel", "feishu", "--room-id", "oc_alpha", "--sender-id", "u-manager", "--content", "hello", "--mention-id", "u-dev"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	if !strings.Contains(stdout.String(), `"id": "om_1"`) || !strings.Contains(stdout.String(), `"sender_id": "u-manager"`) {
 		t.Fatalf("stdout = %q, want JSON message payload", stdout.String())
+	}
+}
+
+func TestExecuteMessageListReadsFromDefaultChannel(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/messages?room_id=room-1" {
+				t.Fatalf("url = %q, want csgclaw message list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"msg-1","room_id":"room-1","sender_id":"u-admin","kind":"message","content":"hello","created_at":"2026-04-12T09:00:00Z","mentions":[]}]`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "message", "list", "--room-id", "room-1"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "msg-1", "u-admin", "message", "hello")
+}
+
+func TestExecuteMessageListReadsFromFeishuChannel(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/messages?room_id=oc_alpha" {
+				t.Fatalf("url = %q, want feishu message list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"om_1","room_id":"oc_alpha","sender_id":"ou_manager","kind":"message","content":"hello","created_at":"2026-04-12T09:00:00Z","mentions":[]}]`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "message", "list", "--channel", "feishu", "--room-id", "oc_alpha"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"id": "om_1"`) || !strings.Contains(stdout.String(), `"sender_id": "ou_manager"`) {
+		t.Fatalf("stdout = %q, want JSON message list payload", stdout.String())
 	}
 }
 

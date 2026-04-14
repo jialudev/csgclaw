@@ -125,6 +125,18 @@ func (c *Client) SendMessageByChannel(ctx context.Context, channel string, req a
 	return created, nil
 }
 
+func (c *Client) ListMessagesByChannel(ctx context.Context, channel, roomID string) ([]apitypes.Message, error) {
+	var messages []apitypes.Message
+	path, err := messageListPath(channel, roomID)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.GetJSON(ctx, path, &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
 func (c *Client) AddRoomMemberByChannel(ctx context.Context, channel string, req apitypes.AddRoomMembersRequest) (apitypes.Room, error) {
 	var updated apitypes.Room
 	path, err := memberCreatePath(channel, req.RoomID)
@@ -310,4 +322,16 @@ func roomMembersPath(channelName, roomID, operation string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported channel %q", channelName)
 	}
+}
+
+func messageListPath(channelName, roomID string) (string, error) {
+	path, err := channelPath(channelName, "messages")
+	if err != nil {
+		return "", err
+	}
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		return "", fmt.Errorf("room_id is required")
+	}
+	return path + "?room_id=" + url.QueryEscape(roomID), nil
 }

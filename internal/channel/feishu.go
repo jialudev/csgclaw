@@ -62,6 +62,8 @@ type FeishuListChatMembersFunc func(context.Context, FeishuAppConfig, map[string
 
 type FeishuListChatsFunc func(context.Context, FeishuAppConfig) ([]im.Room, error)
 
+type FeishuListRoomMessagesFunc func(context.Context, FeishuAppConfig, string) ([]im.Message, error)
+
 type FeishuSendMessageRequest struct {
 	ChatID           string
 	Content          string
@@ -79,17 +81,18 @@ type FeishuSendMessageResponse struct {
 type FeishuSendMessageFunc func(context.Context, FeishuAppConfig, FeishuSendMessageRequest) (FeishuSendMessageResponse, error)
 
 type FeishuService struct {
-	mu              sync.RWMutex
-	users           map[string]im.User
-	byHandle        map[string]string
-	rooms           map[string]*im.Room
-	apps            map[string]FeishuAppConfig
-	createChat      FeishuCreateChatFunc
-	addChatMembers  FeishuAddChatMembersFunc
-	listChatMembers FeishuListChatMembersFunc
-	listChats       FeishuListChatsFunc
-	sendMessage     FeishuSendMessageFunc
-	messageBus      *FeishuMessageBus
+	mu               sync.RWMutex
+	users            map[string]im.User
+	byHandle         map[string]string
+	rooms            map[string]*im.Room
+	apps             map[string]FeishuAppConfig
+	createChat       FeishuCreateChatFunc
+	addChatMembers   FeishuAddChatMembersFunc
+	listChatMembers  FeishuListChatMembersFunc
+	listChats        FeishuListChatsFunc
+	listRoomMessages FeishuListRoomMessagesFunc
+	sendMessage      FeishuSendMessageFunc
+	messageBus       *FeishuMessageBus
 }
 
 func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
@@ -100,16 +103,17 @@ func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
 		}
 	}
 	return &FeishuService{
-		users:           make(map[string]im.User),
-		byHandle:        make(map[string]string),
-		rooms:           make(map[string]*im.Room),
-		apps:            configuredApps,
-		createChat:      defaultFeishuCreateChat,
-		addChatMembers:  defaultFeishuAddChatMembers,
-		listChatMembers: defaultFeishuListChatMembers,
-		listChats:       defaultFeishuListChats,
-		sendMessage:     defaultFeishuSendMessage,
-		messageBus:      NewFeishuMessageBus(),
+		users:            make(map[string]im.User),
+		byHandle:         make(map[string]string),
+		rooms:            make(map[string]*im.Room),
+		apps:             configuredApps,
+		createChat:       defaultFeishuCreateChat,
+		addChatMembers:   defaultFeishuAddChatMembers,
+		listChatMembers:  defaultFeishuListChatMembers,
+		listChats:        defaultFeishuListChats,
+		listRoomMessages: defaultFeishuListRoomMessages,
+		sendMessage:      defaultFeishuSendMessage,
+		messageBus:       NewFeishuMessageBus(),
 	}
 }
 
@@ -128,6 +132,22 @@ func NewFeishuServiceWithCreateChatAndAddMembers(apps map[string]FeishuAppConfig
 	}
 	if len(listChatMembers) > 0 && listChatMembers[0] != nil {
 		svc.listChatMembers = listChatMembers[0]
+	}
+	return svc
+}
+
+func NewFeishuServiceWithListRoomMessages(apps map[string]FeishuAppConfig, listRoomMessages FeishuListRoomMessagesFunc) *FeishuService {
+	svc := NewFeishuService(apps)
+	if listRoomMessages != nil {
+		svc.listRoomMessages = listRoomMessages
+	}
+	return svc
+}
+
+func NewFeishuServiceWithCreateChatAndListRoomMessages(apps map[string]FeishuAppConfig, createChat FeishuCreateChatFunc, listRoomMessages FeishuListRoomMessagesFunc) *FeishuService {
+	svc := NewFeishuServiceWithCreateChat(apps, createChat)
+	if listRoomMessages != nil {
+		svc.listRoomMessages = listRoomMessages
 	}
 	return svc
 }
@@ -559,6 +579,119 @@ func defaultFeishuListChats(ctx context.Context, app FeishuAppConfig) ([]im.Room
 	return rooms, nil
 }
 
+func defaultFeishuListRoomMessages(ctx context.Context, app FeishuAppConfig, chatID string) ([]im.Message, error) {
+	client := lark.NewClient(app.AppID, app.AppSecret)
+	messages := make([]im.Message, 0)
+	pageToken := ""
+
+	for {
+		reqBuilder := larkim.NewListMessageReqBuilder().
+			ContainerIdType("chat").
+			ContainerId(chatID).
+			StartTime("0").
+			EndTime(fmt.Sprint(time.Now().UTC().Unix())).
+			SortType("ByCreateTimeAsc").
+			PageSize(50)
+		if pageToken != "" {
+			reqBuilder.PageToken(pageToken)
+		}
+
+		resp, err := client.Im.V1.Message.List(ctx, reqBuilder.Build())
+		if err != nil {
+			return nil, fmt.Errorf("list feishu messages: %w", err)
+		}
+		if !resp.Success() {
+			return nil, fmt.Errorf("list feishu messages: code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+		}
+		if resp.Data == nil {
+			return nil, fmt.Errorf("list feishu messages: empty response data")
+		}
+
+		for _, item := range resp.Data.Items {
+			message, ok := feishuSDKMessageToIMMessage(item)
+			if ok {
+				messages = append(messages, message)
+			}
+		}
+
+		if !larkcore.BoolValue(resp.Data.HasMore) {
+			break
+		}
+		pageToken = strings.TrimSpace(larkcore.StringValue(resp.Data.PageToken))
+		if pageToken == "" {
+			break
+		}
+	}
+
+	return messages, nil
+}
+
+func feishuSDKMessageToIMMessage(item *larkim.Message) (im.Message, bool) {
+	if item == nil || larkcore.BoolValue(item.Deleted) {
+		return im.Message{}, false
+	}
+
+	messageID := strings.TrimSpace(larkcore.StringValue(item.MessageId))
+	if messageID == "" {
+		return im.Message{}, false
+	}
+	senderID := ""
+	if item.Sender != nil {
+		senderID = strings.TrimSpace(larkcore.StringValue(item.Sender.Id))
+	}
+	content := ""
+	if item.Body != nil {
+		content = feishuMessageContentText(larkcore.StringValue(item.Body.Content))
+	}
+
+	return im.Message{
+		ID:        messageID,
+		SenderID:  senderID,
+		Kind:      im.MessageKindMessage,
+		Content:   content,
+		CreatedAt: feishuMessageCreatedAt(larkcore.StringValue(item.CreateTime)),
+		Mentions:  feishuMessageMentionIDs(item.Mentions),
+	}, true
+}
+
+func feishuMessageContentText(content string) string {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return ""
+	}
+
+	var textContent struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(content), &textContent); err == nil && textContent.Text != "" {
+		return textContent.Text
+	}
+	return content
+}
+
+func feishuMessageCreatedAt(createTime string) time.Time {
+	createTime = strings.TrimSpace(createTime)
+	if createTime == "" {
+		return time.Time{}
+	}
+	timestamp, err := time.ParseDuration(createTime + "ms")
+	if err != nil {
+		return time.Time{}
+	}
+	return time.UnixMilli(timestamp.Milliseconds()).UTC()
+}
+
+func feishuMessageMentionIDs(mentions []*larkim.Mention) []string {
+	ids := make([]string, 0, len(mentions))
+	for _, mention := range mentions {
+		if mention == nil {
+			continue
+		}
+		ids = append(ids, larkcore.StringValue(mention.Id))
+	}
+	return normalizeNonEmptyStrings(ids)
+}
+
 func defaultFeishuSendMessage(ctx context.Context, app FeishuAppConfig, req FeishuSendMessageRequest) (FeishuSendMessageResponse, error) {
 	text := req.Content
 	senderOpenID, err := fetchBotOpenID(ctx, app)
@@ -769,6 +902,26 @@ func (s *FeishuService) ListRooms() ([]im.Room, error) {
 	}
 	slices.SortFunc(rooms, func(a, b im.Room) int { return strings.Compare(a.Title, b.Title) })
 	return rooms, nil
+}
+
+func (s *FeishuService) ListRoomMessages(roomID string) ([]im.Message, error) {
+	app, err := s.appConfigForRoom("")
+	if err != nil {
+		return nil, err
+	}
+
+	messages, err := s.listRoomMessages(context.Background(), app, roomID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	if room, ok := s.rooms[roomID]; ok {
+		room.Messages = append([]im.Message(nil), messages...)
+	}
+	s.mu.Unlock()
+
+	return append([]im.Message(nil), messages...), nil
 }
 
 func (s *FeishuService) AddRoomMembers(req im.AddRoomMembersRequest) (im.Room, error) {

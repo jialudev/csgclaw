@@ -359,6 +359,72 @@ func TestFeishuListRoomsCallsConfiguredApp(t *testing.T) {
 	}
 }
 
+func TestFeishuListRoomMessagesFetchesAllMessagesAndUpdatesCache(t *testing.T) {
+	var gotApp FeishuAppConfig
+	var gotRoomID string
+	fetchedAt := time.Unix(5, 0).UTC()
+	svc := NewFeishuServiceWithListRoomMessages(
+		map[string]FeishuAppConfig{"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"}},
+		func(_ context.Context, app FeishuAppConfig, roomID string) ([]im.Message, error) {
+			gotApp = app
+			gotRoomID = roomID
+			return []im.Message{
+				{ID: "om_1", SenderID: "ou_manager", Kind: im.MessageKindMessage, Content: "hello", CreatedAt: fetchedAt},
+				{ID: "om_2", SenderID: "ou_alice", Kind: im.MessageKindMessage, Content: "world", CreatedAt: fetchedAt.Add(time.Second)},
+			}, nil
+		},
+	)
+	svc.rooms["oc_alpha"] = &im.Room{
+		ID:       "oc_alpha",
+		Title:    "alpha",
+		Messages: []im.Message{{ID: "om_old", Content: "old"}},
+	}
+
+	messages, err := svc.ListRoomMessages("oc_alpha")
+	if err != nil {
+		t.Fatalf("ListRoomMessages() error = %v", err)
+	}
+
+	if gotApp.AppID != "cli_manager" {
+		t.Fatalf("list messages app = %+v, want manager app", gotApp)
+	}
+	if gotRoomID != "oc_alpha" {
+		t.Fatalf("list messages room_id = %q, want oc_alpha", gotRoomID)
+	}
+	if len(messages) != 2 || messages[0].ID != "om_1" || messages[1].ID != "om_2" {
+		t.Fatalf("messages = %+v, want fetched messages", messages)
+	}
+	if len(svc.rooms["oc_alpha"].Messages) != 2 || svc.rooms["oc_alpha"].Messages[0].ID != "om_1" {
+		t.Fatalf("cached messages = %+v, want fetched messages", svc.rooms["oc_alpha"].Messages)
+	}
+	messages[0].ID = "mutated"
+	if got, want := svc.rooms["oc_alpha"].Messages[0].ID, "om_1"; got != want {
+		t.Fatalf("cached message id after caller mutation = %q, want %q", got, want)
+	}
+}
+
+func TestFeishuListRoomMessagesRequestsAPIWithoutLocalRoomValidation(t *testing.T) {
+	var gotRoomIDs []string
+	svc := NewFeishuServiceWithListRoomMessages(
+		map[string]FeishuAppConfig{"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"}},
+		func(_ context.Context, _ FeishuAppConfig, roomID string) ([]im.Message, error) {
+			gotRoomIDs = append(gotRoomIDs, roomID)
+			return []im.Message{{ID: "om_1"}}, nil
+		},
+	)
+
+	if _, err := svc.ListRoomMessages(" "); err != nil {
+		t.Fatalf("ListRoomMessages() with blank room_id error = %v", err)
+	}
+	if _, err := svc.ListRoomMessages("missing"); err != nil {
+		t.Fatalf("ListRoomMessages() with missing local room error = %v", err)
+	}
+
+	if len(gotRoomIDs) != 2 || gotRoomIDs[0] != " " || gotRoomIDs[1] != "missing" {
+		t.Fatalf("list messages room_ids = %+v, want blank and missing room ids passed through", gotRoomIDs)
+	}
+}
+
 func TestFeishuAddRoomMembersCallsConfiguredApp(t *testing.T) {
 	var gotApp FeishuAppConfig
 	var gotReq FeishuAddChatMembersRequest

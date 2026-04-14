@@ -32,7 +32,7 @@ func TestExecuteExposesOnlyLiteCommands(t *testing.T) {
 		"bot      Manage bots",
 		"room     Manage IM rooms",
 		"member   Manage IM room members",
-		"message  Send an IM message.",
+		"message  Manage IM messages.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("usage = %q, want substring %q", got, want)
@@ -141,7 +141,7 @@ func TestExecuteRoomCreateUsesChannelRoute(t *testing.T) {
 	assertTableHasRow(t, stdout.String(), "oc_alpha", "alpha", "1", "0")
 }
 
-func TestExecuteMessageUsesChannelRoute(t *testing.T) {
+func TestExecuteMessageCreateUsesChannelRoute(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{
 		stdout: &stdout,
@@ -164,11 +164,36 @@ func TestExecuteMessageUsesChannelRoute(t *testing.T) {
 		}),
 	}
 
-	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "message", "--channel", "feishu", "--room-id", "oc_alpha", "--sender-id", "u-manager", "--content", "hello"})
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "message", "create", "--channel", "feishu", "--room-id", "oc_alpha", "--sender-id", "u-manager", "--content", "hello"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	assertTableHasRow(t, stdout.String(), "om_1", "u-manager", "message", "hello")
+}
+
+func TestExecuteMessageListUsesChannelRoute(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/messages?room_id=oc_alpha" {
+				t.Fatalf("url = %q, want feishu message list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"om_1","room_id":"oc_alpha","sender_id":"ou_manager","kind":"message","content":"hello","created_at":"2026-04-12T09:00:00Z","mentions":[]}]`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "message", "list", "--channel", "feishu", "--room-id", "oc_alpha"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"id": "om_1"`) || !strings.Contains(stdout.String(), `"sender_id": "ou_manager"`) {
+		t.Fatalf("stdout = %q, want JSON message list payload", stdout.String())
+	}
 }
 
 func TestExecuteMemberListUsesFeishuDefault(t *testing.T) {

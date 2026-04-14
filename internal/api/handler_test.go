@@ -182,7 +182,7 @@ func TestHandleFeishuRoomsMembers(t *testing.T) {
 			}, nil
 		},
 		func(context.Context, channel.FeishuAppConfig, channel.FeishuAddChatMembersRequest) error { return nil },
-		func(context.Context, channel.FeishuAppConfig, string) ([]im.User, error) {
+		func(context.Context, channel.FeishuAppConfig, map[string]channel.FeishuAppConfig, string) ([]im.User, error) {
 			return []im.User{
 				{ID: "fsu-admin", Name: "Admin"},
 				{ID: "fsu-alice", Name: "Alice"},
@@ -1367,6 +1367,41 @@ func TestHandleFeishuMessagesPostSendsMessage(t *testing.T) {
 	}
 	if got.ID != "om_1" || got.SenderID != "ou_manager" || got.Content != "hello" {
 		t.Fatalf("message = %+v, want feishu message response", got)
+	}
+}
+
+func TestHandleFeishuMessagesGetListsRoomMessages(t *testing.T) {
+	feishuSvc := channel.NewFeishuServiceWithCreateChatAndListRoomMessages(
+		map[string]channel.FeishuAppConfig{"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret", AdminOpenID: "ou_admin"}},
+		func(_ context.Context, _ channel.FeishuAppConfig, req channel.FeishuCreateChatRequest) (channel.FeishuCreateChatResponse, error) {
+			return channel.FeishuCreateChatResponse{ChatID: "oc_alpha", Name: req.Title}, nil
+		},
+		func(_ context.Context, _ channel.FeishuAppConfig, roomID string) ([]im.Message, error) {
+			if roomID != "oc_alpha" {
+				t.Fatalf("room_id = %q, want oc_alpha", roomID)
+			}
+			return []im.Message{{ID: "om_1", SenderID: "ou_manager", Content: "hello", CreatedAt: time.Unix(1, 0).UTC()}}, nil
+		},
+	)
+	if _, err := feishuSvc.CreateRoom(im.CreateRoomRequest{Title: "alpha", CreatorID: "u-manager"}); err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+	srv := &Handler{feishu: feishuSvc}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/messages?room_id=oc_alpha", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got []im.Message
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "om_1" {
+		t.Fatalf("messages = %+v, want listed feishu messages", got)
 	}
 }
 

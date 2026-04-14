@@ -240,16 +240,16 @@ The selected channel is part of the request payload or query string, not a separ
 `message` is available in both CLIs as a thin wrapper over the message API.
 
 ```text
-csgclaw message --channel <csgclaw|feishu> --room-id <id> --sender-id <id> --content <text> [--mention-id <id>]
-csgclaw-cli message --channel <csgclaw|feishu> --room-id <id> --sender-id <id> --content <text> [--mention-id <id>]
+csgclaw message create --channel <csgclaw|feishu> --room-id <id> --sender-id <id> --content <text> [--mention-id <id>]
+csgclaw-cli message create --channel <csgclaw|feishu> --room-id <id> --sender-id <id> --content <text> [--mention-id <id>]
 ```
 
 Expected behavior:
 
-- `csgclaw message --room-id room-1 --sender-id u-admin --content hello` calls `POST /api/v1/messages`
-- `csgclaw message --channel feishu --room-id oc_alpha --sender-id u-manager --content hello` calls `POST /api/v1/channels/feishu/messages`
-- `csgclaw-cli message --room-id room-1 --sender-id u-admin --content hello` calls `POST /api/v1/messages`
-- `csgclaw-cli message --channel feishu --room-id oc_alpha --sender-id u-manager --content hello` calls `POST /api/v1/channels/feishu/messages`
+- `csgclaw message create --room-id room-1 --sender-id u-admin --content hello` calls `POST /api/v1/messages`
+- `csgclaw message create --channel feishu --room-id oc_alpha --sender-id u-manager --content hello` calls `POST /api/v1/channels/feishu/messages`
+- `csgclaw-cli message create --room-id room-1 --sender-id u-admin --content hello` calls `POST /api/v1/messages`
+- `csgclaw-cli message create --channel feishu --room-id oc_alpha --sender-id u-manager --content hello` calls `POST /api/v1/channels/feishu/messages`
 
 Validation rules:
 
