@@ -110,7 +110,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 }
 
 func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config, forceRecreateManager bool) (bot.Bot, error) {
-	agentSvc, err := agent.NewService(cfg.Model, cfg.Server, cfg.Bootstrap.ManagerImage, agentsPath)
+	agentSvc, err := agent.NewServiceWithChannels(cfg.Model, cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath)
 	if err != nil {
 		return bot.Bot{}, err
 	}

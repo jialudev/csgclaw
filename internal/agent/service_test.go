@@ -977,6 +977,44 @@ func TestPicoclawBoxEnvVars(t *testing.T) {
 	}
 }
 
+func TestAddFeishuBoxEnvVarsUsesMatchingBotID(t *testing.T) {
+	envVars := map[string]string{}
+	addFeishuBoxEnvVars(envVars, "u-worker-1", config.ChannelsConfig{
+		Feishu: map[string]config.FeishuConfig{
+			"u-worker-1": {
+				AppID:     "cli_worker",
+				AppSecret: "worker-secret",
+			},
+		},
+	})
+
+	if got, want := envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"], "cli_worker"; got != want {
+		t.Fatalf("PICOCLAW_CHANNELS_FEISHU_APP_ID = %q, want %q", got, want)
+	}
+	if got, want := envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"], "worker-secret"; got != want {
+		t.Fatalf("PICOCLAW_CHANNELS_FEISHU_APP_SECRET = %q, want %q", got, want)
+	}
+}
+
+func TestAddFeishuBoxEnvVarsRequiresExactBotIDMatch(t *testing.T) {
+	envVars := map[string]string{}
+	addFeishuBoxEnvVars(envVars, ManagerUserID, config.ChannelsConfig{
+		Feishu: map[string]config.FeishuConfig{
+			"manager": {
+				AppID:     "cli_manager",
+				AppSecret: "manager-secret",
+			},
+		},
+	})
+
+	if _, ok := envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"]; ok {
+		t.Fatalf("PICOCLAW_CHANNELS_FEISHU_APP_ID was set for non-matching bot id")
+	}
+	if _, ok := envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"]; ok {
+		t.Fatalf("PICOCLAW_CHANNELS_FEISHU_APP_SECRET was set for non-matching bot id")
+	}
+}
+
 func TestResolveManagerBaseURLPrefersLocalIP(t *testing.T) {
 	orig := localIPv4Resolver
 	localIPv4Resolver = func() string { return "10.0.0.8" }

@@ -54,6 +54,7 @@ func (s *Service) gatewayBoxOptions(name, botID, modelID string) ([]boxlite.BoxO
 		modelID = s.model.ModelID
 	}
 	envVars := picoclawBoxEnvVars(resolveManagerBaseURL(s.server), s.server.AccessToken, botID, s.model)
+	addFeishuBoxEnvVars(envVars, botID, s.channels)
 	opts := []boxlite.BoxOption{
 		boxlite.WithName(name),
 		boxlite.WithDetach(true),
@@ -124,4 +125,20 @@ func picoclawBoxEnvVars(baseURL, accessToken, botID string, model config.ModelCo
 		"PICOCLAW_CUSTOM_MODEL_API_KEY":          model.APIKey,
 		"PICOCLAW_CUSTOM_MODEL_BASE_URL":         model.BaseURL,
 	}
+}
+
+func addFeishuBoxEnvVars(envVars map[string]string, botID string, channels config.ChannelsConfig) {
+	if envVars == nil {
+		return
+	}
+	botID = strings.TrimSpace(botID)
+	if botID == "" || len(channels.Feishu) == 0 {
+		return
+	}
+	feishu, ok := channels.Feishu[botID]
+	if !ok {
+		return
+	}
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"] = feishu.AppID
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"] = feishu.AppSecret
 }

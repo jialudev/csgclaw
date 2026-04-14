@@ -467,7 +467,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agent.NewService(cfg.Model, cfg.Server, cfg.Bootstrap.ManagerImage, agentsPath)
+	return agent.NewServiceWithChannels(cfg.Model, cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath)
 }
 
 func newIMService() (*im.Service, error) {
