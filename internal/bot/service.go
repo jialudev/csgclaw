@@ -138,17 +138,30 @@ func (s *Service) appendConfiguredFeishuBots(ctx context.Context, bots []Bot, ro
 		if role != "" && botRole != role {
 			continue
 		}
-		openID, err := s.feishu.ResolveBotOpenID(ctx, id)
+		agentID := ""
+		available := false
+		if s.agents != nil {
+			if _, ok := s.agents.Agent(id); ok {
+				agentID = id
+				available = true
+			}
+		}
+		openID, appName, err := s.feishu.ResolveBotOpenID(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("resolve configured feishu bot %q open_id: %w", id, err)
 		}
+		name := strings.TrimSpace(appName)
+		if name == "" {
+			name = displayID
+		}
 		bots = append(bots, Bot{
-			ID:        displayID,
-			Name:      displayID,
+			ID:        id,
+			Name:      name,
 			Role:      botRole,
 			Channel:   string(ChannelFeishu),
+			AgentID:   agentID,
 			UserID:    strings.TrimSpace(openID),
-			Available: false,
+			Available: available,
 		})
 		seen[displayID] = struct{}{}
 	}

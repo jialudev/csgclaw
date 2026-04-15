@@ -37,6 +37,11 @@ type FeishuAppConfig struct {
 	AdminOpenID string
 }
 
+type FeishuBotInfo struct {
+	OpenID  string
+	AppName string
+}
+
 type FeishuCreateChatRequest struct {
 	Title       string
 	Description string
@@ -88,7 +93,7 @@ type FeishuService struct {
 	byHandle         map[string]string
 	rooms            map[string]*im.Room
 	apps             map[string]FeishuAppConfig
-	resolveBotOpenID func(context.Context, FeishuAppConfig) (string, error)
+	resolveBotInfo   func(context.Context, FeishuAppConfig) (FeishuBotInfo, error)
 	createChat       FeishuCreateChatFunc
 	addChatMembers   FeishuAddChatMembersFunc
 	listChatMembers  FeishuListChatMembersFunc
@@ -110,7 +115,7 @@ func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
 		byHandle:         make(map[string]string),
 		rooms:            make(map[string]*im.Room),
 		apps:             configuredApps,
-		resolveBotOpenID: fetchBotOpenID,
+		resolveBotInfo:   fetchBotInfo,
 		createChat:       defaultFeishuCreateChat,
 		addChatMembers:   defaultFeishuAddChatMembers,
 		listChatMembers:  defaultFeishuListChatMembers,
@@ -121,10 +126,10 @@ func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
 	}
 }
 
-func NewFeishuServiceWithBotOpenIDResolver(apps map[string]FeishuAppConfig, resolveBotOpenID func(context.Context, FeishuAppConfig) (string, error)) *FeishuService {
+func NewFeishuServiceWithBotOpenIDResolver(apps map[string]FeishuAppConfig, resolveBotInfo func(context.Context, FeishuAppConfig) (FeishuBotInfo, error)) *FeishuService {
 	svc := NewFeishuService(apps)
-	if resolveBotOpenID != nil {
-		svc.resolveBotOpenID = resolveBotOpenID
+	if resolveBotInfo != nil {
+		svc.resolveBotInfo = resolveBotInfo
 	}
 	return svc
 }
@@ -248,7 +253,7 @@ func (s *FeishuService) ListUsers() []im.User {
 	for id, user := range s.users {
 		localUsers[id] = user
 	}
-	resolveBotOpenID := s.resolveBotOpenID
+	resolveBotInfo := s.resolveBotInfo
 	s.mu.RUnlock()
 
 	users := make([]im.User, 0, len(apps)+len(localUsers))
@@ -261,11 +266,11 @@ func (s *FeishuService) ListUsers() []im.User {
 		if err != nil {
 			continue
 		}
-		openID, err := resolveBotOpenID(context.Background(), app)
+		botInfo, err := resolveBotInfo(context.Background(), app)
 		if err != nil {
 			continue
 		}
-		openID = strings.TrimSpace(openID)
+		openID := strings.TrimSpace(botInfo.OpenID)
 		if openID == "" {
 			continue
 		}
@@ -306,7 +311,7 @@ func (s *FeishuService) ResolveBotUser(ctx context.Context, botID string) (im.Us
 	if s == nil {
 		return im.User{}, false, nil
 	}
-	openID, err := s.ResolveBotOpenID(ctx, botID)
+	openID, _, err := s.ResolveBotOpenID(ctx, botID)
 	if err != nil {
 		return im.User{}, false, err
 	}
@@ -548,7 +553,7 @@ func defaultFeishuListChatMembers(ctx context.Context, app FeishuAppConfig, apps
 }
 
 func feishuBotMembersInChat(ctx context.Context, apps map[string]FeishuAppConfig, chatID string, existingMemberIDs map[string]struct{}) ([]im.User, error) {
-	return feishuBotMembersInChatWithResolvers(ctx, apps, chatID, existingMemberIDs, fetchBotOpenID, feishuAppIsInChat)
+	return feishuBotMembersInChatWithResolvers(ctx, apps, chatID, existingMemberIDs, fetchBotInfo, feishuAppIsInChat)
 }
 
 func feishuBotMembersInChatWithResolvers(
@@ -556,7 +561,7 @@ func feishuBotMembersInChatWithResolvers(
 	apps map[string]FeishuAppConfig,
 	chatID string,
 	existingMemberIDs map[string]struct{},
-	resolveBotOpenID func(context.Context, FeishuAppConfig) (string, error),
+	resolveBotInfo func(context.Context, FeishuAppConfig) (FeishuBotInfo, error),
 	isInChat func(context.Context, FeishuAppConfig, string) (bool, error),
 ) ([]im.User, error) {
 	if ctx == nil {
@@ -581,11 +586,11 @@ func feishuBotMembersInChatWithResolvers(
 			continue
 		}
 
-		openID, err := resolveBotOpenID(ctx, app)
+		botInfo, err := resolveBotInfo(ctx, app)
 		if err != nil {
 			return nil, fmt.Errorf("resolve feishu bot %q open_id: %w", botID, err)
 		}
-		openID = strings.TrimSpace(openID)
+		openID := strings.TrimSpace(botInfo.OpenID)
 		if openID == "" {
 			return nil, fmt.Errorf("resolve feishu bot %q open_id: empty open_id", botID)
 		}
@@ -804,10 +809,11 @@ func feishuMessageMentionIDs(mentions []*larkim.Mention) []string {
 
 func defaultFeishuSendMessage(ctx context.Context, app FeishuAppConfig, req FeishuSendMessageRequest) (FeishuSendMessageResponse, error) {
 	text := req.Content
-	senderOpenID, err := fetchBotOpenID(ctx, app)
+	senderInfo, err := fetchBotInfo(ctx, app)
 	if err != nil {
 		return FeishuSendMessageResponse{}, err
 	}
+	senderOpenID := senderInfo.OpenID
 	mentionID := strings.TrimSpace(req.MentionID)
 	mentionOpenID := ""
 	if mentionID != "" {
@@ -815,12 +821,12 @@ func defaultFeishuSendMessage(ctx context.Context, app FeishuAppConfig, req Feis
 		if err != nil {
 			return FeishuSendMessageResponse{}, err
 		}
-		openID, err := fetchBotOpenID(ctx, mentionApp)
+		botInfo, err := fetchBotInfo(ctx, mentionApp)
 		if err != nil {
 			return FeishuSendMessageResponse{}, err
 		}
-		mentionOpenID = openID
-		text = fmt.Sprintf("<at user_id=\"%s\">%s</at> %s", openID, mentionID, req.Content)
+		mentionOpenID = botInfo.OpenID
+		text = fmt.Sprintf("<at user_id=\"%s\">%s</at> %s", mentionOpenID, mentionID, req.Content)
 	}
 
 	content, err := json.Marshal(map[string]string{"text": text})
@@ -856,8 +862,8 @@ func defaultFeishuSendMessage(ctx context.Context, app FeishuAppConfig, req Feis
 	}, nil
 }
 
-// fetchBotOpenID calls the Feishu bot info API to retrieve and store the bot's open_id.
-func fetchBotOpenID(ctx context.Context, app FeishuAppConfig) (string, error) {
+// fetchBotInfo calls the Feishu bot info API to retrieve bot identity fields.
+func fetchBotInfo(ctx context.Context, app FeishuAppConfig) (FeishuBotInfo, error) {
 	client := lark.NewClient(app.AppID, app.AppSecret)
 	resp, err := client.Do(ctx, &larkcore.ApiReq{
 		HttpMethod:                http.MethodGet,
@@ -865,26 +871,30 @@ func fetchBotOpenID(ctx context.Context, app FeishuAppConfig) (string, error) {
 		SupportedAccessTokenTypes: []larkcore.AccessTokenType{larkcore.AccessTokenTypeTenant},
 	})
 	if err != nil {
-		return "", fmt.Errorf("bot info request: %w", err)
+		return FeishuBotInfo{}, fmt.Errorf("bot info request: %w", err)
 	}
 
 	var result struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Bot  struct {
-			OpenID string `json:"open_id"`
+			OpenID  string `json:"open_id"`
+			AppName string `json:"app_name"`
 		} `json:"bot"`
 	}
 	if err := json.Unmarshal(resp.RawBody, &result); err != nil {
-		return "", fmt.Errorf("bot info parse: %w", err)
+		return FeishuBotInfo{}, fmt.Errorf("bot info parse: %w", err)
 	}
 	if result.Code != 0 {
-		return "", fmt.Errorf("bot info api error: code=%d msg=%s", result.Code, result.Msg)
+		return FeishuBotInfo{}, fmt.Errorf("bot info api error: code=%d msg=%s", result.Code, result.Msg)
 	}
 	if result.Bot.OpenID == "" {
-		return "", fmt.Errorf("bot info: empty open_id")
+		return FeishuBotInfo{}, fmt.Errorf("bot info: empty open_id")
 	}
-	return result.Bot.OpenID, nil
+	return FeishuBotInfo{
+		OpenID:  result.Bot.OpenID,
+		AppName: result.Bot.AppName,
+	}, nil
 }
 
 func (s *FeishuService) SendMessage(req im.CreateMessageRequest) (im.Message, error) {
@@ -962,10 +972,10 @@ func (s *FeishuService) SendMessage(req im.CreateMessageRequest) (im.Message, er
 	return message, nil
 }
 
-func (s *FeishuService) ResolveBotOpenID(ctx context.Context, botID string) (string, error) {
+func (s *FeishuService) ResolveBotOpenID(ctx context.Context, botID string) (string, string, error) {
 	botID = strings.TrimSpace(botID)
 	if botID == "" {
-		return "", fmt.Errorf("feishu bot id is required")
+		return "", "", fmt.Errorf("feishu bot id is required")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -975,14 +985,18 @@ func (s *FeishuService) ResolveBotOpenID(ctx context.Context, botID string) (str
 	app, ok := s.apps[botID]
 	s.mu.RUnlock()
 	if !ok {
-		return botID, nil
+		return botID, "", nil
 	}
 
 	app, err := validateFeishuAppConfig(app, botID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return s.resolveBotOpenID(ctx, app)
+	botInfo, err := s.resolveBotInfo(ctx, app)
+	if err != nil {
+		return "", "", err
+	}
+	return botInfo.OpenID, botInfo.AppName, nil
 }
 
 func (s *FeishuService) ListRooms() ([]im.Room, error) {

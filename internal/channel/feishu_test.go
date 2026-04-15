@@ -68,14 +68,14 @@ func TestFeishuListUsersUsesConfiguredAppsAndOpenIDs(t *testing.T) {
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 			"u-dev":     {AppID: "cli_dev", AppSecret: "dev-secret"},
 		},
-		func(_ context.Context, app FeishuAppConfig) (string, error) {
+		func(_ context.Context, app FeishuAppConfig) (FeishuBotInfo, error) {
 			switch app.AppID {
 			case "cli_manager":
-				return "ou_manager", nil
+				return FeishuBotInfo{OpenID: "ou_manager"}, nil
 			case "cli_dev":
-				return "ou_dev", nil
+				return FeishuBotInfo{OpenID: "ou_dev"}, nil
 			default:
-				return "", nil
+				return FeishuBotInfo{}, nil
 			}
 		},
 	)
@@ -103,11 +103,11 @@ func TestFeishuResolveBotUserUsesConfiguredOpenID(t *testing.T) {
 		map[string]FeishuAppConfig{
 			"u-alice": {AppID: "cli_alice", AppSecret: "alice-secret"},
 		},
-		func(_ context.Context, app FeishuAppConfig) (string, error) {
+		func(_ context.Context, app FeishuAppConfig) (FeishuBotInfo, error) {
 			if got, want := app.AppID, "cli_alice"; got != want {
 				t.Fatalf("resolve app_id = %q, want %q", got, want)
 			}
-			return "ou_alice", nil
+			return FeishuBotInfo{OpenID: "ou_alice"}, nil
 		},
 	)
 
@@ -131,11 +131,11 @@ func TestFeishuEnsureUserUsesConfiguredOpenID(t *testing.T) {
 		map[string]FeishuAppConfig{
 			"u-alice": {AppID: "cli_alice", AppSecret: "alice-secret"},
 		},
-		func(_ context.Context, app FeishuAppConfig) (string, error) {
+		func(_ context.Context, app FeishuAppConfig) (FeishuBotInfo, error) {
 			if got, want := app.AppID, "cli_alice"; got != want {
 				t.Fatalf("resolve app_id = %q, want %q", got, want)
 			}
-			return "ou_alice", nil
+			return FeishuBotInfo{OpenID: "ou_alice"}, nil
 		},
 	)
 
@@ -168,16 +168,16 @@ func TestFeishuBotMembersInChatWithResolversIncludesConfiguredBots(t *testing.T)
 		apps,
 		"oc_alpha",
 		map[string]struct{}{"ou_existing": {}},
-		func(_ context.Context, app FeishuAppConfig) (string, error) {
+		func(_ context.Context, app FeishuAppConfig) (FeishuBotInfo, error) {
 			switch app.AppID {
 			case "cli_manager":
-				return "ou_manager", nil
+				return FeishuBotInfo{OpenID: "ou_manager"}, nil
 			case "cli_dev":
-				return "ou_existing", nil
+				return FeishuBotInfo{OpenID: "ou_existing"}, nil
 			case "cli_qa":
-				return "ou_qa", nil
+				return FeishuBotInfo{OpenID: "ou_qa"}, nil
 			default:
-				return "", nil
+				return FeishuBotInfo{}, nil
 			}
 		},
 		func(_ context.Context, app FeishuAppConfig, chatID string) (bool, error) {

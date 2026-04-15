@@ -33,7 +33,7 @@ func (h *Handler) handleFeishuEvents(w http.ResponseWriter, r *http.Request, bot
 		http.Error(w, "feishu events are not configured", http.StatusServiceUnavailable)
 		return
 	}
-	botOpenID, err := h.feishu.ResolveBotOpenID(r.Context(), botID)
+	botOpenID, _, err := h.feishu.ResolveBotOpenID(r.Context(), botID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("resolve feishu bot open_id: %v", err), http.StatusBadRequest)
 		return

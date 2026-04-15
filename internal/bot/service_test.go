@@ -155,15 +155,15 @@ func TestServiceListFeishuIncludesConfiguredUnavailableBots(t *testing.T) {
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 			"u-worker":  {AppID: "cli_worker", AppSecret: "worker-secret"},
 		},
-		func(_ context.Context, app channel.FeishuAppConfig) (string, error) {
+		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
 			switch app.AppID {
 			case "cli_manager":
-				return "ou_manager", nil
+				return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
 			case "cli_worker":
-				return "ou_worker", nil
+				return channel.FeishuBotInfo{OpenID: "ou_worker", AppName: "Worker Bot"}, nil
 			default:
 				t.Fatalf("unexpected app_id %q", app.AppID)
-				return "", nil
+				return channel.FeishuBotInfo{}, nil
 			}
 		},
 	)
@@ -182,8 +182,50 @@ func TestServiceListFeishuIncludesConfiguredUnavailableBots(t *testing.T) {
 	if got[0].ID != "u-worker" || !got[0].Available {
 		t.Fatalf("stored bot = %+v, want available u-worker", got[0])
 	}
-	if got[1].ID != "manager" || got[1].Name != "manager" || got[1].Role != string(RoleManager) || got[1].AgentID != "" || got[1].UserID != "ou_manager" || got[1].Available {
-		t.Fatalf("configured bot = %+v, want unavailable manager with display id and open_id", got[1])
+	if got[1].ID != "u-manager" || got[1].Name != "Manager Bot" || got[1].Role != string(RoleManager) || got[1].AgentID != "" || got[1].UserID != "ou_manager" || got[1].Available {
+		t.Fatalf("configured bot = %+v, want unavailable manager with configured id and open_id", got[1])
+	}
+}
+
+func TestServiceListFeishuConfiguredBotUsesMatchingAgent(t *testing.T) {
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        "u-manager",
+			Name:      "manager",
+			Role:      agent.RoleManager,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+			ModelID:   "default-model",
+		},
+	})
+	feishuSvc := channel.NewFeishuServiceWithBotOpenIDResolver(
+		map[string]channel.FeishuAppConfig{
+			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
+		},
+		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
+			if app.AppID != "cli_manager" {
+				t.Fatalf("unexpected app_id %q", app.AppID)
+			}
+			return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
+		},
+	)
+	svc, err := NewServiceWithDependencies(store, agentSvc, nil, feishuSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	got, err := svc.List(string(ChannelFeishu), "")
+	if err != nil {
+		t.Fatalf("List(feishu) error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List(feishu) = %+v, want configured manager", got)
+	}
+	if got[0].ID != "u-manager" || got[0].AgentID != "u-manager" || !got[0].Available {
+		t.Fatalf("configured bot = %+v, want configured id u-manager bound to available u-manager agent", got[0])
 	}
 }
 
@@ -197,15 +239,15 @@ func TestServiceListFeishuConfiguredBotsRespectRoleFilter(t *testing.T) {
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 			"u-worker":  {AppID: "cli_worker", AppSecret: "worker-secret"},
 		},
-		func(_ context.Context, app channel.FeishuAppConfig) (string, error) {
+		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
 			switch app.AppID {
 			case "cli_manager":
-				return "ou_manager", nil
+				return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
 			case "cli_worker":
-				return "ou_worker", nil
+				return channel.FeishuBotInfo{OpenID: "ou_worker", AppName: "Worker Bot"}, nil
 			default:
 				t.Fatalf("unexpected app_id %q", app.AppID)
-				return "", nil
+				return channel.FeishuBotInfo{}, nil
 			}
 		},
 	)
@@ -218,7 +260,7 @@ func TestServiceListFeishuConfiguredBotsRespectRoleFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List(feishu, manager) error = %v", err)
 	}
-	if len(got) != 1 || got[0].ID != "manager" || got[0].Name != "manager" || got[0].UserID != "ou_manager" || got[0].AgentID != "" || got[0].Available {
+	if len(got) != 1 || got[0].ID != "u-manager" || got[0].Name != "Manager Bot" || got[0].UserID != "ou_manager" || got[0].AgentID != "" || got[0].Available {
 		t.Fatalf("List(feishu, manager) = %+v, want unavailable configured manager only", got)
 	}
 }
@@ -728,11 +770,11 @@ func TestServiceCreateFeishuManagerUsesConfiguredOpenID(t *testing.T) {
 		map[string]channel.FeishuAppConfig{
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 		},
-		func(_ context.Context, app channel.FeishuAppConfig) (string, error) {
+		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
 			if got, want := app.AppID, "cli_manager"; got != want {
 				t.Fatalf("resolve app_id = %q, want %q", got, want)
 			}
-			return "ou_manager", nil
+			return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
 		},
 	)
 	store, err := NewMemoryStore(nil)
