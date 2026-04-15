@@ -159,11 +159,19 @@ func displayAgentProfile(profile string) string {
 
 func RenderBotsTable(w io.Writer, bots []apitypes.Bot) error {
 	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tNAME\tROLE\tCHANNEL\tAGENT\tUSER")
+	fmt.Fprintln(tw, "ID\tNAME\tROLE\tCHANNEL\tAGENT\tUSER\tAVAILABLE")
 	for _, b := range bots {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", b.ID, b.Name, b.Role, b.Channel, b.AgentID, b.UserID)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%t\n", b.ID, b.Name, b.Role, b.Channel, displayBotField(b.AgentID), displayBotField(b.UserID), b.Available)
 	}
 	return tw.Flush()
+}
+
+func displayBotField(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	return value
 }
 
 func RenderRoomsTable(w io.Writer, rooms []apitypes.Room) error {

@@ -9,6 +9,7 @@ type Bot struct {
 	Channel   string    `json:"channel"`
 	AgentID   string    `json:"agent_id"`
 	UserID    string    `json:"user_id"`
+	Available bool      `json:"available"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

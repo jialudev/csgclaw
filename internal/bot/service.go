@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,7 +84,80 @@ func (s *Service) List(channel, role string) ([]Bot, error) {
 		}
 		filtered = append(filtered, b)
 	}
+	if normalizedChannel == string(ChannelFeishu) {
+		var err error
+		filtered, err = s.appendConfiguredFeishuBots(context.Background(), filtered, normalizedRole)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return filtered, nil
+}
+
+func (s *Service) appendConfiguredFeishuBots(ctx context.Context, bots []Bot, role string) ([]Bot, error) {
+	if s.feishu == nil {
+		return bots, nil
+	}
+	apps := s.feishu.AppConfigs()
+	if len(apps) == 0 {
+		return bots, nil
+	}
+
+	seen := make(map[string]struct{}, len(bots))
+	for _, b := range bots {
+		id := strings.TrimSpace(b.ID)
+		seen[id] = struct{}{}
+		seen[configuredFeishuBotDisplayID(id)] = struct{}{}
+	}
+
+	configuredIDs := make([]string, 0, len(apps))
+	for id := range apps {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		configuredIDs = append(configuredIDs, id)
+	}
+	slices.Sort(configuredIDs)
+
+	for _, id := range configuredIDs {
+		displayID := configuredFeishuBotDisplayID(id)
+		if displayID == "" {
+			continue
+		}
+		if _, ok := seen[displayID]; ok {
+			continue
+		}
+		botRole := string(RoleWorker)
+		if id == agent.ManagerUserID {
+			botRole = string(RoleManager)
+		}
+		if role != "" && botRole != role {
+			continue
+		}
+		openID, err := s.feishu.ResolveBotOpenID(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("resolve configured feishu bot %q open_id: %w", id, err)
+		}
+		bots = append(bots, Bot{
+			ID:        displayID,
+			Name:      displayID,
+			Role:      botRole,
+			Channel:   string(ChannelFeishu),
+			UserID:    strings.TrimSpace(openID),
+			Available: false,
+		})
+		seen[displayID] = struct{}{}
+	}
+	return bots, nil
+}
+
+func configuredFeishuBotDisplayID(id string) string {
+	id = strings.TrimSpace(id)
+	return strings.TrimPrefix(id, "u-")
 }
 
 func (s *Service) Delete(ctx context.Context, channel, id string) error {
@@ -203,6 +277,7 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 		Channel:   normalized.Channel,
 		AgentID:   created.ID,
 		UserID:    userID,
+		Available: true,
 		CreatedAt: createdAt,
 	}
 	if _, ok, err := s.store.GetByChannelID(b.Channel, b.ID); err != nil {
@@ -252,6 +327,7 @@ func (s *Service) createManager(ctx context.Context, normalized CreateRequest, f
 		Channel:   normalized.Channel,
 		AgentID:   manager.ID,
 		UserID:    userID,
+		Available: true,
 		CreatedAt: createdAt,
 	}
 	if _, ok, err := s.store.GetByChannelID(b.Channel, b.ID); err != nil {

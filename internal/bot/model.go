@@ -75,6 +75,7 @@ func NormalizeBot(b Bot) (Bot, error) {
 	}
 	b.Role = string(role)
 	b.Channel = string(channel)
+	b.Available = true
 	return b, nil
 }
 
