@@ -158,6 +158,28 @@ func TestExecuteBotListFeishuUsesChannelQuery(t *testing.T) {
 	}
 }
 
+func TestExecuteBotListUsesRoleQuery(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/bots?channel=csgclaw&role=worker" {
+				t.Fatalf("url = %q, want role-filtered bot list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"bot-alice","name":"alice","role":"worker","channel":"csgclaw","agent_id":"u-alice","user_id":"u-alice","created_at":"2026-04-12T09:00:00Z"}]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "list", "--role", "worker"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "bot-alice", "alice", "worker", "csgclaw", "u-alice", "u-alice")
+}
+
 func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{

@@ -45,25 +45,43 @@ func (s *Service) SetDependencies(agentSvc *agent.Service, imSvc *im.Service, fe
 	}
 }
 
-func (s *Service) List(channel string) ([]Bot, error) {
+func (s *Service) List(channel, role string) ([]Bot, error) {
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("bot store is required")
 	}
-	if channel == "" {
-		return s.store.List(), nil
-	}
-
-	normalized, err := NormalizeChannel(channel)
-	if err != nil {
-		return nil, err
-	}
 
 	all := s.store.List()
+	if strings.TrimSpace(channel) == "" && strings.TrimSpace(role) == "" {
+		return all, nil
+	}
+
+	normalizedChannel := ""
+	if strings.TrimSpace(channel) != "" {
+		normalized, err := NormalizeChannel(channel)
+		if err != nil {
+			return nil, err
+		}
+		normalizedChannel = string(normalized)
+	}
+
+	normalizedRole := ""
+	if strings.TrimSpace(role) != "" {
+		normalized, err := NormalizeRole(role)
+		if err != nil {
+			return nil, err
+		}
+		normalizedRole = string(normalized)
+	}
+
 	filtered := make([]Bot, 0, len(all))
 	for _, b := range all {
-		if b.Channel == string(normalized) {
-			filtered = append(filtered, b)
+		if normalizedChannel != "" && b.Channel != normalizedChannel {
+			continue
 		}
+		if normalizedRole != "" && b.Role != normalizedRole {
+			continue
+		}
+		filtered = append(filtered, b)
 	}
 	return filtered, nil
 }

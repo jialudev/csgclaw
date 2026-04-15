@@ -57,6 +57,7 @@ func (c cmd) usage(run *command.Context) {
 func (c cmd) runList(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
 	fs := run.NewFlagSet("bot list", run.Program+" bot list [flags]", "List bots.")
 	channelName := fs.String("channel", "csgclaw", "channel name: csgclaw or feishu")
+	role := fs.String("role", "", "bot role: manager or worker")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -64,7 +65,7 @@ func (c cmd) runList(ctx context.Context, run *command.Context, args []string, g
 		return fmt.Errorf("bot list does not accept positional arguments")
 	}
 
-	bots, err := run.APIClient(globals).ListBots(ctx, *channelName)
+	bots, err := run.APIClient(globals).ListBots(ctx, *channelName, *role)
 	if err != nil {
 		return err
 	}

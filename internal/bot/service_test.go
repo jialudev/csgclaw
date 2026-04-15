@@ -35,7 +35,7 @@ func TestServiceListReturnsAllWhenChannelEmpty(t *testing.T) {
 		},
 	})
 
-	got, err := svc.List("")
+	got, err := svc.List("", "")
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -65,7 +65,7 @@ func TestServiceListFiltersByNormalizedChannel(t *testing.T) {
 		},
 	})
 
-	got, err := svc.List(" FEISHU ")
+	got, err := svc.List(" FEISHU ", "")
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -74,12 +74,82 @@ func TestServiceListFiltersByNormalizedChannel(t *testing.T) {
 	}
 }
 
+func TestServiceListFiltersByNormalizedRole(t *testing.T) {
+	svc := mustNewBotService(t, []Bot{
+		{
+			ID:        "bot-manager",
+			Name:      "Manager Bot",
+			Role:      string(RoleManager),
+			Channel:   string(ChannelCSGClaw),
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:        "bot-worker",
+			Name:      "Worker Bot",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelCSGClaw),
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})
+
+	got, err := svc.List("", " WORKER ")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "bot-worker" {
+		t.Fatalf("List(role=WORKER) = %+v, want only bot-worker", got)
+	}
+}
+
+func TestServiceListFiltersByChannelAndRole(t *testing.T) {
+	svc := mustNewBotService(t, []Bot{
+		{
+			ID:        "bot-csgclaw-manager",
+			Name:      "CSGClaw Manager",
+			Role:      string(RoleManager),
+			Channel:   string(ChannelCSGClaw),
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:        "bot-feishu-manager",
+			Name:      "Feishu Manager",
+			Role:      string(RoleManager),
+			Channel:   string(ChannelFeishu),
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:        "bot-feishu-worker",
+			Name:      "Feishu Worker",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelFeishu),
+			CreatedAt: time.Date(2026, 4, 12, 11, 0, 0, 0, time.UTC),
+		},
+	})
+
+	got, err := svc.List("feishu", "manager")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "bot-feishu-manager" {
+		t.Fatalf("List(feishu, manager) = %+v, want only bot-feishu-manager", got)
+	}
+}
+
 func TestServiceListRejectsInvalidChannel(t *testing.T) {
 	svc := mustNewBotService(t, nil)
 
-	_, err := svc.List("slack")
+	_, err := svc.List("slack", "")
 	if err == nil || !strings.Contains(err.Error(), "channel must be one of") {
 		t.Fatalf("List(slack) error = %v, want channel validation error", err)
+	}
+}
+
+func TestServiceListRejectsInvalidRole(t *testing.T) {
+	svc := mustNewBotService(t, nil)
+
+	_, err := svc.List("", "agent")
+	if err == nil || !strings.Contains(err.Error(), "role must be one of") {
+		t.Fatalf("List(role=agent) error = %v, want role validation error", err)
 	}
 }
 
@@ -108,14 +178,14 @@ func TestServiceDeleteRemovesBotForChannel(t *testing.T) {
 	if err := svc.Delete(context.Background(), "feishu", "u-alice"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	feishuBots, err := svc.List("feishu")
+	feishuBots, err := svc.List("feishu", "")
 	if err != nil {
 		t.Fatalf("List(feishu) error = %v", err)
 	}
 	if len(feishuBots) != 0 {
 		t.Fatalf("List(feishu) = %+v, want deleted", feishuBots)
 	}
-	csgclawBots, err := svc.List("csgclaw")
+	csgclawBots, err := svc.List("csgclaw", "")
 	if err != nil {
 		t.Fatalf("List(csgclaw) error = %v", err)
 	}
@@ -230,7 +300,7 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	if !containsUser(users, "u-alice") {
 		t.Fatalf("users = %+v, want u-alice", users)
 	}
-	listed, err := svc.List(string(ChannelCSGClaw))
+	listed, err := svc.List(string(ChannelCSGClaw), "")
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -295,7 +365,7 @@ func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	if !containsUser(feishuSvc.ListUsers(), "u-alice") {
 		t.Fatalf("feishu users = %+v, want u-alice", feishuSvc.ListUsers())
 	}
-	listed, err := svc.List(string(ChannelFeishu))
+	listed, err := svc.List(string(ChannelFeishu), "")
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -374,7 +444,7 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	if !containsUser(feishuSvc.ListUsers(), "u-alice") {
 		t.Fatalf("feishu users = %+v, want u-alice", feishuSvc.ListUsers())
 	}
-	all, err := svc.List("")
+	all, err := svc.List("", "")
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -462,7 +532,7 @@ func TestServiceCreateManagerBindsSameAgentAcrossChannels(t *testing.T) {
 	if csgclawBot.ID != agent.ManagerUserID || feishuBot.ID != agent.ManagerUserID || csgclawBot.AgentID != feishuBot.AgentID {
 		t.Fatalf("created managers = %+v / %+v, want shared manager agent", csgclawBot, feishuBot)
 	}
-	all, err := svc.List("")
+	all, err := svc.List("", "")
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

@@ -90,6 +90,31 @@ func TestExecuteBotListUsesAPIClient(t *testing.T) {
 	}
 }
 
+func TestExecuteBotListUsesRoleQuery(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/bots?channel=feishu&role=manager" {
+				t.Fatalf("url = %q, want role-filtered bot list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"bot-feishu","name":"feishu","role":"manager","channel":"feishu","agent_id":"u-manager","user_id":"fsu-manager","created_at":"2026-04-12T09:00:00Z"}]`), nil
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "bot", "list", "--channel", "feishu", "--role", "manager"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"id": "bot-feishu"`) || !strings.Contains(stdout.String(), `"role": "manager"`) {
+		t.Fatalf("stdout = %q, want JSON bot payload", stdout.String())
+	}
+}
+
 func TestExecuteUsesEnvironmentForEndpointAndToken(t *testing.T) {
 	t.Setenv(envBaseURL, "http://env.example.test")
 	t.Setenv(envAccessToken, "env-secret-token")

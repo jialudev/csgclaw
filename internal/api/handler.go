@@ -123,7 +123,7 @@ func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		bots, err := h.botSvc.List(r.URL.Query().Get("channel"))
+		bots, err := h.botSvc.List(r.URL.Query().Get("channel"), r.URL.Query().Get("role"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

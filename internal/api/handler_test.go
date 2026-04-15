@@ -331,9 +331,56 @@ func TestHandleBotsListFiltersByChannel(t *testing.T) {
 	}
 }
 
+func TestHandleBotsListFiltersByRole(t *testing.T) {
+	srv := &Handler{botSvc: mustNewBotService(t, []bot.Bot{
+		{
+			ID:        "bot-manager",
+			Name:      "Manager Bot",
+			Role:      string(bot.RoleManager),
+			Channel:   string(bot.ChannelCSGClaw),
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:        "bot-worker",
+			Name:      "Worker Bot",
+			Role:      string(bot.RoleWorker),
+			Channel:   string(bot.ChannelCSGClaw),
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots?role=worker", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got []bot.Bot
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "bot-worker" {
+		t.Fatalf("bots = %+v, want only bot-worker", got)
+	}
+}
+
 func TestHandleBotsListRejectsInvalidChannel(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, nil)}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots?channel=unknown", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestHandleBotsListRejectsInvalidRole(t *testing.T) {
+	srv := &Handler{botSvc: mustNewBotService(t, nil)}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots?role=agent", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -655,14 +702,14 @@ func TestHandleBotByIDDeleteUsesChannel(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
 	}
-	bots, err := srv.botSvc.List(string(bot.ChannelCSGClaw))
+	bots, err := srv.botSvc.List(string(bot.ChannelCSGClaw), "")
 	if err != nil {
 		t.Fatalf("List(csgclaw) error = %v", err)
 	}
 	if len(bots) != 1 || bots[0].ID != "u-alice" {
 		t.Fatalf("csgclaw bots = %+v, want retained u-alice", bots)
 	}
-	bots, err = srv.botSvc.List(string(bot.ChannelFeishu))
+	bots, err = srv.botSvc.List(string(bot.ChannelFeishu), "")
 	if err != nil {
 		t.Fatalf("List(feishu) error = %v", err)
 	}
@@ -1131,7 +1178,7 @@ func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
 	if got.ID != "u-bob" || got.Role != agent.RoleWorker {
 		t.Fatalf("agent = %+v, want worker alias result", got)
 	}
-	bots, err := botSvc.List(string(bot.ChannelCSGClaw))
+	bots, err := botSvc.List(string(bot.ChannelCSGClaw), "")
 	if err != nil {
 		t.Fatalf("botSvc.List() error = %v", err)
 	}
