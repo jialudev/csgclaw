@@ -40,6 +40,36 @@ func TestExecuteAgentStatusUsesHTTPClient(t *testing.T) {
 	}
 }
 
+func TestExecuteDefaultsToJSONOutputForNonTerminalStdout(t *testing.T) {
+	stdout, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer stdout.Close()
+
+	app := &App{
+		stdout: stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "http://example.test/api/v1/agents" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"u-alice","name":"alice","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z"}]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "status"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	got, err := os.ReadFile(stdout.Name())
+	if err != nil {
+		t.Fatalf("ReadFile(stdout) error = %v", err)
+	}
+	if !strings.Contains(string(got), `"id": "u-alice"`) {
+		t.Fatalf("stdout = %q, want JSON agent payload", string(got))
+	}
+}
+
 func TestExecuteUsesEnvironmentForEndpointAndToken(t *testing.T) {
 	t.Setenv(envBaseURL, "http://env.example.test")
 	t.Setenv(envAccessToken, "env-secret-token")
@@ -618,6 +648,41 @@ func TestExecuteAgentLogsUsesHTTPClient(t *testing.T) {
 	}
 	if stdout.String() != "line-1\nline-2\n" {
 		t.Fatalf("stdout = %q, want streamed logs", stdout.String())
+	}
+}
+
+func TestExecuteAgentLogsDefaultsToStreamForNonTerminalStdout(t *testing.T) {
+	stdout, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer stdout.Close()
+
+	app := &App{
+		stdout: stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "http://example.test/api/v1/agents/u-alice/logs?lines=2" {
+				t.Fatalf("url = %q, want logs route", req.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     http.StatusText(http.StatusOK),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("line-1\nline-2\n")),
+			}, nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "logs", "u-alice", "-n", "2"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	got, err := os.ReadFile(stdout.Name())
+	if err != nil {
+		t.Fatalf("ReadFile(stdout) error = %v", err)
+	}
+	if string(got) != "line-1\nline-2\n" {
+		t.Fatalf("stdout = %q, want streamed logs", string(got))
 	}
 }
 

@@ -108,7 +108,7 @@ func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error)
 	}
 	fs.StringVar(&opts.Endpoint, "endpoint", opts.Endpoint, "HTTP server endpoint")
 	fs.StringVar(&opts.Token, "token", opts.Token, "API authentication token")
-	fs.StringVar(&opts.Output, "output", "table", "output format: table or json")
+	fs.StringVar(&opts.Output, "output", "", "output format: table or json")
 	fs.BoolVar(&opts.Version, "version", false, "print version and exit")
 	fs.BoolVar(&opts.Version, "V", false, "print version and exit")
 
@@ -117,7 +117,7 @@ func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error)
 		return GlobalOptions{}, nil, err
 	}
 	if opts.Output == "" {
-		opts.Output = "table"
+		opts.Output = a.defaultOutput(opts, rest)
 	}
 	if _, err := command.NormalizeOutput(opts.Output); err != nil {
 		return GlobalOptions{}, nil, err
@@ -140,6 +140,13 @@ func splitLeadingFlags(args []string) ([]string, []string) {
 		}
 	}
 	return args, nil
+}
+
+func (a *App) defaultOutput(opts GlobalOptions, rest []string) string {
+	if opts.Version || len(rest) == 0 {
+		return "table"
+	}
+	return command.DefaultOutput(a.stdout)
 }
 
 func consumesValue(arg string) bool {

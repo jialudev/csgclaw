@@ -11,6 +11,8 @@ import (
 
 	"csgclaw/internal/apiclient"
 	"csgclaw/internal/apitypes"
+
+	"golang.org/x/term"
 )
 
 type Command interface {
@@ -116,6 +118,17 @@ func NormalizeOutput(output string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported output format %q", output)
 	}
+}
+
+func DefaultOutput(w io.Writer) string {
+	file, ok := w.(interface{ Fd() uintptr })
+	if !ok {
+		return "table"
+	}
+	if term.IsTerminal(int(file.Fd())) {
+		return "table"
+	}
+	return "json"
 }
 
 func RenderAction(output string, w io.Writer, result ActionResult) error {

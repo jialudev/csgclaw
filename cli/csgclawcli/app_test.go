@@ -7,6 +7,7 @@ import (
 	"flag"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -87,6 +88,39 @@ func TestExecuteBotListUsesAPIClient(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), `"id": "bot-feishu"`) || !strings.Contains(stdout.String(), `"channel": "feishu"`) {
 		t.Fatalf("stdout = %q, want JSON bot payload", stdout.String())
+	}
+}
+
+func TestExecuteDefaultsToJSONOutputForNonTerminalStdout(t *testing.T) {
+	stdout, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	if err != nil {
+		t.Fatalf("CreateTemp() error = %v", err)
+	}
+	defer stdout.Close()
+
+	app := &App{
+		stdout: stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/bots?channel=feishu" {
+				t.Fatalf("url = %q, want feishu bot list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"bot-feishu","name":"feishu","role":"manager","channel":"feishu","agent_id":"u-manager","user_id":"fsu-manager","created_at":"2026-04-12T09:00:00Z"}]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "list", "--channel", "feishu"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	got, err := os.ReadFile(stdout.Name())
+	if err != nil {
+		t.Fatalf("ReadFile(stdout) error = %v", err)
+	}
+	if !strings.Contains(string(got), `"id": "bot-feishu"`) || !strings.Contains(string(got), `"channel": "feishu"`) {
+		t.Fatalf("stdout = %q, want JSON bot payload", string(got))
 	}
 }
 

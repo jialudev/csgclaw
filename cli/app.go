@@ -118,7 +118,7 @@ func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error)
 	}
 	fs.StringVar(&opts.Endpoint, "endpoint", opts.Endpoint, "HTTP server endpoint")
 	fs.StringVar(&opts.Token, "token", opts.Token, "API authentication token")
-	fs.StringVar(&opts.Output, "output", "table", "output format: table or json")
+	fs.StringVar(&opts.Output, "output", "", "output format: table or json")
 	fs.StringVar(&opts.Config, "config", "", "path to config file")
 	fs.BoolVar(&opts.Version, "version", false, "print version and exit")
 	fs.BoolVar(&opts.Version, "V", false, "print version and exit")
@@ -128,7 +128,7 @@ func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error)
 		return GlobalOptions{}, nil, err
 	}
 	if opts.Output == "" {
-		opts.Output = "table"
+		opts.Output = a.defaultOutput(rest)
 	}
 	if _, err := command.NormalizeOutput(opts.Output); err != nil {
 		return GlobalOptions{}, nil, err
@@ -151,6 +151,27 @@ func splitLeadingFlags(args []string) ([]string, []string) {
 		}
 	}
 	return args, nil
+}
+
+func (a *App) defaultOutput(rest []string) string {
+	if isSpecialOutputCommand(rest) {
+		return "table"
+	}
+	return command.DefaultOutput(a.stdout)
+}
+
+func isSpecialOutputCommand(rest []string) bool {
+	if len(rest) == 0 {
+		return true
+	}
+	switch rest[0] {
+	case "serve", "stop", "_serve":
+		return true
+	case "agent":
+		return len(rest) > 1 && rest[1] == "logs"
+	default:
+		return false
+	}
 }
 
 func consumesValue(arg string) bool {
