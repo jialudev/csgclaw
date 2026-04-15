@@ -99,10 +99,10 @@ type gatewayVolumeMount struct {
 
 func gatewayVolumeMounts(hostPicoClawRoot, projectsRoot string) []gatewayVolumeMount {
 	return []gatewayVolumeMount{
-		{
-			hostPath:  hostPicoClawRoot,
-			guestPath: boxPicoClawDir,
-		},
+		//{
+		//	hostPath:  hostPicoClawRoot,
+		//	guestPath: boxPicoClawDir,
+		//},
 		{
 			hostPath:  projectsRoot,
 			guestPath: boxProjectsDir,

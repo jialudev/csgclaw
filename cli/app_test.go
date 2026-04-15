@@ -40,6 +40,56 @@ func TestExecuteAgentStatusUsesHTTPClient(t *testing.T) {
 	}
 }
 
+func TestExecuteUsesEnvironmentForEndpointAndToken(t *testing.T) {
+	t.Setenv(envBaseURL, "http://env.example.test")
+	t.Setenv(envAccessToken, "env-secret-token")
+
+	app := &App{
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "http://env.example.test/api/v1/agents" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://env.example.test/api/v1/agents")
+			}
+			if got := req.Header.Get("Authorization"); got != "Bearer env-secret-token" {
+				t.Fatalf("Authorization = %q, want %q", got, "Bearer env-secret-token")
+			}
+			return jsonResponse(http.StatusOK, `[]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"agent", "status"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestExecuteFlagsOverrideEnvironmentForEndpointAndToken(t *testing.T) {
+	t.Setenv(envBaseURL, "http://env.example.test")
+	t.Setenv(envAccessToken, "env-secret-token")
+
+	app := &App{
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "http://flag.example.test/api/v1/agents" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://flag.example.test/api/v1/agents")
+			}
+			if got := req.Header.Get("Authorization"); got != "Bearer flag-secret-token" {
+				t.Fatalf("Authorization = %q, want %q", got, "Bearer flag-secret-token")
+			}
+			return jsonResponse(http.StatusOK, `[]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{
+		"--endpoint", "http://flag.example.test",
+		"--token", "flag-secret-token",
+		"agent", "status",
+	}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
 func TestExecuteAgentListUsesHTTPClient(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{

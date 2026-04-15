@@ -13,19 +13,21 @@ CMD_PATH ?= ./cmd/$(APP)
 
 GO ?= go
 GOFMT ?= gofmt
+TARGET_OS ?= $(shell $(GO) env GOOS)
+TARGET_ARCH ?= $(shell $(GO) env GOARCH)
 
 ONBOARD_BASE_URL ?= http://127.0.0.1:4000
 ONBOARD_API_KEY ?= sk-1234567890
 ONBOARD_MODEL_ID ?= minimax-m2.7
-ONBOARD_MANAGER_IMAGE ?= ghcr.io/russellluo/picoclaw:2026.4.14
+ONBOARD_MANAGER_IMAGE ?= ghcr.io/russellluo/picoclaw:2026.4.15
 
 IMAGE ?= ghcr.io/russellluo/picoclaw
-TAG ?= 2026.4.14
+TAG ?= 2026.4.15
 LOCAL_IMAGE ?= picoclaw:local
 
 .DEFAULT_GOAL := build-all
 
-.PHONY: help fmt test build build-csgclaw build-csgclaw-cli build-all run onboard clean package package-all release tag push publish boxlite-setup
+.PHONY: help fmt test build build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run onboard clean package package-all release tag push publish boxlite-setup
 
 help:
 	@printf '%s\n' \
@@ -33,6 +35,8 @@ help:
 		'make boxlite-setup - fetch BoxLite native library if missing' \
 		'make test      - run Go tests with local build cache' \
 		'make build     - build $(BIN) from $(CMD_PATH)' \
+		'make build-csgclaw-cli - build bin/csgclaw-cli for TARGET_OS/TARGET_ARCH (defaults to current platform)' \
+		'make build-csgclaw-cli-for-picoclaw - build bin/csgclaw-cli for linux/arm64' \
 		'make build-all - build bin/csgclaw and bin/csgclaw-cli' \
 		'make run       - run the server in foreground' \
 		'make onboard   - initialize ~/.csgclaw/config.toml with defaults' \
@@ -65,7 +69,10 @@ build-csgclaw: boxlite-setup
 
 build-csgclaw-cli:
 	mkdir -p $(BIN_DIR)
-	env GOCACHE=$(GOCACHE) $(GO) build -ldflags "$(CLI_LDFLAGS)" -o $(BIN_DIR)/csgclaw-cli ./cmd/csgclaw-cli
+	env GOCACHE=$(GOCACHE) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) $(GO) build -ldflags "$(CLI_LDFLAGS)" -o $(BIN_DIR)/csgclaw-cli ./cmd/csgclaw-cli
+
+build-csgclaw-cli-for-picoclaw:
+	$(MAKE) build-csgclaw-cli TARGET_OS=linux TARGET_ARCH=arm64
 
 build-all: build-csgclaw build-csgclaw-cli
 

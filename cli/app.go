@@ -21,6 +21,11 @@ import (
 	appversion "csgclaw/internal/version"
 )
 
+const (
+	envBaseURL     = "CSGCLAW_BASE_URL"
+	envAccessToken = "CSGCLAW_ACCESS_TOKEN"
+)
+
 type App struct {
 	stdout     io.Writer
 	stderr     io.Writer
@@ -108,9 +113,12 @@ func (a *App) parseGlobalOptions(args []string) (GlobalOptions, []string, error)
 	fs.SetOutput(a.stderr)
 	fs.Usage = a.usage
 
-	opts := GlobalOptions{}
-	fs.StringVar(&opts.Endpoint, "endpoint", "", "HTTP server endpoint")
-	fs.StringVar(&opts.Token, "token", "", "API authentication token")
+	opts := GlobalOptions{
+		Endpoint: os.Getenv(envBaseURL),
+		Token:    os.Getenv(envAccessToken),
+	}
+	fs.StringVar(&opts.Endpoint, "endpoint", opts.Endpoint, "HTTP server endpoint")
+	fs.StringVar(&opts.Token, "token", opts.Token, "API authentication token")
 	fs.StringVar(&opts.Output, "output", "table", "output format: table or json")
 	fs.StringVar(&opts.Config, "config", "", "path to config file")
 	fs.BoolVar(&opts.Version, "version", false, "print version and exit")
@@ -176,8 +184,8 @@ func (a *App) usage() {
 	fmt.Fprintln(a.stderr, "  csgclaw message create --channel csgclaw --room-id room-1 --sender-id u-admin --content hello")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Global flags:")
-	fmt.Fprintln(a.stderr, "  --endpoint string   HTTP server endpoint")
-	fmt.Fprintln(a.stderr, "  --token string      API authentication token")
+	fmt.Fprintf(a.stderr, "  --endpoint string   HTTP server endpoint (default %s)\n", envBaseURL)
+	fmt.Fprintf(a.stderr, "  --token string      API authentication token (default %s)\n", envAccessToken)
 	fmt.Fprintln(a.stderr, "  --output string     Output format: table or json")
 	fmt.Fprintln(a.stderr, "  --config string     Path to config file")
 	fmt.Fprintln(a.stderr, "  --version, -V       Print version and exit")

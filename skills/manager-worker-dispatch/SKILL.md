@@ -114,17 +114,50 @@ Choose workers by `description`, not just by `role`.
 
 Split cross-capability work into multiple tasks instead of giving one vague package to a single worker.
 
+## Command Usage
+
+Create a room:
+
+```bash
+csgclaw-cli room create --title test-room --creator-id ou_xxx --channel <current_channel>
+```
+
+List workers:
+
+```bash
+csgclaw-cli bot list --role worker --channel <current_channel>
+```
+
+Create a worker:
+
+```bash
+csgclaw-cli bot create --id u-alex --name alex --role worker --channel <current_channel>
+```
+
+Add a worker into the given room:
+
+```bash
+csgclaw-cli member create --room-id oc_xxx --user-id u-alex --channel <current_channel>
+```
+
 ## Script Usage
 
 ```bash
 cd ~/.picoclaw/workspace/skills/manager-worker-dispatch
-python scripts/manager_worker_api.py list-workers
-python scripts/manager_worker_api.py create-worker --name alex --description "qa regression testing"
-python scripts/manager_worker_api.py join-worker --room-id room-123 --worker-id u-alex
+python scripts/manager_worker_api.py -h
+```
+
+Start tracking todo:
+
+```bash
 python scripts/manager_worker_api.py start-tracking --room-id room-123 --todo-path ~/.picoclaw/workspace/projects/demo/todo.json
+```
+
+Stop the tracking:
+
+```bash
 python scripts/manager_worker_api.py stop-tracking --todo-path ~/.picoclaw/workspace/projects/demo/todo.json
 ```
-Use `python scripts/manager_worker_api.py -h` to inspect the latest commands, flags, and environment variable fallbacks before invoking or updating the workflow.
 
 If you need to direct the human user to the project files on their Mac, point them to the host-side path such as `~/.csgclaw/projects/demo/todo.json`, not the in-box `/home/picoclaw/...` path.
 
