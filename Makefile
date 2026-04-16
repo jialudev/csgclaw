@@ -27,11 +27,12 @@ LOCAL_IMAGE ?= picoclaw:local
 
 .DEFAULT_GOAL := build-all
 
-.PHONY: help fmt test build build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run onboard clean package package-all release tag push publish boxlite-setup
+.PHONY: help fmt test build build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run onboard clean package package-all release tag push publish boxlite-setup sync-agent-runtimes
 
 help:
 	@printf '%s\n' \
 		'make fmt       - format Go files' \
+		'make sync-agent-runtimes - stage PicoClaw runtime workspaces for Go embed' \
 		'make boxlite-setup - fetch BoxLite native library if missing' \
 		'make test      - run Go tests with local build cache' \
 		'make build     - build $(BIN) from $(CMD_PATH)' \
@@ -51,23 +52,26 @@ help:
 fmt:
 	$(GOFMT) -w $(shell find cli cmd internal -name '*.go')
 
+sync-agent-runtimes:
+	$(CURDIR)/scripts/sync-agent-runtimes.sh
+
 boxlite-setup:
 	@if [ ! -f third_party/boxlite-go/libboxlite.a ]; then \
 		echo "fetching BoxLite native library..."; \
 		cd third_party/boxlite-go && BOXLITE_SDK_VERSION=v0.7.6 $(GO) run ./cmd/setup; \
 	fi
 
-test: boxlite-setup
+test: boxlite-setup sync-agent-runtimes
 	env GOCACHE=$(GOCACHE) $(GO) test ./...
 
-build: boxlite-setup
+build: boxlite-setup sync-agent-runtimes
 	mkdir -p $(BIN_DIR)
 	env GOCACHE=$(GOCACHE) $(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_PATH)
 
 build-csgclaw: boxlite-setup
 	$(MAKE) build APP=csgclaw
 
-build-csgclaw-cli:
+build-csgclaw-cli: sync-agent-runtimes
 	mkdir -p $(BIN_DIR)
 	env GOCACHE=$(GOCACHE) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) $(GO) build -ldflags "$(CLI_LDFLAGS)" -o $(BIN_DIR)/csgclaw-cli ./cmd/csgclaw-cli
 
@@ -86,16 +90,16 @@ onboard: boxlite-setup
 		--model-id $(ONBOARD_MODEL_ID) \
 		--manager-image $(ONBOARD_MANAGER_IMAGE)
 
-package: boxlite-setup
+package: boxlite-setup sync-agent-runtimes
 	mkdir -p $(DIST_DIR)
 	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=$(APP) GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh $$(go env GOOS) $$(go env GOARCH)
 
-package-all: boxlite-setup
+package-all: boxlite-setup sync-agent-runtimes
 	mkdir -p $(DIST_DIR)
 	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=csgclaw GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh $$(go env GOOS) $$(go env GOARCH)
 	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=csgclaw-cli GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh $$(go env GOOS) $$(go env GOARCH)
 
-release: boxlite-setup
+release: boxlite-setup sync-agent-runtimes
 	mkdir -p $(DIST_DIR)
 	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=csgclaw GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh darwin arm64
 	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) DIST_DIR=$(DIST_DIR) APP=csgclaw-cli GOCACHE=$(GOCACHE) $(CURDIR)/scripts/package-release.sh darwin arm64

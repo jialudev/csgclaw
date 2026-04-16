@@ -66,7 +66,7 @@ func TestRenderAgentPicoClawConfigUsesBridgeModelEndpoint(t *testing.T) {
 	}
 }
 
-func TestEnsureAgentPicoClawConfigUsesDirectoryMountRoot(t *testing.T) {
+func TestEnsureAgentPicoClawConfigWritesConfigFiles(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
@@ -83,7 +83,7 @@ func TestEnsureAgentPicoClawConfigUsesDirectoryMountRoot(t *testing.T) {
 	if info, err := os.Stat(root); err != nil {
 		t.Fatalf("os.Stat(root) error = %v", err)
 	} else if !info.IsDir() {
-		t.Fatalf("mount root %q is not a directory", root)
+		t.Fatalf("config root %q is not a directory", root)
 	}
 	for _, path := range []string{
 		filepath.Join(root, hostPicoClawConfig),
@@ -95,16 +95,37 @@ func TestEnsureAgentPicoClawConfigUsesDirectoryMountRoot(t *testing.T) {
 			t.Fatalf("config artifact %q is unexpectedly a directory", path)
 		}
 	}
+}
 
-	mounts := gatewayVolumeMounts(root, "/tmp/projects")
-	if len(mounts) != 2 {
-		t.Fatalf("gatewayVolumeMounts() len = %d, want 2", len(mounts))
+func TestEnsureAgentWorkspaceCopiesEmbeddedTemplate(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	root, err := ensureAgentWorkspace("alice", workspaceTemplateWorker)
+	if err != nil {
+		t.Fatalf("ensureAgentWorkspace(worker) error = %v", err)
 	}
-	if mounts[0].hostPath != root || mounts[0].guestPath != boxPicoClawDir {
-		t.Fatalf("gatewayVolumeMounts()[0] = %+v, want %q => %q", mounts[0], root, boxPicoClawDir)
+
+	for _, path := range []string{
+		filepath.Join(root, "USER.md"),
+		filepath.Join(root, "AGENT.md"),
+		filepath.Join(root, "SOUL.md"),
+		filepath.Join(root, "memory", "MEMORY.md"),
+		filepath.Join(root, "skills", "weather", "SKILL.md"),
+	} {
+		if info, err := os.Stat(path); err != nil {
+			t.Fatalf("os.Stat(%q) error = %v", path, err)
+		} else if info.IsDir() {
+			t.Fatalf("workspace file %q is unexpectedly a directory", path)
+		}
 	}
-	if strings.HasSuffix(mounts[0].hostPath, hostPicoClawConfig) || strings.HasSuffix(mounts[0].hostPath, ".security.yml") {
-		t.Fatalf("gatewayVolumeMounts()[0].hostPath = %q, want directory mount root", mounts[0].hostPath)
+
+	managerRoot, err := ensureAgentWorkspace("manager", workspaceTemplateForAgent(ManagerName, ManagerUserID))
+	if err != nil {
+		t.Fatalf("ensureAgentWorkspace(manager) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(managerRoot, "skills", "manager-worker-dispatch", "SKILL.md")); err != nil {
+		t.Fatalf("os.Stat(manager skill) error = %v", err)
 	}
 }
 

@@ -77,7 +77,7 @@ func (s *Service) gatewayBoxOptions(name, botID string, modelCfg config.ModelCon
 		//boxlite.WithCmd("sleep", "infinity"),
 	)
 
-	hostPicoClawRoot, err := ensureAgentPicoClawConfig(name, botID, s.server, modelCfg)
+	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID))
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *Service) gatewayBoxOptions(name, botID string, modelCfg config.ModelCon
 	if err != nil {
 		return nil, err
 	}
-	for _, mount := range gatewayVolumeMounts(hostPicoClawRoot, projectsRoot) {
+	for _, mount := range gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot) {
 		opts = append(opts, boxlite.WithVolume(mount.hostPath, mount.guestPath))
 	}
 
@@ -97,12 +97,12 @@ type gatewayVolumeMount struct {
 	guestPath string
 }
 
-func gatewayVolumeMounts(hostPicoClawRoot, projectsRoot string) []gatewayVolumeMount {
+func gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot string) []gatewayVolumeMount {
 	return []gatewayVolumeMount{
-		//{
-		//	hostPath:  hostPicoClawRoot,
-		//	guestPath: boxPicoClawDir,
-		//},
+		{
+			hostPath:  hostWorkspaceRoot,
+			guestPath: boxWorkspaceDir,
+		},
 		{
 			hostPath:  projectsRoot,
 			guestPath: boxProjectsDir,

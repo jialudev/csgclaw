@@ -22,10 +22,12 @@ const (
 	managerGuestPort   = 18790
 	managerDebugMode   = true
 	hostPicoClawDir    = ".picoclaw"
+	hostWorkspaceDir   = "workspace"
 	hostProjectsDir    = "projects"
 	hostPicoClawConfig = "config.json"
 	hostPicoClawLogs   = "logs"
 	boxPicoClawDir     = "/home/picoclaw/.picoclaw"
+	boxWorkspaceDir    = boxPicoClawDir + "/workspace"
 	boxProjectsDir     = "/home/picoclaw/.picoclaw/workspace/projects"
 )
 

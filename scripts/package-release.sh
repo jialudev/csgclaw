@@ -22,6 +22,7 @@ if [ "$APP" = "csgclaw-cli" ]; then
 fi
 
 mkdir -p "$DIST_DIR"
+"$(dirname "$0")/sync-agent-runtimes.sh"
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT

@@ -13,6 +13,9 @@ dist/
 # Local runtime data
 manager-data/
 
+# Generated embedded runtime workspaces
+/internal/agent/embed/
+
 # Editor directories
 .idea/
 .vscode/
