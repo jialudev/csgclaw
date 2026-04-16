@@ -56,7 +56,7 @@ def make_bootstrap():
 
 
 def dispatch_message(task):
-    return manager_worker_api.build_tracking_message(task, None, TODO_PATH)
+    return manager_worker_api.build_tracking_message(task, TODO_PATH)
 
 
 class TrackingDecisionTests(unittest.TestCase):
@@ -69,7 +69,6 @@ class TrackingDecisionTests(unittest.TestCase):
             bootstrap,
             bot_id=BOT_ID,
             room_id=ROOM_ID,
-            mention=None,
             todo_path=TODO_PATH,
             retry_in_seconds=2.0,
         )
@@ -82,6 +81,7 @@ class TrackingDecisionTests(unittest.TestCase):
         self.assertEqual(decision["kind"], "dispatch")
         self.assertEqual(decision["task"]["id"], 1)
         self.assertEqual(decision["text"], dispatch_message(task1))
+        self.assertEqual(decision["mention_id"], "u-ux")
 
     def test_waits_for_task_passes_when_current_task_already_dispatched(self):
         task1 = make_task(1, "ux", passes=False)
@@ -135,6 +135,7 @@ class TrackingDecisionTests(unittest.TestCase):
         self.assertEqual(decision["kind"], "dispatch")
         self.assertEqual(decision["task"]["id"], 2)
         self.assertEqual(decision["text"], dispatch_message(task2))
+        self.assertEqual(decision["mention_id"], "u-dev")
 
     def test_dispatches_when_reply_exists_before_current_poll_once_pass_is_true(self):
         task1 = make_task(1, "ux", passes=True)
@@ -148,6 +149,7 @@ class TrackingDecisionTests(unittest.TestCase):
 
         self.assertEqual(decision["kind"], "dispatch")
         self.assertEqual(decision["task"]["id"], 2)
+        self.assertEqual(decision["mention_id"], "u-dev")
 
     def test_unresolved_assignee_raises_clear_error(self):
         task1 = make_task(1, "ghost", passes=True)
@@ -161,6 +163,104 @@ class TrackingDecisionTests(unittest.TestCase):
 
         self.assertIn('Task assignee "ghost"', str(ctx.exception))
         self.assertIn(ROOM_ID, str(ctx.exception))
+
+
+class FeishuTrackingDecisionTests(unittest.TestCase):
+    def decide(self, tasks, previous_pending_index=None):
+        return manager_worker_api.decide_feishu_tracking_action(
+            tasks,
+            room_id=ROOM_ID,
+            todo_path=TODO_PATH,
+            retry_in_seconds=2.0,
+            previous_pending_index=previous_pending_index,
+        )
+
+    def test_first_task_dispatches_without_delay(self):
+        task1 = make_task(1, "ux", passes=False)
+
+        decision = self.decide([task1])
+
+        self.assertEqual(decision["kind"], "dispatch")
+        self.assertEqual(decision["task"]["id"], 1)
+        self.assertEqual(decision["mention_id"], "u-ux")
+        self.assertEqual(decision["delay_seconds"], 0.0)
+        self.assertEqual(decision["pending_index"], 0)
+
+    def test_next_task_dispatches_with_delay_after_previous_task_passes(self):
+        task1 = make_task(1, "ux", passes=True)
+        task2 = make_task(2, "dev", passes=False)
+
+        decision = self.decide([task1, task2], previous_pending_index=0)
+
+        self.assertEqual(decision["kind"], "dispatch")
+        self.assertEqual(decision["task"]["id"], 2)
+        self.assertEqual(decision["mention_id"], "u-dev")
+        self.assertEqual(decision["delay_seconds"], manager_worker_api.FEISHU_DISPATCH_DELAY_SECONDS)
+        self.assertEqual(decision["pending_index"], 1)
+
+    def test_same_pending_index_waits_for_passes(self):
+        task1 = make_task(1, "ux", passes=True)
+        task2 = make_task(2, "dev", passes=False)
+
+        decision = self.decide([task1, task2], previous_pending_index=1)
+
+        self.assertEqual(decision["kind"], "wait")
+        self.assertEqual(decision["output"]["event"], "waiting-for-task-passes")
+        self.assertEqual(decision["output"]["task_id"], 2)
+
+    def test_explicit_feishu_mention_id_is_used(self):
+        task1 = make_task(1, "ux", passes=False)
+        task1["mention_id"] = "custom-worker"
+
+        decision = self.decide([task1])
+
+        self.assertEqual(decision["kind"], "dispatch")
+        self.assertEqual(decision["mention_id"], "custom-worker")
+
+
+class CSGClawAPITests(unittest.TestCase):
+    def test_dry_run_send_bot_message_uses_cli_message_create_with_mention(self):
+        api = manager_worker_api.CSGClawAPI(
+            base_url="http://example.test",
+            token=None,
+            timeout=30,
+            dry_run=True,
+        )
+
+        result = api.send_bot_message("feishu", ROOM_ID, BOT_ID, "u-dev", "hello")
+
+        self.assertEqual(
+            result["command"],
+            [
+                "csgclaw-cli",
+                "--endpoint",
+                "http://example.test",
+                "--output",
+                "json",
+                "message",
+                "create",
+                "--channel",
+                "feishu",
+                "--room-id",
+                ROOM_ID,
+                "--sender-id",
+                BOT_ID,
+                "--mention-id",
+                "u-dev",
+                "--content",
+                "hello",
+            ],
+        )
+
+    def test_list_messages_uses_channel_specific_path(self):
+        api = manager_worker_api.CSGClawAPI(
+            base_url="http://example.test",
+            token=None,
+            timeout=30,
+            dry_run=True,
+        )
+
+        self.assertEqual(api.list_messages("feishu", "oc_alpha"), [])
 
 
 if __name__ == "__main__":
