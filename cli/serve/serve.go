@@ -25,6 +25,7 @@ import (
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/modelprovider"
+	boxliteadapter "csgclaw/internal/sandbox/boxlite"
 	"csgclaw/internal/server"
 )
 
@@ -494,9 +495,13 @@ access_token = %q
 [bootstrap]
 manager_image = %q
 
+[sandbox]
+provider = %q
+home_dir_name = %q
+
 [models]
 default = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Bootstrap.ManagerImage, llmCfg.DefaultSelector()) + formatEffectiveProviders(llmCfg)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, llmCfg.DefaultSelector()) + formatEffectiveProviders(llmCfg)
 
 	if strings.TrimSpace(cfg.Channels.FeishuAdminOpenID) != "" {
 		content += fmt.Sprintf(`
@@ -579,7 +584,26 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath)
+	opts, err := sandboxServiceOptions(cfg.Sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
+}
+
+func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, error) {
+	cfg = cfg.Resolved()
+	var provider agent.ServiceOption
+	switch cfg.Provider {
+	case config.DefaultSandboxProvider:
+		provider = agent.WithSandboxProvider(boxliteadapter.NewProvider())
+	default:
+		return nil, fmt.Errorf("unsupported sandbox provider %q; supported values are %q", cfg.Provider, config.DefaultSandboxProvider)
+	}
+	return []agent.ServiceOption{
+		provider,
+		agent.WithSandboxHomeDirName(cfg.HomeDirName),
+	}, nil
 }
 
 func newIMService() (*im.Service, error) {

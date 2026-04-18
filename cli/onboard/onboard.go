@@ -17,6 +17,7 @@ import (
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/modelprovider"
+	boxliteadapter "csgclaw/internal/sandbox/boxlite"
 
 	"golang.org/x/term"
 )
@@ -80,6 +81,10 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 			},
 			Bootstrap: config.BootstrapConfig{
 				ManagerImage: config.DefaultManagerImage,
+			},
+			Sandbox: config.SandboxConfig{
+				Provider:    config.DefaultSandboxProvider,
+				HomeDirName: config.DefaultSandboxHomeDirName,
 			},
 		}
 	}
@@ -535,7 +540,11 @@ func isTerminal(value any) bool {
 }
 
 func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config, forceRecreateManager bool) (bot.Bot, error) {
-	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath)
+	opts, err := sandboxServiceOptions(cfg.Sandbox)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
 	if err != nil {
 		return bot.Bot{}, err
 	}
@@ -560,6 +569,21 @@ func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg c
 		Role:    string(bot.RoleManager),
 		Channel: string(bot.ChannelCSGClaw),
 	}, forceRecreateManager)
+}
+
+func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, error) {
+	cfg = cfg.Resolved()
+	var provider agent.ServiceOption
+	switch cfg.Provider {
+	case config.DefaultSandboxProvider:
+		provider = agent.WithSandboxProvider(boxliteadapter.NewProvider())
+	default:
+		return nil, fmt.Errorf("unsupported sandbox provider %q; supported values are %q", cfg.Provider, config.DefaultSandboxProvider)
+	}
+	return []agent.ServiceOption{
+		provider,
+		agent.WithSandboxHomeDirName(cfg.HomeDirName),
+	}, nil
 }
 
 func loadOnboardConfig(path string) (config.Config, bool, error) {

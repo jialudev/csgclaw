@@ -19,6 +19,7 @@ type Config struct {
 	LLM       LLMConfig
 	Model     ModelConfig
 	Bootstrap BootstrapConfig
+	Sandbox   SandboxConfig
 	Channels  ChannelsConfig
 }
 
@@ -47,6 +48,21 @@ type BootstrapConfig struct {
 	ManagerImage string
 }
 
+type SandboxConfig struct {
+	Provider    string
+	HomeDirName string
+}
+
+func (c SandboxConfig) Resolved() SandboxConfig {
+	if strings.TrimSpace(c.Provider) == "" {
+		c.Provider = DefaultSandboxProvider
+	}
+	if strings.TrimSpace(c.HomeDirName) == "" {
+		c.HomeDirName = DefaultSandboxHomeDirName
+	}
+	return c
+}
+
 type ChannelsConfig struct {
 	FeishuAdminOpenID string
 	Feishu            map[string]FeishuConfig
@@ -58,17 +74,19 @@ type FeishuConfig struct {
 }
 
 const (
-	AppDirName         = ".csgclaw"
-	RuntimeHomeDirName = "boxlite"
-	ConfigFileName     = "config.toml"
-	StateFileName      = "state.json"
-	AgentsDirName      = "agents"
-	IMDirName          = "im"
-	ChannelsDirName    = "channels"
+	AppDirName      = ".csgclaw"
+	ConfigFileName  = "config.toml"
+	StateFileName   = "state.json"
+	AgentsDirName   = "agents"
+	IMDirName       = "im"
+	ChannelsDirName = "channels"
 
-	DefaultHTTPPort     = apiclient.DefaultHTTPPort
-	DefaultAccessToken  = "your_access_token"
-	DefaultManagerImage = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
+	DefaultHTTPPort           = apiclient.DefaultHTTPPort
+	DefaultAccessToken        = "your_access_token"
+	DefaultManagerImage       = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
+	DefaultSandboxProvider    = "boxlite"
+	DefaultSandboxHomeDirName = "boxlite"
+	RuntimeHomeDirName        = DefaultSandboxHomeDirName
 )
 
 func DefaultListenAddr() string {
@@ -214,6 +232,13 @@ func Load(path string) (Config, error) {
 			case "manager_image":
 				cfg.Bootstrap.ManagerImage = value
 			}
+		case section == "sandbox":
+			switch key {
+			case "provider":
+				cfg.Sandbox.Provider = value
+			case "home_dir_name":
+				cfg.Sandbox.HomeDirName = value
+			}
 		case section == "channels.feishu":
 			switch key {
 			case "admin_open_id":
@@ -269,6 +294,7 @@ func Load(path string) (Config, error) {
 	if cfg.Server.AccessToken == "" {
 		cfg.Server.AccessToken = DefaultAccessToken
 	}
+	cfg.Sandbox = cfg.Sandbox.Resolved()
 
 	if !modelsCfg.IsZero() {
 		cfg.Models = modelsCfg.Normalized()
@@ -301,9 +327,13 @@ access_token = %q
 [bootstrap]
 manager_image = %q
 
+[sandbox]
+provider = %q
+home_dir_name = %q
+
 [models]
 default = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, cfg.Server.AccessToken, cfg.Bootstrap.ManagerImage, defaultSelector)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, cfg.Server.AccessToken, cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, defaultSelector)
 
 	for _, name := range sortedProviderNames(llmCfg.Providers) {
 		provider := llmCfg.Providers[name].Resolved()

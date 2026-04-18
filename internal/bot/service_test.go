@@ -9,12 +9,11 @@ import (
 	"testing"
 	"time"
 
-	boxlite "github.com/RussellLuo/boxlite/sdks/go"
-
 	"csgclaw/internal/agent"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
+	"csgclaw/internal/sandbox/sandboxtest"
 )
 
 func TestServiceListReturnsAllWhenChannelEmpty(t *testing.T) {
@@ -325,12 +324,6 @@ func TestServiceDeleteRemovesBotForChannel(t *testing.T) {
 }
 
 func TestServiceDeleteRemovesBackingAgentWhenLastReference(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		nil,
-	)
-	defer agent.ResetTestHooks()
-
 	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
 		{
 			ID:        "u-alice",
@@ -374,25 +367,8 @@ func TestNewServiceRequiresStore(t *testing.T) {
 }
 
 func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			if name != "alice" {
-				t.Fatalf("create gateway name = %q, want alice", name)
-			}
-			if botID != "u-alice" {
-				t.Fatalf("create gateway botID = %q, want u-alice", botID)
-			}
-			return nil, &boxlite.BoxInfo{
-				ID:        "box-alice",
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
 	if err != nil {
@@ -446,25 +422,8 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 }
 
 func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			if name != "alice" {
-				t.Fatalf("create gateway name = %q, want alice", name)
-			}
-			if botID != "u-alice" {
-				t.Fatalf("create gateway botID = %q, want u-alice", botID)
-			}
-			return nil, &boxlite.BoxInfo{
-				ID:        "box-alice",
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
 	if err != nil {
@@ -511,27 +470,9 @@ func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 }
 
 func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
-	createCalls := 0
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			createCalls++
-			if name != "alice" {
-				t.Fatalf("create gateway name = %q, want alice", name)
-			}
-			if botID != "u-alice" {
-				t.Fatalf("create gateway botID = %q, want u-alice", botID)
-			}
-			return nil, &boxlite.BoxInfo{
-				ID:        "box-alice",
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
+	t.Setenv("HOME", t.TempDir())
+	provider := sandboxtest.NewProvider()
+	t.Cleanup(agent.TestOnlySetSandboxProvider(provider))
 
 	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
 	if err != nil {
@@ -565,7 +506,7 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(feishu worker) error = %v", err)
 	}
-	if createCalls != 1 {
+	if createCalls := sandboxCreateCalls(provider); createCalls != 1 {
 		t.Fatalf("create gateway calls = %d, want 1", createCalls)
 	}
 	if csgclawBot.ID != "u-alice" || feishuBot.ID != "u-alice" || csgclawBot.AgentID != feishuBot.AgentID {
@@ -814,28 +755,8 @@ func TestServiceCreateFeishuManagerUsesConfiguredOpenID(t *testing.T) {
 }
 
 func TestServiceCreateManagerBootstrapsMissingAgent(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			if name != agent.ManagerName {
-				t.Fatalf("create gateway name = %q, want manager", name)
-			}
-			if botID != agent.ManagerUserID {
-				t.Fatalf("create gateway botID = %q, want u-manager", botID)
-			}
-			return &boxlite.Box{}, &boxlite.BoxInfo{
-				ID:        "box-manager",
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
-	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
-	})
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc := mustNewSeededAgentService(t, nil)
 	imSvc := im.NewService()
@@ -935,6 +856,8 @@ func mustNewBotService(t *testing.T, bots []Bot) *Service {
 
 func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Service {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	if agents == nil {
 		agents = []agent.Agent{}
@@ -953,4 +876,15 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
 	return svc
+}
+
+func sandboxCreateCalls(provider *sandboxtest.Provider) int {
+	if provider == nil {
+		return 0
+	}
+	total := 0
+	for _, rt := range provider.Runtimes {
+		total += len(rt.CreateCalls)
+	}
+	return total
 }

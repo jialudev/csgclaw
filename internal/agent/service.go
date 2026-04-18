@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
-	boxlite "github.com/RussellLuo/boxlite/sdks/go"
-
 	"csgclaw/internal/config"
+	"csgclaw/internal/sandbox"
 )
 
 const (
@@ -33,28 +32,40 @@ const (
 
 var localIPv4Resolver = localIPv4
 
+var defaultSandboxProvider sandbox.Provider = unconfiguredSandboxProvider{}
+
+type unconfiguredSandboxProvider struct{}
+
+func (unconfiguredSandboxProvider) Name() string {
+	return "unconfigured"
+}
+
+func (unconfiguredSandboxProvider) Open(context.Context, string) (sandbox.Runtime, error) {
+	return nil, fmt.Errorf("sandbox provider is not configured")
+}
+
 var (
-	testEnsureRuntimeHook       func(*Service, string) (*boxlite.Runtime, error)
-	testEnsureRuntimeAtHomeHook func(*Service, string) (*boxlite.Runtime, error)
-	testGetBoxHook              func(*Service, context.Context, *boxlite.Runtime, string) (*boxlite.Box, error)
-	testStartBoxHook            func(*Service, context.Context, *boxlite.Box) error
-	testBoxInfoHook             func(*Service, context.Context, *boxlite.Box) (*boxlite.BoxInfo, error)
-	testCloseBoxHook            func(*Service, *boxlite.Box) error
-	testCloseRuntimeHook        func(*Service, string, *boxlite.Runtime) error
-	testCreateBoxHook           func(*Service, context.Context, *boxlite.Runtime, string, ...boxlite.BoxOption) (*boxlite.Box, error)
-	testCreateGatewayBoxHook    func(*Service, context.Context, *boxlite.Runtime, string, string, string, config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error)
-	testForceRemoveBoxHook      func(*Service, context.Context, *boxlite.Runtime, string) error
-	testRunBoxCommandHook       func(*Service, context.Context, *boxlite.Box, string, []string, io.Writer) (int, error)
+	testEnsureRuntimeHook       func(*Service, string) (sandbox.Runtime, error)
+	testEnsureRuntimeAtHomeHook func(*Service, string) (sandbox.Runtime, error)
+	testGetBoxHook              func(*Service, context.Context, sandbox.Runtime, string) (sandbox.Instance, error)
+	testStartBoxHook            func(*Service, context.Context, sandbox.Instance) error
+	testBoxInfoHook             func(*Service, context.Context, sandbox.Instance) (sandbox.Info, error)
+	testCloseBoxHook            func(*Service, sandbox.Instance) error
+	testCloseRuntimeHook        func(*Service, string, sandbox.Runtime) error
+	testCreateBoxHook           func(*Service, context.Context, sandbox.Runtime, sandbox.CreateSpec) (sandbox.Instance, error)
+	testCreateGatewayBoxHook    func(*Service, context.Context, sandbox.Runtime, string, string, string, config.ModelConfig) (sandbox.Instance, sandbox.Info, error)
+	testForceRemoveBoxHook      func(*Service, context.Context, sandbox.Runtime, string) error
+	testRunBoxCommandHook       func(*Service, context.Context, sandbox.Instance, string, []string, io.Writer) (int, error)
 )
 
 // SetTestHooks installs lightweight hooks for tests that need to bypass runtime/box creation.
 func SetTestHooks(
-	ensureRuntime func(*Service, string) (*boxlite.Runtime, error),
-	createGatewayBox func(*Service, context.Context, *boxlite.Runtime, string, string, string, config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error),
+	ensureRuntime func(*Service, string) (sandbox.Runtime, error),
+	createGatewayBox func(*Service, context.Context, sandbox.Runtime, string, string, string, config.ModelConfig) (sandbox.Instance, sandbox.Info, error),
 ) {
 	testEnsureRuntimeHook = ensureRuntime
 	if ensureRuntime != nil {
-		testEnsureRuntimeAtHomeHook = func(s *Service, _ string) (*boxlite.Runtime, error) {
+		testEnsureRuntimeAtHomeHook = func(s *Service, _ string) (sandbox.Runtime, error) {
 			return ensureRuntime(s, ManagerName)
 		}
 	} else {
@@ -78,13 +89,27 @@ func ResetTestHooks() {
 	testRunBoxCommandHook = nil
 }
 
+// TestOnlySetSandboxProvider replaces the default sandbox provider for newly
+// created services. It returns a restore function for test cleanup.
+func TestOnlySetSandboxProvider(provider sandbox.Provider) func() {
+	previous := defaultSandboxProvider
+	if provider == nil {
+		defaultSandboxProvider = unconfiguredSandboxProvider{}
+	} else {
+		defaultSandboxProvider = provider
+	}
+	return func() {
+		defaultSandboxProvider = previous
+	}
+}
+
 // TestOnlySetGetBoxHook installs a test hook for box lookup.
-func TestOnlySetGetBoxHook(hook func(*Service, context.Context, *boxlite.Runtime, string) (*boxlite.Box, error)) {
+func TestOnlySetGetBoxHook(hook func(*Service, context.Context, sandbox.Runtime, string) (sandbox.Instance, error)) {
 	testGetBoxHook = hook
 }
 
 // TestOnlySetRunBoxCommandHook installs a test hook for command execution inside a box.
-func TestOnlySetRunBoxCommandHook(hook func(*Service, context.Context, *boxlite.Box, string, []string, io.Writer) (int, error)) {
+func TestOnlySetRunBoxCommandHook(hook func(*Service, context.Context, sandbox.Instance, string, []string, io.Writer) (int, error)) {
 	testRunBoxCommandHook = hook
 }
 
@@ -95,27 +120,50 @@ type Service struct {
 	channels     config.ChannelsConfig
 	managerImage string
 	state        string
+	sandbox      sandbox.Provider
+	sandboxHome  string
 	mu           sync.RWMutex
-	runtimes     map[string]*boxlite.Runtime
+	runtimes     map[string]sandbox.Runtime
 	agents       map[string]Agent
 }
 
-func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string) (*Service, error) {
-	return NewServiceWithLLM(config.SingleProfileLLM(model), server, managerImage, statePath)
+type ServiceOption func(*Service) error
+
+func WithSandboxProvider(provider sandbox.Provider) ServiceOption {
+	return func(s *Service) error {
+		if provider == nil {
+			return fmt.Errorf("sandbox provider is required")
+		}
+		s.sandbox = provider
+		return nil
+	}
 }
 
-func NewServiceWithChannels(model config.ModelConfig, server config.ServerConfig, channels config.ChannelsConfig, managerImage, statePath string) (*Service, error) {
-	return NewServiceWithLLMAndChannels(config.SingleProfileLLM(model), server, channels, managerImage, statePath)
+func WithSandboxHomeDirName(name string) ServiceOption {
+	return func(s *Service) error {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return fmt.Errorf("sandbox home dir name is required")
+		}
+		s.sandboxHome = name
+		return nil
+	}
 }
 
-func NewServiceWithLLM(llmCfg config.LLMConfig, server config.ServerConfig, managerImage, statePath string) (*Service, error) {
-	return NewServiceWithLLMAndChannels(llmCfg, server, config.ChannelsConfig{}, managerImage, statePath)
+func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
+	return NewServiceWithLLM(config.SingleProfileLLM(model), server, managerImage, statePath, opts...)
 }
 
-func NewServiceWithLLMAndChannels(llmCfg config.LLMConfig, server config.ServerConfig, channels config.ChannelsConfig, managerImage, statePath string) (*Service, error) {
-	// step 8.0 agent.Service owns two things together:
-	// step 8.0.1 the persisted registry of manager/worker metadata
-	// step 8.0.2 the live Boxlite runtime/box lifecycle.
+func NewServiceWithChannels(model config.ModelConfig, server config.ServerConfig, channels config.ChannelsConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
+	return NewServiceWithLLMAndChannels(config.SingleProfileLLM(model), server, channels, managerImage, statePath, opts...)
+}
+
+func NewServiceWithLLM(llmCfg config.LLMConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
+	return NewServiceWithLLMAndChannels(llmCfg, server, config.ChannelsConfig{}, managerImage, statePath, opts...)
+}
+
+func NewServiceWithLLMAndChannels(llmCfg config.LLMConfig, server config.ServerConfig, channels config.ChannelsConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
+	// agent.Service owns the persisted registry and the live sandbox lifecycle.
 	if managerImage == "" {
 		managerImage = config.DefaultManagerImage
 	}
@@ -134,8 +182,18 @@ func NewServiceWithLLMAndChannels(llmCfg config.LLMConfig, server config.ServerC
 		channels:     cloneChannelsConfig(channels),
 		managerImage: managerImage,
 		state:        statePath,
-		runtimes:     make(map[string]*boxlite.Runtime),
+		sandbox:      defaultSandboxProvider,
+		sandboxHome:  config.DefaultSandboxHomeDirName,
+		runtimes:     make(map[string]sandbox.Runtime),
 		agents:       make(map[string]Agent),
+	}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		if err := opt(svc); err != nil {
+			return nil, err
+		}
 	}
 	if strings.TrimSpace(svc.llm.DefaultProfile) == "" {
 		svc.llm.DefaultProfile = defaultProfile
@@ -203,7 +261,7 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 	if err != nil {
 		return Agent{}, err
 	}
-	runtimeHome, err := boxRuntimeHome(ManagerName)
+	runtimeHome, err := s.sandboxRuntimeHome(ManagerName)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -214,7 +272,7 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 		log.Printf("force recreating bootstrap manager box %q", ManagerName)
 		managerBoxIDOrName := s.bootstrapManagerBoxIDOrName()
 		if err := s.forceRemoveBox(ctx, rt, managerBoxIDOrName); err != nil {
-			if boxlite.IsNotFound(err) {
+			if sandbox.IsNotFound(err) {
 				log.Printf("bootstrap manager box %q (%q) does not exist yet; continuing", ManagerName, managerBoxIDOrName)
 			} else {
 				return Agent{}, fmt.Errorf("force remove bootstrap manager box %q (%q): %w", ManagerName, managerBoxIDOrName, err)
@@ -239,7 +297,7 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 		}
 		box = nil
 	}
-	var info *boxlite.BoxInfo
+	var info sandbox.Info
 	if box == nil {
 		log.Printf("bootstrap manager box %q not found, creating it with image %q", ManagerName, s.managerImage)
 		log.Printf("if the image is not present locally, the first pull may take a while")
@@ -355,7 +413,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	if err != nil {
 		return Agent{}, err
 	}
-	runtimeHome, err := boxRuntimeHome(name)
+	runtimeHome, err := s.sandboxRuntimeHome(name)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -383,18 +441,22 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	}
 	managerBaseURL := resolveManagerBaseURL(s.server)
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, id)
-	boxOpts := []boxlite.BoxOption{
-		boxlite.WithName(name),
-		boxlite.WithDetach(true),
-		boxlite.WithAutoRemove(false),
-		boxlite.WithVolume(projectsRoot, boxProjectsDir),
+	boxSpec := sandbox.CreateSpec{
+		Image:      image,
+		Name:       name,
+		Detach:     true,
+		AutoRemove: false,
+		Mounts: []sandbox.Mount{
+			{HostPath: projectsRoot, GuestPath: boxProjectsDir},
+		},
+		Env: make(map[string]string),
 	}
 	for key, value := range bridgeLLMEnvVars(llmBaseURL, s.server.AccessToken, resolvedModel.ModelID) {
-		boxOpts = append(boxOpts, boxlite.WithEnv(key, value))
+		boxSpec.Env[key] = value
 	}
-	box, err := s.createBox(ctx, rt, image, boxOpts...)
+	box, err := s.createBox(ctx, rt, boxSpec)
 	if err != nil {
-		return Agent{}, fmt.Errorf("create boxlite agent: %w", err)
+		return Agent{}, fmt.Errorf("create sandbox agent: %w", err)
 	}
 	defer func() {
 		_ = s.closeBox(box)
@@ -443,7 +505,7 @@ func (s *Service) Agent(id string) (Agent, bool) {
 	return *cloneAgent(&a), true
 }
 
-func (s *Service) resolveAgentBox(ctx context.Context, rt *boxlite.Runtime, got Agent) (*boxlite.Box, string, error) {
+func (s *Service) resolveAgentBox(ctx context.Context, rt sandbox.Runtime, got Agent) (sandbox.Instance, string, error) {
 	keys := make([]string, 0, 2)
 	if boxID := strings.TrimSpace(got.BoxID); boxID != "" {
 		keys = append(keys, boxID)
@@ -463,7 +525,7 @@ func (s *Service) resolveAgentBox(ctx context.Context, rt *boxlite.Runtime, got 
 		if err == nil {
 			return box, key, nil
 		}
-		if boxlite.IsNotFound(err) {
+		if sandbox.IsNotFound(err) {
 			lastNotFound = err
 			continue
 		}
@@ -475,7 +537,7 @@ func (s *Service) resolveAgentBox(ctx context.Context, rt *boxlite.Runtime, got 
 	return nil, "", fmt.Errorf("agent box %q not found", got.Name)
 }
 
-func (s *Service) refreshAgentBoxID(id string, got Agent, resolvedKey string, box *boxlite.Box) error {
+func (s *Service) refreshAgentBoxID(id string, got Agent, resolvedKey string, box sandbox.Instance) error {
 	if box == nil {
 		return nil
 	}
@@ -523,7 +585,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	runtimeHome, err := boxRuntimeHome(existing.Name)
+	runtimeHome, err := s.sandboxRuntimeHome(existing.Name)
 	if err != nil {
 		return err
 	}
@@ -535,7 +597,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		if _, resolvedKey, resolveErr := s.resolveAgentBox(ctx, rt, existing); resolveErr == nil && strings.TrimSpace(resolvedKey) != "" {
 			boxIDOrName = resolvedKey
 		}
-		if err := s.forceRemoveBox(ctx, rt, boxIDOrName); err != nil && !boxlite.IsNotFound(err) {
+		if err := s.forceRemoveBox(ctx, rt, boxIDOrName); err != nil && !sandbox.IsNotFound(err) {
 			return fmt.Errorf("remove agent box: %w", err)
 		}
 		_ = s.closeRuntime(runtimeHome, rt)
@@ -557,7 +619,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("agent %q not found", id)
 	}
 	delete(s.agents, id)
-	runtimeHome, err = boxRuntimeHome(current.Name)
+	runtimeHome, err = s.sandboxRuntimeHome(current.Name)
 	if err != nil {
 		return err
 	}
@@ -606,7 +668,7 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	if err != nil {
 		return Agent{}, err
 	}
-	runtimeHome, err := boxRuntimeHome(name)
+	runtimeHome, err := s.sandboxRuntimeHome(name)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -691,7 +753,7 @@ func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines 
 	if err != nil {
 		return err
 	}
-	runtimeHome, err := boxRuntimeHome(got.Name)
+	runtimeHome, err := s.sandboxRuntimeHome(got.Name)
 	if err != nil {
 		return err
 	}
@@ -701,7 +763,7 @@ func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines 
 
 	box, resolvedKey, err := s.resolveAgentBox(ctx, rt, got)
 	if err != nil {
-		if boxlite.IsNotFound(err) {
+		if sandbox.IsNotFound(err) {
 			boxIDOrName := strings.TrimSpace(got.BoxID)
 			if boxIDOrName == "" {
 				boxIDOrName = got.Name

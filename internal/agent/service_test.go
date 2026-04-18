@@ -11,10 +11,49 @@ import (
 	"testing"
 	"time"
 
-	boxlite "github.com/RussellLuo/boxlite/sdks/go"
-
 	"csgclaw/internal/config"
+	"csgclaw/internal/sandbox"
 )
+
+type fakeRuntime struct{}
+
+func (f *fakeRuntime) Create(context.Context, sandbox.CreateSpec) (sandbox.Instance, error) {
+	return &fakeInstance{}, nil
+}
+
+func (f *fakeRuntime) Get(context.Context, string) (sandbox.Instance, error) {
+	return &fakeInstance{}, nil
+}
+
+func (f *fakeRuntime) Remove(context.Context, string, sandbox.RemoveOptions) error {
+	return nil
+}
+
+func (f *fakeRuntime) Close() error {
+	return nil
+}
+
+type fakeInstance struct{}
+
+func (f *fakeInstance) Start(context.Context) error {
+	return nil
+}
+
+func (f *fakeInstance) Stop(context.Context, sandbox.StopOptions) error {
+	return nil
+}
+
+func (f *fakeInstance) Info(context.Context) (sandbox.Info, error) {
+	return sandbox.Info{}, nil
+}
+
+func (f *fakeInstance) Run(context.Context, sandbox.CommandSpec) (sandbox.CommandResult, error) {
+	return sandbox.CommandResult{}, nil
+}
+
+func (f *fakeInstance) Close() error {
+	return nil
+}
 
 func testModelConfig() config.ModelConfig {
 	return config.ModelConfig{
@@ -71,7 +110,7 @@ func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
 
 func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
 		nil,
 	)
 	defer ResetTestHooks()
@@ -85,18 +124,8 @@ func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
 	if err == nil {
 		t.Fatal("CreateWorker() error = nil, want invalid runtime error")
 	}
-	if !strings.Contains(err.Error(), "invalid boxlite runtime") {
+	if !strings.Contains(err.Error(), "invalid sandbox runtime") {
 		t.Fatalf("CreateWorker() error = %q, want invalid runtime error", err)
-	}
-}
-
-func TestRuntimeValidRejectsNilAndZeroValue(t *testing.T) {
-	var nilRT *boxlite.Runtime
-	if runtimeValid(nilRT) {
-		t.Fatal("runtimeValid(nil) = true, want false")
-	}
-	if runtimeValid(&boxlite.Runtime{}) {
-		t.Fatal("runtimeValid(zero runtime) = true, want false")
 	}
 }
 
@@ -174,7 +203,7 @@ func TestDeleteRejectsManagerAgent(t *testing.T) {
 
 func TestDeleteRemovesAgentFromState(t *testing.T) {
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
 		nil,
 	)
 	defer ResetTestHooks()
@@ -215,7 +244,7 @@ func TestDeleteRemovesAgentFromState(t *testing.T) {
 
 func TestDeleteRemovesAgentHomeDirectory(t *testing.T) {
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
 		nil,
 	)
 	defer ResetTestHooks()
@@ -263,18 +292,18 @@ func TestDeleteRemovesAgentHomeDirectory(t *testing.T) {
 
 func TestDeletePrefersBoxIDOverName(t *testing.T) {
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return &fakeRuntime{}, nil },
 		nil,
 	)
 	defer ResetTestHooks()
 
 	var removed string
-	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) error {
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) error {
 		removed = idOrName
 		return nil
 	}
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
 	defer func() {
 		testForceRemoveBoxHook = nil
@@ -303,21 +332,21 @@ func TestDeletePrefersBoxIDOverName(t *testing.T) {
 
 func TestDeleteFallsBackToNameWhenStoredBoxIDIsStale(t *testing.T) {
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return &fakeRuntime{}, nil },
 		nil,
 	)
 	defer ResetTestHooks()
 
 	var lookedUp []string
 	var removed string
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
 		lookedUp = append(lookedUp, idOrName)
 		if idOrName == "alice" {
-			return &boxlite.Box{}, nil
+			return &fakeInstance{}, nil
 		}
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
-	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) error {
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) error {
 		removed = idOrName
 		return nil
 	}
@@ -362,14 +391,14 @@ func TestDeleteFallsBackToNameWhenStoredBoxIDIsStale(t *testing.T) {
 }
 
 func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
-	rt := &boxlite.Runtime{}
-	SetTestHooks(func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
+	rt := &fakeRuntime{}
+	SetTestHooks(func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil }, nil)
 	defer ResetTestHooks()
-	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) error {
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) error {
 		return nil
 	}
 	var closeRuntimeCalls int
-	testCloseRuntimeHook = func(_ *Service, home string, got *boxlite.Runtime) error {
+	testCloseRuntimeHook = func(_ *Service, home string, got sandbox.Runtime) error {
 		if got != rt {
 			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
 		}
@@ -398,9 +427,9 @@ func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
 		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 
-	runtimeHome, err := boxRuntimeHome("alice")
+	runtimeHome, err := sandboxRuntimeHome("alice")
 	if err != nil {
-		t.Fatalf("boxRuntimeHome() error = %v", err)
+		t.Fatalf("sandboxRuntimeHome() error = %v", err)
 	}
 	svc.runtimes[runtimeHome] = rt
 
@@ -417,14 +446,13 @@ func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
 
 func TestCreateWorkerStoresBoxID(t *testing.T) {
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return nil, &boxlite.BoxInfo{
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+			return nil, sandbox.Info{
 				ID:        "box-" + name,
 				Name:      name,
-				State:     boxlite.StateRunning,
+				State:     sandbox.StateRunning,
 				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
-				Image:     "test-image",
 			}, nil
 		},
 	)
@@ -446,14 +474,13 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 
 func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return nil, &boxlite.BoxInfo{
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+			return nil, sandbox.Info{
 				ID:        "box-" + name,
 				Name:      name,
-				State:     boxlite.StateRunning,
+				State:     sandbox.StateRunning,
 				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
-				Image:     "test-image",
 			}, nil
 		},
 	)
@@ -497,16 +524,15 @@ func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 }
 
 func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
-	rt := &boxlite.Runtime{}
+	rt := &fakeRuntime{}
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil },
-		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return &boxlite.Box{}, &boxlite.BoxInfo{
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+			return &fakeInstance{}, sandbox.Info{
 				ID:        "box-" + name,
 				Name:      name,
-				State:     boxlite.StateRunning,
+				State:     sandbox.StateRunning,
 				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
-				Image:     "test-image",
 			}, nil
 		},
 	)
@@ -514,11 +540,11 @@ func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
 
 	var closeCalls int
 	var closeRuntimeCalls int
-	testCloseBoxHook = func(_ *Service, _ *boxlite.Box) error {
+	testCloseBoxHook = func(_ *Service, _ sandbox.Instance) error {
 		closeCalls++
 		return nil
 	}
-	testCloseRuntimeHook = func(_ *Service, _ string, got *boxlite.Runtime) error {
+	testCloseRuntimeHook = func(_ *Service, _ string, got sandbox.Runtime) error {
 		if got != rt {
 			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
 		}
@@ -547,18 +573,18 @@ func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
 }
 
 func TestStreamLogsUsesStoredBoxIDAndTailArgs(t *testing.T) {
-	rt := &boxlite.Runtime{}
-	SetTestHooks(func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
+	rt := &fakeRuntime{}
+	SetTestHooks(func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil }, nil)
 	defer ResetTestHooks()
 
 	var gotBoxID string
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
 		gotBoxID = idOrName
-		return &boxlite.Box{}, nil
+		return &fakeInstance{}, nil
 	}
 	var gotName string
 	var gotArgs []string
-	testRunBoxCommandHook = func(_ *Service, _ context.Context, _ *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+	testRunBoxCommandHook = func(_ *Service, _ context.Context, _ sandbox.Instance, name string, args []string, w io.Writer) (int, error) {
 		gotName = name
 		gotArgs = append([]string(nil), args...)
 		_, _ = fmt.Fprint(w, "line-1\n")
@@ -601,22 +627,22 @@ func TestStreamLogsUsesStoredBoxIDAndTailArgs(t *testing.T) {
 }
 
 func TestStreamLogsFallsBackToNameAndRefreshesStoredBoxID(t *testing.T) {
-	rt := &boxlite.Runtime{}
-	SetTestHooks(func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
+	rt := &fakeRuntime{}
+	SetTestHooks(func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil }, nil)
 	defer ResetTestHooks()
 
 	var gotKeys []string
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
 		gotKeys = append(gotKeys, idOrName)
 		if idOrName == "alice" {
-			return &boxlite.Box{}, nil
+			return &fakeInstance{}, nil
 		}
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
-	testBoxInfoHook = func(_ *Service, _ context.Context, _ *boxlite.Box) (*boxlite.BoxInfo, error) {
-		return &boxlite.BoxInfo{ID: "box-new"}, nil
+	testBoxInfoHook = func(_ *Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{ID: "box-new"}, nil
 	}
-	testRunBoxCommandHook = func(_ *Service, _ context.Context, _ *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+	testRunBoxCommandHook = func(_ *Service, _ context.Context, _ sandbox.Instance, name string, args []string, w io.Writer) (int, error) {
 		_, _ = fmt.Fprint(w, "line-1\n")
 		return 0, nil
 	}
@@ -658,23 +684,23 @@ func TestStreamLogsFallsBackToNameAndRefreshesStoredBoxID(t *testing.T) {
 }
 
 func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
-	rt := &boxlite.Runtime{}
+	rt := &fakeRuntime{}
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil },
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil },
 		nil,
 	)
 	defer ResetTestHooks()
 
 	var closeCalls int
 	var closeRuntimeCalls int
-	testCreateBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, _ ...boxlite.BoxOption) (*boxlite.Box, error) {
-		return &boxlite.Box{}, nil
+	testCreateBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ sandbox.CreateSpec) (sandbox.Instance, error) {
+		return &fakeInstance{}, nil
 	}
-	testCloseBoxHook = func(_ *Service, _ *boxlite.Box) error {
+	testCloseBoxHook = func(_ *Service, _ sandbox.Instance) error {
 		closeCalls++
 		return nil
 	}
-	testCloseRuntimeHook = func(_ *Service, _ string, got *boxlite.Runtime) error {
+	testCloseRuntimeHook = func(_ *Service, _ string, got sandbox.Runtime) error {
 		if got != rt {
 			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
 		}
@@ -713,27 +739,28 @@ func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
 }
 
 func TestEnsureBootstrapStateForceRecreatePrefersStoredManagerBoxID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
-		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return &boxlite.Box{}, &boxlite.BoxInfo{
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return &fakeRuntime{}, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+			return &fakeInstance{}, sandbox.Info{
 				ID:        "box-new",
 				Name:      name,
-				State:     boxlite.StateRunning,
+				State:     sandbox.StateRunning,
 				CreatedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
-				Image:     "test-image",
 			}, nil
 		},
 	)
 	defer ResetTestHooks()
 
 	var removed string
-	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, idOrName string) error {
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) error {
 		removed = idOrName
 		return nil
 	}
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
 	defer func() {
 		testForceRemoveBoxHook = nil
@@ -784,9 +811,9 @@ func TestEnsureBootstrapStateForceRecreateResetsManagerHomeBeforeCreate(t *testi
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	runtimeHome, err := boxRuntimeHome(ManagerName)
+	runtimeHome, err := sandboxRuntimeHome(ManagerName)
 	if err != nil {
-		t.Fatalf("boxRuntimeHome() error = %v", err)
+		t.Fatalf("sandboxRuntimeHome() error = %v", err)
 	}
 	managerHome, err := agentHomeDir(ManagerName)
 	if err != nil {
@@ -802,29 +829,28 @@ func TestEnsureBootstrapStateForceRecreateResetsManagerHomeBeforeCreate(t *testi
 
 	var ensuredHomes []string
 	var closeRuntimeCalls int
-	testEnsureRuntimeAtHomeHook = func(_ *Service, home string) (*boxlite.Runtime, error) {
+	testEnsureRuntimeAtHomeHook = func(_ *Service, home string) (sandbox.Runtime, error) {
 		ensuredHomes = append(ensuredHomes, home)
-		return &boxlite.Runtime{}, nil
+		return &fakeRuntime{}, nil
 	}
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
-	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) error {
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) error {
 		return nil
 	}
-	testCreateGatewayBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
+	testCreateGatewayBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
 		if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
 			t.Fatalf("stale manager file still exists before recreate: err=%v", err)
 		}
-		return &boxlite.Box{}, &boxlite.BoxInfo{
+		return &fakeInstance{}, sandbox.Info{
 			ID:        "box-new",
 			Name:      name,
-			State:     boxlite.StateRunning,
+			State:     sandbox.StateRunning,
 			CreatedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
-			Image:     "test-image",
 		}, nil
 	}
-	testCloseRuntimeHook = func(_ *Service, gotHome string, _ *boxlite.Runtime) error {
+	testCloseRuntimeHook = func(_ *Service, gotHome string, _ sandbox.Runtime) error {
 		closeRuntimeCalls++
 		if gotHome != runtimeHome {
 			t.Fatalf("closeRuntime() home = %q, want %q", gotHome, runtimeHome)
@@ -871,32 +897,33 @@ func TestEnsureBootstrapStateForceRecreateResetsManagerHomeBeforeCreate(t *testi
 }
 
 func TestEnsureBootstrapStateClosesManagerBoxHandleAfterCreate(t *testing.T) {
-	rt := &boxlite.Runtime{}
+	t.Setenv("HOME", t.TempDir())
+
+	rt := &fakeRuntime{}
 	SetTestHooks(
-		func(_ *Service, _ string) (*boxlite.Runtime, error) { return rt, nil },
-		func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return &boxlite.Box{}, &boxlite.BoxInfo{
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+			return &fakeInstance{}, sandbox.Info{
 				ID:        "box-" + name,
 				Name:      name,
-				State:     boxlite.StateRunning,
+				State:     sandbox.StateRunning,
 				CreatedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
-				Image:     "test-image",
 			}, nil
 		},
 	)
 	defer ResetTestHooks()
 
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
 
 	var closeCalls int
 	var closeRuntimeCalls int
-	testCloseBoxHook = func(_ *Service, _ *boxlite.Box) error {
+	testCloseBoxHook = func(_ *Service, _ sandbox.Instance) error {
 		closeCalls++
 		return nil
 	}
-	testCloseRuntimeHook = func(_ *Service, _ string, got *boxlite.Runtime) error {
+	testCloseRuntimeHook = func(_ *Service, _ string, got sandbox.Runtime) error {
 		if got != rt {
 			t.Fatalf("closeRuntime() got runtime %p, want %p", got, rt)
 		}
@@ -926,40 +953,34 @@ func TestEnsureBootstrapStateClosesManagerBoxHandleAfterCreate(t *testing.T) {
 }
 
 func TestEnsureBootstrapStateReusesStoredManagerBoxIDWithoutForce(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	SetTestHooks(nil, nil)
 	defer ResetTestHooks()
 
-	primaryRT := &boxlite.Runtime{}
-	legacyRT := &boxlite.Runtime{}
-	testEnsureRuntimeAtHomeHook = func(_ *Service, home string) (*boxlite.Runtime, error) {
-		if strings.HasSuffix(home, filepath.Join(config.AppDirName, config.RuntimeHomeDirName)) {
-			return primaryRT, nil
-		}
-		return legacyRT, nil
+	primaryRT := &fakeRuntime{}
+	testEnsureRuntimeAtHomeHook = func(_ *Service, home string) (sandbox.Runtime, error) {
+		return primaryRT, nil
 	}
 
 	var created bool
-	testCreateGatewayBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string, _ string, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
+	testCreateGatewayBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, _ string, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
 		created = true
-		return nil, nil, nil
+		return nil, sandbox.Info{}, nil
 	}
-	testGetBoxHook = func(_ *Service, _ context.Context, rt *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
-		if rt == primaryRT {
-			return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing in primary"}
+	testGetBoxHook = func(_ *Service, _ context.Context, rt sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		if rt == primaryRT && idOrName == "box-old" {
+			return &fakeInstance{}, nil
 		}
-		if rt == legacyRT && idOrName == "box-old" {
-			return &boxlite.Box{}, nil
-		}
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
-	testStartBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Box) error { return nil }
-	testBoxInfoHook = func(_ *Service, _ context.Context, _ *boxlite.Box) (*boxlite.BoxInfo, error) {
-		return &boxlite.BoxInfo{
+	testStartBoxHook = func(_ *Service, _ context.Context, _ sandbox.Instance) error { return nil }
+	testBoxInfoHook = func(_ *Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{
 			ID:        "box-old",
 			Name:      ManagerName,
-			State:     boxlite.StateRunning,
+			State:     sandbox.StateRunning,
 			CreatedAt: time.Date(2026, 4, 2, 12, 0, 0, 0, time.UTC),
-			Image:     "test-image",
 		}, nil
 	}
 
@@ -996,14 +1017,14 @@ func TestBoxRuntimeHomeUsesPerAgentDirectory(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	got, err := boxRuntimeHome("alice")
+	got, err := sandboxRuntimeHome("alice")
 	if err != nil {
-		t.Fatalf("boxRuntimeHome() error = %v", err)
+		t.Fatalf("sandboxRuntimeHome() error = %v", err)
 	}
 
 	want := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice", config.RuntimeHomeDirName)
 	if got != want {
-		t.Fatalf("boxRuntimeHome() = %q, want %q", got, want)
+		t.Fatalf("sandboxRuntimeHome() = %q, want %q", got, want)
 	}
 }
 
@@ -1011,12 +1032,12 @@ func TestLookupBootstrapManagerUsesPerAgentHome(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	var gotHome string
-	testEnsureRuntimeAtHomeHook = func(_ *Service, homeDir string) (*boxlite.Runtime, error) {
+	testEnsureRuntimeAtHomeHook = func(_ *Service, homeDir string) (sandbox.Runtime, error) {
 		gotHome = homeDir
-		return &boxlite.Runtime{}, nil
+		return &fakeRuntime{}, nil
 	}
-	testGetBoxHook = func(_ *Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
 	}
 	defer func() {
 		testEnsureRuntimeAtHomeHook = nil
@@ -1072,6 +1093,80 @@ func TestEnsureAgentProjectsRootUsesHomeProjectsDir(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Fatalf("ensureAgentProjectsRoot() path is not a directory: %q", got)
+	}
+}
+
+func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	orig := localIPv4Resolver
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	defer func() { localIPv4Resolver = orig }()
+
+	svc, err := NewServiceWithChannels(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
+		config.ChannelsConfig{
+			Feishu: map[string]config.FeishuConfig{
+				"u-worker-1": {
+					AppID:     "cli_worker",
+					AppSecret: "worker-secret",
+				},
+			},
+		},
+		"",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("NewServiceWithChannels() error = %v", err)
+	}
+
+	spec, err := svc.gatewayCreateSpec("picoclaw:latest", "alice", "u-worker-1", config.ModelConfig{
+		ModelID: "minimax-m2.7",
+	})
+	if err != nil {
+		t.Fatalf("gatewayCreateSpec() error = %v", err)
+	}
+
+	if spec.Image != "picoclaw:latest" {
+		t.Fatalf("gatewayCreateSpec() image = %q, want %q", spec.Image, "picoclaw:latest")
+	}
+	if spec.Name != "alice" {
+		t.Fatalf("gatewayCreateSpec() name = %q, want %q", spec.Name, "alice")
+	}
+	if !spec.Detach {
+		t.Fatal("gatewayCreateSpec() detach = false, want true")
+	}
+	if spec.AutoRemove {
+		t.Fatal("gatewayCreateSpec() auto_remove = true, want false")
+	}
+	wantCmd := "/bin/sh -c /usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null"
+	if strings.Join(spec.Cmd, " ") != wantCmd {
+		t.Fatalf("gatewayCreateSpec() cmd = %q, want %q", spec.Cmd, wantCmd)
+	}
+	if got, want := spec.Env["HOME"], "/home/picoclaw"; got != want {
+		t.Fatalf("HOME env = %q, want %q", got, want)
+	}
+	if got, want := spec.Env["CSGCLAW_BASE_URL"], "http://10.0.0.8:18080"; got != want {
+		t.Fatalf("CSGCLAW_BASE_URL = %q, want %q", got, want)
+	}
+	if got, want := spec.Env["CSGCLAW_LLM_BASE_URL"], "http://10.0.0.8:18080/api/bots/u-worker-1/llm"; got != want {
+		t.Fatalf("CSGCLAW_LLM_BASE_URL = %q, want %q", got, want)
+	}
+	if got, want := spec.Env["PICOCLAW_CHANNELS_FEISHU_APP_ID"], "cli_worker"; got != want {
+		t.Fatalf("PICOCLAW_CHANNELS_FEISHU_APP_ID = %q, want %q", got, want)
+	}
+
+	wantWorkspaceRoot := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice", hostWorkspaceDir)
+	wantProjectsRoot := filepath.Join(homeDir, config.AppDirName, hostProjectsDir)
+	if len(spec.Mounts) != 2 {
+		t.Fatalf("gatewayCreateSpec() mounts = %+v, want 2 mounts", spec.Mounts)
+	}
+	if spec.Mounts[0].HostPath != wantWorkspaceRoot || spec.Mounts[0].GuestPath != boxWorkspaceDir {
+		t.Fatalf("workspace mount = %+v, want host %q guest %q", spec.Mounts[0], wantWorkspaceRoot, boxWorkspaceDir)
+	}
+	if spec.Mounts[1].HostPath != wantProjectsRoot || spec.Mounts[1].GuestPath != boxProjectsDir {
+		t.Fatalf("projects mount = %+v, want host %q guest %q", spec.Mounts[1], wantProjectsRoot, boxProjectsDir)
 	}
 }
 

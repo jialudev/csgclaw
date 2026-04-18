@@ -180,6 +180,9 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`advertise_base_url = "http://example.test"`,
 		`api_key = "sk*****et"`,
 		`access_token = "pc*****et"`,
+		`[sandbox]`,
+		`provider = "boxlite"`,
+		`home_dir_name = "boxlite"`,
 		`[models]`,
 		`default = "default.model-test"`,
 		`[models.providers.default]`,
@@ -202,6 +205,21 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	}
 	if strings.Contains(got, "manager-secret") {
 		t.Fatalf("stdout leaked feishu app secret:\n%s", got)
+	}
+}
+
+func TestNewAgentServiceRejectsUnsupportedSandboxProvider(t *testing.T) {
+	_, err := newAgentService(config.Config{
+		Sandbox: config.SandboxConfig{
+			Provider:    "docker",
+			HomeDirName: "docker",
+		},
+	})
+	if err == nil {
+		t.Fatal("newAgentService() error = nil, want unsupported sandbox provider")
+	}
+	if !strings.Contains(err.Error(), `unsupported sandbox provider "docker"`) {
+		t.Fatalf("newAgentService() error = %q, want unsupported sandbox provider", err)
 	}
 }
 

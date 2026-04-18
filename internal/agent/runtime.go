@@ -6,15 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
-	boxlite "github.com/RussellLuo/boxlite/sdks/go"
-
 	"csgclaw/internal/config"
+	"csgclaw/internal/sandbox"
 )
 
-func (s *Service) ensureRuntime(agentName string) (*boxlite.Runtime, error) {
+func (s *Service) ensureRuntime(agentName string) (sandbox.Runtime, error) {
 	if testEnsureRuntimeHook != nil {
 		return testEnsureRuntimeHook(s, agentName)
 	}
@@ -22,14 +20,14 @@ func (s *Service) ensureRuntime(agentName string) (*boxlite.Runtime, error) {
 	if agentName == "" {
 		return nil, fmt.Errorf("agent name is required")
 	}
-	homeDir, err := boxRuntimeHome(agentName)
+	homeDir, err := s.sandboxRuntimeHome(agentName)
 	if err != nil {
 		return nil, err
 	}
 	return s.ensureRuntimeAtHome(homeDir)
 }
 
-func (s *Service) ensureRuntimeAtHome(homeDir string) (*boxlite.Runtime, error) {
+func (s *Service) ensureRuntimeAtHome(homeDir string) (sandbox.Runtime, error) {
 	homeDir = strings.TrimSpace(homeDir)
 	if homeDir == "" {
 		return nil, fmt.Errorf("runtime home is required")
@@ -48,17 +46,16 @@ func (s *Service) ensureRuntimeAtHome(homeDir string) (*boxlite.Runtime, error) 
 		return rt, nil
 	}
 
-	opts := []boxlite.RuntimeOption{boxlite.WithHomeDir(homeDir)}
-	rt, err := boxlite.NewRuntime(opts...)
+	rt, err := s.sandbox.Open(context.Background(), homeDir)
 	if err != nil {
-		return nil, fmt.Errorf("create boxlite runtime: %w", err)
+		return nil, fmt.Errorf("create sandbox runtime: %w", err)
 	}
 	s.runtimes[homeDir] = rt
 	return rt, nil
 }
 
-func (s *Service) lookupBootstrapManager(ctx context.Context) (*boxlite.Runtime, *boxlite.Box, error) {
-	homeDir, err := boxRuntimeHome(ManagerName)
+func (s *Service) lookupBootstrapManager(ctx context.Context) (sandbox.Runtime, sandbox.Instance, error) {
+	homeDir, err := s.sandboxRuntimeHome(ManagerName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -75,55 +72,58 @@ func (s *Service) lookupBootstrapManager(ctx context.Context) (*boxlite.Runtime,
 		if err == nil {
 			return rt, box, nil
 		}
-		if !boxlite.IsNotFound(err) {
+		if !sandbox.IsNotFound(err) {
 			return nil, nil, err
 		}
 	}
 	return rt, nil, nil
 }
 
-func (s *Service) getBox(ctx context.Context, rt *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+func (s *Service) getBox(ctx context.Context, rt sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
 	if testGetBoxHook != nil {
 		return testGetBoxHook(s, ctx, rt, idOrName)
 	}
 	return rt.Get(ctx, idOrName)
 }
 
-func (s *Service) startBox(ctx context.Context, box *boxlite.Box) error {
+func (s *Service) startBox(ctx context.Context, box sandbox.Instance) error {
 	if testStartBoxHook != nil {
 		return testStartBoxHook(s, ctx, box)
 	}
 	return box.Start(ctx)
 }
 
-func (s *Service) boxInfo(ctx context.Context, box *boxlite.Box) (*boxlite.BoxInfo, error) {
+func (s *Service) boxInfo(ctx context.Context, box sandbox.Instance) (sandbox.Info, error) {
 	if testBoxInfoHook != nil {
 		return testBoxInfoHook(s, ctx, box)
 	}
 	return box.Info(ctx)
 }
 
-func (s *Service) createBox(ctx context.Context, rt *boxlite.Runtime, image string, opts ...boxlite.BoxOption) (*boxlite.Box, error) {
+func (s *Service) createBox(ctx context.Context, rt sandbox.Runtime, spec sandbox.CreateSpec) (sandbox.Instance, error) {
 	if testCreateBoxHook != nil {
-		return testCreateBoxHook(s, ctx, rt, image, opts...)
+		return testCreateBoxHook(s, ctx, rt, spec)
 	}
-	return rt.Create(ctx, image, opts...)
+	return rt.Create(ctx, spec)
 }
 
-func (s *Service) runBoxCommand(ctx context.Context, box *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+func (s *Service) runBoxCommand(ctx context.Context, box sandbox.Instance, name string, args []string, w io.Writer) (int, error) {
 	if testRunBoxCommandHook != nil {
 		return testRunBoxCommandHook(s, ctx, box, name, args, w)
 	}
-	cmd := box.Command(name, args...)
-	cmd.Stdout = w
-	cmd.Stderr = w
-	if err := cmd.Run(ctx); err != nil {
+	result, err := box.Run(ctx, sandbox.CommandSpec{
+		Name:   name,
+		Args:   args,
+		Stdout: w,
+		Stderr: w,
+	})
+	if err != nil {
 		return 0, err
 	}
-	return cmd.ExitCode(), nil
+	return result.ExitCode, nil
 }
 
-func (s *Service) closeBox(box *boxlite.Box) error {
+func (s *Service) closeBox(box sandbox.Instance) error {
 	if box == nil {
 		return nil
 	}
@@ -133,7 +133,7 @@ func (s *Service) closeBox(box *boxlite.Box) error {
 	return box.Close()
 }
 
-func (s *Service) closeRuntime(homeDir string, rt *boxlite.Runtime) error {
+func (s *Service) closeRuntime(homeDir string, rt sandbox.Runtime) error {
 	if rt == nil {
 		return nil
 	}
@@ -149,32 +149,28 @@ func (s *Service) closeRuntime(homeDir string, rt *boxlite.Runtime) error {
 	return rt.Close()
 }
 
-func runtimeValid(rt *boxlite.Runtime) bool {
-	if rt == nil {
-		return false
-	}
-
-	v := reflect.ValueOf(rt)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
-		return false
-	}
-	elem := v.Elem()
-	if !elem.IsValid() {
-		return false
-	}
-	handle := elem.FieldByName("handle")
-	if !handle.IsValid() || handle.Kind() != reflect.Ptr {
-		return false
-	}
-	return !handle.IsNil()
+func sandboxRuntimeHome(agentName string) (string, error) {
+	return sandboxRuntimeHomeWithDirName(agentName, config.DefaultSandboxHomeDirName)
 }
 
-func boxRuntimeHome(agentName string) (string, error) {
+func (s *Service) sandboxRuntimeHome(agentName string) (string, error) {
+	homeDirName := config.DefaultSandboxHomeDirName
+	if s != nil && strings.TrimSpace(s.sandboxHome) != "" {
+		homeDirName = s.sandboxHome
+	}
+	return sandboxRuntimeHomeWithDirName(agentName, homeDirName)
+}
+
+func sandboxRuntimeHomeWithDirName(agentName, homeDirName string) (string, error) {
 	agentHome, err := agentHomeDir(agentName)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(agentHome, config.RuntimeHomeDirName), nil
+	homeDirName = strings.TrimSpace(homeDirName)
+	if homeDirName == "" {
+		homeDirName = config.DefaultSandboxHomeDirName
+	}
+	return filepath.Join(agentHome, homeDirName), nil
 }
 
 func agentHomeDir(agentName string) (string, error) {

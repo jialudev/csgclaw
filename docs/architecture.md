@@ -6,7 +6,7 @@ CSGClaw is a Go-based local multi-agent platform. It runs a single local HTTP se
 
 The main runtime concepts are:
 
-- **Agent**: the executable runtime unit, backed by BoxLite.
+- **Agent**: the executable runtime unit, backed by the configured sandbox provider. BoxLite is the default provider.
 - **Channel**: a messaging backend, such as the built-in `csgclaw` IM or Feishu.
 - **User**: a channel-scoped messaging identity.
 - **Bot**: the product-level identity that connects one agent to one channel user.
@@ -16,7 +16,7 @@ A bot can be a `manager` or a `worker`.
 ```text
 bot
  ├─ role: manager | worker
- ├─ agent_id  ─────────► agent runtime in BoxLite
+ ├─ agent_id  ─────────► agent runtime in sandbox
  └─ channel + user_id ─► user identity in csgclaw IM or Feishu
 ```
 
@@ -45,9 +45,10 @@ This keeps execution concerns in `agent`, messaging concerns in `im` / `channel`
       │ Agent Service   │  │ Channel Backends    │
       └────────┬────────┘  └────────┬────────────┘
                │                    │
-           ┌───▼────┐          ┌────▼─────┐
-           │BoxLite │          │Storage   │
-           └────────┘          └──────────┘
+           ┌───▼─────┐          ┌────▼─────┐
+           │Sandbox  │          │Storage   │
+           │Provider │          │          │
+           └─────────┘          └──────────┘
 ```
 
 The Web UI is served by the local HTTP server and uses the same API surface as the CLIs. At the implementation level, `internal/server` owns server lifecycle and static UI wiring, while `internal/api` owns route registration and request/response handling.
@@ -60,7 +61,7 @@ The Web UI is served by the local HTTP server and uses the same API surface as t
 - `cli` owns command parsing, HTTP calls, and output formatting.
 - `internal/api` owns HTTP request/response handling only.
 - `internal/bot` owns bot creation and listing. It coordinates `agent` and channel user creation.
-- `internal/agent` owns BoxLite runtime lifecycle and logs.
+- `internal/agent` owns agent lifecycle and logs through `internal/sandbox`.
 - `internal/im` owns the built-in `csgclaw` IM.
 - `internal/channel` owns external channel integrations such as Feishu.
 - Secrets must not be hardcoded or printed. Logs and startup output must keep tokens redacted.
@@ -78,7 +79,9 @@ cli/message/            shared message command implementation for csgclaw and cs
 internal/server/        local HTTP server and static UI wiring
 internal/api/           HTTP handlers and route registration
 internal/bot/           bot lifecycle and agent/user binding
-internal/agent/         agent runtime, storage, BoxLite wiring
+internal/agent/         agent runtime and storage
+internal/sandbox/       runtime-neutral sandbox interfaces
+internal/sandbox/boxlite/ BoxLite sandbox adapter
 internal/im/            built-in csgclaw IM and PicoClaw bridge
 internal/channel/       external channel integrations, including Feishu
 internal/config/        config defaults, load/save
@@ -285,7 +288,7 @@ Filesystem storage remains the default persistence layer.
 
 Each domain owns its own records:
 
-- `agent`: runtime metadata and BoxLite state references
+- `agent`: runtime metadata and sandbox state references
 - `bot`: bot-to-agent-to-channel-user mapping
 - `im`: built-in rooms, users, messages, and events
 - `channel`: external channel integration state when needed

@@ -20,6 +20,12 @@ func TestRunInteractiveDefaultUsesCSGHubLiteModels(t *testing.T) {
 		if got, want := cfg.Models.Default, "csghub-lite.Qwen/Qwen3-0.6B-GGUF"; got != want {
 			t.Fatalf("cfg.Models.Default = %q, want %q", got, want)
 		}
+		if got, want := cfg.Sandbox.Provider, config.DefaultSandboxProvider; got != want {
+			t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
+		}
+		if got, want := cfg.Sandbox.HomeDirName, config.DefaultSandboxHomeDirName; got != want {
+			t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
+		}
 		provider, ok := cfg.Models.Providers["csghub-lite"]
 		if !ok {
 			t.Fatal(`cfg.Models.Providers["csghub-lite"] missing`)
@@ -80,6 +86,9 @@ func TestRunInteractiveDefaultUsesCSGHubLiteModels(t *testing.T) {
 		`[models.providers.csghub-lite]`,
 		`api_key = "local"`,
 		`models = ["Qwen/Qwen3-0.6B-GGUF", "Qwen/Qwen3-1.7B-GGUF"]`,
+		`[sandbox]`,
+		`provider = "boxlite"`,
+		`home_dir_name = "boxlite"`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("saved config missing %q:\n%s", want, content)

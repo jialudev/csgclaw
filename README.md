@@ -72,6 +72,10 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 
 [bootstrap]
 manager_image = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
+
+[sandbox]
+provider = "boxlite"
+home_dir_name = "boxlite"
 ```
 
 ### Remote LLM API
@@ -92,6 +96,10 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
+
+[sandbox]
+provider = "boxlite"
+home_dir_name = "boxlite"
 ```
 
 ### Local Codex via CLIProxyAPI
@@ -112,6 +120,10 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
+
+[sandbox]
+provider = "boxlite"
+home_dir_name = "boxlite"
 ```
 
 ### Worker Override Example
@@ -158,7 +170,7 @@ CSGClaw gives you one **Manager** and a set of specialized **Workers**, so inste
 
 **Workers** — role-specific executors (frontend, backend, testing, docs, research…). Specialization keeps context clean and reduces role confusion.
 
-**Sandbox** — Worker execution is isolated via **Boxlite**, providing security boundaries without requiring Docker.
+**Sandbox** — Worker execution is isolated through the configured sandbox provider. The default provider is **Boxlite**, which provides security boundaries without requiring Docker.
 
 **Interface** — WebUI out of the box; Feishu, WeChat, Matrix, and other channels available as integrations.
 

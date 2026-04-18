@@ -7,49 +7,48 @@ import (
 	"path/filepath"
 	"strings"
 
-	boxlite "github.com/RussellLuo/boxlite/sdks/go"
-
 	"csgclaw/internal/config"
+	"csgclaw/internal/sandbox"
 )
 
-func (s *Service) createGatewayBox(ctx context.Context, rt *boxlite.Runtime, image, name, botID string, modelCfg config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
+func (s *Service) createGatewayBox(ctx context.Context, rt sandbox.Runtime, image, name, botID string, modelCfg config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
 	if testCreateGatewayBoxHook != nil {
 		return testCreateGatewayBoxHook(s, ctx, rt, image, name, botID, modelCfg)
 	}
-	if !runtimeValid(rt) {
-		return nil, nil, fmt.Errorf("invalid boxlite runtime")
+	if rt == nil {
+		return nil, sandbox.Info{}, fmt.Errorf("invalid sandbox runtime")
 	}
-	boxOpts, err := s.gatewayBoxOptions(name, botID, modelCfg)
+	spec, err := s.gatewayCreateSpec(image, name, botID, modelCfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, sandbox.Info{}, err
 	}
-	box, err := rt.Create(ctx, image, boxOpts...)
+	box, err := rt.Create(ctx, spec)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create gateway box: %w", err)
+		return nil, sandbox.Info{}, fmt.Errorf("create gateway box: %w", err)
 	}
 	if err := box.Start(ctx); err != nil {
 		_ = s.closeBox(box)
-		return nil, nil, fmt.Errorf("start gateway box: %w", err)
+		return nil, sandbox.Info{}, fmt.Errorf("start gateway box: %w", err)
 	}
 	info, err := box.Info(ctx)
 	if err != nil {
 		_ = s.closeBox(box)
-		return nil, nil, fmt.Errorf("read gateway box info: %w", err)
+		return nil, sandbox.Info{}, fmt.Errorf("read gateway box info: %w", err)
 	}
 	return box, info, nil
 }
 
-func (s *Service) forceRemoveBox(ctx context.Context, rt *boxlite.Runtime, idOrName string) error {
+func (s *Service) forceRemoveBox(ctx context.Context, rt sandbox.Runtime, idOrName string) error {
 	if testForceRemoveBoxHook != nil {
 		return testForceRemoveBoxHook(s, ctx, rt, idOrName)
 	}
-	if !runtimeValid(rt) {
-		return fmt.Errorf("invalid boxlite runtime")
+	if rt == nil {
+		return fmt.Errorf("invalid sandbox runtime")
 	}
-	return rt.ForceRemove(ctx, idOrName)
+	return rt.Remove(ctx, idOrName, sandbox.RemoveOptions{Force: true})
 }
 
-func (s *Service) gatewayBoxOptions(name, botID string, modelCfg config.ModelConfig) ([]boxlite.BoxOption, error) {
+func (s *Service) gatewayCreateSpec(image, name, botID string, modelCfg config.ModelConfig) (sandbox.CreateSpec, error) {
 	modelCfg = modelCfg.Resolved()
 	if strings.TrimSpace(modelCfg.ModelID) == "" {
 		modelCfg = s.model.Resolved()
@@ -59,37 +58,36 @@ func (s *Service) gatewayBoxOptions(name, botID string, modelCfg config.ModelCon
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, botID)
 	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
 	addFeishuBoxEnvVars(envVars, botID, s.channels)
-	opts := []boxlite.BoxOption{
-		boxlite.WithName(name),
-		boxlite.WithDetach(true),
-		boxlite.WithAutoRemove(false),
-		//boxlite.WithPort(managerHostPort, managerGuestPort),
-		boxlite.WithEnv("HOME", "/home/picoclaw"),
+	envVars["HOME"] = "/home/picoclaw"
+	spec := sandbox.CreateSpec{
+		Image:      image,
+		Name:       name,
+		Detach:     true,
+		AutoRemove: false,
+		Env:        envVars,
+		Cmd: []string{
+			"/bin/sh",
+			"-c",
+			"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
+		},
 	}
-	for key, value := range envVars {
-		opts = append(opts, boxlite.WithEnv(key, value))
-	}
-	//entrypoint, cmd := gatewayStartCommand(managerDebugMode)
-	opts = append(opts,
-		//boxlite.WithEntrypoint(entrypoint...),
-		//boxlite.WithCmd(cmd...),
-		boxlite.WithCmd("/bin/sh", "-c", "/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null"),
-		//boxlite.WithCmd("sleep", "infinity"),
-	)
 
 	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID))
 	if err != nil {
-		return nil, err
+		return sandbox.CreateSpec{}, err
 	}
 	projectsRoot, err := ensureAgentProjectsRoot()
 	if err != nil {
-		return nil, err
+		return sandbox.CreateSpec{}, err
 	}
 	for _, mount := range gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot) {
-		opts = append(opts, boxlite.WithVolume(mount.hostPath, mount.guestPath))
+		spec.Mounts = append(spec.Mounts, sandbox.Mount{
+			HostPath:  mount.hostPath,
+			GuestPath: mount.guestPath,
+		})
 	}
 
-	return opts, nil
+	return spec, nil
 }
 
 type gatewayVolumeMount struct {

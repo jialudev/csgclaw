@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	boxlite "github.com/RussellLuo/boxlite/sdks/go"
-
 	"csgclaw/internal/agent"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	"csgclaw/internal/sandbox"
+	"csgclaw/internal/sandbox/sandboxtest"
 )
 
 func TestParsePicoClawBotPath(t *testing.T) {
@@ -432,19 +432,8 @@ func TestHandleBotsListRequiresService(t *testing.T) {
 }
 
 func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return nil, &boxlite.BoxInfo{
-				ID:        "box-" + name,
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc, _ := mustNewSeededServiceWithPath(t, nil)
 	imSvc := im.NewService()
@@ -525,19 +514,8 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 }
 
 func TestHandleBotsCreateFeishuWorker(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return nil, &boxlite.BoxInfo{
-				ID:        "box-" + name,
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc, _ := mustNewSeededServiceWithPath(t, nil)
 	feishuSvc := channel.NewFeishuService()
@@ -640,28 +618,8 @@ func TestHandleBotsCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
 }
 
 func TestHandleBotsCreateManagerBootstrapsMissingAgent(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return &boxlite.Runtime{}, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, botID string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			if name != agent.ManagerName {
-				t.Fatalf("create gateway name = %q, want manager", name)
-			}
-			if botID != agent.ManagerUserID {
-				t.Fatalf("create gateway botID = %q, want u-manager", botID)
-			}
-			return &boxlite.Box{}, &boxlite.BoxInfo{
-				ID:        "box-manager",
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
-	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string) (*boxlite.Box, error) {
-		return nil, &boxlite.Error{Code: boxlite.ErrNotFound, Message: "missing"}
-	})
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc := mustNewSeededService(t, nil)
 	imSvc := im.NewService()
@@ -848,9 +806,7 @@ func TestHandleAgentsGetByIDNotFound(t *testing.T) {
 }
 
 func TestHandleAgentLogsStreamsGatewayLog(t *testing.T) {
-	rt := &boxlite.Runtime{}
-	agent.SetTestHooks(func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
-	defer agent.ResetTestHooks()
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc := mustNewSeededService(t, []agent.Agent{
 		{ID: "u-alice", Name: "alice", BoxID: "box-123", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
@@ -859,11 +815,11 @@ func TestHandleAgentLogsStreamsGatewayLog(t *testing.T) {
 	var gotBoxID string
 	var gotCmd string
 	var gotArgs []string
-	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
 		gotBoxID = idOrName
-		return &boxlite.Box{}, nil
+		return sandboxtest.NewInstance(sandbox.Info{ID: idOrName, Name: "alice"}), nil
 	})
-	agent.TestOnlySetRunBoxCommandHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Box, name string, args []string, w io.Writer) (int, error) {
+	agent.TestOnlySetRunBoxCommandHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance, name string, args []string, w io.Writer) (int, error) {
 		gotCmd = name
 		gotArgs = append([]string(nil), args...)
 		_, _ = io.WriteString(w, "hello\nworld\n")
@@ -901,9 +857,7 @@ func TestHandleAgentLogsStreamsGatewayLog(t *testing.T) {
 }
 
 func TestHandleAgentLogsReloadsStateBeforeStreaming(t *testing.T) {
-	rt := &boxlite.Runtime{}
-	agent.SetTestHooks(func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return rt, nil }, nil)
-	defer agent.ResetTestHooks()
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	agentSvc, statePath := mustNewSeededServiceWithPath(t, []agent.Agent{
 		{ID: "u-manager", Name: "manager", BoxID: "box-old", Role: agent.RoleManager, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
@@ -915,11 +869,11 @@ func TestHandleAgentLogsReloadsStateBeforeStreaming(t *testing.T) {
 	}
 
 	var gotBoxID string
-	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, idOrName string) (*boxlite.Box, error) {
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
 		gotBoxID = idOrName
-		return &boxlite.Box{}, nil
+		return sandboxtest.NewInstance(sandbox.Info{ID: idOrName, Name: "manager"}), nil
 	})
-	agent.TestOnlySetRunBoxCommandHook(func(_ *agent.Service, _ context.Context, _ *boxlite.Box, _ string, _ []string, w io.Writer) (int, error) {
+	agent.TestOnlySetRunBoxCommandHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance, _ string, _ []string, w io.Writer) (int, error) {
 		_, _ = io.WriteString(w, "line-1\n")
 		return 0, nil
 	})
@@ -943,12 +897,6 @@ func TestHandleAgentLogsReloadsStateBeforeStreaming(t *testing.T) {
 }
 
 func TestHandleAgentsDeleteRemovesAgent(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		nil,
-	)
-	defer agent.ResetTestHooks()
-
 	svc := mustNewSeededService(t, []agent.Agent{
 		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
 	})
@@ -982,18 +930,8 @@ func TestHandleAgentsDeleteNotFound(t *testing.T) {
 }
 
 func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return nil, &boxlite.BoxInfo{
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	svc := mustNewService(t)
 	bus := im.NewBus()
@@ -1170,18 +1108,8 @@ func TestHandleRoomsInviteRequiresRoomID(t *testing.T) {
 }
 
 func TestHandleWorkersPostRemainsCreateAlias(t *testing.T) {
-	agent.SetTestHooks(
-		func(_ *agent.Service, _ string) (*boxlite.Runtime, error) { return nil, nil },
-		func(_ *agent.Service, _ context.Context, _ *boxlite.Runtime, _ string, name, _ string, _ config.ModelConfig) (*boxlite.Box, *boxlite.BoxInfo, error) {
-			return nil, &boxlite.BoxInfo{
-				State:     boxlite.StateRunning,
-				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
-				Name:      name,
-				Image:     "test-image",
-			}, nil
-		},
-	)
-	defer agent.ResetTestHooks()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	svc := mustNewService(t)
 	store, err := bot.NewMemoryStore(nil)
@@ -1885,6 +1813,8 @@ func TestHandlePicoClawModelsLegacyRouteReturnsBridgeCatalog(t *testing.T) {
 
 func mustNewService(t *testing.T) *agent.Service {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	svc, err := agent.NewService(config.ModelConfig{
 		Provider: config.ProviderLLMAPI,
@@ -1921,6 +1851,8 @@ func mustNewBotService(t *testing.T, bots []bot.Bot) *bot.Service {
 
 func mustNewSeededServiceWithPath(t *testing.T, agents []agent.Agent) (*agent.Service, string) {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	if agents == nil {
 		agents = []agent.Agent{}
