@@ -89,10 +89,25 @@ func TestRunInteractiveDefaultUsesCSGHubLiteModels(t *testing.T) {
 		`[sandbox]`,
 		`provider = "boxlite"`,
 		`home_dir_name = "boxlite"`,
+		`boxlite_cli_path = "boxlite"`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("saved config missing %q:\n%s", want, content)
 		}
+	}
+}
+
+func TestSandboxServiceOptionsSupportsBoxLiteCLI(t *testing.T) {
+	opts, err := sandboxServiceOptions(config.SandboxConfig{
+		Provider:       config.BoxLiteCLIProvider,
+		HomeDirName:    "sandbox-home",
+		BoxLiteCLIPath: "/opt/boxlite/bin/boxlite",
+	})
+	if err != nil {
+		t.Fatalf("sandboxServiceOptions() error = %v", err)
+	}
+	if len(opts) != 2 {
+		t.Fatalf("len(opts) = %d, want 2", len(opts))
 	}
 }
 

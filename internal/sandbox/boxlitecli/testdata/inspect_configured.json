@@ -1,0 +1,17 @@
+[
+  {
+    "Id": "Lda8NPKeBwlN",
+    "Name": "csgclaw-spike",
+    "Image": "alpine",
+    "Created": "2026-04-18T07:14:27.533324+00:00",
+    "Status": "configured",
+    "State": {
+      "Status": "configured",
+      "Running": false,
+      "Pid": 0
+    },
+    "Cpus": 2,
+    "Memory": 536870912
+  }
+]
+

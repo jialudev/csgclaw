@@ -1,0 +1,75 @@
+boxlite --home "$home" start csgclaw-spike
+2026-04-18T07:26:11.161851Z  INFO boxlite::runtime::rt_impl: Virtualization support verified reason=Hypervisor.framework is available (Apple Silicon)
+2026-04-18T07:26:11.168754Z  INFO boxlite::runtime::rt_impl: Recovering 1 boxes from database
+2026-04-18T07:26:11.168859Z  INFO boxlite::rootfs::guest: guest_binary_hash: using compile-time hash hash_prefix="00423c5a28dc"
+2026-04-18T07:26:11.169429Z  INFO boxlite::rootfs::guest: GC completed elapsed_ms=0 suffix=-00423c5a28dc
+2026-04-18T07:26:11.169444Z  INFO boxlite::runtime::rt_impl: Box recovery complete
+2026-04-18T07:26:11.203708Z  INFO boxlite::images::store: Pulling image from registry: docker.io/library/alpine:latest
+2026-04-18T07:26:11.203983Z  INFO boxlite::litebox::init::tasks::guest_rootfs: Initializing bootstrap guest rootfs debian:bookworm-slim (first time only)
+2026-04-18T07:26:11.204064Z  INFO boxlite::images::store: Pulling image from registry: docker.io/library/debian:bookworm-slim
+2026-04-18T07:26:13.669829Z  INFO boxlite::images::store: Pulling platform-specific manifest: sha256:378c4c5418f7493bd500ad21ffb43818d0689daaad43e3261859fb417d1481a0
+2026-04-18T07:26:14.089258Z  INFO boxlite::images::store: Pulling platform-specific manifest: sha256:0d49f9bc3af362aa0921b14b2f5c612a902ab6f7c2cac8d7026ade96fd0b9f6c
+2026-04-18T07:26:14.502287Z  INFO boxlite::images::store: Downloading 1 layers in parallel
+2026-04-18T07:26:14.502341Z  INFO boxlite::images::store: Downloading layer: sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7
+2026-04-18T07:26:14.608282Z  INFO boxlite::images::store: Downloading 1 layers in parallel
+2026-04-18T07:26:14.608303Z  INFO boxlite::images::store: Downloading layer: sha256:1dbbb2db815c2527e90ef5a3e4dfb957cfe7b61b6a7fc59722f1f64b1a1b611e
+2026-04-18T07:26:19.889397Z  WARN boxlite::images::store: Layer download failed (attempt 1): error sending request for url (https://index.docker.io/v2/library/alpine/blobs/sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7)
+2026-04-18T07:26:19.889890Z  INFO boxlite::images::store: Retrying layer download (attempt 2/3): sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7
+2026-04-18T07:26:19.961582Z  WARN boxlite::images::store: Layer download failed (attempt 1): error sending request for url (https://index.docker.io/v2/library/debian/blobs/sha256:1dbbb2db815c2527e90ef5a3e4dfb957cfe7b61b6a7fc59722f1f64b1a1b611e)
+2026-04-18T07:26:19.961813Z  INFO boxlite::images::store: Retrying layer download (attempt 2/3): sha256:1dbbb2db815c2527e90ef5a3e4dfb957cfe7b61b6a7fc59722f1f64b1a1b611e
+2026-04-18T07:26:25.506037Z  WARN boxlite::images::store: Layer download failed (attempt 2): error sending request for url (https://index.docker.io/v2/library/alpine/blobs/sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7)
+2026-04-18T07:26:25.506367Z  INFO boxlite::images::store: Retrying layer download (attempt 3/3): sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7
+2026-04-18T07:26:28.548865Z  INFO boxlite::images::store: Downloaded and verified layer: sha256:1dbbb2db815c2527e90ef5a3e4dfb957cfe7b61b6a7fc59722f1f64b1a1b611e
+2026-04-18T07:26:29.071588Z  INFO boxlite::images::store: Downloaded and verified layer: sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7
+2026-04-18T07:26:29.306805Z  INFO boxlite::images::image_disk: Building image disk for sha256:5a67bb5c5872f2d2d5237c8f910ffce5a343eda4a9e6ac09a447f7285c6767d7 (first time)
+2026-04-18T07:26:29.307071Z  INFO boxlite::rootfs::builder: Preparing rootfs at /tmp/csgclaw-boxlite-cli-spike-auth/tmp/.tmpA517dC/merged
+2026-04-18T07:26:29.307080Z  INFO boxlite::rootfs::builder: Attempting copy-based mount with layer caching
+2026-04-18T07:26:29.756687Z  INFO boxlite::images::image_disk: Building image disk for sha256:330fcd3ef9fae4312d392c2c77694a1d8ffa184d6071c74ab7cf2af191742e99 (first time)
+2026-04-18T07:26:29.756755Z  INFO boxlite::rootfs::builder: Preparing rootfs at /tmp/csgclaw-boxlite-cli-spike-auth/tmp/.tmp0fSvqm/merged
+2026-04-18T07:26:29.756758Z  INFO boxlite::rootfs::builder: Attempting copy-based mount with layer caching
+2026-04-18T07:26:29.920152Z  INFO boxlite::rootfs::builder: Stacking 1 cached layers directly to destination
+2026-04-18T07:26:29.920164Z  INFO boxlite::rootfs::copy_mount: Copy-based mount created at /tmp/csgclaw-boxlite-cli-spike-auth/tmp/.tmp0fSvqm/merged
+2026-04-18T07:26:29.992625Z  INFO boxlite::rootfs::builder: Rootfs prepared at /tmp/csgclaw-boxlite-cli-spike-auth/tmp/.tmp0fSvqm/merged
+2026-04-18T07:26:29.992627Z  INFO boxlite::rootfs::builder: Rootfs prepared using copy-based mount
+2026-04-18T07:26:29.992709Z  INFO boxlite::rootfs::dns: Created /etc/resolv.conf in container rootfs
+2026-04-18T07:26:30.292212Z  INFO boxlite::disk::ext4: Fixed ownership of 515 files to 0:0 in 33.319542ms
+2026-04-18T07:26:30.292390Z  INFO boxlite::images::image_disk: Installed image disk to cache: /tmp/csgclaw-boxlite-cli-spike-auth/images/disk-images/sha256-330fcd3ef9fae4312d392c2c77694a1d8ffa184d6071c74ab7cf2af191742e99.ext4
+2026-04-18T07:26:30.321968Z  INFO boxlite::disk::qcow2: Creating COW child disk: /tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/disks/disk.qcow2 (backing: /tmp/csgclaw-boxlite-cli-spike-auth/images/disk-images/sha256-330fcd3ef9fae4312d392c2c77694a1d8ffa184d6071c74ab7cf2af191742e99.ext4, format: raw)
+2026-04-18T07:26:30.333918Z  INFO boxlite::disk::qcow2: Created COW child disk: /tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/disks/disk.qcow2
+2026-04-18T07:26:30.333935Z  INFO boxlite::litebox::init::tasks::container_rootfs: Created container rootfs COW overlay (persistent) cow_disk=/tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/disks/disk.qcow2 base_disk=/tmp/csgclaw-boxlite-cli-spike-auth/images/disk-images/sha256-330fcd3ef9fae4312d392c2c77694a1d8ffa184d6071c74ab7cf2af191742e99.ext4 virtual_size_mb=256
+2026-04-18T07:26:30.686510Z  INFO boxlite::rootfs::builder: Stacking 1 cached layers directly to destination
+2026-04-18T07:26:30.686525Z  INFO boxlite::rootfs::copy_mount: Creating copy-based mount: /tmp/csgclaw-boxlite-cli-spike-auth/images/extracted/sha256-1dbbb2db815c2527e90ef5a3e4dfb957cfe7b61b6a7fc59722f1f64b1a1b611e -> /tmp/csgclaw-boxlite-cli-spike-auth/tmp/.tmpA517dC/merged
+2026-04-18T07:26:31.421554Z  INFO boxlite::rootfs::copy_mount: Copy-based mount created at /tmp/csgclaw-boxlite-cli-spike-auth/tmp/.tmpA517dC/merged
+2026-04-18T07:26:31.421569Z  INFO boxlite::rootfs::builder: Rootfs prepared at /tmp/csgclaw-boxlite-cli-spike-auth/tmp/.tmpA517dC/merged
+2026-04-18T07:26:31.421572Z  INFO boxlite::rootfs::builder: Rootfs prepared using copy-based mount
+2026-04-18T07:26:31.421697Z  INFO boxlite::rootfs::dns: Created /etc/resolv.conf in container rootfs
+2026-04-18T07:26:33.688175Z  INFO boxlite::disk::ext4: Fixed ownership of 4220 files to 0:0 in 201.303625ms
+2026-04-18T07:26:33.688515Z  INFO boxlite::images::image_disk: Installed image disk to cache: /tmp/csgclaw-boxlite-cli-spike-auth/images/disk-images/sha256-5a67bb5c5872f2d2d5237c8f910ffce5a343eda4a9e6ac09a447f7285c6767d7.ext4
+2026-04-18T07:26:33.874965Z  INFO boxlite::rootfs::guest: get_or_create: stage1 image_disk done elapsed_ms=4568
+2026-04-18T07:26:33.874984Z  INFO boxlite::rootfs::guest: get_or_create: cached_guest_hash done elapsed_ms=0
+2026-04-18T07:26:33.875605Z  INFO boxlite::rootfs::guest: get_or_create: CACHE MISS - building guest rootfs version_key=5a67bb5c5872-00423c5a28dc
+2026-04-18T07:26:33.875828Z  INFO boxlite::rootfs::guest: build_and_install: copy image disk done elapsed_ms=0 size_mb=256
+2026-04-18T07:26:33.915458Z  INFO boxlite::rootfs::guest: sha256_file computed path=/Users/russellluo/Library/Application Support/boxlite/runtimes/v0.7.5/boxlite-guest size_mb=11 elapsed_ms=37 hash_prefix="00423c5a28dc"
+2026-04-18T07:26:34.213531Z  INFO boxlite::rootfs::guest: build_and_install: inject guest binary done elapsed_ms=337
+2026-04-18T07:26:34.214678Z  INFO boxlite::rootfs::guest: Installed guest rootfs to cache layer_id=MM45ytYk version_key=5a67bb5c5872-00423c5a28dc path=/private/tmp/csgclaw-boxlite-cli-spike-auth/bases/MM45ytYk.ext4
+2026-04-18T07:26:34.214685Z  INFO boxlite::rootfs::guest: build_and_install: completed version_key=5a67bb5c5872-00423c5a28dc total_ms=339
+2026-04-18T07:26:34.214773Z  INFO boxlite::rootfs::guest: get_or_create: completed total_ms=4908 cache_hit=false
+2026-04-18T07:26:34.214781Z  INFO boxlite::litebox::init::tasks::guest_rootfs: Bootstrap guest rootfs ready: Disk { disk_path: "/private/tmp/csgclaw-boxlite-cli-spike-auth/bases/MM45ytYk.ext4", device_path: None }
+2026-04-18T07:26:34.214820Z  INFO boxlite::disk::qcow2: Creating COW child disk: /tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/disks/guest-rootfs.qcow2 (backing: /private/tmp/csgclaw-boxlite-cli-spike-auth/bases/MM45ytYk.ext4, format: raw)
+2026-04-18T07:26:34.238590Z  INFO boxlite::disk::qcow2: Created COW child disk: /tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/disks/guest-rootfs.qcow2
+2026-04-18T07:26:34.238610Z  INFO boxlite::litebox::init::tasks::guest_rootfs: Created guest rootfs COW overlay (persistent) cow_disk=/tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/disks/guest-rootfs.qcow2 base_disk=/private/tmp/csgclaw-boxlite-cli-spike-auth/bases/MM45ytYk.ext4
+2026-04-18T07:26:34.239040Z  INFO boxlite::litebox::init::tasks::vmm_spawn: Port mappings: 0 (image: 0, user: 0, overridden: 0)
+2026-04-18T07:26:34.239164Z  INFO boxlite::vmm::controller::shim: Starting Box subprocess engine=Libkrun transport=Unix { socket_path: "/tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/sockets/box.sock" }
+2026-04-18T07:26:34.242365Z  INFO boxlite::jailer: Using copied shim binary (Firecracker pattern) original=/Users/russellluo/Library/Application Support/boxlite/runtimes/v0.7.5/boxlite-shim copied=/tmp/csgclaw-boxlite-cli-spike-auth/boxes/IsQXIqKJVlTG/bin/boxlite-shim
+2026-04-18T07:26:34.242828Z  INFO boxlite::jailer: Building confined command sandbox="seatbelt"
+2026-04-18T07:26:34.246287Z  INFO boxlite::vmm::controller::shim: boxlite-shim subprocess spawned box_id=IsQXIqKJVlTG pid=73931 shim_spawn_duration_ms=7
+2026-04-18T07:26:34.246347Z  INFO boxlite::vmm::controller::shim: VM subprocess started successfully box_id=IsQXIqKJVlTG
+2026-04-18T07:26:36.030500Z  INFO boxlite::litebox::init::tasks::guest_init: Sending guest initialization request
+2026-04-18T07:26:36.034482Z  INFO boxlite::litebox::init::tasks::guest_init: Guest initialized successfully
+2026-04-18T07:26:36.034493Z  INFO boxlite::litebox::init::tasks::guest_init: Sending container configuration to guest
+2026-04-18T07:26:36.098979Z  INFO boxlite::litebox::init::tasks::guest_init: Container initialized container_id=97539c5579de60008700133db86d4595aea7e62833ae5aa3ebaad3550e6804be
+2026-04-18T07:26:36.099783Z  INFO boxlite::litebox::box_impl: Box started successfully (first_start=true) box_id=IsQXIqKJVlTG
+2026-04-18T07:26:36.099794Z  INFO boxlite::litebox::box_impl: Box started box_id=IsQXIqKJVlTG elapsed_ms=24930
+csgclaw-spike
+[boxlite] Auto-stopping non-detached box: id=IsQXIqKJVlTG, pid=73931
+

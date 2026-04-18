@@ -52,91 +52,9 @@ csgclaw onboard --provider csghub-lite --models Qwen/Qwen3-0.6B-GGUF
 csgclaw onboard --base-url <url> --api-key <key> --models <model[,model...]> [--reasoning-effort <effort>]
 ```
 
-## Model Provider Examples
+## Configuration
 
-### Local CSGHub-lite
-
-```toml
-[server]
-listen_addr = "0.0.0.0:18080"
-advertise_base_url = "http://127.0.0.1:18080"
-access_token = "your_access_token"
-
-[models]
-default = "csghub-lite.Qwen/Qwen3-0.6B-GGUF"
-
-[models.providers.csghub-lite]
-base_url = "http://127.0.0.1:11435/v1"
-api_key = "local"
-models = ["Qwen/Qwen3-0.6B-GGUF"]
-
-[bootstrap]
-manager_image = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
-
-[sandbox]
-provider = "boxlite"
-home_dir_name = "boxlite"
-```
-
-### Remote LLM API
-
-```toml
-[server]
-listen_addr = "0.0.0.0:18080"
-advertise_base_url = "http://127.0.0.1:18080"
-access_token = "your_access_token"
-
-[models]
-default = "remote.gpt-5.4"
-
-[models.providers.remote]
-base_url = "https://api.openai.com/v1"
-api_key = "sk-your-api-key"
-models = ["gpt-5.4"]
-
-[bootstrap]
-manager_image = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
-
-[sandbox]
-provider = "boxlite"
-home_dir_name = "boxlite"
-```
-
-### Local Codex via CLIProxyAPI
-
-```toml
-[server]
-listen_addr = "0.0.0.0:18080"
-advertise_base_url = "http://127.0.0.1:18080"
-access_token = "your_access_token"
-
-[models]
-default = "codex.gpt-5.4"
-
-[models.providers.codex]
-base_url = "http://127.0.0.1:8317/v1"
-api_key = "local"
-models = ["gpt-5.4"]
-
-[bootstrap]
-manager_image = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
-
-[sandbox]
-provider = "boxlite"
-home_dir_name = "boxlite"
-```
-
-### Worker Override Example
-
-```json
-{
-  "id": "u-reviewer",
-  "name": "reviewer",
-  "description": "code review worker",
-  "profile": "codex.gpt-5.4",
-  "role": "worker"
-}
-```
+`csgclaw onboard` writes a local config with server, model, bootstrap, sandbox, and channel settings. See [docs/config.md](docs/config.md) for model provider examples, sandbox provider options, and Worker override examples.
 
 ## Features
 
@@ -170,7 +88,7 @@ CSGClaw gives you one **Manager** and a set of specialized **Workers**, so inste
 
 **Workers** — role-specific executors (frontend, backend, testing, docs, research…). Specialization keeps context clean and reduces role confusion.
 
-**Sandbox** — Worker execution is isolated through the configured sandbox provider. The default provider is **Boxlite**, which provides security boundaries without requiring Docker.
+**Sandbox** — Worker execution is isolated through the configured sandbox provider. The default provider is **Boxlite**, with an optional `boxlite-cli` provider for installations that prefer an external BoxLite binary.
 
 **Interface** — WebUI out of the box; Feishu, WeChat, Matrix, and other channels available as integrations.
 

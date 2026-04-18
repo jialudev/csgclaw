@@ -81,6 +81,9 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Sandbox.HomeDirName, DefaultSandboxHomeDirName; got != want {
 		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
 	}
+	if got, want := cfg.Sandbox.BoxLiteCLIPath, DefaultBoxLiteCLIPath; got != want {
+		t.Fatalf("cfg.Sandbox.BoxLiteCLIPath = %q, want %q", got, want)
+	}
 	if got, want := cfg.Model.Provider, ProviderLLMAPI; got != want {
 		t.Fatalf("cfg.Model.Provider = %q, want %q", got, want)
 	}
@@ -96,8 +99,9 @@ func TestLoadReadsSandboxConfig(t *testing.T) {
 listen_addr = "127.0.0.1:18080"
 
 [sandbox]
-provider = "boxlite"
+provider = "boxlite-cli"
 home_dir_name = "sandbox-home"
+boxlite_cli_path = "/usr/local/bin/boxlite"
 
 [models]
 default = "default.minimax-m2.7"
@@ -115,11 +119,14 @@ models = ["minimax-m2.7"]
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got, want := cfg.Sandbox.Provider, "boxlite"; got != want {
+	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 	if got, want := cfg.Sandbox.HomeDirName, "sandbox-home"; got != want {
 		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
+	}
+	if got, want := cfg.Sandbox.BoxLiteCLIPath, "/usr/local/bin/boxlite"; got != want {
+		t.Fatalf("cfg.Sandbox.BoxLiteCLIPath = %q, want %q", got, want)
 	}
 }
 
@@ -303,8 +310,9 @@ func TestSaveWritesModelsSection(t *testing.T) {
 			ManagerImage: "img",
 		},
 		Sandbox: SandboxConfig{
-			Provider:    "boxlite",
-			HomeDirName: "sandbox-home",
+			Provider:       BoxLiteCLIProvider,
+			HomeDirName:    "sandbox-home",
+			BoxLiteCLIPath: "/opt/boxlite/bin/boxlite",
 		},
 		Channels: ChannelsConfig{
 			FeishuAdminOpenID: "ou_admin",
@@ -336,7 +344,7 @@ func TestSaveWritesModelsSection(t *testing.T) {
 	if !strings.Contains(content, "[models]") || !strings.Contains(content, "[models.providers.default]") {
 		t.Fatalf("saved config missing models sections:\n%s", content)
 	}
-	if !strings.Contains(content, "[sandbox]") || !strings.Contains(content, `provider = "boxlite"`) || !strings.Contains(content, `home_dir_name = "sandbox-home"`) {
+	if !strings.Contains(content, "[sandbox]") || !strings.Contains(content, `provider = "boxlite-cli"`) || !strings.Contains(content, `home_dir_name = "sandbox-home"`) || !strings.Contains(content, `boxlite_cli_path = "/opt/boxlite/bin/boxlite"`) {
 		t.Fatalf("saved config missing sandbox section:\n%s", content)
 	}
 	if !strings.Contains(content, `default = "default.minimax-m2.7"`) {

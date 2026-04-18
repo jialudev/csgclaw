@@ -26,6 +26,7 @@ type Provider interface {
 
 // Runtime manages sandbox instances under one sandbox home.
 type Runtime interface {
+	// Create creates and starts an instance from spec.
 	Create(ctx context.Context, spec CreateSpec) (Instance, error)
 	Get(ctx context.Context, idOrName string) (Instance, error)
 	Remove(ctx context.Context, idOrName string, opts RemoveOptions) error
@@ -60,7 +61,7 @@ const (
 	StateExited  State = "exited"
 )
 
-// CreateSpec describes a sandbox instance to create.
+// CreateSpec describes a sandbox instance to create and start.
 type CreateSpec struct {
 	Image      string
 	Name       string

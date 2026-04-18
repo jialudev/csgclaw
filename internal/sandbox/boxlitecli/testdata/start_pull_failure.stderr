@@ -1,0 +1,29 @@
+2026-04-18T07:13:56.844217Z  INFO boxlite::runtime::rt_impl: Virtualization support verified reason=Hypervisor.framework is available (Apple Silicon)
+2026-04-18T07:13:56.849133Z  INFO boxlite::runtime::rt_impl: Recovering 1 boxes from database
+2026-04-18T07:13:56.849219Z  INFO boxlite::rootfs::guest: guest_binary_hash: using compile-time hash hash_prefix="00423c5a28dc"
+2026-04-18T07:13:56.849251Z  INFO boxlite::rootfs::guest: GC completed elapsed_ms=0 suffix=-00423c5a28dc
+2026-04-18T07:13:56.849259Z  INFO boxlite::runtime::rt_impl: Box recovery complete
+2026-04-18T07:13:56.883319Z  INFO boxlite::images::store: Pulling image from registry: docker.io/library/alpine:latest
+2026-04-18T07:13:56.885702Z  INFO boxlite::litebox::init::tasks::guest_rootfs: Initializing bootstrap guest rootfs debian:bookworm-slim (first time only)
+2026-04-18T07:13:56.885756Z  INFO boxlite::images::store: Pulling image from registry: docker.io/library/debian:bookworm-slim
+2026-04-18T07:13:59.116798Z  INFO boxlite::images::store: Pulling platform-specific manifest: sha256:0d49f9bc3af362aa0921b14b2f5c612a902ab6f7c2cac8d7026ade96fd0b9f6c
+2026-04-18T07:13:59.504839Z  INFO boxlite::images::store: Pulling platform-specific manifest: sha256:378c4c5418f7493bd500ad21ffb43818d0689daaad43e3261859fb417d1481a0
+2026-04-18T07:13:59.872183Z  INFO boxlite::images::store: Downloading 1 layers in parallel
+2026-04-18T07:13:59.872208Z  INFO boxlite::images::store: Downloading layer: sha256:1dbbb2db815c2527e90ef5a3e4dfb957cfe7b61b6a7fc59722f1f64b1a1b611e
+2026-04-18T07:13:59.971618Z  INFO boxlite::images::store: Downloading 1 layers in parallel
+2026-04-18T07:13:59.971633Z  INFO boxlite::images::store: Downloading layer: sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7
+2026-04-18T07:14:03.139371Z  INFO boxlite::images::store: Downloaded and verified layer: sha256:d17f077ada118cc762df373ff803592abf2dfa3ddafaa7381e364dd27a88fca7
+2026-04-18T07:14:08.446531Z ERROR boxlite::litebox::init::tasks: Task failed: storage error: Failed to pull image 'alpine' after trying 1 registry:
+  - docker.io/library/alpine:latest: storage error: failed to pull config: error sending request for url (https://index.docker.io/v2/library/alpine/blobs/sha256:2ffb2ff4aab36d06b7f3266bbb10e8232769cd2360613131d37abd19430cf6f1) box_id=lzgyq0VdProT task=container_rootfs_prep
+2026-04-18T07:14:08.447141Z  WARN boxlite::litebox::init::types: Box initialization failed, cleaning up
+2026-04-18T07:14:08.447157Z ERROR boxlite::litebox::init::types: Box crashed. Diagnostic files preserved at:
+  /tmp/csgclaw-boxlite-cli-spike/boxes/lzgyq0VdProT
+
+To clean up: rm -rf /tmp/csgclaw-boxlite-cli-spike/boxes/lzgyq0VdProT
+Error starting box 'csgclaw-spike': storage error: Failed to pull image 'alpine' after trying 1 registry:
+  - docker.io/library/alpine:latest: storage error: failed to pull config: error sending request for url (https://index.docker.io/v2/library/alpine/blobs/sha256:2ffb2ff4aab36d06b7f3266bbb10e8232769cd2360613131d37abd19430cf6f1)
+Error: Failed to start all 1 box(es)
+Errors:
+  csgclaw-spike: storage error: Failed to pull image 'alpine' after trying 1 registry:
+  - docker.io/library/alpine:latest: storage error: failed to pull config: error sending request for url (https://index.docker.io/v2/library/alpine/blobs/sha256:2ffb2ff4aab36d06b7f3266bbb10e8232769cd2360613131d37abd19430cf6f1)
+

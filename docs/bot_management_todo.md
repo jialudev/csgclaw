@@ -1,0 +1,6 @@
+- [x] csgclaw bot create --channel csgclaw: create csgclaw(im) user
+- [ ] csgclaw bot create --channel feishu: create feishu user
+- [x] csgclaw bot list --channel feishu: list feishu user
+- [ ] csgclaw bot delete --channel csgclaw: delete csgclaw(im) user
+- [ ] csgclaw bot delete --channel feishu: delete feishu user
+- [ ] csgclaw user create --channel feishu: create feishu user

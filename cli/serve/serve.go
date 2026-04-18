@@ -26,6 +26,7 @@ import (
 	"csgclaw/internal/llm"
 	"csgclaw/internal/modelprovider"
 	boxliteadapter "csgclaw/internal/sandbox/boxlite"
+	"csgclaw/internal/sandbox/boxlitecli"
 	"csgclaw/internal/server"
 )
 
@@ -498,10 +499,11 @@ manager_image = %q
 [sandbox]
 provider = %q
 home_dir_name = %q
+boxlite_cli_path = %q
 
 [models]
 default = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, llmCfg.DefaultSelector()) + formatEffectiveProviders(llmCfg)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, cfg.Sandbox.Resolved().BoxLiteCLIPath, llmCfg.DefaultSelector()) + formatEffectiveProviders(llmCfg)
 
 	if strings.TrimSpace(cfg.Channels.FeishuAdminOpenID) != "" {
 		content += fmt.Sprintf(`
@@ -597,8 +599,10 @@ func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, err
 	switch cfg.Provider {
 	case config.DefaultSandboxProvider:
 		provider = agent.WithSandboxProvider(boxliteadapter.NewProvider())
+	case config.BoxLiteCLIProvider:
+		provider = agent.WithSandboxProvider(boxlitecli.NewProvider(boxlitecli.WithPath(cfg.BoxLiteCLIPath)))
 	default:
-		return nil, fmt.Errorf("unsupported sandbox provider %q; supported values are %q", cfg.Provider, config.DefaultSandboxProvider)
+		return nil, fmt.Errorf("unsupported sandbox provider %q; supported values are %q or %q", cfg.Provider, config.DefaultSandboxProvider, config.BoxLiteCLIProvider)
 	}
 	return []agent.ServiceOption{
 		provider,

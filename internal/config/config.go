@@ -49,8 +49,9 @@ type BootstrapConfig struct {
 }
 
 type SandboxConfig struct {
-	Provider    string
-	HomeDirName string
+	Provider       string
+	HomeDirName    string
+	BoxLiteCLIPath string
 }
 
 func (c SandboxConfig) Resolved() SandboxConfig {
@@ -59,6 +60,9 @@ func (c SandboxConfig) Resolved() SandboxConfig {
 	}
 	if strings.TrimSpace(c.HomeDirName) == "" {
 		c.HomeDirName = DefaultSandboxHomeDirName
+	}
+	if strings.TrimSpace(c.BoxLiteCLIPath) == "" {
+		c.BoxLiteCLIPath = DefaultBoxLiteCLIPath
 	}
 	return c
 }
@@ -83,8 +87,10 @@ const (
 
 	DefaultHTTPPort           = apiclient.DefaultHTTPPort
 	DefaultAccessToken        = "your_access_token"
-	DefaultManagerImage       = "ghcr.io/russellluo/picoclaw:2026.4.15.3"
+	DefaultManagerImage       = "ghcr.io/russellluo/picoclaw:2026.4.18"
 	DefaultSandboxProvider    = "boxlite"
+	BoxLiteCLIProvider        = "boxlite-cli"
+	DefaultBoxLiteCLIPath     = "boxlite"
 	DefaultSandboxHomeDirName = "boxlite"
 	RuntimeHomeDirName        = DefaultSandboxHomeDirName
 )
@@ -238,6 +244,8 @@ func Load(path string) (Config, error) {
 				cfg.Sandbox.Provider = value
 			case "home_dir_name":
 				cfg.Sandbox.HomeDirName = value
+			case "boxlite_cli_path":
+				cfg.Sandbox.BoxLiteCLIPath = value
 			}
 		case section == "channels.feishu":
 			switch key {
@@ -330,10 +338,11 @@ manager_image = %q
 [sandbox]
 provider = %q
 home_dir_name = %q
+boxlite_cli_path = %q
 
 [models]
 default = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, cfg.Server.AccessToken, cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, defaultSelector)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, cfg.Server.AccessToken, cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, cfg.Sandbox.Resolved().BoxLiteCLIPath, defaultSelector)
 
 	for _, name := range sortedProviderNames(llmCfg.Providers) {
 		provider := llmCfg.Providers[name].Resolved()

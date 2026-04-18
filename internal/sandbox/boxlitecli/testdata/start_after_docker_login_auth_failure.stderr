@@ -1,0 +1,22 @@
+2026-04-18T07:23:57.793106Z  INFO boxlite::runtime::rt_impl: Virtualization support verified reason=Hypervisor.framework is available (Apple Silicon)
+2026-04-18T07:23:57.797095Z  INFO boxlite::runtime::rt_impl: Recovering 1 boxes from database
+2026-04-18T07:23:57.797176Z  INFO boxlite::rootfs::guest: guest_binary_hash: using compile-time hash hash_prefix="00423c5a28dc"
+2026-04-18T07:23:57.797208Z  INFO boxlite::rootfs::guest: GC completed elapsed_ms=0 suffix=-00423c5a28dc
+2026-04-18T07:23:57.797215Z  INFO boxlite::runtime::rt_impl: Box recovery complete
+2026-04-18T07:23:57.828958Z  INFO boxlite::images::store: Pulling image from registry: docker.io/library/alpine:latest
+2026-04-18T07:23:57.829224Z  INFO boxlite::litebox::init::tasks::guest_rootfs: Initializing bootstrap guest rootfs debian:bookworm-slim (first time only)
+2026-04-18T07:23:57.829292Z  INFO boxlite::images::store: Pulling image from registry: docker.io/library/debian:bookworm-slim
+2026-04-18T07:24:04.000764Z ERROR boxlite::litebox::init::tasks: Task failed: storage error: Failed to pull image 'debian:bookworm-slim' after trying 1 registry:
+  - docker.io/library/debian:bookworm-slim: storage error: failed to pull manifest: Not authorized: url https://index.docker.io/v2/library/debian/manifests/bookworm-slim box_id=oqCYQRyVTCaB task=guest_rootfs_init
+2026-04-18T07:24:04.000995Z  WARN boxlite::litebox::init::types: Box initialization failed, cleaning up
+2026-04-18T07:24:04.001014Z ERROR boxlite::litebox::init::types: Box crashed. Diagnostic files preserved at:
+  /tmp/csgclaw-boxlite-cli-spike-auth/boxes/oqCYQRyVTCaB
+
+To clean up: rm -rf /tmp/csgclaw-boxlite-cli-spike-auth/boxes/oqCYQRyVTCaB
+Error starting box 'csgclaw-spike': storage error: Failed to pull image 'debian:bookworm-slim' after trying 1 registry:
+  - docker.io/library/debian:bookworm-slim: storage error: failed to pull manifest: Not authorized: url https://index.docker.io/v2/library/debian/manifests/bookworm-slim
+Error: Failed to start all 1 box(es)
+Errors:
+  csgclaw-spike: storage error: Failed to pull image 'debian:bookworm-slim' after trying 1 registry:
+  - docker.io/library/debian:bookworm-slim: storage error: failed to pull manifest: Not authorized: url https://index.docker.io/v2/library/debian/manifests/bookworm-slim
+

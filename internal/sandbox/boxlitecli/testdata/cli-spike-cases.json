@@ -1,0 +1,165 @@
+{
+  "boxlite_version": "0.7.5",
+  "captured_at": "2026-04-18T07:14:27Z",
+  "platform": {
+    "os": "macos",
+    "arch": "aarch64",
+    "virtualization": "Hypervisor.framework is available (Apple Silicon)"
+  },
+  "cases": [
+    {
+      "name": "create_success",
+      "command": ["boxlite", "--home", "$HOME", "create", "--name", "csgclaw-spike", "alpine"],
+      "exit_code": 0,
+      "stdout": "create_success.stdout",
+      "stderr_note": "runtime INFO logs only",
+      "conclusion": "stdout is the created box ID"
+    },
+    {
+      "name": "inspect_configured",
+      "command": ["boxlite", "--home", "$HOME", "inspect", "--format", "json", "csgclaw-spike"],
+      "exit_code": 0,
+      "stdout": "inspect_configured.json",
+      "stderr_note": "runtime INFO logs only",
+      "conclusion": "inspect JSON is an array; Status and State.Status were both configured"
+    },
+    {
+      "name": "inspect_missing",
+      "command": ["boxlite", "--home", "$HOME", "inspect", "--format", "json", "csgclaw-missing"],
+      "exit_code": 1,
+      "stdout": "inspect_not_found.stdout",
+      "stderr": "inspect_not_found.stderr",
+      "conclusion": "missing inspect should map to sandbox.ErrNotFound"
+    },
+    {
+      "name": "exec_missing",
+      "command": ["boxlite", "--home", "$HOME", "exec", "csgclaw-spike", "--", "sh", "-lc", "echo ok"],
+      "exit_code": 1,
+      "stdout_note": "empty",
+      "stderr": "exec_missing.stderr",
+      "conclusion": "missing exec uses different capitalization: No such box"
+    },
+    {
+      "name": "rm_force_configured",
+      "command": ["boxlite", "--home", "$HOME", "rm", "-f", "csgclaw-spike"],
+      "exit_code": 0,
+      "stdout": "rm_force_success.stdout",
+      "stderr_note": "runtime INFO logs only",
+      "conclusion": "successful remove stdout is the box name"
+    },
+    {
+      "name": "start_pull_failure",
+      "command": ["boxlite", "--home", "$HOME", "start", "csgclaw-spike"],
+      "exit_code": 1,
+      "stdout_note": "empty",
+      "stderr": "start_pull_failure.stderr",
+      "conclusion": "failed start can remove the DB record and leave an orphaned box directory"
+    },
+    {
+      "name": "start_proxy_auth_failure",
+      "command": ["boxlite", "--home", "$HOME", "start", "csgclaw-spike"],
+      "environment": {
+        "https_proxy": "http://127.0.0.1:7890",
+        "HTTPS_PROXY": "http://127.0.0.1:7890",
+        "http_proxy": "http://127.0.0.1:7890",
+        "HTTP_PROXY": "http://127.0.0.1:7890",
+        "all_proxy": "http://127.0.0.1:7890",
+        "ALL_PROXY": "http://127.0.0.1:7890"
+      },
+      "exit_code": 1,
+      "stdout_note": "empty",
+      "stderr": "start_proxy_auth_failure.stderr",
+      "conclusion": "proxy rerun reached Docker Hub but failed on bootstrap debian:bookworm-slim manifest authorization"
+    },
+    {
+      "name": "start_after_docker_login_auth_failure",
+      "command": ["boxlite", "--home", "$HOME", "start", "csgclaw-spike"],
+      "environment": {
+        "docker_login": "docker login docker.io succeeded before this run",
+        "https_proxy": "http://127.0.0.1:7890",
+        "HTTPS_PROXY": "http://127.0.0.1:7890",
+        "http_proxy": "http://127.0.0.1:7890",
+        "HTTP_PROXY": "http://127.0.0.1:7890",
+        "all_proxy": "http://127.0.0.1:7890",
+        "ALL_PROXY": "http://127.0.0.1:7890"
+      },
+      "exit_code": 1,
+      "stdout_note": "empty",
+      "stderr": "start_after_docker_login_auth_failure.stderr",
+      "conclusion": "Docker CLI login did not unblock BoxLite bootstrap debian:bookworm-slim manifest pull"
+    },
+    {
+      "name": "start_success_manual_combined",
+      "command": ["boxlite", "--home", "$HOME", "start", "csgclaw-spike"],
+      "exit_code": 0,
+      "exit_code_source": "reported manually as successful",
+      "combined_output": "start_success_manual_combined.log",
+      "stream_split": false,
+      "conclusion": "manual retry succeeded after layer download retries; stream-split stdout/stderr still needs capture"
+    },
+    {
+      "name": "detached_create_success",
+      "command": ["boxlite", "--home", "$HOME", "create", "--name", "csgclaw-spike", "--detach", "alpine"],
+      "exit_code": 0,
+      "stdout": "detached_create_success.stdout",
+      "stderr_note": "runtime INFO logs only",
+      "conclusion": "stdout is the created detached box ID"
+    },
+    {
+      "name": "detached_start_success",
+      "command": ["boxlite", "--home", "$HOME", "start", "csgclaw-spike"],
+      "exit_code": 0,
+      "stdout": "detached_start_success.stdout",
+      "stderr_note": "large image-pull and VM startup logs omitted from per-case fixture",
+      "conclusion": "detached start stdout is the box name and leaves the box running"
+    },
+    {
+      "name": "detached_inspect_running",
+      "command": ["boxlite", "--home", "$HOME", "inspect", "--format", "json", "csgclaw-spike"],
+      "exit_code": 0,
+      "stdout": "detached_inspect_running.json",
+      "stderr_note": "runtime INFO logs only",
+      "conclusion": "Status and State.Status are running; State.Running is true"
+    },
+    {
+      "name": "detached_exec_ok",
+      "command": ["boxlite", "--home", "$HOME", "exec", "csgclaw-spike", "--", "sh", "-lc", "echo ok"],
+      "exit_code": 0,
+      "stdout": "detached_exec_ok.stdout",
+      "stderr_note": "runtime INFO logs plus a seccomp warning",
+      "conclusion": "command stdout is forwarded and exit code is zero"
+    },
+    {
+      "name": "detached_exec_exit7",
+      "command": ["boxlite", "--home", "$HOME", "exec", "csgclaw-spike", "--", "sh", "-lc", "echo fail >&2; exit 7"],
+      "exit_code": 7,
+      "stdout_note": "empty",
+      "stderr": "detached_exec_exit7.stderr",
+      "conclusion": "boxlite preserves the command exit code; command stderr is mixed with runtime stderr"
+    },
+    {
+      "name": "detached_stop_success",
+      "command": ["boxlite", "--home", "$HOME", "stop", "csgclaw-spike"],
+      "exit_code": 0,
+      "stdout": "detached_stop_success.stdout",
+      "stderr_note": "runtime INFO logs only",
+      "conclusion": "successful stop stdout is the box name"
+    },
+    {
+      "name": "detached_inspect_stopped",
+      "command": ["boxlite", "--home", "$HOME", "inspect", "--format", "json", "csgclaw-spike"],
+      "exit_code": 0,
+      "stdout": "detached_inspect_stopped.json",
+      "stderr_note": "runtime INFO logs only",
+      "conclusion": "Status and State.Status are stopped; State.Running is false"
+    },
+    {
+      "name": "context_kill",
+      "command": ["boxlite", "--home", "$HOME", "pull", "alpine"],
+      "exit_code": 143,
+      "stdout_note": "empty",
+      "stderr": "context_kill.stderr",
+      "conclusion": "SIGTERM kill is visible as shell exit code 143; Go CommandContext should still surface ctx cancellation"
+    }
+  ]
+}

@@ -42,7 +42,7 @@ type Runtime struct {
 var _ sandbox.Provider = Provider{}
 var _ sandbox.Runtime = (*Runtime)(nil)
 
-// Create creates a BoxLite box from a generic sandbox create spec.
+// Create creates and starts a BoxLite box from a generic sandbox create spec.
 func (r *Runtime) Create(ctx context.Context, spec sandbox.CreateSpec) (sandbox.Instance, error) {
 	if r == nil || r.runtime == nil {
 		return nil, fmt.Errorf("invalid boxlite runtime")
@@ -54,6 +54,10 @@ func (r *Runtime) Create(ctx context.Context, spec sandbox.CreateSpec) (sandbox.
 	box, err := r.runtime.Create(ctx, spec.Image, opts...)
 	if err != nil {
 		return nil, wrapError("create boxlite box", err)
+	}
+	if err := box.Start(ctx); err != nil {
+		_ = box.Close()
+		return nil, wrapError("start boxlite box", err)
 	}
 	return &Instance{box: box}, nil
 }

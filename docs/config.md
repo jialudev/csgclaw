@@ -1,0 +1,113 @@
+# CSGClaw Configuration
+
+English | [中文](config.zh.md)
+
+`csgclaw onboard` writes the local config file used by `csgclaw serve`. The config covers server access, model providers, bootstrap image selection, sandbox isolation, and optional channels.
+
+## Model Provider Examples
+
+### Local CSGHub-lite
+
+```toml
+[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+access_token = "your_access_token"
+
+[models]
+default = "csghub-lite.Qwen/Qwen3-0.6B-GGUF"
+
+[models.providers.csghub-lite]
+base_url = "http://127.0.0.1:11435/v1"
+api_key = "local"
+models = ["Qwen/Qwen3-0.6B-GGUF"]
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.18"
+
+[sandbox]
+provider = "boxlite"
+home_dir_name = "boxlite"
+boxlite_cli_path = "boxlite"
+```
+
+### Remote LLM API
+
+```toml
+[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+access_token = "your_access_token"
+
+[models]
+default = "remote.gpt-5.4"
+
+[models.providers.remote]
+base_url = "https://api.openai.com/v1"
+api_key = "sk-your-api-key"
+models = ["gpt-5.4"]
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.18"
+
+[sandbox]
+provider = "boxlite"
+home_dir_name = "boxlite"
+boxlite_cli_path = "boxlite"
+```
+
+### Local Codex via CLIProxyAPI
+
+```toml
+[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://127.0.0.1:18080"
+access_token = "your_access_token"
+
+[models]
+default = "codex.gpt-5.4"
+
+[models.providers.codex]
+base_url = "http://127.0.0.1:8317/v1"
+api_key = "local"
+models = ["gpt-5.4"]
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.18"
+
+[sandbox]
+provider = "boxlite"
+home_dir_name = "boxlite"
+boxlite_cli_path = "boxlite"
+```
+
+## Sandbox Providers
+
+CSGClaw runs Workers through the configured sandbox provider. The default is `boxlite`, which uses the vendored BoxLite Go SDK.
+
+You can opt in to the CLI-backed provider when you already have the `boxlite` binary installed:
+
+```toml
+[sandbox]
+provider = "boxlite-cli"
+home_dir_name = "boxlite"
+boxlite_cli_path = "boxlite"
+```
+
+`boxlite_cli_path` is the executable path used only by `provider = "boxlite-cli"`. The default value, `boxlite`, resolves from `PATH`; set an absolute path if the binary is installed elsewhere.
+
+CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the agent directory plus `home_dir_name` such as `~/.csgclaw/agents/<agent-id>/boxlite`. That explicit home takes precedence over `BOXLITE_HOME` for CSGClaw-managed sandboxes, while `BOXLITE_HOME` still applies when you run `boxlite` manually without `--home`.
+
+The `boxlite-cli` provider does not need the vendored Go SDK at runtime. Source builds and the current default `boxlite` provider still use the SDK path, so commands such as `make test` may fetch or link the vendored BoxLite native library.
+
+## Worker Override Example
+
+```json
+{
+  "id": "u-reviewer",
+  "name": "reviewer",
+  "description": "code review worker",
+  "profile": "codex.gpt-5.4",
+  "role": "worker"
+}
+```

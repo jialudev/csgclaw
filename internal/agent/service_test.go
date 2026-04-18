@@ -13,6 +13,7 @@ import (
 
 	"csgclaw/internal/config"
 	"csgclaw/internal/sandbox"
+	"csgclaw/internal/sandbox/boxlitecli"
 )
 
 type fakeRuntime struct{}
@@ -53,6 +54,153 @@ func (f *fakeInstance) Run(context.Context, sandbox.CommandSpec) (sandbox.Comman
 
 func (f *fakeInstance) Close() error {
 	return nil
+}
+
+type agentBoxliteCLIRunner struct {
+	requests []boxlitecli.CommandRequest
+	boxes    map[string]agentBoxliteCLIBox
+}
+
+type agentBoxliteCLIBox struct {
+	ID     string
+	Name   string
+	Status string
+}
+
+func newAgentBoxliteCLIRunner() *agentBoxliteCLIRunner {
+	return &agentBoxliteCLIRunner{boxes: make(map[string]agentBoxliteCLIBox)}
+}
+
+func (r *agentBoxliteCLIRunner) Run(_ context.Context, req boxlitecli.CommandRequest) (boxlitecli.CommandResult, error) {
+	r.requests = append(r.requests, req)
+	if len(req.Args) < 3 {
+		return boxlitecli.CommandResult{ExitCode: 1, Stderr: []byte("missing command")}, fmt.Errorf("exit status 1")
+	}
+
+	switch req.Args[2] {
+	case "inspect":
+		idOrName := req.Args[len(req.Args)-1]
+		box, ok := r.boxes[idOrName]
+		if !ok {
+			return boxlitecli.CommandResult{
+				ExitCode: 1,
+				Stderr:   []byte("Error: no such box: " + idOrName),
+			}, fmt.Errorf("exit status 1")
+		}
+		stdout := fmt.Sprintf(`[{"Id":%q,"Name":%q,"Created":"2026-04-18T07:31:25Z","Status":%q}]`, box.ID, box.Name, box.Status)
+		return boxlitecli.CommandResult{Stdout: []byte(stdout)}, nil
+	case "run":
+		name := valueAfter(req.Args, "--name")
+		if name == "" {
+			name = "box"
+		}
+		id := "box-" + name
+		box := agentBoxliteCLIBox{ID: id, Name: name, Status: "running"}
+		r.boxes[id] = box
+		r.boxes[name] = box
+		return boxlitecli.CommandResult{Stdout: []byte(id + "\n")}, nil
+	case "start":
+		idOrName := req.Args[len(req.Args)-1]
+		box, ok := r.boxes[idOrName]
+		if !ok {
+			return boxlitecli.CommandResult{ExitCode: 1, Stderr: []byte("Error: no such box: " + idOrName)}, fmt.Errorf("exit status 1")
+		}
+		box.Status = "running"
+		r.boxes[box.ID] = box
+		r.boxes[box.Name] = box
+		return boxlitecli.CommandResult{}, nil
+	case "exec":
+		if len(req.Args) > 6 && req.Args[5] == "tail" && req.Stdout != nil {
+			_, _ = req.Stdout.Write([]byte("gateway line\n"))
+		}
+		return boxlitecli.CommandResult{}, nil
+	case "rm":
+		idOrName := req.Args[len(req.Args)-1]
+		box, ok := r.boxes[idOrName]
+		if !ok {
+			return boxlitecli.CommandResult{ExitCode: 1, Stderr: []byte("Error: no such box: " + idOrName)}, fmt.Errorf("exit status 1")
+		}
+		delete(r.boxes, box.ID)
+		delete(r.boxes, box.Name)
+		return boxlitecli.CommandResult{}, nil
+	default:
+		return boxlitecli.CommandResult{ExitCode: 1, Stderr: []byte("unsupported command")}, fmt.Errorf("exit status 1")
+	}
+}
+
+func valueAfter(args []string, key string) string {
+	for idx := 0; idx < len(args)-1; idx++ {
+		if args[idx] == key {
+			return args[idx+1]
+		}
+	}
+	return ""
+}
+
+func countBoxliteCLICommand(requests []boxlitecli.CommandRequest, command string) int {
+	var count int
+	for _, req := range requests {
+		if len(req.Args) > 2 && req.Args[2] == command {
+			count++
+		}
+	}
+	return count
+}
+
+func hasBoxliteCLIExec(requests []boxlitecli.CommandRequest, values ...string) bool {
+	for _, req := range requests {
+		if len(req.Args) > 5 && req.Args[2] == "exec" && containsSubsequence(req.Args[5:], values) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBoxliteCLICommandArgs(requests []boxlitecli.CommandRequest, command string, values ...string) bool {
+	for _, req := range requests {
+		if len(req.Args) > 2 && req.Args[2] == command && containsSubsequence(req.Args[3:], values) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSubsequence(args []string, values []string) bool {
+	if len(values) == 0 {
+		return true
+	}
+	for idx := 0; idx <= len(args)-len(values); idx++ {
+		matched := true
+		for valueIdx, value := range values {
+			if args[idx+valueIdx] != value {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAny(args []string, values ...string) bool {
+	for _, arg := range args {
+		for _, value := range values {
+			if arg == value {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func requestArgs(requests []boxlitecli.CommandRequest) [][]string {
+	out := make([][]string, 0, len(requests))
+	for _, req := range requests {
+		out = append(out, req.Args)
+	}
+	return out
 }
 
 func testModelConfig() config.ModelConfig {
@@ -126,6 +274,80 @@ func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid sandbox runtime") {
 		t.Fatalf("CreateWorker() error = %q, want invalid runtime error", err)
+	}
+}
+
+func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	orig := localIPv4Resolver
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	defer func() { localIPv4Resolver = orig }()
+
+	runner := newAgentBoxliteCLIRunner()
+	provider := boxlitecli.NewProvider(boxlitecli.WithRunner(runner))
+	statePath := filepath.Join(homeDir, "agents.json")
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
+		"picoclaw:latest",
+		statePath,
+		WithSandboxProvider(provider),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	manager, err := svc.EnsureManager(context.Background(), false)
+	if err != nil {
+		t.Fatalf("EnsureManager() error = %v", err)
+	}
+	if manager.BoxID != "box-manager" || manager.Status != string(sandbox.StateRunning) {
+		t.Fatalf("EnsureManager() = %+v, want running box-manager", manager)
+	}
+
+	worker, err := svc.CreateWorker(context.Background(), CreateRequest{
+		ID:   "u-alice",
+		Name: "alice",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if worker.BoxID != "box-alice" || worker.Status != string(sandbox.StateRunning) {
+		t.Fatalf("CreateWorker() = %+v, want running box-alice", worker)
+	}
+
+	var logs strings.Builder
+	if err := svc.StreamLogs(context.Background(), worker.ID, true, 3, &logs); err != nil {
+		t.Fatalf("StreamLogs() error = %v", err)
+	}
+	if got := logs.String(); got != "gateway line\n" {
+		t.Fatalf("StreamLogs() output = %q, want gateway line", got)
+	}
+
+	if err := svc.Delete(context.Background(), worker.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	if got, want := countBoxliteCLICommand(runner.requests, "run"), 2; got != want {
+		t.Fatalf("run command count = %d, want %d", got, want)
+	}
+	if got, want := countBoxliteCLICommand(runner.requests, "start"), 0; got != want {
+		t.Fatalf("start command count = %d, want %d", got, want)
+	}
+	if !hasBoxliteCLICommandArgs(runner.requests, "run", "/bin/sh", "-c", "/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null") {
+		t.Fatalf("boxlite-cli gateway run command not found in requests: %#v", requestArgs(runner.requests))
+	}
+	if !hasBoxliteCLIExec(runner.requests, "tail", "-n", "3", "-f", boxPicoClawDir+"/gateway.log") {
+		t.Fatalf("boxlite-cli tail exec not found in requests: %#v", requestArgs(runner.requests))
+	}
+	if !hasBoxliteCLICommandArgs(runner.requests, "rm", "-f", "box-alice") {
+		t.Fatalf("boxlite-cli remove command not found in requests: %#v", requestArgs(runner.requests))
+	}
+	for _, req := range runner.requests {
+		if len(req.Args) > 2 && req.Args[2] == "run" && !containsAny(req.Args, "/bin/sh", "/usr/local/bin/picoclaw") {
+			t.Fatalf("boxlite-cli run args missing gateway command: %q", req.Args)
+		}
 	}
 }
 

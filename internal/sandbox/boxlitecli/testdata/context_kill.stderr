@@ -1,0 +1,8 @@
+2026-04-18T07:14:50.004564Z  INFO boxlite::runtime::rt_impl: Virtualization support verified reason=Hypervisor.framework is available (Apple Silicon)
+2026-04-18T07:14:50.011285Z  INFO boxlite::db: Initialized database schema version 7
+2026-04-18T07:14:50.020368Z  INFO boxlite::runtime::rt_impl: Recovering 0 boxes from database
+2026-04-18T07:14:50.020387Z  INFO boxlite::rootfs::guest: guest_binary_hash: using compile-time hash hash_prefix="00423c5a28dc"
+2026-04-18T07:14:50.020414Z  INFO boxlite::rootfs::guest: GC completed elapsed_ms=0 suffix=-00423c5a28dc
+2026-04-18T07:14:50.020421Z  INFO boxlite::runtime::rt_impl: Box recovery complete
+2026-04-18T07:14:50.049679Z  INFO boxlite::images::store: Pulling image from registry: docker.io/library/alpine:latest
+
