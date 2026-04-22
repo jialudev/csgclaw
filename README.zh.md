@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="CSGClaw logo" width="560" />
+  <img src="assets/logo.png" alt="CSGClaw logo" width="600" />
 </p>
 
 <p align="center">
