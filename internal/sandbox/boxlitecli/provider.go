@@ -60,6 +60,19 @@ type Runtime struct {
 
 var _ sandbox.Provider = Provider{}
 var _ sandbox.Runtime = (*Runtime)(nil)
+var _ sandbox.ImagePuller = (*Runtime)(nil)
+
+func (r *Runtime) Pull(ctx context.Context, image string) error {
+	if err := r.valid(); err != nil {
+		return err
+	}
+	image = strings.TrimSpace(image)
+	if image == "" {
+		return fmt.Errorf("boxlite cli image is required")
+	}
+	result, err := r.run(ctx, []string{"pull", image}, nil, nil)
+	return wrapRunError("pull boxlite cli image", result, err)
+}
 
 func (r *Runtime) Create(ctx context.Context, spec sandbox.CreateSpec) (sandbox.Instance, error) {
 	if err := r.valid(); err != nil {

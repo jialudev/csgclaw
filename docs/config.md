@@ -8,9 +8,11 @@ English | [中文](config.zh.md)
 
 `listen_addr` is the address that the local HTTP server binds to.
 
-`advertise_base_url` is the base URL that CSGClaw gives to manager and worker boxes so they can call back into the local HTTP server. When it is set, CSGClaw uses it as-is after trimming a trailing slash and does not try to infer a host IP. When it is empty, CSGClaw falls back to an inferred local IPv4 address plus the configured listen port.
+`advertise_base_url` is the base URL that CSGClaw gives to manager and worker boxes so they can call back into the local HTTP server. When it is set, CSGClaw uses it after trimming a trailing slash. When it is empty, CSGClaw falls back to an inferred local IPv4 address plus the configured listen port.
 
 Use `advertise_base_url` when the automatically inferred address is not reachable from BoxLite boxes, such as when you need a LAN address, a tunnel URL, or a host alias.
+
+`host.docker.internal` is a Docker Desktop-specific alias and is usually not resolvable from BoxLite boxes. If it appears in `advertise_base_url`, CSGClaw rewrites it to the inferred local IPv4 address when generating manager and worker box configs.
 
 `access_token` protects authenticated API routes, including the PicoClaw bot routes. When authentication is enabled, clients must send `Authorization: Bearer <access_token>`.
 
@@ -47,6 +49,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -74,6 +77,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -101,6 +105,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -108,6 +113,28 @@ home_dir_name = "boxlite"
 boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
+
+## OpenClaw Runtime
+
+CSGClaw defaults to PicoClaw. To run the bootstrap manager and created workers with OpenClaw instead, configure both the OpenClaw-capable image and `agent_runtime = "openclaw"`.
+
+The recommended image shape is a slim OpenClaw base image with the CSGClaw channel plugin baked under `/home/node/openclaw-plugins/csgclaw-extension`. Runtime state still comes from `~/.csgclaw/agents/<agent>/.openclaw/openclaw.json`; do not mount an empty host directory over `/home/node/openclaw-plugins`, because that hides baked plugins.
+
+```toml
+[models]
+default = "minimax.MiniMax-M2.7"
+
+[models.providers.minimax]
+base_url = "https://api.minimaxi.com/v1"
+api_key = "${MINIMAX_API_KEY}"
+models = ["MiniMax-M2.7"]
+
+[bootstrap]
+manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw:20260429.2-csgclaw"
+agent_runtime = "openclaw"
+```
+
+`base_url` should be the OpenAI-compatible API root, such as `https://api.minimaxi.com/v1`. If a full `/chat/completions` URL is supplied, CSGClaw normalizes it back to the API root before forwarding requests.
 
 ## Sandbox Providers
 

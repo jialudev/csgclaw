@@ -62,8 +62,8 @@ func (c ModelConfig) EffectiveProvider() string {
 func (c ModelConfig) Resolved() ModelConfig {
 	out := c
 	out.Provider = out.EffectiveProvider()
-	out.BaseURL = strings.TrimRight(strings.TrimSpace(out.BaseURL), "/")
-	out.APIKey = strings.TrimSpace(out.APIKey)
+	out.BaseURL = normalizeOpenAIBaseURL(out.BaseURL)
+	out.APIKey = stripBearerAPIKeyPrefix(strings.TrimSpace(out.APIKey))
 	out.ModelID = strings.TrimSpace(out.ModelID)
 	out.ReasoningEffort = strings.ToLower(strings.TrimSpace(out.ReasoningEffort))
 	return out
@@ -100,8 +100,8 @@ func (c ModelConfig) Validate() error {
 
 func (c ProviderConfig) Resolved() ProviderConfig {
 	out := c
-	out.BaseURL = strings.TrimRight(strings.TrimSpace(out.BaseURL), "/")
-	out.APIKey = strings.TrimSpace(out.APIKey)
+	out.BaseURL = normalizeOpenAIBaseURL(out.BaseURL)
+	out.APIKey = stripBearerAPIKeyPrefix(strings.TrimSpace(out.APIKey))
 	out.ReasoningEffort = strings.ToLower(strings.TrimSpace(out.ReasoningEffort))
 	out.Models = normalizeModelIDs(out.Models)
 	return out
@@ -446,4 +446,26 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func normalizeOpenAIBaseURL(value string) string {
+	baseURL := strings.TrimRight(strings.TrimSpace(value), "/")
+	const chatCompletionsSuffix = "/chat/completions"
+	if strings.HasSuffix(baseURL, chatCompletionsSuffix) {
+		baseURL = strings.TrimRight(strings.TrimSuffix(baseURL, chatCompletionsSuffix), "/")
+	}
+	return baseURL
+}
+
+// stripBearerAPIKeyPrefix removes a leading "Bearer " prefix from API keys copied from
+// curl-style Authorization headers. OpenClaw adds the scheme when authHeader is true.
+func stripBearerAPIKeyPrefix(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) < 8 {
+		return value
+	}
+	if strings.EqualFold(value[:7], "bearer ") {
+		return strings.TrimSpace(value[7:])
+	}
+	return value
 }

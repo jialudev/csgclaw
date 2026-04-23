@@ -1,6 +1,9 @@
 package boxlite
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
 // Wire types match the JSON format produced by the Rust FFI layer.
 // These are unexported — only used for JSON marshaling/unmarshaling.
@@ -36,6 +39,11 @@ type wirePort struct {
 // wireRootfsImage matches Rust RootfsSpec::Image serialization.
 type wireRootfsImage struct {
 	Image string `json:"Image"`
+}
+
+// wireRootfsPath matches Rust RootfsSpec::RootfsPath serialization.
+type wireRootfsPath struct {
+	RootfsPath string `json:"RootfsPath"`
 }
 
 // boxInfoWire matches the JSON from box_info_to_json() in ffi/src/json.rs.
@@ -75,8 +83,15 @@ func (w *boxInfoWire) toBoxInfo() BoxInfo {
 
 // buildOptionsJSON creates the JSON wire representation from boxConfig.
 func buildOptionsJSON(image string, cfg *boxConfig) boxOptionsWire {
+	rootfs := any(wireRootfsImage{Image: image})
+	if rootfsPath := cfg.rootfsPath; rootfsPath != "" {
+		if info, err := os.Stat(rootfsPath); err == nil && info.IsDir() {
+			rootfs = wireRootfsPath{RootfsPath: rootfsPath}
+		}
+	}
+
 	w := boxOptionsWire{
-		Rootfs:  wireRootfsImage{Image: image},
+		Rootfs:  rootfs,
 		Env:     cfg.env,
 		Network: "Isolated",
 	}

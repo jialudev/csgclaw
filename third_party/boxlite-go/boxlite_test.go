@@ -2,6 +2,8 @@ package boxlite
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -188,6 +190,40 @@ func TestBuildOptionsJSON_Defaults(t *testing.T) {
 	}
 	if wire.Ports == nil {
 		t.Error("Ports should be non-nil empty slice")
+	}
+}
+
+func TestBuildOptionsJSON_WithRootfsPath(t *testing.T) {
+	bundle := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundle, "oci-layout"), []byte(`{"imageLayoutVersion":"1.0.0"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(oci-layout) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, "index.json"), []byte(`{"schemaVersion":2,"manifests":[]}`), 0o600); err != nil {
+		t.Fatalf("WriteFile(index.json) error = %v", err)
+	}
+
+	cfg := &boxConfig{}
+	WithRootfsPath(bundle)(cfg)
+	wire := buildOptionsJSON("alpine:latest", cfg)
+	rootfs, ok := wire.Rootfs.(wireRootfsPath)
+	if !ok {
+		t.Fatalf("Rootfs type: got %T, want wireRootfsPath", wire.Rootfs)
+	}
+	if rootfs.RootfsPath != bundle {
+		t.Fatalf("Rootfs.RootfsPath = %q, want %q", rootfs.RootfsPath, bundle)
+	}
+}
+
+func TestBuildOptionsJSON_WithMissingRootfsPathFallsBackToImage(t *testing.T) {
+	cfg := &boxConfig{}
+	WithRootfsPath(filepath.Join(t.TempDir(), "missing"))(cfg)
+	wire := buildOptionsJSON("alpine:latest", cfg)
+	rootfs, ok := wire.Rootfs.(wireRootfsImage)
+	if !ok {
+		t.Fatalf("Rootfs type: got %T, want wireRootfsImage", wire.Rootfs)
+	}
+	if rootfs.Image != "alpine:latest" {
+		t.Fatalf("Rootfs.Image = %q, want %q", rootfs.Image, "alpine:latest")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,13 +155,34 @@ func updateCSGClawChannel(cfg map[string]any, botID string, server config.Server
 
 func resolveManagerBaseURL(server config.ServerConfig) string {
 	if server.AdvertiseBaseURL != "" {
-		return strings.TrimRight(server.AdvertiseBaseURL, "/")
+		baseURL := strings.TrimRight(server.AdvertiseBaseURL, "/")
+		if rewritten := rewriteDockerHostAliasBaseURL(baseURL); rewritten != "" {
+			return rewritten
+		}
+		return baseURL
 	}
 	port := config.ListenPort(server.ListenAddr)
 	if ip := localIPv4Resolver(); ip != "" {
 		return fmt.Sprintf("http://%s:%s", ip, port)
 	}
 	return ""
+}
+
+func rewriteDockerHostAliasBaseURL(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil || !strings.EqualFold(parsed.Hostname(), "host.docker.internal") {
+		return ""
+	}
+	ip := localIPv4Resolver()
+	if ip == "" {
+		return ""
+	}
+	if port := parsed.Port(); port != "" {
+		parsed.Host = net.JoinHostPort(ip, port)
+	} else {
+		parsed.Host = ip
+	}
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func localIPv4() string {

@@ -242,7 +242,7 @@ func serveForeground(ctx context.Context, run *command.Context, cfg config.Confi
 	if err != nil {
 		return err
 	}
-	apiURL := apiBaseURL(cfg.Server)
+	apiURL := localAPIBaseURL(cfg.Server)
 	imURL := imOpenURL(apiURL)
 
 	if output == "json" {
@@ -291,7 +291,7 @@ func serveBackground(run *command.Context, cfg config.Config, globals command.Gl
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
-	apiURL := apiBaseURL(cfg.Server)
+	apiURL := localAPIBaseURL(cfg.Server)
 	if err := waitForHealthy(apiURL, 5*time.Second); err != nil {
 		_ = cmd.Process.Kill()
 		return fmt.Errorf("server process started (pid %d) but health check failed: %w; see %s", cmd.Process.Pid, err, logPath)
@@ -461,6 +461,10 @@ func apiBaseURL(server config.ServerConfig) string {
 		return strings.TrimRight(server.AdvertiseBaseURL, "/")
 	}
 
+	return localAPIBaseURL(server)
+}
+
+func localAPIBaseURL(server config.ServerConfig) string {
 	port := config.ListenPort(server.ListenAddr)
 	if server.ListenAddr == "" {
 		return config.DefaultAPIBaseURL()
@@ -497,12 +501,13 @@ no_auth = %t
 
 [bootstrap]
 manager_image = %q
+agent_runtime = %q
 
 [sandbox]
 provider = %q
 home_dir_name = %q
 boxlite_cli_path = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, cfg.Sandbox.Resolved().BoxLiteCLIPath)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImage, cfg.Bootstrap.ResolvedGatewayRuntime(), cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName, cfg.Sandbox.Resolved().BoxLiteCLIPath)
 	if len(cfg.Sandbox.Resolved().DebianRegistries) > 0 {
 		content = strings.Replace(content, "[sandbox]\n", fmt.Sprintf("[sandbox]\ndebian_registries = %s\n", formatModelList(cfg.Sandbox.Resolved().DebianRegistries)), 1)
 	}
@@ -555,6 +560,9 @@ func loadConfig(path string) (config.Config, error) {
 }
 
 func validateModelConfig(cfg config.Config) error {
+	if err := cfg.Bootstrap.Validate(); err != nil {
+		return err
+	}
 	if err := effectiveLLMConfig(cfg).Validate(); err != nil {
 		var validationErr *config.ModelValidationError
 		if errors.As(err, &validationErr) && len(validationErr.MissingFields) > 0 {
@@ -596,6 +604,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntime()))
 	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
 }
 

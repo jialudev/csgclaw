@@ -78,6 +78,8 @@ func (r *agentBoxliteCLIRunner) Run(_ context.Context, req boxlitecli.CommandReq
 	}
 
 	switch req.Args[2] {
+	case "pull":
+		return boxlitecli.CommandResult{}, nil
 	case "inspect":
 		idOrName := req.Args[len(req.Args)-1]
 		box, ok := r.boxes[idOrName]
@@ -93,6 +95,12 @@ func (r *agentBoxliteCLIRunner) Run(_ context.Context, req boxlitecli.CommandReq
 		name := valueAfter(req.Args, "--name")
 		if name == "" {
 			name = "box"
+		}
+		if _, ok := r.boxes[name]; ok {
+			return boxlitecli.CommandResult{
+				ExitCode: 1,
+				Stderr:   []byte("Error: invalid argument: box with name '" + name + "' already exists"),
+			}, fmt.Errorf("exit status 1")
 		}
 		id := "box-" + name
 		box := agentBoxliteCLIBox{ID: id, Name: name, Status: "running"}
@@ -331,6 +339,9 @@ func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
 
 	if got, want := countBoxliteCLICommand(runner.requests, "run"), 2; got != want {
 		t.Fatalf("run command count = %d, want %d", got, want)
+	}
+	if got, want := countBoxliteCLICommand(runner.requests, "pull"), 2; got != want {
+		t.Fatalf("pull command count = %d, want %d", got, want)
 	}
 	if got, want := countBoxliteCLICommand(runner.requests, "start"), 0; got != want {
 		t.Fatalf("start command count = %d, want %d", got, want)
@@ -726,6 +737,55 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 	}
 }
 
+func TestCreateWorkerRecoversExistingBoxAfterNameConflict(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	orig := localIPv4Resolver
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	defer func() { localIPv4Resolver = orig }()
+
+	runner := newAgentBoxliteCLIRunner()
+	runner.boxes["alice"] = agentBoxliteCLIBox{ID: "box-alice", Name: "alice", Status: "running"}
+	runner.boxes["box-alice"] = runner.boxes["alice"]
+	provider := boxlitecli.NewProvider(boxlitecli.WithRunner(runner))
+	statePath := filepath.Join(homeDir, "agents.json")
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
+		"openclaw-csgclaw:local",
+		statePath,
+		WithSandboxProvider(provider),
+		WithGatewayRuntime(config.AgentRuntimeOpenClaw),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateRequest{
+		ID:          "u-alice",
+		Name:        "alice",
+		Description: "frontend worker",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.ID != "u-alice" || got.BoxID != "box-alice" || got.Status != string(sandbox.StateRunning) {
+		t.Fatalf("CreateWorker() = %+v, want recovered running box-alice", got)
+	}
+	if got.Description != "frontend worker" {
+		t.Fatalf("CreateWorker().Description = %q, want frontend worker", got.Description)
+	}
+	if got.Role != RoleWorker {
+		t.Fatalf("CreateWorker().Role = %q, want worker", got.Role)
+	}
+	if got, want := countBoxliteCLICommand(runner.requests, "run"), 1; got != want {
+		t.Fatalf("run command count = %d, want %d", got, want)
+	}
+	if got, want := countBoxliteCLICommand(runner.requests, "inspect"), 2; got != want {
+		t.Fatalf("inspect command count = %d, want %d", got, want)
+	}
+}
+
 func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
@@ -955,8 +1015,17 @@ func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 		startCalls++
 		return nil
 	}
+	// Start() now skips startBox when boxInfo reports the box is already
+	// running (avoids re-executing CMD on a live VM and racing the gateway
+	// port). Simulate a stopped box that transitions to running once startBox
+	// is invoked: pre-start info reports Stopped, post-start info reports
+	// Running.
 	testBoxInfoHook = func(_ *Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
-		return sandbox.Info{ID: "box-new", State: sandbox.StateRunning}, nil
+		state := sandbox.StateStopped
+		if startCalls > 0 {
+			state = sandbox.StateRunning
+		}
+		return sandbox.Info{ID: "box-new", State: state}, nil
 	}
 	defer func() {
 		testGetBoxHook = nil
@@ -1659,6 +1728,147 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 	}
 }
 
+func TestGatewayCreateSpecBuildsOpenClawSpecWithoutPluginMount(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	orig := localIPv4Resolver
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	defer func() { localIPv4Resolver = orig }()
+
+	svc, err := NewServiceWithChannels(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
+		config.ChannelsConfig{},
+		"openclaw-csgclaw:local",
+		"",
+		WithGatewayRuntime(config.AgentRuntimeOpenClaw),
+	)
+	if err != nil {
+		t.Fatalf("NewServiceWithChannels() error = %v", err)
+	}
+
+	spec, err := svc.gatewayCreateSpec("openclaw-csgclaw:local", "alice", "u-worker-1", config.ModelConfig{
+		BaseURL: "https://api.minimaxi.com/v1/chat/completions",
+		APIKey:  "sk-minimax-test",
+		ModelID: "MiniMax-M2.7",
+	})
+	if err != nil {
+		t.Fatalf("gatewayCreateSpec() error = %v", err)
+	}
+
+	if got, want := spec.Env["HOME"], boxOpenClawUserHome; got != want {
+		t.Fatalf("HOME env = %q, want %q", got, want)
+	}
+	wantCmd := "/bin/sh -c " + openClawStartScript()
+	if strings.Join(spec.Cmd, " ") != wantCmd {
+		t.Fatalf("gatewayCreateSpec() cmd = %q, want %q", spec.Cmd, wantCmd)
+	}
+	cmdJoined := strings.Join(spec.Cmd, " ")
+	if strings.Contains(cmdJoined, "install.sh") || strings.Contains(cmdJoined, "command -v csgclaw-cli") {
+		t.Fatalf("openclaw start script should not install csgclaw-cli at runtime (it is baked into the image), got: %q", spec.Cmd)
+	}
+
+	wantProjectsRoot := filepath.Join(homeDir, config.AppDirName, hostProjectsDir)
+	wantOpenClawRoot := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice", hostOpenClawDir)
+	if len(spec.Mounts) != 2 {
+		t.Fatalf("gatewayCreateSpec() mounts = %+v, want 2 mounts", spec.Mounts)
+	}
+	wants := map[string]string{
+		wantOpenClawRoot: boxOpenClawDir,
+		wantProjectsRoot: boxOpenClawProjectsDir,
+	}
+	for _, mount := range spec.Mounts {
+		if strings.Contains(mount.GuestPath, "openclaw-plugins") {
+			t.Fatalf("gatewayCreateSpec() should not mount over baked plugins: %+v", spec.Mounts)
+		}
+		if wantGuest, ok := wants[mount.HostPath]; !ok || wantGuest != mount.GuestPath {
+			t.Fatalf("unexpected mount %+v; wants host->guest %v", mount, wants)
+		}
+		delete(wants, mount.HostPath)
+	}
+	if len(wants) != 0 {
+		t.Fatalf("missing mounts: %v", wants)
+	}
+	if _, err := os.Stat(filepath.Join(wantOpenClawRoot, hostWorkspaceDir, "AGENT.md")); err != nil {
+		t.Fatalf("expected openclaw workspace template under openclaw root: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(wantOpenClawRoot, hostOpenClawConfig))
+	if err != nil {
+		t.Fatalf("ReadFile(openclaw config) error = %v", err)
+	}
+	if strings.Contains(string(data), "/chat/completions/chat/completions") {
+		t.Fatalf("openclaw config has duplicated chat completions suffix:\n%s", string(data))
+	}
+	if !strings.Contains(string(data), "csg-skills") {
+		t.Fatalf("openclaw config should set skills.load.extraDirs for csg-skills, got:\n%s", string(data))
+	}
+	csgDir := filepath.Join(wantOpenClawRoot, hostCsgOpenClawSkills)
+	ents, err := os.ReadDir(csgDir)
+	if err != nil {
+		t.Fatalf("ReadDir(%q) error = %v (worker should get empty csg-skills dir)", csgDir, err)
+	}
+	if len(ents) != 0 {
+		t.Fatalf("worker csg-skills should be empty, got %d entries: %+v", len(ents), ents)
+	}
+}
+
+func TestGatewayCreateSpecPopulatesOpenClawCsgSkillsForManager(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	orig := localIPv4Resolver
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	defer func() { localIPv4Resolver = orig }()
+
+	svc, err := NewServiceWithChannels(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
+		config.ChannelsConfig{},
+		"openclaw-csgclaw:local",
+		"",
+		WithGatewayRuntime(config.AgentRuntimeOpenClaw),
+	)
+	if err != nil {
+		t.Fatalf("NewServiceWithChannels() error = %v", err)
+	}
+
+	_, err = svc.gatewayCreateSpec("openclaw-csgclaw:local", ManagerName, ManagerUserID, testModelConfig().Resolved())
+	if err != nil {
+		t.Fatalf("gatewayCreateSpec() error = %v", err)
+	}
+	wantOpenClawRoot := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, ManagerName, hostOpenClawDir)
+	skill := filepath.Join(wantOpenClawRoot, hostCsgOpenClawSkills, "manager-worker-dispatch", "SKILL.md")
+	data, err := os.ReadFile(skill)
+	if err != nil {
+		t.Fatalf("expected manager CSG skill in openclaw pack: stat %q: %v", skill, err)
+	}
+	if !strings.Contains(string(data), "Use the `basics` skill for room, bot, and member operations") {
+		t.Fatalf("manager CSG skill should route basic room/bot/member ops through basics skill, got:\n%s", string(data))
+	}
+	if !strings.Contains(string(data), "cd ~/.openclaw/workspace/skills/manager-worker-dispatch") {
+		t.Fatalf("manager CSG skill should document the OpenClaw workspace tracking script path, got:\n%s", string(data))
+	}
+	cfgRaw, err := os.ReadFile(filepath.Join(wantOpenClawRoot, hostOpenClawConfig))
+	if err != nil {
+		t.Fatalf("ReadFile(openclaw config) error = %v", err)
+	}
+	cfgText := string(cfgRaw)
+	if !strings.Contains(cfgText, `"security": "full"`) || !strings.Contains(cfgText, `"ask": "off"`) {
+		t.Fatalf("openclaw config should disable exec approval prompts (tools.exec security=full ask=off), got:\n%s", cfgText)
+	}
+	if !strings.Contains(cfgText, `"verboseDefault": "on"`) {
+		t.Fatalf("openclaw config should set agents.defaults.verboseDefault to on for tool stream visibility, got:\n%s", cfgText)
+	}
+	approvalsRaw, err := os.ReadFile(filepath.Join(wantOpenClawRoot, hostOpenClawExecApproval))
+	if err != nil {
+		t.Fatalf("ReadFile(openclaw exec-approvals) error = %v", err)
+	}
+	approvalsText := string(approvalsRaw)
+	if !strings.Contains(approvalsText, `"security": "full"`) || !strings.Contains(approvalsText, `"ask": "off"`) {
+		t.Fatalf("openclaw exec-approvals should default security=full ask=off, got:\n%s", approvalsText)
+	}
+}
+
 func TestGatewayStartCommandUsesTiniForNormalMode(t *testing.T) {
 	entrypoint, cmd := gatewayStartCommand(false)
 
@@ -1786,6 +1996,24 @@ func TestResolveManagerBaseURLPrefersAdvertiseBaseURL(t *testing.T) {
 	})
 
 	want := "http://127.0.0.1:18080"
+	if got != want {
+		t.Fatalf("resolveManagerBaseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveManagerBaseURLRewritesDockerHostAlias(t *testing.T) {
+	orig := localIPv4Resolver
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	t.Cleanup(func() {
+		localIPv4Resolver = orig
+	})
+
+	got := resolveManagerBaseURL(config.ServerConfig{
+		ListenAddr:       "0.0.0.0:19090",
+		AdvertiseBaseURL: "http://host.docker.internal:18080",
+	})
+
+	want := "http://10.0.0.8:18080"
 	if got != want {
 		t.Fatalf("resolveManagerBaseURL() = %q, want %q", got, want)
 	}

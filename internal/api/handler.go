@@ -2,11 +2,13 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/apitypes"
@@ -27,6 +29,15 @@ type Handler struct {
 	llm               *llm.Service
 	serverAccessToken string
 	serverNoAuth      bool
+}
+
+const createOperationTimeout = 10 * time.Minute
+
+func detachedCreateContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), createOperationTimeout)
 }
 
 type imBootstrapResponse struct {
@@ -130,7 +141,9 @@ func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 			return
 		}
-		created, err := h.botSvc.Create(r.Context(), req)
+		createCtx, cancel := detachedCreateContext(r.Context())
+		defer cancel()
+		created, err := h.botSvc.Create(createCtx, req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -375,7 +388,9 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 	}
 	req.Role = agent.RoleWorker
 
-	created, err := h.svc.CreateWorker(r.Context(), req)
+	createCtx, cancel := detachedCreateContext(r.Context())
+	defer cancel()
+	created, err := h.svc.CreateWorker(createCtx, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -784,10 +799,18 @@ func (h *Handler) handleIMEvents(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, ": connected\n\n")
 	flusher.Flush()
 
+	ticker := time.NewTicker(sseHeartbeatInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-ticker.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
 		case evt, ok := <-events:
 			if !ok {
 				return

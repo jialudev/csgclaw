@@ -1,0 +1,96 @@
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "csgclaw-llm": {
+        "baseUrl": "https://cloud.infini-ai.com/maas/v1",
+        "apiKey": "REPLACE_WITH_LLM_API_KEY",
+        "api": "openai-completions",
+        "auth": "token",
+        "authHeader": true,
+        "models": [
+          {
+            "id": "minimax-m2.5",
+            "name": "minimax-m2.5",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 256000,
+            "maxTokens": 128000
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "csgclaw-llm/minimax-m2.5"
+      },
+      "workspace": "~/.openclaw/workspace",
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "verboseDefault": "full"
+    }
+  },
+  "skills": {
+    "load": {
+      "extraDirs": ["~/.openclaw/csg-skills"]
+    }
+  },
+  "tools": {
+    "profile": "full",
+    "exec": {
+      "host": "gateway",
+      "security": "full",
+      "ask": "off"
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "channels": {
+    "csgclaw": {
+      "enabled": true,
+      "baseUrl": "http://127.0.0.1:18080",
+      "botId": "u-manager",
+      "accessToken": "your_access_token"
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "your_access_token"
+    },
+    "controlUi": {
+      "enabled": true,
+      "basePath": "/",
+      "dangerouslyDisableDeviceAuth": true,
+      "allowedOrigins": ["*"],
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
+  },
+  "plugins": {
+    "load": {
+      "paths": ["/home/node/openclaw-plugins/csgclaw-extension"]
+    },
+    "entries": {
+      "csgclaw": {
+        "enabled": true
+      }
+    }
+  }
+}

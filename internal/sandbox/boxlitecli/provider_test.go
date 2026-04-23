@@ -78,6 +78,40 @@ func TestCreateBuildsRunCLIArgs(t *testing.T) {
 	}
 }
 
+func TestPullBuildsCLIArgs(t *testing.T) {
+	runner := &fakeRunner{
+		results: []fakeResult{{result: CommandResult{}}},
+	}
+	rt, err := NewProvider(
+		WithPath("/usr/local/bin/boxlite"),
+		WithConfig("/tmp/config.toml"),
+		WithRegistry("registry.local"),
+		WithRunner(runner),
+	).Open(context.Background(), "/tmp/boxlite-home")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+
+	puller, ok := rt.(sandbox.ImagePuller)
+	if !ok {
+		t.Fatalf("runtime does not implement sandbox.ImagePuller")
+	}
+	if err := puller.Pull(context.Background(), "registry.local/openclaw:latest"); err != nil {
+		t.Fatalf("Pull() error = %v", err)
+	}
+
+	want := []string{
+		"--home", "/tmp/boxlite-home",
+		"--config", "/tmp/config.toml",
+		"--registry", "registry.local",
+		"pull",
+		"registry.local/openclaw:latest",
+	}
+	if got := runner.requests[0].Args; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Pull() args = %#v, want %#v", got, want)
+	}
+}
+
 func TestCreateRejectsUnsupportedOptions(t *testing.T) {
 	tests := []struct {
 		name string

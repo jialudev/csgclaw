@@ -33,6 +33,12 @@ type Runtime interface {
 	Close() error
 }
 
+// ImagePuller is an optional runtime capability for warming the image cache
+// before creating an instance.
+type ImagePuller interface {
+	Pull(ctx context.Context, image string) error
+}
+
 // Instance is a handle to one sandbox instance.
 type Instance interface {
 	Start(ctx context.Context) error

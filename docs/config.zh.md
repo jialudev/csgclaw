@@ -8,9 +8,11 @@
 
 `listen_addr` 是本地 HTTP server 监听的地址。
 
-`advertise_base_url` 是 CSGClaw 传给 manager 和 worker box 的回连地址，box 会用它访问本地 HTTP server。设置后，CSGClaw 会直接使用该值，只去掉末尾的 `/`，不会再自动推断本机 IP。为空时，CSGClaw 才会回退到自动推断出的本机 IPv4 地址，并拼上监听端口。
+`advertise_base_url` 是 CSGClaw 传给 manager 和 worker box 的回连地址，box 会用它访问本地 HTTP server。设置后，CSGClaw 会去掉末尾的 `/` 后使用该值。为空时，CSGClaw 会回退到自动推断出的本机 IPv4 地址，并拼上监听端口。
 
 当自动推断出的地址无法从 BoxLite box 内访问时，可以设置 `advertise_base_url`，例如使用局域网地址、隧道地址或 host alias。
+
+`host.docker.internal` 是 Docker Desktop 专用的 host alias，通常不能从 BoxLite box 内解析。如果它出现在 `advertise_base_url` 里，CSGClaw 生成 manager 和 worker box 配置时会改写成自动推断出的本机 IPv4 地址。
 
 `access_token` 用来保护需要认证的 API 路由，包括 PicoClaw bot 路由。启用鉴权时，客户端必须发送 `Authorization: Bearer <access_token>`。
 
@@ -47,6 +49,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -74,6 +77,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -101,6 +105,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -108,6 +113,28 @@ home_dir_name = "boxlite"
 boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
+
+## OpenClaw Runtime
+
+CSGClaw 默认使用 PicoClaw。若要让 bootstrap manager 和新建 worker 都使用 OpenClaw，需要同时配置 OpenClaw 镜像和 `agent_runtime = "openclaw"`。
+
+推荐镜像形态是基于 OpenClaw slim 二次封装，并把 CSGClaw channel plugin 烘焙到 `/home/node/openclaw-plugins/csgclaw-extension`。运行时状态仍由 `~/.csgclaw/agents/<agent>/.openclaw/openclaw.json` 提供；不要把空的宿主机目录挂载到 `/home/node/openclaw-plugins`，否则会遮住镜像内已经烘焙好的插件。
+
+```toml
+[models]
+default = "minimax.MiniMax-M2.7"
+
+[models.providers.minimax]
+base_url = "https://api.minimaxi.com/v1"
+api_key = "${MINIMAX_API_KEY}"
+models = ["MiniMax-M2.7"]
+
+[bootstrap]
+manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw:20260429.2-csgclaw"
+agent_runtime = "openclaw"
+```
+
+`base_url` 应填写 OpenAI-compatible API 根地址，例如 `https://api.minimaxi.com/v1`。如果误填完整的 `/chat/completions` 地址，CSGClaw 会在转发前归一化回 API 根地址。
 
 ## Sandbox Provider
 

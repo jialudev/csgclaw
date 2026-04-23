@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,31 @@ import (
 	"csgclaw/internal/sandbox"
 )
 
+const (
+	gatewayBoxPhaseIdle uint32 = iota
+	gatewayBoxPhasePreparing
+	gatewayBoxPhasePulling
+	gatewayBoxPhaseCreating
+)
+
+func (s *Service) setGatewayWorkPhase(p uint32) {
+	if s == nil {
+		return
+	}
+	s.gatewayWorkPhase.Store(p)
+}
+
+// gatewayBoxWillPrefetchImage reports whether pullSandboxImage will invoke ImagePuller.Pull
+// for this image/runtime (warm cache before sandbox create).
+func gatewayBoxWillPrefetchImage(image string, rt sandbox.Runtime) bool {
+	img := strings.TrimSpace(image)
+	if img == "" || strings.HasPrefix(img, "rootfs:") || rt == nil {
+		return false
+	}
+	_, ok := rt.(sandbox.ImagePuller)
+	return ok
+}
+
 func (s *Service) createGatewayBox(ctx context.Context, rt sandbox.Runtime, image, name, botID string, modelCfg config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
 	if testCreateGatewayBoxHook != nil {
 		return testCreateGatewayBoxHook(s, ctx, rt, image, name, botID, modelCfg)
@@ -18,20 +44,56 @@ func (s *Service) createGatewayBox(ctx context.Context, rt sandbox.Runtime, imag
 	if rt == nil {
 		return nil, sandbox.Info{}, fmt.Errorf("invalid sandbox runtime")
 	}
+	defer s.setGatewayWorkPhase(gatewayBoxPhaseIdle)
+
+	s.setGatewayWorkPhase(gatewayBoxPhasePreparing)
+	log.Printf(`gateway box %q: stage "preparing" — workspace dirs, PicoClaw/OpenClaw JSON config, mounts, and bundled skills layout on the host`, name)
 	spec, err := s.gatewayCreateSpec(image, name, botID, modelCfg)
 	if err != nil {
 		return nil, sandbox.Info{}, err
 	}
+	img := strings.TrimSpace(spec.Image)
+	willPrefetch := gatewayBoxWillPrefetchImage(spec.Image, rt)
+	if willPrefetch {
+		s.setGatewayWorkPhase(gatewayBoxPhasePulling)
+		log.Printf(`gateway box %q: stage "pre-pull" — running bundled boxlite CLI "pull %s" BEFORE sandbox create (separate prefetch; look for "image prefetch completed" next)`, name, img)
+	} else if img != "" && !strings.HasPrefix(img, "rootfs:") {
+		log.Printf(`gateway box %q: no separate pre-pull step — runtime lacks ImagePuller; image layers may download during sandbox create instead`, name)
+	}
+	if err := s.pullSandboxImage(ctx, rt, spec.Image); err != nil {
+		return nil, sandbox.Info{}, err
+	}
+	if willPrefetch {
+		log.Printf(`gateway box %q: image prefetch completed for %q — next stage is sandbox create/start (often the slow part: provisioning, disks, VM bring-up)`, name, img)
+	}
+	s.setGatewayWorkPhase(gatewayBoxPhaseCreating)
+	log.Printf(`gateway box %q: stage "creating" — boxlite sandbox create/start for image %q (not the same CLI step as pull; gateway process starts after VM is up)`, name, img)
 	box, err := rt.Create(ctx, spec)
 	if err != nil {
 		return nil, sandbox.Info{}, fmt.Errorf("create gateway box: %w", err)
 	}
+	log.Printf(`gateway box %q: sandbox instance record created; inspecting running state/metadata`, name)
 	info, err := box.Info(ctx)
 	if err != nil {
 		_ = s.closeBox(box)
 		return nil, sandbox.Info{}, fmt.Errorf("read gateway box info: %w", err)
 	}
 	return box, info, nil
+}
+
+func (s *Service) pullSandboxImage(ctx context.Context, rt sandbox.Runtime, image string) error {
+	image = strings.TrimSpace(image)
+	if image == "" || strings.HasPrefix(image, "rootfs:") {
+		return nil
+	}
+	puller, ok := rt.(sandbox.ImagePuller)
+	if !ok {
+		return nil
+	}
+	if err := puller.Pull(ctx, image); err != nil {
+		return fmt.Errorf("pull gateway box image %q: %w", image, err)
+	}
+	return nil
 }
 
 func (s *Service) forceRemoveBox(ctx context.Context, rt sandbox.Runtime, idOrName string) error {
@@ -52,27 +114,78 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, modelCfg config.M
 	modelID := modelCfg.ModelID
 	managerBaseURL := resolveManagerBaseURL(s.server)
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, botID)
-	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
-	addFeishuBoxEnvVars(envVars, botID, s.channels)
-	envVars["HOME"] = "/home/picoclaw"
-	spec := sandbox.CreateSpec{
-		Image:      image,
-		Name:       name,
-		Detach:     true,
-		AutoRemove: false,
-		Env:        envVars,
-		Cmd: []string{
-			"/bin/sh",
-			"-c",
-			"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
-		},
+
+	if s.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawConfig(name, botID, s.server, modelCfg); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+		if err := ensureOpenClawCsgSkills(name, botID); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+	} else {
+		if _, err := ensureAgentPicoClawConfig(name, botID, s.server, modelCfg); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
 	}
 
-	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID))
+	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
+	addFeishuBoxEnvVars(envVars, botID, s.channels)
+	var spec sandbox.CreateSpec
+	if s.useOpenClawGateway() {
+		envVars["HOME"] = boxOpenClawUserHome
+		envVars["NODE_ENV"] = "production"
+		spec = sandbox.CreateSpec{
+			Image:      image,
+			Name:       name,
+			Detach:     true,
+			AutoRemove: false,
+			Env:        envVars,
+			Cmd: []string{
+				"/bin/sh",
+				"-c",
+				openClawStartScript(),
+			},
+		}
+	} else {
+		envVars["HOME"] = "/home/picoclaw"
+		spec = sandbox.CreateSpec{
+			Image:      image,
+			Name:       name,
+			Detach:     true,
+			AutoRemove: false,
+			Env:        envVars,
+			Cmd: []string{
+				"/bin/sh",
+				"-c",
+				"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
+			},
+		}
+	}
+
+	projectsRoot, err := ensureAgentProjectsRoot()
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
-	projectsRoot, err := ensureAgentProjectsRoot()
+
+	if s.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawWorkspace(name, workspaceTemplateForAgent(name, botID, true)); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+		hostOpenRoot, err := agentOpenClawRoot(name)
+		if err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+		spec.Mounts = append(spec.Mounts, sandbox.Mount{
+			HostPath:  hostOpenRoot,
+			GuestPath: boxOpenClawDir,
+		}, sandbox.Mount{
+			HostPath:  projectsRoot,
+			GuestPath: boxOpenClawProjectsDir,
+		})
+		return spec, nil
+	}
+
+	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID, false))
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
@@ -82,7 +195,6 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, modelCfg config.M
 			GuestPath: mount.guestPath,
 		})
 	}
-
 	return spec, nil
 }
 
@@ -102,6 +214,19 @@ func gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot string) []gatewayVolume
 			guestPath: boxProjectsDir,
 		},
 	}
+}
+
+// openClawStartScript launches the OpenClaw gateway. csgclaw-cli is baked into
+// the OpenClaw image (see csgclaw-extension/Dockerfile) under /usr/local/bin,
+// so the agent does not need to fetch or install it at runtime.
+//
+// The "gateway stop" prefix gracefully terminates any pre-existing gateway
+// instance before starting a new one, preventing a port-already-in-use error
+// if this CMD is re-executed on an already-running box.
+func openClawStartScript() string {
+	// Stop any pre-existing gateway (same-VM restart guard), then wait briefly so
+	// the port is fully released before the new process tries to bind it.
+	return "node /app/openclaw.mjs gateway stop 2>/dev/null; sleep 2; exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 18789 1>>" + openClawGatewayLog + " 2>&1"
 }
 
 func gatewayStartCommand(debug bool) ([]string, []string) {

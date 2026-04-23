@@ -3,6 +3,9 @@ package boxlitesdk
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +87,74 @@ func TestBoxStateMapping(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := boxState(tt.state); got != tt.want {
 				t.Fatalf("boxState(%q) = %q, want %q", tt.state, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveRootfsImage(t *testing.T) {
+	rootfsDir := t.TempDir()
+	rootfsFile := rootfsDir + ".txt"
+	if err := os.WriteFile(rootfsFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		image      string
+		wantImage  string
+		wantRootfs string
+		wantErr    string
+	}{
+		{
+			name:       "registry image",
+			image:      "ghcr.io/opencsg/openclaw:latest",
+			wantImage:  "ghcr.io/opencsg/openclaw:latest",
+			wantRootfs: "",
+		},
+		{
+			name:       "rootfs image prefix",
+			image:      "rootfs:" + rootfsDir,
+			wantImage:  "",
+			wantRootfs: rootfsDir,
+		},
+		{
+			name:    "empty rootfs path",
+			image:   "rootfs:",
+			wantErr: "rootfs path is required",
+		},
+		{
+			name:    "missing rootfs path",
+			image:   "rootfs:" + filepath.Join(rootfsDir, "missing"),
+			wantErr: "is not accessible",
+		},
+		{
+			name:    "rootfs path not directory",
+			image:   "rootfs:" + rootfsFile,
+			wantErr: "is not a directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotImage, gotRootfs, err := resolveRootfsImage(tt.image)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("resolveRootfsImage() error = nil, want %q", tt.wantErr)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("resolveRootfsImage() error = %q, want substring %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveRootfsImage() error = %v", err)
+			}
+			if gotImage != tt.wantImage {
+				t.Fatalf("resolveRootfsImage() image = %q, want %q", gotImage, tt.wantImage)
+			}
+			if gotRootfs != tt.wantRootfs {
+				t.Fatalf("resolveRootfsImage() rootfs = %q, want %q", gotRootfs, tt.wantRootfs)
 			}
 		})
 	}

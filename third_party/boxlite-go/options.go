@@ -28,6 +28,7 @@ type boxConfig struct {
 	env        [][2]string
 	volumes    []volumeEntry
 	ports      []portEntry
+	rootfsPath string
 	workDir    string
 	entrypoint []string
 	cmd        []string
@@ -92,6 +93,13 @@ func WithPort(hostPort, guestPort int) BoxOption {
 			protocol:  "Tcp",
 		})
 	}
+}
+
+// WithRootfsPath prefers a local OCI layout directory as rootfs.
+// When the path exists and is a directory, it is sent as RootfsPath and the
+// image reference is ignored by the runtime.
+func WithRootfsPath(path string) BoxOption {
+	return func(c *boxConfig) { c.rootfsPath = path }
 }
 
 // WithWorkDir sets the working directory inside the container.

@@ -4,6 +4,7 @@ package boxlitesdk
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	boxlitesdk "github.com/RussellLuo/boxlite/sdks/go"
@@ -12,6 +13,7 @@ import (
 )
 
 const providerName = "boxlite-sdk"
+const rootfsImagePrefix = "rootfs:"
 
 // Provider opens BoxLite-backed sandbox runtimes.
 type Provider struct {
@@ -58,11 +60,18 @@ func (r *Runtime) Create(ctx context.Context, spec sandbox.CreateSpec) (sandbox.
 	if r == nil || r.runtime == nil {
 		return nil, fmt.Errorf("invalid boxlite runtime")
 	}
+	imageRef, rootfsPath, err := resolveRootfsImage(spec.Image)
+	if err != nil {
+		return nil, err
+	}
 	opts, err := boxOptions(spec)
 	if err != nil {
 		return nil, err
 	}
-	box, err := r.runtime.Create(ctx, spec.Image, opts...)
+	if rootfsPath != "" {
+		opts = append(opts, boxlitesdk.WithRootfsPath(rootfsPath))
+	}
+	box, err := r.runtime.Create(ctx, imageRef, opts...)
 	if err != nil {
 		return nil, wrapError("create boxlite box", err)
 	}
@@ -71,6 +80,25 @@ func (r *Runtime) Create(ctx context.Context, spec sandbox.CreateSpec) (sandbox.
 		return nil, wrapError("start boxlite box", err)
 	}
 	return &Instance{box: box}, nil
+}
+
+func resolveRootfsImage(image string) (imageRef string, rootfsPath string, err error) {
+	image = strings.TrimSpace(image)
+	if !strings.HasPrefix(image, rootfsImagePrefix) {
+		return image, "", nil
+	}
+	rootfsPath = strings.TrimSpace(strings.TrimPrefix(image, rootfsImagePrefix))
+	if rootfsPath == "" {
+		return "", "", fmt.Errorf("invalid sandbox image: rootfs path is required")
+	}
+	info, statErr := os.Stat(rootfsPath)
+	if statErr != nil {
+		return "", "", fmt.Errorf("invalid sandbox image: rootfs path %q is not accessible: %w", rootfsPath, statErr)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("invalid sandbox image: rootfs path %q is not a directory", rootfsPath)
+	}
+	return "", rootfsPath, nil
 }
 
 // Get returns a handle for an existing BoxLite box by ID or name.

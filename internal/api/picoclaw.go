@@ -6,9 +6,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"csgclaw/internal/im"
 )
+
+// sseHeartbeatInterval pushes periodic SSE comment lines so intermediate NATs/firewalls
+// do not treat the idle stream as stale (common idle timeout ~5m; symptom: duration≈300s).
+const sseHeartbeatInterval = 25 * time.Second
 
 func (h *Handler) registerPicoClawRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/bots/", h.handlePicoClawBotRoutes)
@@ -75,16 +80,29 @@ func (h *Handler) handlePicoClawEvents(w http.ResponseWriter, r *http.Request, b
 	_, _ = io.WriteString(w, ": connected\n\n")
 	flusher.Flush()
 
+	ticker := time.NewTicker(sseHeartbeatInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case evt := <-events:
+		case <-ticker.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case evt, ok := <-events:
+			if !ok {
+				return
+			}
 			data, err := evt.MarshalJSONLine()
 			if err != nil {
 				return
 			}
-			_, _ = fmt.Fprintf(w, "event: message\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}
