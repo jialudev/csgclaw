@@ -12,6 +12,8 @@
 
 当自动推断出的地址无法从 BoxLite box 内访问时，可以设置 `advertise_base_url`，例如使用局域网地址、隧道地址或 host alias。
 
+`access_token` 用来保护需要认证的 API 路由，包括 PicoClaw bot 路由。设置后，客户端必须发送 `Authorization: Bearer <access_token>`。如果去掉首尾空白后为空，CSGClaw 会跳过这个 bearer token 检查。
+
 `config.toml` 中的字符串值可以通过 `${NAME}` 或 `$NAME` 引用环境变量。CSGClaw 读取配置时会展开这些变量；后续重写同一个值时，会尽量保留占位符形式。如果环境变量未设置，会展开为空字符串。
 
 ```toml

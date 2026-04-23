@@ -1526,6 +1526,18 @@ func TestHandleFeishuEventsRequiresAuthorization(t *testing.T) {
 	}
 }
 
+func TestHandleFeishuEventsSkipsAuthorizationWhenServerAccessTokenEmpty(t *testing.T) {
+	srv := &Handler{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/bots/u-manager/events", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusUnauthorized {
+		t.Fatalf("status = %d, want non-unauthorized when server access token is empty", rec.Code)
+	}
+}
+
 func TestHandleMessagesPostRequiresRoomID(t *testing.T) {
 	srv := &Handler{im: im.NewService()}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/messages", strings.NewReader(`{"sender_id":"u-admin","content":"hello"}`))
@@ -1724,8 +1736,9 @@ func TestHandleFeishuRoomsDeleteRemovesRoom(t *testing.T) {
 
 func TestHandlePicoClawRoutesRequireAuthorization(t *testing.T) {
 	srv := &Handler{
-		im:       im.NewService(),
-		picoclaw: im.NewPicoClawBridge("secret"),
+		im:                im.NewService(),
+		picoclaw:          im.NewPicoClawBridge("secret"),
+		serverAccessToken: "secret",
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"room_id":"room-1","text":"hello"}`))
@@ -1734,6 +1747,20 @@ func TestHandlePicoClawRoutesRequireAuthorization(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestHandlePicoClawRoutesSkipAuthorizationWhenServerAccessTokenEmpty(t *testing.T) {
+	srv := &Handler{
+		picoclaw: im.NewPicoClawBridge("secret"),
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"room_id":"room-1","text":"hello"}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusUnauthorized {
+		t.Fatalf("status = %d, want non-unauthorized when server access token is empty", rec.Code)
 	}
 }
 

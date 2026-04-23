@@ -39,7 +39,7 @@ func (h *Handler) handlePicoClawBotRoutes(w http.ResponseWriter, r *http.Request
 		http.Error(w, "picoclaw integration is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	if !h.picoclaw.ValidateAccessToken(r.Header.Get("Authorization")) {
+	if !h.validateServerAccessToken(r.Header.Get("Authorization")) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

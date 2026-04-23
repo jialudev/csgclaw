@@ -12,6 +12,8 @@ English | [中文](config.zh.md)
 
 Use `advertise_base_url` when the automatically inferred address is not reachable from BoxLite boxes, such as when you need a LAN address, a tunnel URL, or a host alias.
 
+`access_token` protects authenticated API routes, including the PicoClaw bot routes. When it is set, clients must send `Authorization: Bearer <access_token>`. When it is empty after trimming whitespace, CSGClaw skips this bearer-token check.
+
 String values in `config.toml` can reference environment variables with `${NAME}` or `$NAME`. CSGClaw expands them when loading the config and keeps the placeholder form when it later rewrites the same value. If an environment variable is not set, it expands to an empty string.
 
 ```toml

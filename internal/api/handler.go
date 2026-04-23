@@ -89,10 +89,11 @@ func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, im
 }
 
 func (h *Handler) validateServerAccessToken(authHeader string) bool {
-	if strings.TrimSpace(h.serverAccessToken) == "" {
+	token := strings.TrimSpace(h.serverAccessToken)
+	if token == "" {
 		return true
 	}
-	return authHeader == "Bearer "+h.serverAccessToken
+	return authHeader == "Bearer "+token
 }
 
 func (h *Handler) handleHealthz(w http.ResponseWriter, _ *http.Request) {

@@ -3,12 +3,10 @@ package im
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 )
 
 type PicoClawBridge struct {
-	accessToken string
 	mu          sync.Mutex
 	subscribers map[string]map[chan PicoClawEvent]struct{}
 }
@@ -34,18 +32,10 @@ type PicoClawSendMessageRequest struct {
 	Text   string `json:"text"`
 }
 
-func NewPicoClawBridge(accessToken string) *PicoClawBridge {
+func NewPicoClawBridge(string) *PicoClawBridge {
 	return &PicoClawBridge{
-		accessToken: accessToken,
 		subscribers: make(map[string]map[chan PicoClawEvent]struct{}),
 	}
-}
-
-func (b *PicoClawBridge) ValidateAccessToken(authHeader string) bool {
-	if strings.TrimSpace(b.accessToken) == "" {
-		return true
-	}
-	return authHeader == "Bearer "+b.accessToken
 }
 
 func (b *PicoClawBridge) Subscribe(botID string) (<-chan PicoClawEvent, func()) {
