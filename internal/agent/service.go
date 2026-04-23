@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -114,17 +115,18 @@ func TestOnlySetRunBoxCommandHook(hook func(*Service, context.Context, sandbox.I
 }
 
 type Service struct {
-	model        config.ModelConfig
-	llm          config.LLMConfig
-	server       config.ServerConfig
-	channels     config.ChannelsConfig
-	managerImage string
-	state        string
-	sandbox      sandbox.Provider
-	sandboxHome  string
-	mu           sync.RWMutex
-	runtimes     map[string]sandbox.Runtime
-	agents       map[string]Agent
+	model          config.ModelConfig
+	llm            config.LLMConfig
+	server         config.ServerConfig
+	channels       config.ChannelsConfig
+	managerImage   string
+	gatewayRuntime string
+	state          string
+	sandbox        sandbox.Provider
+	sandboxHome    string
+	mu             sync.RWMutex
+	runtimes       map[string]sandbox.Runtime
+	agents         map[string]Agent
 }
 
 type ServiceOption func(*Service) error
@@ -148,6 +150,33 @@ func WithSandboxHomeDirName(name string) ServiceOption {
 		s.sandboxHome = name
 		return nil
 	}
+}
+
+// WithGatewayRuntime sets picoclaw vs openclaw gateway behavior (from [bootstrap] or image inference).
+func WithGatewayRuntime(runtime string) ServiceOption {
+	return func(s *Service) error {
+		runtime = strings.TrimSpace(strings.ToLower(runtime))
+		switch runtime {
+		case "", config.AgentRuntimePicoclaw:
+			s.gatewayRuntime = config.AgentRuntimePicoclaw
+		case config.AgentRuntimeOpenClaw:
+			s.gatewayRuntime = config.AgentRuntimeOpenClaw
+		default:
+			return fmt.Errorf("gateway runtime %q is not supported (use %q or %q)", runtime, config.AgentRuntimePicoclaw, config.AgentRuntimeOpenClaw)
+		}
+		return nil
+	}
+}
+
+func (s *Service) useOpenClawGateway() bool {
+	return s != nil && s.gatewayRuntime == config.AgentRuntimeOpenClaw
+}
+
+func (s *Service) gatewayLogPath() string {
+	if s.useOpenClawGateway() {
+		return openClawGatewayLog
+	}
+	return boxPicoClawDir + "/gateway.log"
 }
 
 func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
@@ -240,8 +269,14 @@ func (svc *Service) EnsureBootstrapManager(ctx context.Context, forceRecreate bo
 	if err != nil {
 		return err
 	}
-	if _, err := ensureAgentPicoClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
-		return err
+	if svc.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel, svc.channels); err != nil {
+			return err
+		}
+	} else {
+		if _, err := ensureAgentPicoClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
+			return err
+		}
 	}
 
 	_, err = svc.EnsureManager(ctx, forceRecreate)
@@ -288,8 +323,25 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 		if err != nil {
 			return Agent{}, err
 		}
+		// Preserve host-installed OpenClaw plugins across recreate (e.g. csgclaw-extension).
+		pluginsPath := filepath.Join(managerHome, "openclaw-plugins")
+		pluginsAside := filepath.Join(os.TempDir(), "csgclaw-manager-openclaw-plugins")
+		_ = os.RemoveAll(pluginsAside)
+		if _, err := os.Stat(pluginsPath); err == nil {
+			if err := os.Rename(pluginsPath, pluginsAside); err != nil {
+				log.Printf("bootstrap manager: could not move openclaw-plugins aside: %v", err)
+			}
+		}
 		if err := os.RemoveAll(managerHome); err != nil {
 			return Agent{}, fmt.Errorf("remove bootstrap manager home: %w", err)
+		}
+		if err := os.MkdirAll(managerHome, 0o755); err != nil {
+			return Agent{}, fmt.Errorf("recreate bootstrap manager home: %w", err)
+		}
+		if _, err := os.Stat(pluginsAside); err == nil {
+			if err := os.Rename(pluginsAside, pluginsPath); err != nil {
+				log.Printf("bootstrap manager: could not restore openclaw-plugins: %v", err)
+			}
 		}
 		rt, err = s.ensureRuntimeAtHome(runtimeHome)
 		if err != nil {
@@ -770,7 +822,7 @@ func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines 
 	if follow {
 		args = append(args, "-f")
 	}
-	args = append(args, boxPicoClawDir+"/gateway.log")
+	args = append(args, s.gatewayLogPath())
 
 	exitCode, err := s.runBoxCommand(ctx, box, "tail", args, w)
 	if err != nil {

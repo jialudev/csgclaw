@@ -50,6 +50,28 @@ type LLMConfig struct {
 
 type BootstrapConfig struct {
 	ManagerImage string
+	AgentRuntime string
+}
+
+const (
+	AgentRuntimePicoclaw = "picoclaw"
+	AgentRuntimeOpenClaw = "openclaw"
+)
+
+// ResolvedGatewayRuntime selects PicoClaw vs OpenClaw gateway behavior for sandbox boxes.
+func (b BootstrapConfig) ResolvedGatewayRuntime() string {
+	explicit := strings.TrimSpace(strings.ToLower(b.AgentRuntime))
+	switch explicit {
+	case AgentRuntimeOpenClaw:
+		return AgentRuntimeOpenClaw
+	case AgentRuntimePicoclaw:
+		return AgentRuntimePicoclaw
+	}
+	img := strings.ToLower(b.ManagerImage)
+	if strings.Contains(img, "openclaw/openclaw") || strings.Contains(img, "openclaw-csgclaw") {
+		return AgentRuntimeOpenClaw
+	}
+	return AgentRuntimePicoclaw
 }
 
 type SandboxConfig struct {
@@ -290,6 +312,8 @@ func Load(path string) (Config, error) {
 			case "manager_image":
 				cfg.raw.bootstrap.ManagerImage = parseRawStringValue(rawValue)
 				cfg.Bootstrap.ManagerImage = value
+			case "agent_runtime":
+				cfg.Bootstrap.AgentRuntime = value
 			}
 		case section == "sandbox":
 			switch key {
@@ -372,6 +396,7 @@ func Load(path string) (Config, error) {
 	if cfg.Bootstrap.ManagerImage == "" {
 		cfg.Bootstrap.ManagerImage = DefaultManagerImage
 	}
+	cfg.Bootstrap.AgentRuntime = strings.TrimSpace(strings.ToLower(cfg.Bootstrap.AgentRuntime))
 	if cfg.Server.AccessToken == "" {
 		cfg.Server.AccessToken = DefaultAccessToken
 	}

@@ -17,7 +17,7 @@ GOFMT ?= gofmt
 TARGET_OS ?= $(shell $(GO) env GOOS)
 TARGET_ARCH ?= $(shell $(GO) env GOARCH)
 
-ONBOARD_BASE_URL ?= http://127.0.0.1:4000
+ONBOARD_BASE_URL ?= https://api.minimaxi.com/v1
 ONBOARD_API_KEY ?= sk-1234567890
 ONBOARD_MODEL_ID ?= minimax-m2.7
 ONBOARD_MANAGER_IMAGE ?= opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0

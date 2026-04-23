@@ -52,23 +52,52 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, modelCfg config.M
 	modelID := modelCfg.ModelID
 	managerBaseURL := resolveManagerBaseURL(s.server)
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, botID)
-	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
-	addFeishuBoxEnvVars(envVars, botID, s.channels)
-	envVars["HOME"] = "/home/picoclaw"
-	spec := sandbox.CreateSpec{
-		Image:      image,
-		Name:       name,
-		Detach:     true,
-		AutoRemove: false,
-		Env:        envVars,
-		Cmd: []string{
-			"/bin/sh",
-			"-c",
-			"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
-		},
+
+	if s.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawConfig(name, botID, s.server, modelCfg, s.channels); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+	} else {
+		if _, err := ensureAgentPicoClawConfig(name, botID, s.server, modelCfg); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
 	}
 
-	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID))
+	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
+	addFeishuBoxEnvVars(envVars, botID, s.channels)
+	var spec sandbox.CreateSpec
+	if s.useOpenClawGateway() {
+		envVars["HOME"] = boxOpenClawUserHome
+		envVars["NODE_ENV"] = "production"
+		spec = sandbox.CreateSpec{
+			Image:      image,
+			Name:       name,
+			Detach:     true,
+			AutoRemove: false,
+			Env:        envVars,
+			Cmd: []string{
+				"/bin/sh",
+				"-c",
+				"node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 18789 1>>" + openClawGatewayLog + " 2>&1",
+			},
+		}
+	} else {
+		envVars["HOME"] = "/home/picoclaw"
+		spec = sandbox.CreateSpec{
+			Image:      image,
+			Name:       name,
+			Detach:     true,
+			AutoRemove: false,
+			Env:        envVars,
+			Cmd: []string{
+				"/bin/sh",
+				"-c",
+				"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
+			},
+		}
+	}
+
+	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID, s.useOpenClawGateway()))
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
@@ -76,10 +105,31 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, modelCfg config.M
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
-	for _, mount := range gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot) {
+	for _, mount := range gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot, s.useOpenClawGateway()) {
 		spec.Mounts = append(spec.Mounts, sandbox.Mount{
 			HostPath:  mount.hostPath,
 			GuestPath: mount.guestPath,
+		})
+	}
+
+	if s.useOpenClawGateway() {
+		hostOpenRoot, err := agentOpenClawRoot(name)
+		if err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+		spec.Mounts = append(spec.Mounts, sandbox.Mount{
+			HostPath:  hostOpenRoot,
+			GuestPath: boxOpenClawDir,
+		})
+		// Baked plugins path in openclaw.json points here; host dir can be filled from
+		// `docker create openclaw-csgclaw:local` + `docker cp ...:/home/node/openclaw-plugins/`.
+		pluginHost := filepath.Join(filepath.Dir(hostOpenRoot), "openclaw-plugins")
+		if err := os.MkdirAll(pluginHost, 0o755); err != nil {
+			return sandbox.CreateSpec{}, fmt.Errorf("create host openclaw-plugins dir: %w", err)
+		}
+		spec.Mounts = append(spec.Mounts, sandbox.Mount{
+			HostPath:  pluginHost,
+			GuestPath: "/home/node/openclaw-plugins",
 		})
 	}
 
@@ -91,7 +141,19 @@ type gatewayVolumeMount struct {
 	guestPath string
 }
 
-func gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot string) []gatewayVolumeMount {
+func gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot string, openClaw bool) []gatewayVolumeMount {
+	if openClaw {
+		return []gatewayVolumeMount{
+			{
+				hostPath:  hostWorkspaceRoot,
+				guestPath: boxOpenClawWorkspaceDir,
+			},
+			{
+				hostPath:  projectsRoot,
+				guestPath: boxOpenClawProjectsDir,
+			},
+		}
+	}
 	return []gatewayVolumeMount{
 		{
 			hostPath:  hostWorkspaceRoot,

@@ -9,15 +9,24 @@ import (
 )
 
 const (
-	workspaceTemplateManager = "embed/runtimes/picoclaw/manager/workspace"
-	workspaceTemplateWorker  = "embed/runtimes/picoclaw/worker/workspace"
+	workspaceTemplateManagerPicoclaw = "embed/runtimes/picoclaw/manager/workspace"
+	workspaceTemplateWorkerPicoclaw  = "embed/runtimes/picoclaw/worker/workspace"
+	workspaceTemplateManagerOpenClaw = "embed/runtimes/openclaw/manager/workspace"
+	workspaceTemplateWorkerOpenClaw  = "embed/runtimes/openclaw/worker/workspace"
 )
 
-func workspaceTemplateForAgent(name, botID string) string {
-	if strings.EqualFold(strings.TrimSpace(name), ManagerName) || strings.TrimSpace(botID) == ManagerUserID {
-		return workspaceTemplateManager
+func workspaceTemplateForAgent(name, botID string, openClaw bool) string {
+	isManager := strings.EqualFold(strings.TrimSpace(name), ManagerName) || strings.TrimSpace(botID) == ManagerUserID
+	if openClaw {
+		if isManager {
+			return workspaceTemplateManagerOpenClaw
+		}
+		return workspaceTemplateWorkerOpenClaw
 	}
-	return workspaceTemplateWorker
+	if isManager {
+		return workspaceTemplateManagerPicoclaw
+	}
+	return workspaceTemplateWorkerPicoclaw
 }
 
 func ensureAgentWorkspace(agentName, template string) (string, error) {

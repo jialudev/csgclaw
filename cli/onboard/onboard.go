@@ -83,6 +83,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 			},
 			Bootstrap: config.BootstrapConfig{
 				ManagerImage: config.DefaultManagerImage,
+				AgentRuntime: config.AgentRuntimeOpenClaw,
 			},
 			Sandbox: config.SandboxConfig{
 				Provider:       config.DefaultSandboxProvider,
@@ -550,6 +551,7 @@ func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg c
 	if err != nil {
 		return bot.Bot{}, err
 	}
+	opts = append(opts, agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntime()))
 	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
 	if err != nil {
 		return bot.Bot{}, err

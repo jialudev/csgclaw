@@ -596,6 +596,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntime()))
 	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
 }
 

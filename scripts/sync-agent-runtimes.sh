@@ -14,6 +14,14 @@ if [ ! -d "${src}/picoclaw/worker/workspace" ]; then
   echo "missing PicoClaw worker workspace: ${src}/picoclaw/worker/workspace" >&2
   exit 1
 fi
+if [ ! -d "${src}/openclaw/manager/workspace" ]; then
+  echo "missing OpenClaw manager workspace: ${src}/openclaw/manager/workspace" >&2
+  exit 1
+fi
+if [ ! -d "${src}/openclaw/worker/workspace" ]; then
+  echo "missing OpenClaw worker workspace: ${src}/openclaw/worker/workspace" >&2
+  exit 1
+fi
 
 rm -rf "${dst}"
 mkdir -p "$(dirname "${dst}")"

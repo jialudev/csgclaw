@@ -760,3 +760,10 @@ func TestValidateRejectsUnsupportedProvider(t *testing.T) {
 		t.Fatalf("Validate() error = %q, want unsupported provider rejection", err)
 	}
 }
+
+func TestResolvedGatewayRuntimeInfersOpenClawFromCSGClawImage(t *testing.T) {
+	b := BootstrapConfig{ManagerImage: "opencsg-registry.example.com/ns/openclaw-csgclaw:1.2.3"}
+	if got, want := b.ResolvedGatewayRuntime(), AgentRuntimeOpenClaw; got != want {
+		t.Fatalf("ResolvedGatewayRuntime() = %q, want %q", got, want)
+	}
+}
