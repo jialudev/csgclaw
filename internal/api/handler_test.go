@@ -978,8 +978,15 @@ func TestHandleAgentStartStartsExistingBox(t *testing.T) {
 		startCalls++
 		return nil
 	})
+	// Start() now skips startBox when the box is already running. Simulate a
+	// stopped-then-started transition: pre-start info reports Stopped (so the
+	// guard fires), post-start info reports Running.
 	agent.TestOnlySetBoxInfoHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
-		return sandbox.Info{ID: "box-new", Name: "alice", State: sandbox.StateRunning}, nil
+		state := sandbox.StateStopped
+		if startCalls > 0 {
+			state = sandbox.StateRunning
+		}
+		return sandbox.Info{ID: "box-new", Name: "alice", State: state}, nil
 	})
 	defer func() {
 		agent.TestOnlySetGetBoxHook(nil)

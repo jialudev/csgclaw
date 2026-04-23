@@ -176,6 +176,43 @@ models = ["minimax-m2.7"]
 	}
 }
 
+func TestLoadReadsBootstrapAgentRuntime(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[bootstrap]
+manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw-csgclaw:20260331.20260423.1"
+agent_runtime = "openclaw"
+
+[models]
+default = "minimax.MiniMax-M2.7"
+
+[models.providers.minimax]
+base_url = "https://api.minimaxi.com/v1/chat/completions"
+api_key = "sk"
+models = ["MiniMax-M2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Bootstrap.AgentRuntime, AgentRuntimeOpenClaw; got != want {
+		t.Fatalf("cfg.Bootstrap.AgentRuntime = %q, want %q", got, want)
+	}
+	if got, want := cfg.Bootstrap.ResolvedGatewayRuntime(), AgentRuntimeOpenClaw; got != want {
+		t.Fatalf("ResolvedGatewayRuntime() = %q, want %q", got, want)
+	}
+	if got, want := cfg.Model.BaseURL, "https://api.minimaxi.com/v1"; got != want {
+		t.Fatalf("cfg.Model.BaseURL = %q, want %q", got, want)
+	}
+}
+
 func TestLoadReadsModelsProviderPool(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -392,6 +429,9 @@ func TestSaveWritesModelsSection(t *testing.T) {
 	if !strings.Contains(content, "no_auth = false") {
 		t.Fatalf("saved config missing server no_auth:\n%s", content)
 	}
+	if !strings.Contains(content, `agent_runtime = "picoclaw"`) {
+		t.Fatalf("saved config missing bootstrap agent_runtime:\n%s", content)
+	}
 	if !strings.Contains(content, "[models]") || !strings.Contains(content, "[models.providers.default]") {
 		t.Fatalf("saved config missing models sections:\n%s", content)
 	}
@@ -523,6 +563,7 @@ no_auth = true
 
 [bootstrap]
 manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
+agent_runtime = "picoclaw"
 
 [sandbox]
 debian_registries = ["harbor.opencsg.com", "docker.io"]
@@ -865,5 +906,49 @@ func TestValidateRejectsUnsupportedProvider(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "only \"llm-api\" is supported now") {
 		t.Fatalf("Validate() error = %q, want unsupported provider rejection", err)
+	}
+}
+
+func TestBootstrapValidateRejectsUnsupportedAgentRuntime(t *testing.T) {
+	err := (BootstrapConfig{AgentRuntime: "llama"}).Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want unsupported agent runtime")
+	}
+	if !strings.Contains(err.Error(), "agent_runtime") {
+		t.Fatalf("Validate() error = %q, want agent_runtime hint", err)
+	}
+}
+
+func TestDefaultManagerImageForAgentRuntime(t *testing.T) {
+	if got, want := DefaultManagerImageForAgentRuntime(AgentRuntimePicoclaw), DefaultManagerImage; got != want {
+		t.Fatalf("DefaultManagerImageForAgentRuntime(picoclaw) = %q, want %q", got, want)
+	}
+	if got, want := DefaultManagerImageForAgentRuntime(AgentRuntimeOpenClaw), DefaultOpenClawManagerImage; got != want {
+		t.Fatalf("DefaultManagerImageForAgentRuntime(openclaw) = %q, want %q", got, want)
+	}
+	if got, want := DefaultManagerImageForAgentRuntime(""), DefaultManagerImage; got != want {
+		t.Fatalf("DefaultManagerImageForAgentRuntime(\"\") = %q, want %q", got, want)
+	}
+}
+
+func TestResolvedGatewayRuntimeInfersOpenClawFromCSGClawImage(t *testing.T) {
+	b := BootstrapConfig{ManagerImage: "opencsg-registry.example.com/ns/openclaw-csgclaw:1.2.3"}
+	if got, want := b.ResolvedGatewayRuntime(), AgentRuntimeOpenClaw; got != want {
+		t.Fatalf("ResolvedGatewayRuntime() = %q, want %q", got, want)
+	}
+}
+
+func TestModelConfigResolvedStripsBearerAPIKeyPrefix(t *testing.T) {
+	cfg := ModelConfig{
+		Provider: ProviderLLMAPI,
+		BaseURL:  "https://cloud.infini-ai.com/maas/v1/chat/completions",
+		APIKey:   "Bearer  sk-test-token",
+		ModelID:  "gemini-2.5-pro",
+	}.Resolved()
+	if got, want := cfg.APIKey, "sk-test-token"; got != want {
+		t.Fatalf("Resolved().APIKey = %q, want %q", got, want)
+	}
+	if got, want := cfg.BaseURL, "https://cloud.infini-ai.com/maas/v1"; got != want {
+		t.Fatalf("Resolved().BaseURL = %q, want %q", got, want)
 	}
 }

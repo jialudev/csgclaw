@@ -6,6 +6,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -131,17 +134,18 @@ func TestOnlySetRunBoxCommandHook(hook func(*Service, context.Context, sandbox.I
 }
 
 type Service struct {
-	model        config.ModelConfig
-	llm          config.LLMConfig
-	server       config.ServerConfig
-	channels     config.ChannelsConfig
-	managerImage string
-	state        string
-	sandbox      sandbox.Provider
-	sandboxHome  string
-	mu           sync.RWMutex
-	runtimes     map[string]sandbox.Runtime
-	agents       map[string]Agent
+	model          config.ModelConfig
+	llm            config.LLMConfig
+	server         config.ServerConfig
+	channels       config.ChannelsConfig
+	managerImage   string
+	gatewayRuntime string
+	state          string
+	sandbox        sandbox.Provider
+	sandboxHome    string
+	mu             sync.RWMutex
+	runtimes       map[string]sandbox.Runtime
+	agents         map[string]Agent
 }
 
 type ServiceOption func(*Service) error
@@ -165,6 +169,33 @@ func WithSandboxHomeDirName(name string) ServiceOption {
 		s.sandboxHome = name
 		return nil
 	}
+}
+
+// WithGatewayRuntime sets picoclaw vs openclaw gateway behavior (from [bootstrap] or image inference).
+func WithGatewayRuntime(runtime string) ServiceOption {
+	return func(s *Service) error {
+		runtime = strings.TrimSpace(strings.ToLower(runtime))
+		switch runtime {
+		case "", config.AgentRuntimePicoclaw:
+			s.gatewayRuntime = config.AgentRuntimePicoclaw
+		case config.AgentRuntimeOpenClaw:
+			s.gatewayRuntime = config.AgentRuntimeOpenClaw
+		default:
+			return fmt.Errorf("gateway runtime %q is not supported (use %q or %q)", runtime, config.AgentRuntimePicoclaw, config.AgentRuntimeOpenClaw)
+		}
+		return nil
+	}
+}
+
+func (s *Service) useOpenClawGateway() bool {
+	return s != nil && s.gatewayRuntime == config.AgentRuntimeOpenClaw
+}
+
+func (s *Service) gatewayLogPath() string {
+	if s.useOpenClawGateway() {
+		return openClawGatewayLog
+	}
+	return boxPicoClawDir + "/gateway.log"
 }
 
 func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
@@ -257,8 +288,17 @@ func (svc *Service) EnsureBootstrapManager(ctx context.Context, forceRecreate bo
 	if err != nil {
 		return err
 	}
-	if _, err := ensureAgentPicoClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
-		return err
+	if svc.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
+			return err
+		}
+		if err := ensureOpenClawCsgSkills(ManagerName, ManagerUserID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := ensureAgentPicoClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
+			return err
+		}
 	}
 
 	_, err = svc.EnsureManager(ctx, forceRecreate)
@@ -287,8 +327,18 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 	}()
 	if forceRecreate {
 		log.Printf("force recreating bootstrap manager box %q", ManagerName)
+		// Stop the existing box before force-removing it. boxlite rm only removes the
+		// box from the database; it does NOT terminate the running shim process (VM).
+		// If the shim stays alive the gateway inside keeps port 18789 occupied, and
+		// the next gateway launched in the new box will fail with "port already in use".
+		if box != nil {
+			if stopErr := s.stopBox(ctx, box, sandbox.StopOptions{}); stopErr != nil {
+				log.Printf("bootstrap manager: stop box before recreate: %v (continuing)", stopErr)
+			}
+		}
+		managerBoxIDs := s.bootstrapManagerLookupKeys()
 		removed := false
-		for _, managerBoxIDOrName := range s.bootstrapManagerLookupKeys() {
+		for _, managerBoxIDOrName := range managerBoxIDs {
 			if err := s.forceRemoveBox(ctx, rt, managerBoxIDOrName); err != nil {
 				if sandbox.IsNotFound(err) {
 					log.Printf("bootstrap manager box %q (%q) does not exist yet; continuing", ManagerName, managerBoxIDOrName)
@@ -311,8 +361,31 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 		if err != nil {
 			return Agent{}, err
 		}
+		// Kill orphaned boxlite-shim (VM) processes under the manager's boxlite
+		// home. boxlite rm removes the box from its database but does NOT stop
+		// the shim; a live shim keeps gateway port 18789 occupied. Each agent
+		// has a dedicated boxlite home, so pgrep scoped to runtimeHome is safe.
+		killOrphanedShims(runtimeHome)
+
+		// Preserve host-installed OpenClaw plugins across recreate (e.g. csgclaw-extension).
+		pluginsPath := filepath.Join(managerHome, "openclaw-plugins")
+		pluginsAside := filepath.Join(os.TempDir(), "csgclaw-manager-openclaw-plugins")
+		_ = os.RemoveAll(pluginsAside)
+		if _, err := os.Stat(pluginsPath); err == nil {
+			if err := os.Rename(pluginsPath, pluginsAside); err != nil {
+				log.Printf("bootstrap manager: could not move openclaw-plugins aside: %v", err)
+			}
+		}
 		if err := os.RemoveAll(managerHome); err != nil {
 			return Agent{}, fmt.Errorf("remove bootstrap manager home: %w", err)
+		}
+		if err := os.MkdirAll(managerHome, 0o755); err != nil {
+			return Agent{}, fmt.Errorf("recreate bootstrap manager home: %w", err)
+		}
+		if _, err := os.Stat(pluginsAside); err == nil {
+			if err := os.Rename(pluginsAside, pluginsPath); err != nil {
+				log.Printf("bootstrap manager: could not restore openclaw-plugins: %v", err)
+			}
 		}
 		rt, err = s.ensureRuntimeAtHome(runtimeHome)
 		if err != nil {
@@ -344,12 +417,22 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 		}
 		log.Printf("bootstrap manager box %q created", ManagerName)
 	} else {
-		if err := s.startBox(ctx, box); err != nil {
-			return Agent{}, fmt.Errorf("start bootstrap manager box: %w", err)
-		}
 		info, err = s.boxInfo(ctx, box)
 		if err != nil {
 			return Agent{}, fmt.Errorf("read bootstrap manager box info: %w", err)
+		}
+		// Only start a stopped/created box. If it is already Running the gateway
+		// process is already live inside the VM; calling startBox again would
+		// re-execute the CMD, launching a second gateway instance that fails with
+		// a port-already-in-use error.
+		if info.State != sandbox.StateRunning {
+			if err := s.startBox(ctx, box); err != nil {
+				return Agent{}, fmt.Errorf("start bootstrap manager box: %w", err)
+			}
+			info, err = s.boxInfo(ctx, box)
+			if err != nil {
+				return Agent{}, fmt.Errorf("read bootstrap manager box info after start: %w", err)
+			}
 		}
 	}
 	defer func() {
@@ -630,12 +713,20 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 		_ = s.closeBox(box)
 	}()
 
-	if err := s.startBox(ctx, box); err != nil {
-		return Agent{}, fmt.Errorf("start agent box: %w", err)
-	}
 	info, err := s.boxInfo(ctx, box)
 	if err != nil {
 		return Agent{}, fmt.Errorf("read agent box info: %w", err)
+	}
+	// Only start a stopped/created box to avoid re-executing the CMD when the
+	// gateway is already live, which would cause a port-already-in-use error.
+	if info.State != sandbox.StateRunning {
+		if err := s.startBox(ctx, box); err != nil {
+			return Agent{}, fmt.Errorf("start agent box: %w", err)
+		}
+		info, err = s.boxInfo(ctx, box)
+		if err != nil {
+			return Agent{}, fmt.Errorf("read agent box info after start: %w", err)
+		}
 	}
 
 	s.mu.Lock()
@@ -946,7 +1037,7 @@ func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines 
 	if follow {
 		args = append(args, "-f")
 	}
-	args = append(args, boxPicoClawDir+"/gateway.log")
+	args = append(args, s.gatewayLogPath())
 
 	exitCode, err := s.runBoxCommand(ctx, box, "tail", args, w)
 	if err != nil {
@@ -1021,4 +1112,34 @@ func (s *Service) hasNameLocked(name string) bool {
 		}
 	}
 	return false
+}
+
+// killOrphanedShims terminates processes whose argv references boxliteHome
+// (typically boxlite-shim). With per-agent boxlite homes, matching the
+// manager runtime path does not affect worker agents.
+//
+// Errors are logged but never returned; failures must not block force-recreate.
+func killOrphanedShims(boxliteHome string) {
+	boxliteHome = strings.TrimSpace(boxliteHome)
+	if boxliteHome == "" {
+		return
+	}
+	pgrepOut, err := exec.Command("pgrep", "-f", boxliteHome).Output()
+	if err != nil {
+		// pgrep exits non-zero when no matches are found.
+		return
+	}
+	for _, pidStr := range strings.Fields(string(pgrepOut)) {
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil || pid <= 0 {
+			continue
+		}
+		if proc, err := os.FindProcess(pid); err == nil {
+			if killErr := proc.Kill(); killErr != nil {
+				log.Printf("bootstrap manager: kill shim pid %d: %v", pid, killErr)
+			} else {
+				log.Printf("bootstrap manager: killed shim pid %d", pid)
+			}
+		}
+	}
 }

@@ -64,6 +64,7 @@ func TestRunInteractiveDefaultUsesCSGHubLiteModels(t *testing.T) {
 	output := run.Stdout.(*fakeTerminalBuffer).String()
 	for _, want := range []string{
 		"CSGClaw model provider setup",
+		"Bootstrap agent runtime",
 		"Options:",
 		"csghub-lite - local default at " + modelServer.URL + "/v1",
 		"csghub-lite run <model>",
@@ -452,6 +453,82 @@ func TestRunDebianRegistriesFlagPersistsToConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "[sandbox]") {
 		t.Fatalf("saved config missing [sandbox] section:\n%s", string(data))
+	}
+}
+
+func TestRunAgentRuntimeOpenClawSetsDefaultImageWithoutManagerImageFlag(t *testing.T) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+		if got, want := cfg.Bootstrap.AgentRuntime, config.AgentRuntimeOpenClaw; got != want {
+			t.Fatalf("bootstrap cfg.Bootstrap.AgentRuntime = %q, want %q", got, want)
+		}
+		if got, want := cfg.Bootstrap.ManagerImage, config.DefaultOpenClawManagerImage; got != want {
+			t.Fatalf("bootstrap cfg.Bootstrap.ManagerImage = %q, want %q", got, want)
+		}
+		return bot.Bot{}, nil
+	})
+	defer restore()
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	run := testContext()
+	err := NewCmd().Run(context.Background(), run, []string{
+		"--base-url", "https://api.minimaxi.com/v1/chat/completions",
+		"--api-key", "secret",
+		"--models", "MiniMax-M2.7",
+		"--agent-runtime", "openclaw",
+	}, command.GlobalOptions{Config: configPath})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `manager_image = "`+config.DefaultOpenClawManagerImage+`"`) {
+		t.Fatalf("saved config should set manager_image to DefaultOpenClawManagerImage:\n%s", content)
+	}
+	if !strings.Contains(content, `agent_runtime = "openclaw"`) {
+		t.Fatalf("saved config missing agent_runtime openclaw:\n%s", content)
+	}
+}
+
+func TestRunAgentRuntimeFlagPersistsToConfig(t *testing.T) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+		if got, want := cfg.Bootstrap.AgentRuntime, config.AgentRuntimeOpenClaw; got != want {
+			t.Fatalf("bootstrap cfg.Bootstrap.AgentRuntime = %q, want %q", got, want)
+		}
+		return bot.Bot{}, nil
+	})
+	defer restore()
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	run := testContext()
+	err := NewCmd().Run(context.Background(), run, []string{
+		"--base-url", "https://api.minimaxi.com/v1/chat/completions",
+		"--api-key", "secret",
+		"--models", "MiniMax-M2.7",
+		"--manager-image", "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw-csgclaw:20260331.20260428.1",
+		"--agent-runtime", "openclaw",
+	}, command.GlobalOptions{Config: configPath})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		`manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw-csgclaw:20260331.20260428.1"`,
+		`agent_runtime = "openclaw"`,
+		`base_url = "https://api.minimaxi.com/v1"`,
+		`models = ["MiniMax-M2.7"]`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("saved config missing %q:\n%s", want, content)
+		}
 	}
 }
 

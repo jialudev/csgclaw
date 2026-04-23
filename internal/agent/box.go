@@ -52,27 +52,78 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, modelCfg config.M
 	modelID := modelCfg.ModelID
 	managerBaseURL := resolveManagerBaseURL(s.server)
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, botID)
-	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
-	addFeishuBoxEnvVars(envVars, botID, s.channels)
-	envVars["HOME"] = "/home/picoclaw"
-	spec := sandbox.CreateSpec{
-		Image:      image,
-		Name:       name,
-		Detach:     true,
-		AutoRemove: false,
-		Env:        envVars,
-		Cmd: []string{
-			"/bin/sh",
-			"-c",
-			"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
-		},
+
+	if s.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawConfig(name, botID, s.server, modelCfg); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+		if err := ensureOpenClawCsgSkills(name, botID); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+	} else {
+		if _, err := ensureAgentPicoClawConfig(name, botID, s.server, modelCfg); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
 	}
 
-	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID))
+	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
+	addFeishuBoxEnvVars(envVars, botID, s.channels)
+	var spec sandbox.CreateSpec
+	if s.useOpenClawGateway() {
+		envVars["HOME"] = boxOpenClawUserHome
+		envVars["NODE_ENV"] = "production"
+		spec = sandbox.CreateSpec{
+			Image:      image,
+			Name:       name,
+			Detach:     true,
+			AutoRemove: false,
+			Env:        envVars,
+			Cmd: []string{
+				"/bin/sh",
+				"-c",
+				openClawStartScript(),
+			},
+		}
+	} else {
+		envVars["HOME"] = "/home/picoclaw"
+		spec = sandbox.CreateSpec{
+			Image:      image,
+			Name:       name,
+			Detach:     true,
+			AutoRemove: false,
+			Env:        envVars,
+			Cmd: []string{
+				"/bin/sh",
+				"-c",
+				"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
+			},
+		}
+	}
+
+	projectsRoot, err := ensureAgentProjectsRoot()
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
-	projectsRoot, err := ensureAgentProjectsRoot()
+
+	if s.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawWorkspace(name, workspaceTemplateForAgent(name, botID, true)); err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+		hostOpenRoot, err := agentOpenClawRoot(name)
+		if err != nil {
+			return sandbox.CreateSpec{}, err
+		}
+		spec.Mounts = append(spec.Mounts, sandbox.Mount{
+			HostPath:  hostOpenRoot,
+			GuestPath: boxOpenClawDir,
+		}, sandbox.Mount{
+			HostPath:  projectsRoot,
+			GuestPath: boxOpenClawProjectsDir,
+		})
+		return spec, nil
+	}
+
+	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID, false))
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
@@ -82,7 +133,6 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, modelCfg config.M
 			GuestPath: mount.guestPath,
 		})
 	}
-
 	return spec, nil
 }
 
@@ -102,6 +152,19 @@ func gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot string) []gatewayVolume
 			guestPath: boxProjectsDir,
 		},
 	}
+}
+
+// openClawStartScript launches the OpenClaw gateway. csgclaw-cli is baked into
+// the OpenClaw image (see csgclaw-extension/Dockerfile) under /usr/local/bin,
+// so the agent does not need to fetch or install it at runtime.
+//
+// The "gateway stop" prefix gracefully terminates any pre-existing gateway
+// instance before starting a new one, preventing a port-already-in-use error
+// if this CMD is re-executed on an already-running box.
+func openClawStartScript() string {
+	// Stop any pre-existing gateway (same-VM restart guard), then wait briefly so
+	// the port is fully released before the new process tries to bind it.
+	return "node /app/openclaw.mjs gateway stop 2>/dev/null; sleep 2; exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 18789 1>>" + openClawGatewayLog + " 2>&1"
 }
 
 func gatewayStartCommand(debug bool) ([]string, []string) {

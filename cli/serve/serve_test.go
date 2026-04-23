@@ -200,7 +200,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`[channels.feishu.manager]`,
 		`app_id = "cli_manager"`,
 		`app_secret = "ma**********et"`,
-		"CSGClaw IM is available at: http://example.test/",
+		"CSGClaw IM is available at: http://127.0.0.1:18080/",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, got)
@@ -320,6 +320,7 @@ no_auth = true
 
 [bootstrap]
 manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
+agent_runtime = "picoclaw"
 
 [sandbox]
 debian_registries = ["harbor.opencsg.com", "docker.io"]
@@ -453,6 +454,17 @@ func TestAPIBaseURLPrefersAdvertiseBaseURL(t *testing.T) {
 	want := "http://example.test/base"
 	if got != want {
 		t.Fatalf("apiBaseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestLocalAPIBaseURLIgnoresAdvertiseBaseURL(t *testing.T) {
+	got := localAPIBaseURL(config.ServerConfig{
+		ListenAddr:       "0.0.0.0:19090",
+		AdvertiseBaseURL: "http://host.docker.internal:19090",
+	})
+	want := "http://127.0.0.1:19090"
+	if got != want {
+		t.Fatalf("localAPIBaseURL() = %q, want %q", got, want)
 	}
 }
 

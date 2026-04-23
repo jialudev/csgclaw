@@ -165,13 +165,17 @@ func (s *Service) sandboxRuntimeHome(agentName string) (string, error) {
 }
 
 func sandboxRuntimeHomeWithDirName(agentName, homeDirName string) (string, error) {
-	agentHome, err := agentHomeDir(agentName)
-	if err != nil {
-		return "", err
+	agentName = strings.TrimSpace(agentName)
+	if agentName == "" {
+		return "", fmt.Errorf("agent name is required")
 	}
 	homeDirName = strings.TrimSpace(homeDirName)
 	if homeDirName == "" {
 		homeDirName = config.DefaultSandboxHomeDirName
+	}
+	agentHome, err := agentHomeDir(agentName)
+	if err != nil {
+		return "", err
 	}
 	return filepath.Join(agentHome, homeDirName), nil
 }
