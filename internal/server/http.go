@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -37,7 +38,7 @@ func Run(opts Options) error {
 
 	httpServer := &http.Server{
 		Addr:              opts.ListenAddr,
-		Handler:           mux,
+		Handler:           accessLog(slog.Default(), mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

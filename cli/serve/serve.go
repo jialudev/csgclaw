@@ -704,4 +704,3 @@ func formatModelList(models []string) string {
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
-

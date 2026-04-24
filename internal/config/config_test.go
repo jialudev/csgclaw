@@ -314,9 +314,9 @@ func TestSaveWritesModelsSection(t *testing.T) {
 		Models: models,
 		LLM:    models,
 		Sandbox: SandboxConfig{
-			Provider:          BoxLiteCLIProvider,
-			HomeDirName:       "sandbox-home",
-			BoxLiteCLIPath:    "/opt/boxlite/bin/boxlite",
+			Provider:         BoxLiteCLIProvider,
+			HomeDirName:      "sandbox-home",
+			BoxLiteCLIPath:   "/opt/boxlite/bin/boxlite",
 			DebianRegistries: []string{"registry.a", "docker.io"},
 		},
 		Bootstrap: BootstrapConfig{

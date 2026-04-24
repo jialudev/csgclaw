@@ -100,10 +100,10 @@ func TestRunInteractiveDefaultUsesCSGHubLiteModels(t *testing.T) {
 
 func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
-		Provider:          config.BoxLiteCLIProvider,
-		HomeDirName:       "sandbox-home",
-		BoxLiteCLIPath:    "/opt/boxlite/bin/boxlite",
-		DebianRegistries:  []string{"registry.a"},
+		Provider:         config.BoxLiteCLIProvider,
+		HomeDirName:      "sandbox-home",
+		BoxLiteCLIPath:   "/opt/boxlite/bin/boxlite",
+		DebianRegistries: []string{"registry.a"},
 	})
 	if err != nil {
 		t.Fatalf("sandboxServiceOptions() error = %v", err)
