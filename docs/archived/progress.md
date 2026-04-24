@@ -15,7 +15,7 @@
 
 - CLI 入口集中在 `cmd/csgclaw/main.go`，当前对外入口以 `onboard`、`serve`、`stop` 与资源型子命令为主，内部仍保留 `_serve` 作为守护进程子进程入口。
 - HTTP 路由与 handler 已拆到 `internal/api/`，`internal/server/` 主要负责 server lifecycle、mux 装配与 UI 托管。
-- Agent 能力目前以 `worker` 为中心暴露，核心入口是 `GET/POST /api/v1/workers`。
+- Agent 能力目前以 `worker` 为中心暴露，核心入口是 `GET/POST /api/v1/agents`。
 - IM 能力目前以 `/api/v1/im/*` 命名空间和 SSE 为主，不是目标文档里的扁平 REST + WebSocket 结构。
 - Web UI 静态资源已迁到顶层 `web/` 目录并继续由 Go embed 托管，但还不是独立构建工程。
 
@@ -84,11 +84,11 @@
 ### A04. Agent API 资源模型不一致
 
 - `目标`：`/api/v1/agents` 承载 create/list/get/delete/logs。
-- `现状`：当前只有 `GET/POST /api/v1/workers`，而且语义上偏“创建 worker box + 同步 IM”。
+- `现状`：当前只有 `GET/POST /api/v1/agents`，而且语义上偏“创建 worker box + 同步 IM”。
 - `影响`：这是服务端 API 的核心结构差异，也是 CLI 无法按目标设计推进的直接原因。
 - `推荐增量步骤`：
-  - [x] A04-1 新增 `GET /api/v1/agents`，先直接返回 `svc.List()`，不影响旧 `/workers`。
-  - [x] A04-2 新增 `POST /api/v1/agents`，先复用现有 `CreateRequest`，支持 `role=worker`，把 `/workers` 变成兼容别名。
+  - [x] A04-1 新增 `GET /api/v1/agents`，直接返回 `svc.List()`。
+  - [x] A04-2 新增 `POST /api/v1/agents`，复用现有 `CreateRequest`，支持 `role=worker`。
   - [x] A04-3 新增 `GET /api/v1/agents/:id`，先基于 `svc.Agent(id)` 实现详情查询。
   - [x] A04-4 在 `agent.Service` 中补删除接口，再新增 `DELETE /api/v1/agents/:id`。
   - [ ] A04-5 先定义日志查询接口与占位实现，再补齐真实 log source，避免先把 CLI/API 形态卡死。

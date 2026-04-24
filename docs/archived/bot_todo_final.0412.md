@@ -15,8 +15,8 @@
 
 ## 当前可复用代码
 
-- `internal/api.handleWorkers`
-  - 当前 `/api/v1/workers` 的入口。
+- `internal/api.handleAgents`
+  - 当前 `/api/v1/agents` 的入口。
   - `POST` 会创建 worker agent，并调用 `ensureWorkerIMState` 创建 csgclaw IM user。
   - 只能覆盖 csgclaw IM，不能覆盖 Feishu，也没有 bot 记录。
 
@@ -255,8 +255,8 @@ csgclaw bot create -channel csgclaw --role worker --name alice
 
 注意事项：
 
-- 这一步可以直接复用 `/api/v1/workers` 的 `ensureWorkerIMState` 思路，但逻辑应下沉到 `internal/bot`。
-- 先不要删除 `/api/v1/workers`。
+- 这一步可以直接复用 `/api/v1/agents` 的 `ensureWorkerIMState` 思路，但逻辑应下沉到 `internal/bot`。
+- 后续统一保留 `/api/v1/agents`。
 - `POST /api/v1/bots` 创建成功返回 `201 Created`。
 - 如果 agent 创建成功但 IM user 创建失败，需要明确处理策略。
 
@@ -404,18 +404,18 @@ go test ./...
 make
 ```
 
-### Step 10：让 `/api/v1/workers` 复用 bot service，逐步降级为兼容别名
+### Step 10：让 `/api/v1/agents` 统一复用 bot service / agent service
 
 在 bot API 完成后，整理旧 worker API。
 
 建议策略：
 
-- `GET /api/v1/workers` 可以继续返回 worker agent，保持兼容。
-- `POST /api/v1/workers` 内部改为调用 `internal/bot.Create`，并传入：
+- `GET /api/v1/agents` 返回统一 agent 列表。
+- `POST /api/v1/agents` 内部创建 `role=worker` agent，并传入：
   - `role=worker`
   - `channel=csgclaw`
 - 响应是否保持 agent 对象需要谨慎：
-  - 为了兼容旧调用方，`/api/v1/workers` 可以继续返回 agent。
+  - 统一通过 `/api/v1/agents` 返回 agent。
   - `/api/v1/bots` 返回 bot。
 
 这一步能减少重复逻辑，同时不破坏旧接口。
@@ -464,7 +464,7 @@ csgclaw bot list -channel feishu
 - [x] 7. `POST /api/v1/bots` 支持 `worker + feishu`。
 - [x] 8. `csgclaw bot create`。
 - [x] 9. manager bot 先绑定现有 manager，再评估是否支持创建 manager box。
-- [x] 10. `/api/v1/workers` 复用 bot service，作为兼容入口保留。
+- [x] 10. 统一通过 `/api/v1/agents` 提供 agent 创建与查询。
 - [ ] 11. 更新 API/README 文档和手工验证。
 
 ## 每步完成标准

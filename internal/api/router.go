@@ -24,7 +24,6 @@ func (h *Handler) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/users", h.handleUsers)
 	mux.HandleFunc("/api/v1/users/", h.handleUserByID)
 	mux.HandleFunc("/api/v1/messages", h.handleMessages)
-	mux.HandleFunc("/api/v1/workers", h.handleWorkers)
 	mux.HandleFunc("/api/v1/im/agents/join", h.handleIMAgentJoin)
 	mux.HandleFunc("/api/v1/im/bootstrap", h.handleIMBootstrap)
 	mux.HandleFunc("/api/v1/im/events", h.handleIMEvents)

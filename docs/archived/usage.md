@@ -55,7 +55,7 @@ csgclaw serve
 ### 2.1 创建 Worker
 
 ```http
-POST /api/v1/workers
+POST /api/v1/agents
 Content-Type: application/json
 
 {
@@ -81,7 +81,7 @@ Content-Type: application/json
 ```bash
 curl -X POST \
   -H 'Content-Type: application/json' \
-  http://127.0.0.1:18080/api/v1/workers \
+  http://127.0.0.1:18080/api/v1/agents \
   -d '{
     "id": "u-alice",
     "name": "alice",
@@ -231,7 +231,7 @@ manager_image = "ghcr.io/russellluo/picoclaw:2026.4.14.5"
 最简单的联调顺序：
 
 1. 启动 CSGClaw IM
-2. 调用 `POST /api/v1/workers` 创建一个 worker
+2. 调用 `POST /api/v1/agents` 创建一个 worker
 3. 先用 `curl -N` 连上 `/api/bots/{bot_id}/events`
 4. 在 WebUI 中给 bot 所在私聊发消息，或在群聊里 `@bot`
 5. 确认 SSE 能收到 `event: message`

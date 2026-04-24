@@ -719,19 +719,6 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	return *cloneAgent(&worker), nil
 }
 
-func (s *Service) ListWorkers() []Agent {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	workers := make(map[string]Agent)
-	for id, a := range s.agents {
-		if a.Role == RoleWorker {
-			workers[id] = a
-		}
-	}
-	return sortedAgentsFromMap(workers)
-}
-
 func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {
 	id = strings.TrimSpace(id)
 	if id == "" {

@@ -21,7 +21,7 @@
 ok
 ```
 
-## 2. Worker 接口
+## 2. Agent 接口
 
 统一后的 `worker` 对象字段如下。除 PicoClaw Bot 兼容接口外，`bot / worker / agent` 在 API 和内部结构里都按这一套字段表达：
 
@@ -45,13 +45,13 @@ ok
 
 - `role` 当前常见值：`manager`、`worker`、`agent`
 - `image` 仍可能出现在响应中，用于表示容器镜像；它不是统一身份字段的一部分
-- `/api/v1/workers` 只是 `worker` 视角的路由别名，返回对象仍然是统一的 `agent`
+- 创建 worker agent 请统一使用 `/api/v1/agents`
 
-### `GET /api/v1/workers`
+### `GET /api/v1/agents`
 
-获取全部 `role=worker` 的 agent 列表。
+获取全部 agent 列表。
 
-### `POST /api/v1/workers`
+### `POST /api/v1/agents`
 
 创建 `role=worker` 的 agent，并自动同步到 IM 用户体系。
 

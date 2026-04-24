@@ -351,22 +351,6 @@ func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
 	}
 }
 
-func TestListWorkersFiltersUnifiedAgents(t *testing.T) {
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	svc.agents["u-manager"] = Agent{ID: "u-manager", Name: "manager", Role: RoleManager, CreatedAt: time.Date(2026, 3, 28, 9, 0, 0, 0, time.UTC)}
-	svc.agents["worker-1"] = Agent{ID: "worker-1", Name: "alice", Role: RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)}
-	svc.agents["agent-1"] = Agent{ID: "agent-1", Name: "observer", Role: RoleAgent, CreatedAt: time.Date(2026, 3, 28, 11, 0, 0, 0, time.UTC)}
-
-	workers := svc.ListWorkers()
-	if len(workers) != 1 || workers[0].ID != "worker-1" {
-		t.Fatalf("ListWorkers() = %+v, want only worker agent", workers)
-	}
-}
-
 func TestLoadMigratesLegacyWorkersIntoAgents(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")

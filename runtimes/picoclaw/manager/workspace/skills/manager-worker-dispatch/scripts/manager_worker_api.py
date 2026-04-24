@@ -468,9 +468,6 @@ class CSGClawAPI:
         url: str,
         payload: dict[str, Any] | None,
     ) -> dict[str, Any] | list[dict[str, Any]]:
-        if method == "GET" and path == "/api/v1/workers":
-            return []
-
         if method == "GET" and path == "/api/v1/im/bootstrap":
             return {"current_user_id": "u-admin", "users": [], "rooms": []}
 
