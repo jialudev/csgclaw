@@ -9,6 +9,7 @@ const (
 	EventTypeConversationCreated      = "conversation.created"
 	EventTypeConversationMembersAdded = "conversation.members_added"
 	EventTypeUserCreated              = "user.created"
+	EventTypeUserDeleted              = "user.deleted"
 )
 
 type Event struct {

@@ -325,6 +325,29 @@ func TestDeleteUserRejectsCurrentUser(t *testing.T) {
 	}
 }
 
+func TestDeleteUserPublishesUserDeletedEvent(t *testing.T) {
+	bus := NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	svc := NewServiceFromBootstrapWithBus(Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []User{
+			{ID: "u-admin", Name: "admin", Handle: "admin"},
+			{ID: "u-alice", Name: "Alice", Handle: "alice"},
+		},
+	}, bus)
+
+	if err := svc.DeleteUser("u-alice"); err != nil {
+		t.Fatalf("DeleteUser() error = %v", err)
+	}
+
+	evt := mustReceiveEvent(t, events)
+	if evt.Type != EventTypeUserDeleted || evt.User == nil || evt.User.ID != "u-alice" {
+		t.Fatalf("event = %+v, want user_deleted for u-alice", evt)
+	}
+}
+
 func TestSaveBootstrapSplitsRoomMessagesIntoSessionFiles(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")

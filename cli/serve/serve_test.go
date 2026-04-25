@@ -91,7 +91,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	NewAgentService = func(config.Config) (*agent.Service, error) {
 		return svc, nil
 	}
-	NewIMService = func() (*im.Service, error) {
+	NewIMService = func(*im.Bus) (*im.Service, error) {
 		return nil, nil
 	}
 	wantBotSvc := &bot.Service{}
@@ -405,7 +405,7 @@ func stubServeDependencies(t *testing.T) func() {
 	RunServer = func(server.Options) error { return nil }
 	NewAgentService = func(config.Config) (*agent.Service, error) { return &agent.Service{}, nil }
 	NewBotService = func() (*bot.Service, error) { return &bot.Service{}, nil }
-	NewIMService = func() (*im.Service, error) { return nil, nil }
+	NewIMService = func(*im.Bus) (*im.Service, error) { return nil, nil }
 	NewFeishuService = func(config.Config) (*channel.FeishuService, error) { return nil, nil }
 	NewLLMService = func(config.Config, *agent.Service) (*llm.Service, error) { return nil, nil }
 	EnsureBootstrapManager = func(context.Context, *agent.Service, bool) error { return nil }

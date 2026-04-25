@@ -69,6 +69,7 @@ type AddAgentToConversationRequest struct {
 
 type Service struct {
 	mu            sync.RWMutex
+	bus           *Bus
 	statePath     string
 	currentUserID string
 	users         map[string]User
@@ -100,22 +101,35 @@ func NewService() *Service {
 	return NewServiceFromBootstrap(DefaultBootstrap())
 }
 
+func NewServiceWithBus(bus *Bus) *Service {
+	return NewServiceFromBootstrapWithBus(DefaultBootstrap(), bus)
+}
+
 func NewServiceFromPath(path string) (*Service, error) {
+	return NewServiceFromPathWithBus(path, nil)
+}
+
+func NewServiceFromPathWithBus(path string, bus *Bus) (*Service, error) {
 	state, err := LoadBootstrap(path)
 	if err != nil {
 		return nil, err
 	}
-	svc := NewServiceFromBootstrap(state)
+	svc := NewServiceFromBootstrapWithBus(state, bus)
 	svc.statePath = path
 	return svc, nil
 }
 
 func NewServiceFromBootstrap(state Bootstrap) *Service {
+	return NewServiceFromBootstrapWithBus(state, nil)
+}
+
+func NewServiceFromBootstrapWithBus(state Bootstrap, bus *Bus) *Service {
 	state = normalizeBootstrap(state)
 
 	users := state.Users
 	rooms := state.Rooms
 	svc := &Service{
+		bus:           bus,
 		currentUserID: state.CurrentUserID,
 		users:         make(map[string]User, len(users)),
 		byHandle:      make(map[string]string, len(users)),
@@ -655,13 +669,13 @@ func (s *Service) DeleteUser(userID string) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	user, ok := s.users[userID]
 	if !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("user not found")
 	}
 	if userID == s.currentUserID {
+		s.mu.Unlock()
 		return fmt.Errorf("cannot delete current user")
 	}
 
@@ -693,7 +707,21 @@ func (s *Service) DeleteUser(userID string) error {
 		room.Subtitle = formatRoomSubtitle(len(participants))
 	}
 
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	bus := s.bus
+	s.mu.Unlock()
+
+	if bus != nil {
+		userCopy := user
+		bus.Publish(Event{
+			Type: EventTypeUserDeleted,
+			User: &userCopy,
+		})
+	}
+	return nil
 }
 
 func (s *Service) EnsureAgentUser(req EnsureAgentUserRequest) (User, *Room, error) {

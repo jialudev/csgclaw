@@ -514,6 +514,21 @@ function App() {
   }, [activeConversationId]);
 
   useEffect(() => {
+    if (!data) {
+      return;
+    }
+    if (!activeConversationId) {
+      if (data.rooms.length > 0) {
+        setActiveConversationId(data.rooms[0].id);
+      }
+      return;
+    }
+    if (!data.rooms.some((room) => room.id === activeConversationId)) {
+      setActiveConversationId(data.rooms[0]?.id ?? "");
+    }
+  }, [data, activeConversationId]);
+
+  useEffect(() => {
     const el = textareaRef.current;
     if (!el) {
       return;
@@ -1322,6 +1337,9 @@ function applyIMEvent(current, event) {
   if (event.type === "user.created" && event.user) {
     return upsertUserInData(current, event.user);
   }
+  if (event.type === "user.deleted" && event.user) {
+    return removeUserFromData(current, event.user.id);
+  }
   if (event.type === "message.created" && event.message) {
     return appendMessageToData(current, event.room_id, event.message);
   }
@@ -1371,6 +1389,30 @@ function upsertUserInData(current, user) {
     : [...current.users, user];
   users.sort((a, b) => a.name.localeCompare(b.name));
   return { ...current, users };
+}
+
+function removeUserFromData(current, userID) {
+  if (!current || !userID) {
+    return current;
+  }
+
+  const users = current.users.filter((item) => item.id !== userID);
+  const rooms = current.rooms
+    .map((room) => {
+      const participants = room.participants.filter((id) => id !== userID);
+      const messages = room.messages.filter((message) => message.sender_id !== userID);
+      if (participants.length < 2) {
+        return null;
+      }
+      return {
+        ...room,
+        participants,
+        messages,
+      };
+    })
+    .filter(Boolean);
+
+  return { ...current, users, rooms: sortConversations(rooms) };
 }
 
 function removeConversationFromData(current, conversationID) {

@@ -201,11 +201,12 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	}
 
 	printEffectiveConfig(run, cfg, globals.Output)
+	imBus := im.NewBus()
 	svc, err := NewAgentService(cfg)
 	if err != nil {
 		return err
 	}
-	imSvc, err := NewIMService()
+	imSvc, err := NewIMService(imBus)
 	if err != nil {
 		return err
 	}
@@ -217,18 +218,19 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	if err != nil {
 		return err
 	}
-	return startServer(ctx, cfg, svc, botSvc, imSvc, feishuSvc)
+	return startServer(ctx, cfg, svc, botSvc, imSvc, imBus, feishuSvc)
 }
 
 func serveForeground(ctx context.Context, run *command.Context, cfg config.Config, output string) error {
 	if err := preflightDefaultModelProvider(ctx, cfg); err != nil {
 		return err
 	}
+	imBus := im.NewBus()
 	svc, err := NewAgentService(cfg)
 	if err != nil {
 		return err
 	}
-	imSvc, err := NewIMService()
+	imSvc, err := NewIMService(imBus)
 	if err != nil {
 		return err
 	}
@@ -260,7 +262,7 @@ func serveForeground(ctx context.Context, run *command.Context, cfg config.Confi
 		fmt.Fprintln(run.Stdout, "Open this URL in your browser after startup.")
 	}
 
-	return startServer(ctx, cfg, svc, botSvc, imSvc, feishuSvc)
+	return startServer(ctx, cfg, svc, botSvc, imSvc, imBus, feishuSvc)
 }
 
 func serveBackground(run *command.Context, cfg config.Config, globals command.GlobalOptions, logPath, pidPath string) error {
@@ -318,11 +320,10 @@ func serveBackground(run *command.Context, cfg config.Config, globals command.Gl
 	return nil
 }
 
-func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, feishuSvc *channel.FeishuService) error {
+func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService) error {
 	if err := EnsureBootstrapManager(ctx, svc, false); err != nil {
 		return err
 	}
-	imBus := im.NewBus()
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishuSvc)
 	}
@@ -602,12 +603,12 @@ func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, err
 	return sandboxproviders.ServiceOptions(cfg)
 }
 
-func newIMService() (*im.Service, error) {
+func newIMService(bus *im.Bus) (*im.Service, error) {
 	imStatePath, err := config.DefaultIMStatePath()
 	if err != nil {
 		return nil, err
 	}
-	return im.NewServiceFromPath(imStatePath)
+	return im.NewServiceFromPathWithBus(imStatePath, bus)
 }
 
 func newBotService() (*bot.Service, error) {
