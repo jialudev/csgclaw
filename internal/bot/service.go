@@ -16,6 +16,8 @@ type Service struct {
 	store  *Store
 	agents *agent.Service
 	im     *im.Service
+	imBus  *im.Bus
+	imProv *im.Provisioner
 	feishu *channel.FeishuService
 }
 
@@ -41,9 +43,18 @@ func (s *Service) SetDependencies(agentSvc *agent.Service, imSvc *im.Service, fe
 	}
 	s.agents = agentSvc
 	s.im = imSvc
+	s.imProv = im.NewProvisioner(imSvc, s.imBus)
 	if len(feishuSvc) > 0 {
 		s.feishu = feishuSvc[0]
 	}
+}
+
+func (s *Service) SetIMBus(bus *im.Bus) {
+	if s == nil {
+		return
+	}
+	s.imBus = bus
+	s.imProv = im.NewProvisioner(s.im, bus)
 }
 
 func (s *Service) List(channel, role string) ([]Bot, error) {
@@ -269,7 +280,7 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 		}
 	}
 
-	userID, userCreatedAt, err := s.ensureChannelUser(normalized.Channel, created)
+	userID, userCreatedAt, err := s.ensureChannelUser(ctx, normalized.Channel, created)
 	if err != nil {
 		// TODO: compensate by deleting the agent/box created above once agent deletion
 		// semantics are safe to call from bot creation.
@@ -322,7 +333,7 @@ func (s *Service) createManager(ctx context.Context, normalized CreateRequest, f
 		manager = ensured
 	}
 
-	userID, userCreatedAt, err := s.ensureChannelUser(normalized.Channel, manager)
+	userID, userCreatedAt, err := s.ensureChannelUser(ctx, normalized.Channel, manager)
 	if err != nil {
 		return Bot{}, err
 	}
@@ -366,22 +377,23 @@ func workerAgentID(req CreateRequest) string {
 	return fmt.Sprintf("u-%s", strings.TrimSpace(req.Name))
 }
 
-func (s *Service) ensureChannelUser(channelName string, created agent.Agent) (string, time.Time, error) {
+func (s *Service) ensureChannelUser(ctx context.Context, channelName string, created agent.Agent) (string, time.Time, error) {
 	switch channelName {
 	case string(ChannelCSGClaw):
-		if s.im == nil {
-			return "", time.Time{}, fmt.Errorf("im service is required")
+		if s.imProv == nil {
+			return "", time.Time{}, fmt.Errorf("im provisioner is required")
 		}
-		user, _, err := s.im.EnsureAgentUser(im.EnsureAgentUserRequest{
-			ID:     created.ID,
-			Name:   created.Name,
-			Handle: deriveAgentHandle(created),
-			Role:   displayRole(created.Role),
+		result, err := s.imProv.EnsureAgentUser(ctx, im.AgentIdentity{
+			ID:          created.ID,
+			Name:        created.Name,
+			Description: created.Description,
+			Handle:      deriveAgentHandle(created),
+			Role:        displayRole(created.Role),
 		})
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf("failed to ensure im user: %w", err)
 		}
-		return user.ID, user.CreatedAt, nil
+		return result.User.ID, result.User.CreatedAt, nil
 	case string(ChannelFeishu):
 		if s.feishu == nil {
 			return "", time.Time{}, fmt.Errorf("feishu service is required")

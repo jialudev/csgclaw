@@ -15,6 +15,7 @@ import (
 
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/bot"
+	"csgclaw/internal/channel"
 	appversion "csgclaw/internal/version"
 )
 
@@ -1067,6 +1068,62 @@ func TestExecuteUserListUsesHTTPClient(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	assertTableHasRow(t, stdout.String(), "u-alice", "Alice", "alice", "Worker", "true")
+}
+
+func TestExecuteUserCreateUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/users" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/users")
+			}
+			var body apitypes.CreateUserRequest
+			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if body.ID != "u-alice" || body.Name != "Alice" || body.Handle != "alice" || body.Role != "worker" {
+				t.Fatalf("body = %+v, want csgclaw create user payload", body)
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","handle":"alice","role":"worker","is_online":true}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "user", "create", "--id", "u-alice", "--name", "Alice", "--handle", "alice", "--role", "worker"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "alice", "worker", "true")
+}
+
+func TestExecuteUserCreateUsesFeishuChannelRoute(t *testing.T) {
+	app := &App{
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/users" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/channels/feishu/users")
+			}
+			var body channel.FeishuCreateUserRequest
+			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if body.ID != "ou-alice" || body.Name != "Alice" || body.Handle != "alice" || body.Role != "worker" || body.Avatar != "AL" {
+				t.Fatalf("body = %+v, want feishu create user payload", body)
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"ou-alice","name":"Alice","handle":"alice","role":"worker","avatar":"AL","is_online":true}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "user", "create", "--channel", "feishu", "--id", "ou-alice", "--name", "Alice", "--handle", "alice", "--role", "worker", "--avatar", "AL"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
 }
 
 func TestExecuteUserDeleteUsesHTTPClient(t *testing.T) {

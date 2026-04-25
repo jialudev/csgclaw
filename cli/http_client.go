@@ -70,6 +70,10 @@ func (c *APIClient) CreateFeishuUser(ctx context.Context, req channel.FeishuCrea
 	return created, nil
 }
 
+func (c *APIClient) CreateUser(ctx context.Context, channel string, req apitypes.CreateUserRequest) (apitypes.User, error) {
+	return c.Client.CreateUser(ctx, channel, req)
+}
+
 func (c *APIClient) DeleteUser(ctx context.Context, channel, id string) error {
 	return c.Client.DeleteUser(ctx, channel, id)
 }

@@ -35,6 +35,13 @@ type User struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 }
 
+type CreateUserRequest struct {
+	ID     string `json:"id,omitempty"`
+	Name   string `json:"name"`
+	Handle string `json:"handle,omitempty"`
+	Role   string `json:"role,omitempty"`
+}
+
 type Message struct {
 	ID        string        `json:"id"`
 	SenderID  string        `json:"sender_id"`

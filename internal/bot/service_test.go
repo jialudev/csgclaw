@@ -383,6 +383,10 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServiceWithDependencies() error = %v", err)
 	}
+	bus := im.NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+	svc.SetIMBus(bus)
 
 	got, err := svc.Create(context.Background(), CreateRequest{
 		Name:        "alice",
@@ -408,6 +412,22 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	users := imSvc.ListUsers()
 	if !containsUser(users, "u-alice") {
 		t.Fatalf("users = %+v, want u-alice", users)
+	}
+	rooms := imSvc.ListRooms()
+	if len(rooms) != 1 || !containsParticipant(rooms[0].Participants, "u-admin") || !containsParticipant(rooms[0].Participants, "u-alice") {
+		t.Fatalf("rooms = %+v, want one bootstrap room with admin and u-alice", rooms)
+	}
+	first := mustReceiveEventWithin(t, events, time.Second)
+	if first.Type != im.EventTypeUserCreated || first.User == nil || first.User.ID != "u-alice" {
+		t.Fatalf("first event = %+v, want user_created for u-alice", first)
+	}
+	second := mustReceiveEventWithin(t, events, time.Second)
+	if second.Type != im.EventTypeRoomCreated || second.Room == nil {
+		t.Fatalf("second event = %+v, want room_created with room payload", second)
+	}
+	third := mustReceiveEventWithin(t, events, 2*time.Second)
+	if third.Type != im.EventTypeMessageCreated || third.Message == nil {
+		t.Fatalf("third event = %+v, want bootstrap message", third)
 	}
 	listed, err := svc.List(string(ChannelCSGClaw), "")
 	if err != nil {
@@ -839,6 +859,26 @@ func containsUser(users []im.User, id string) bool {
 		}
 	}
 	return false
+}
+
+func containsParticipant(participants []string, id string) bool {
+	for _, participant := range participants {
+		if participant == id {
+			return true
+		}
+	}
+	return false
+}
+
+func mustReceiveEventWithin(t *testing.T, events <-chan im.Event, timeout time.Duration) im.Event {
+	t.Helper()
+	select {
+	case evt := <-events:
+		return evt
+	case <-time.After(timeout):
+		t.Fatalf("timed out waiting for IM event after %s", timeout)
+		return im.Event{}
+	}
 }
 
 func mustNewBotService(t *testing.T, bots []Bot) *Service {

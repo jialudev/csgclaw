@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/apitypes"
@@ -22,6 +21,7 @@ type Handler struct {
 	botSvc            *bot.Service
 	im                *im.Service
 	imBus             *im.Bus
+	imProvisioner     *im.Provisioner
 	picoclaw          *im.PicoClawBridge
 	feishu            *channel.FeishuService
 	llm               *llm.Service
@@ -80,12 +80,14 @@ func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, im
 func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string, serverNoAuth bool) *Handler {
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishu)
+		botSvc.SetIMBus(imBus)
 	}
 	return &Handler{
 		svc:               svc,
 		botSvc:            botSvc,
 		im:                imSvc,
 		imBus:             imBus,
+		imProvisioner:     im.NewProvisioner(imSvc, imBus),
 		picoclaw:          picoclaw,
 		feishu:            feishu,
 		llm:               llmSvc,
@@ -112,6 +114,7 @@ func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bot service is not configured", http.StatusServiceUnavailable)
 		return
 	}
+	h.botSvc.SetIMBus(h.imBus)
 
 	switch r.Method {
 	case http.MethodGet:
@@ -317,12 +320,18 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.ensureWorkerIMState(created); err != nil {
-		http.Error(w, fmt.Sprintf("agent created but failed to ensure im user: %v", err), http.StatusBadGateway)
-		return
-	}
 
 	writeJSON(w, http.StatusCreated, created)
+}
+
+func (h *Handler) workerIMProvisioner() *im.Provisioner {
+	if h == nil || h.im == nil {
+		return nil
+	}
+	if h.imProvisioner == nil {
+		h.imProvisioner = im.NewProvisioner(h.im, h.imBus)
+	}
+	return h.imProvisioner
 }
 
 func (h *Handler) handleIMAgentJoin(w http.ResponseWriter, r *http.Request) {
@@ -408,6 +417,8 @@ func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, h.im.ListUsers())
+	case http.MethodPost:
+		h.handleCreateUser(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -529,6 +540,50 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	provisioner := h.workerIMProvisioner()
+	if provisioner == nil {
+		http.Error(w, "im provisioner is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req apitypes.CreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	id := strings.TrimSpace(req.ID)
+	name := strings.TrimSpace(req.Name)
+	handle := strings.TrimSpace(req.Handle)
+	role := strings.TrimSpace(req.Role)
+
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if handle == "" {
+		handle = name
+	}
+
+	result, err := provisioner.EnsureAgentUser(r.Context(), im.AgentIdentity{
+		ID:     id,
+		Name:   name,
+		Handle: handle,
+		Role:   role,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result.User)
 }
 
 func (h *Handler) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
@@ -797,52 +852,6 @@ func parseRoomMembersPath(path string) (string, bool) {
 		return parts[0], true
 	}
 	return "", false
-}
-
-func (h *Handler) ensureWorkerIMState(created agent.Agent) error {
-	if h.im == nil {
-		return nil
-	}
-	user, room, err := h.im.EnsureAgentUser(im.EnsureAgentUserRequest{
-		ID:     created.ID,
-		Name:   created.Name,
-		Handle: deriveAgentHandle(created),
-		Role:   displayRole(created.Role),
-	})
-	if err != nil {
-		return err
-	}
-	h.publishUserEvent(im.EventTypeUserCreated, user)
-	if room != nil {
-		h.publishRoomEvent(im.EventTypeRoomCreated, *room)
-		imSvc := h.im
-		roomID := room.ID
-		name := created.Name
-		description := created.Description
-		go func() {
-			time.Sleep(time.Second)
-			message, err := imSvc.CreateMessage(im.CreateMessageRequest{
-				RoomID:   roomID,
-				SenderID: "u-admin",
-				Content:  buildWorkerBootstrapMessage(name, description),
-			})
-			if err != nil {
-				return
-			}
-			h.publishMessageCreated(roomID, message.SenderID, message)
-		}()
-	}
-	return nil
-}
-
-func buildWorkerBootstrapMessage(name, description string) string {
-	name = strings.TrimSpace(name)
-	description = strings.TrimSpace(description)
-	message := fmt.Sprintf("@%s Write this down in your memory: your name is %s.", name, name)
-	if description == "" {
-		return message
-	}
-	return fmt.Sprintf("%s Your responsibility is %s", message, description)
 }
 
 func (h *Handler) publishMessageCreated(conversationID, senderID string, message im.Message) {

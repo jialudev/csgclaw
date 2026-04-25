@@ -87,21 +87,37 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	if len(fs.Args()) != 0 {
 		return fmt.Errorf("user create does not accept positional arguments")
 	}
-	if *channelName != "feishu" {
-		return fmt.Errorf("user create currently supports --channel feishu")
+	if *name == "" {
+		return fmt.Errorf("user create requires --name")
 	}
 
-	var user apitypes.User
-	err := run.APIClient(globals).DoJSON(ctx, http.MethodPost, "/api/v1/channels/feishu/users", channel.FeishuCreateUserRequest{
-		ID:     *id,
-		Name:   *name,
-		Handle: *handle,
-		Role:   *role,
-		Avatar: *avatar,
-	}, &user)
+	var (
+		user apitypes.User
+		err  error
+	)
+	switch *channelName {
+	case "csgclaw":
+		user, err = run.APIClient(globals).CreateUser(ctx, *channelName, apitypes.CreateUserRequest{
+			ID:     *id,
+			Name:   *name,
+			Handle: *handle,
+			Role:   *role,
+		})
+	case "feishu":
+		err = run.APIClient(globals).DoJSON(ctx, http.MethodPost, "/api/v1/channels/feishu/users", channel.FeishuCreateUserRequest{
+			ID:     *id,
+			Name:   *name,
+			Handle: *handle,
+			Role:   *role,
+			Avatar: *avatar,
+		}, &user)
+	default:
+		return fmt.Errorf("unsupported channel %q", *channelName)
+	}
 	if err != nil {
 		return err
 	}
+
 	return command.RenderUsers(globals.Output, run.Stdout, []apitypes.User{user})
 }
 

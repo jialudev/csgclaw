@@ -188,6 +188,18 @@ func (c *Client) ListUsersByChannel(ctx context.Context, channel string) ([]apit
 	return users, nil
 }
 
+func (c *Client) CreateUser(ctx context.Context, channel string, req apitypes.CreateUserRequest) (apitypes.User, error) {
+	var created apitypes.User
+	path, err := channelPath(channel, "users")
+	if err != nil {
+		return apitypes.User{}, err
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, path, req, &created); err != nil {
+		return apitypes.User{}, err
+	}
+	return created, nil
+}
+
 func (c *Client) DeleteUser(ctx context.Context, channel, id string) error {
 	path, err := userDeletePath(channel, id)
 	if err != nil {

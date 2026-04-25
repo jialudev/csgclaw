@@ -77,73 +77,6 @@ func TestDeriveAgentHandle(t *testing.T) {
 	}
 }
 
-func TestEnsureWorkerIMStatePublishesBootstrapRoom(t *testing.T) {
-	bus := im.NewBus()
-	events, cancel := bus.Subscribe()
-	defer cancel()
-
-	srv := &Handler{
-		im:    im.NewService(),
-		imBus: bus,
-	}
-
-	created := agent.Agent{
-		ID:          "u-alice",
-		Name:        "Alice",
-		Description: "test lead",
-		Role:        agent.RoleWorker,
-	}
-	if err := srv.ensureWorkerIMState(created); err != nil {
-		t.Fatalf("ensureWorkerIMState() error = %v", err)
-	}
-
-	first := mustReceiveEvent(t, events)
-	if first.Type != im.EventTypeUserCreated {
-		t.Fatalf("first event.Type = %q, want %q", first.Type, im.EventTypeUserCreated)
-	}
-	if first.User == nil || first.User.ID != "u-alice" {
-		t.Fatalf("first event.User = %+v, want u-alice", first.User)
-	}
-
-	second := mustReceiveEvent(t, events)
-	if second.Type != im.EventTypeRoomCreated {
-		t.Fatalf("second event.Type = %q, want %q", second.Type, im.EventTypeRoomCreated)
-	}
-	if second.Room == nil {
-		t.Fatal("second event.Room = nil, want bootstrap room")
-	}
-	if second.Room.Title != "alice" {
-		t.Fatalf("second event.Room.Title = %q, want %q", second.Room.Title, "alice")
-	}
-	if !containsParticipant(second.Room.Participants, "u-admin") || !containsParticipant(second.Room.Participants, "u-alice") {
-		t.Fatalf("second event.Room.Participants = %+v, want admin and worker", second.Room.Participants)
-	}
-
-	select {
-	case evt := <-events:
-		t.Fatalf("unexpected third event before delay: %q", evt.Type)
-	case <-time.After(150 * time.Millisecond):
-	}
-
-	third := mustReceiveEventWithin(t, events, 2*time.Second)
-	if third.Type != im.EventTypeMessageCreated {
-		t.Fatalf("third event.Type = %q, want %q", third.Type, im.EventTypeMessageCreated)
-	}
-	if third.Message == nil {
-		t.Fatal("third event.Message = nil, want bootstrap message")
-	}
-	if third.Message.SenderID != "u-admin" {
-		t.Fatalf("third event.Message.SenderID = %q, want %q", third.Message.SenderID, "u-admin")
-	}
-	wantContent := "@Alice Write this down in your memory: your name is Alice. Your responsibility is test lead"
-	if third.Message.Content != wantContent {
-		t.Fatalf("third event.Message.Content = %q, want %q", third.Message.Content, wantContent)
-	}
-	if third.Sender == nil || third.Sender.ID != "u-admin" {
-		t.Fatalf("third event.Sender = %+v, want u-admin", third.Sender)
-	}
-}
-
 func TestHandleFeishuUsersCreateAndList(t *testing.T) {
 	srv := &Handler{feishu: channel.NewFeishuService()}
 
@@ -437,6 +370,9 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 
 	agentSvc, _ := mustNewSeededServiceWithPath(t, nil)
 	imSvc := im.NewService()
+	bus := im.NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
 	store, err := bot.NewMemoryStore(nil)
 	if err != nil {
 		t.Fatalf("bot.NewMemoryStore() error = %v", err)
@@ -449,6 +385,7 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 		svc:    agentSvc,
 		botSvc: botSvc,
 		im:     imSvc,
+		imBus:  bus,
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","description":"test lead","role":"worker","channel":"csgclaw"}`))
@@ -510,6 +447,22 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 	}
 	if !containsUser(users, "u-alice") {
 		t.Fatalf("users = %+v, want u-alice", users)
+	}
+	rooms := imSvc.ListRooms()
+	if len(rooms) != 1 || !containsParticipant(rooms[0].Participants, "u-admin") || !containsParticipant(rooms[0].Participants, "u-alice") {
+		t.Fatalf("rooms = %+v, want bootstrap room with admin and u-alice", rooms)
+	}
+	first := mustReceiveIMEvent(t, events)
+	if first.Type != im.EventTypeUserCreated || first.User == nil || first.User.ID != "u-alice" {
+		t.Fatalf("first event = %+v, want user_created for u-alice", first)
+	}
+	second := mustReceiveIMEvent(t, events)
+	if second.Type != im.EventTypeRoomCreated || second.Room == nil {
+		t.Fatalf("second event = %+v, want room_created with room payload", second)
+	}
+	third := mustReceiveIMEventWithin(t, events, 2*time.Second)
+	if third.Type != im.EventTypeMessageCreated || third.Message == nil {
+		t.Fatalf("third event = %+v, want bootstrap message", third)
 	}
 }
 
@@ -929,7 +882,7 @@ func TestHandleAgentsDeleteNotFound(t *testing.T) {
 	}
 }
 
-func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
+func TestHandleAgentsCreateDoesNotProvisionIMState(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
@@ -958,22 +911,16 @@ func TestHandleAgentsCreateUsesWorkerCompatibilityFlow(t *testing.T) {
 	if got.ID != "u-alice" || got.Role != agent.RoleWorker {
 		t.Fatalf("agent = %+v, want worker alias result", got)
 	}
-
-	first := mustReceiveEvent(t, events)
-	second := mustReceiveEvent(t, events)
-	if first.Type != im.EventTypeUserCreated || second.Type != im.EventTypeRoomCreated {
-		t.Fatalf("events = [%q, %q], want user_created then room_created", first.Type, second.Type)
+	if _, ok := srv.im.User("u-alice"); ok {
+		t.Fatal("User(u-alice) ok = true, want false after agent create")
 	}
-
-	third := mustReceiveEventWithin(t, events, 2*time.Second)
-	if third.Type != im.EventTypeMessageCreated {
-		t.Fatalf("third event.Type = %q, want %q", third.Type, im.EventTypeMessageCreated)
+	if rooms := srv.im.ListRooms(); len(rooms) != 0 {
+		t.Fatalf("rooms = %+v, want no IM rooms after agent create", rooms)
 	}
-	if third.Message == nil {
-		t.Fatal("third event.Message = nil, want bootstrap message")
-	}
-	if third.Message.SenderID != "u-admin" {
-		t.Fatalf("third event.Message.SenderID = %q, want %q", third.Message.SenderID, "u-admin")
+	select {
+	case evt := <-events:
+		t.Fatalf("unexpected IM event after agent create: %+v", evt)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 
@@ -1170,6 +1117,105 @@ func TestHandleUsersReturnsUserList(t *testing.T) {
 	}
 	if len(got) != 4 || got[0].Name != "admin" || got[1].Name != "alice" || got[2].Name != "manager" || got[3].Name != "zed" {
 		t.Fatalf("users = %+v, want admin/alice/manager/zed", got)
+	}
+}
+
+func TestHandleUsersCreateProvisionsIMUser(t *testing.T) {
+	bus := im.NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	imSvc := im.NewService()
+	srv := &Handler{
+		im:    imSvc,
+		imBus: bus,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(`{"id":"u-alice","name":"Alice","handle":"alice","role":"worker"}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var got im.User
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-alice" || got.Name != "alice" || got.Handle != "alice" || got.Role != "worker" {
+		t.Fatalf("user = %+v, want normalized provisioned user", got)
+	}
+
+	if _, ok := srv.im.User("u-alice"); !ok {
+		t.Fatal("User(u-alice) ok = false, want true after create")
+	}
+	rooms := srv.im.ListRooms()
+	if len(rooms) != 1 || !containsParticipant(rooms[0].Participants, "u-admin") || !containsParticipant(rooms[0].Participants, "u-alice") {
+		t.Fatalf("rooms = %+v, want one bootstrap room with admin and u-alice", rooms)
+	}
+
+	first := mustReceiveIMEvent(t, events)
+	if first.Type != im.EventTypeUserCreated || first.User == nil || first.User.ID != "u-alice" {
+		t.Fatalf("first event = %+v, want user_created for u-alice", first)
+	}
+	second := mustReceiveIMEvent(t, events)
+	if second.Type != im.EventTypeRoomCreated || second.Room == nil || second.Room.ID == "" {
+		t.Fatalf("second event = %+v, want room_created for bootstrap room", second)
+	}
+}
+
+func TestHandleUsersCreateDefaultsHandleFromName(t *testing.T) {
+	srv := &Handler{im: im.NewService()}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(`{"id":"u-alice","name":"Alice"}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var got im.User
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Handle != "alice" {
+		t.Fatalf("user.Handle = %q, want %q", got.Handle, "alice")
+	}
+}
+
+func TestHandleUsersCreateRejectsMissingID(t *testing.T) {
+	srv := &Handler{im: im.NewService()}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(`{"name":"Alice","handle":"alice"}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func mustReceiveIMEvent(t *testing.T, events <-chan im.Event) im.Event {
+	t.Helper()
+	select {
+	case evt := <-events:
+		return evt
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for IM event")
+		return im.Event{}
+	}
+}
+
+func mustReceiveIMEventWithin(t *testing.T, events <-chan im.Event, timeout time.Duration) im.Event {
+	t.Helper()
+	select {
+	case evt := <-events:
+		return evt
+	case <-time.After(timeout):
+		t.Fatalf("timed out waiting for IM event after %s", timeout)
+		return im.Event{}
 	}
 }
 
