@@ -63,10 +63,6 @@ func (s *Service) List(channel, role string) ([]Bot, error) {
 	}
 
 	all := s.store.List()
-	if strings.TrimSpace(channel) == "" && strings.TrimSpace(role) == "" {
-		return all, nil
-	}
-
 	normalizedChannel := ""
 	if strings.TrimSpace(channel) != "" {
 		normalized, err := NormalizeChannel(channel)
@@ -95,6 +91,7 @@ func (s *Service) List(channel, role string) ([]Bot, error) {
 		}
 		filtered = append(filtered, b)
 	}
+	filtered = s.refreshBotAvailability(filtered)
 	if normalizedChannel == string(ChannelFeishu) {
 		var err error
 		filtered, err = s.appendConfiguredFeishuBots(context.Background(), filtered, normalizedRole)
@@ -103,6 +100,25 @@ func (s *Service) List(channel, role string) ([]Bot, error) {
 		}
 	}
 	return filtered, nil
+}
+
+func (s *Service) refreshBotAvailability(bots []Bot) []Bot {
+	if s == nil || s.agents == nil {
+		return bots
+	}
+	refreshed := make([]Bot, 0, len(bots))
+	for _, b := range bots {
+		agentID := strings.TrimSpace(b.AgentID)
+		b.Available = false
+		if agentID != "" {
+			if a, ok := s.agents.Agent(agentID); ok {
+				b.AgentID = a.ID
+				b.Available = strings.EqualFold(strings.TrimSpace(a.Status), "running")
+			}
+		}
+		refreshed = append(refreshed, b)
+	}
+	return refreshed
 }
 
 func (s *Service) appendConfiguredFeishuBots(ctx context.Context, bots []Bot, role string) ([]Bot, error) {
@@ -152,9 +168,9 @@ func (s *Service) appendConfiguredFeishuBots(ctx context.Context, bots []Bot, ro
 		agentID := ""
 		available := false
 		if s.agents != nil {
-			if _, ok := s.agents.Agent(id); ok {
-				agentID = id
-				available = true
+			if a, ok := s.agents.Agent(id); ok {
+				agentID = a.ID
+				available = strings.EqualFold(strings.TrimSpace(a.Status), "running")
 			}
 		}
 		openID, appName, err := s.feishu.ResolveBotOpenID(ctx, id)

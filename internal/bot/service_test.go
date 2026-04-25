@@ -13,6 +13,7 @@ import (
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
+	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/sandboxtest"
 )
 
@@ -166,10 +167,20 @@ func TestServiceListFeishuIncludesConfiguredUnavailableBots(t *testing.T) {
 			}
 		},
 	)
-	svc, err := NewServiceWithDependencies(store, nil, nil, feishuSvc)
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        "u-worker",
+			Name:      "worker",
+			Role:      agent.RoleWorker,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+			ModelID:   "default-model",
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, agentSvc, nil, feishuSvc)
 	if err != nil {
 		t.Fatalf("NewServiceWithDependencies() error = %v", err)
 	}
+	mustSetAgentRuntimeState(t, "worker", "box-worker", sandbox.StateRunning)
 
 	got, err := svc.List(string(ChannelFeishu), "")
 	if err != nil {
@@ -215,6 +226,7 @@ func TestServiceListFeishuConfiguredBotUsesMatchingAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewServiceWithDependencies() error = %v", err)
 	}
+	mustSetAgentRuntimeState(t, "manager", "box-manager", sandbox.StateRunning)
 
 	got, err := svc.List(string(ChannelFeishu), "")
 	if err != nil {
@@ -225,6 +237,92 @@ func TestServiceListFeishuConfiguredBotUsesMatchingAgent(t *testing.T) {
 	}
 	if got[0].ID != "u-manager" || got[0].AgentID != "u-manager" || !got[0].Available {
 		t.Fatalf("configured bot = %+v, want configured id u-manager bound to available u-manager agent", got[0])
+	}
+}
+
+func TestServiceListStoredBotUnavailableWhenAgentNotRunning(t *testing.T) {
+	store, err := NewMemoryStore([]Bot{
+		{
+			ID:        "u-worker",
+			Name:      "Worker",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelCSGClaw),
+			AgentID:   "u-worker",
+			UserID:    "u-worker",
+			Available: true,
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        "u-worker",
+			Name:      "worker",
+			Role:      agent.RoleWorker,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+			ModelID:   "default-model",
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, agentSvc, nil)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+	mustSetAgentRuntimeState(t, "worker", "box-worker", sandbox.StateStopped)
+
+	got, err := svc.List(string(ChannelCSGClaw), "")
+	if err != nil {
+		t.Fatalf("List(csgclaw) error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List(csgclaw) = %+v, want one stored bot", got)
+	}
+	if got[0].AgentID != "u-worker" || got[0].Available {
+		t.Fatalf("stored bot = %+v, want unavailable bot bound to stopped agent", got[0])
+	}
+}
+
+func TestServiceListWithoutFiltersRefreshesAvailability(t *testing.T) {
+	store, err := NewMemoryStore([]Bot{
+		{
+			ID:        "u-worker",
+			Name:      "Worker",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelCSGClaw),
+			AgentID:   "u-worker",
+			UserID:    "u-worker",
+			Available: true,
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        "u-worker",
+			Name:      "worker",
+			Role:      agent.RoleWorker,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+			ModelID:   "default-model",
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, agentSvc, nil)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+	mustSetAgentRuntimeState(t, "worker", "box-worker", sandbox.StateStopped)
+
+	got, err := svc.List("", "")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List() = %+v, want one stored bot", got)
+	}
+	if got[0].Available {
+		t.Fatalf("stored bot = %+v, want unavailable bot in unfiltered list", got[0])
 	}
 }
 
@@ -970,6 +1068,26 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
 	return svc
+}
+
+func mustSetAgentRuntimeState(t *testing.T, agentName, boxID string, state sandbox.State) {
+	t.Helper()
+
+	agent.ResetTestHooks()
+	t.Cleanup(agent.ResetTestHooks)
+
+	inst := sandboxtest.NewInstance(sandbox.Info{
+		ID:        boxID,
+		Name:      agentName,
+		State:     state,
+		CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+	})
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		if idOrName == agentName || idOrName == boxID {
+			return inst, nil
+		}
+		return nil, sandbox.ErrNotFound
+	})
 }
 
 func sandboxCreateCalls(provider *sandboxtest.Provider) int {
