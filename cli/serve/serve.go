@@ -506,7 +506,6 @@ boxlite_cli_path = %q
 		content = strings.Replace(content, "[sandbox]\n", fmt.Sprintf("[sandbox]\ndebian_registries = %s\n", formatModelList(cfg.Sandbox.Resolved().DebianRegistries)), 1)
 	}
 	content += fmt.Sprintf(`
-
 [models]
 default = %q
 `, llmCfg.DefaultSelector()) + formatEffectiveProviders(llmCfg)

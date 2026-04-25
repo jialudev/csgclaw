@@ -287,6 +287,59 @@ app_secret = "${FEISHU_APP_SECRET}"
 		}
 	}
 }
+
+func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T) {
+	cfg := config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:       "0.0.0.0:18080",
+			AdvertiseBaseURL: "http://192.168.2.52:18080",
+			AccessToken:      "your_access_token",
+			NoAuth:           true,
+		},
+		Models: config.SingleProfileLLM(config.ModelConfig{
+			BaseURL: "http://127.0.0.1:4000",
+			APIKey:  "sk-secret",
+			ModelID: "local.minimax-m2.5",
+		}),
+		Bootstrap: config.BootstrapConfig{
+			ManagerImage: "ghcr.io/russellluo/picoclaw:2026.4.25",
+		},
+		Sandbox: config.SandboxConfig{
+			Provider:         config.BoxLiteCLIProvider,
+			HomeDirName:      config.DefaultSandboxHomeDirName,
+			BoxLiteCLIPath:   config.DefaultBoxLiteCLIPath,
+			DebianRegistries: config.DefaultDebianRegistries,
+		},
+	}
+
+	want := `[server]
+listen_addr = "0.0.0.0:18080"
+advertise_base_url = "http://192.168.2.52:18080"
+access_token = "yo*************en"
+no_auth = true
+
+[bootstrap]
+manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
+
+[sandbox]
+debian_registries = ["harbor.opencsg.com", "docker.io"]
+provider = "boxlite-cli"
+home_dir_name = "boxlite"
+boxlite_cli_path = "boxlite"
+
+[models]
+default = "default.local.minimax-m2.5"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk*****et"
+models = ["local.minimax-m2.5"]
+`
+	if got := formatEffectiveConfig(cfg); got != want {
+		t.Fatalf("formatEffectiveConfig() mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
 		Provider:         config.BoxLiteCLIProvider,
