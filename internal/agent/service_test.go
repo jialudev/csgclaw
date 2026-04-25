@@ -889,6 +889,153 @@ func TestStreamLogsFallsBackToNameAndRefreshesStoredBoxID(t *testing.T) {
 	}
 }
 
+func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
+	rt := &fakeRuntime{}
+	SetTestHooks(func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil }, nil)
+	defer ResetTestHooks()
+
+	var gotKeys []string
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		gotKeys = append(gotKeys, idOrName)
+		if idOrName == "alice" {
+			return &fakeInstance{}, nil
+		}
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
+	}
+	var startCalls int
+	testStartBoxHook = func(_ *Service, _ context.Context, _ sandbox.Instance) error {
+		startCalls++
+		return nil
+	}
+	testBoxInfoHook = func(_ *Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{ID: "box-new", State: sandbox.StateRunning}, nil
+	}
+	defer func() {
+		testGetBoxHook = nil
+		testStartBoxHook = nil
+		testBoxInfoHook = nil
+	}()
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		BoxID:     "box-stale",
+		Role:      RoleWorker,
+		Status:    "stopped",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	got, err := svc.Start(context.Background(), "u-alice")
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if strings.Join(gotKeys, ",") != "box-stale,alice" {
+		t.Fatalf("getBox() keys = %q, want stale box id then name fallback", gotKeys)
+	}
+	if startCalls != 1 {
+		t.Fatalf("startBox() calls = %d, want 1", startCalls)
+	}
+	if got.BoxID != "box-new" {
+		t.Fatalf("Start().BoxID = %q, want %q", got.BoxID, "box-new")
+	}
+	if got.Status != "running" {
+		t.Fatalf("Start().Status = %q, want %q", got.Status, "running")
+	}
+
+	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService(reload) error = %v", err)
+	}
+	persisted, ok := reloaded.Agent("u-alice")
+	if !ok {
+		t.Fatal("reloaded Agent() missing u-alice")
+	}
+	if persisted.BoxID != "box-new" || persisted.Status != "running" {
+		t.Fatalf("reloaded Agent() = %+v, want refreshed box id/status", persisted)
+	}
+}
+
+func TestStopFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
+	rt := &fakeRuntime{}
+	SetTestHooks(func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil }, nil)
+	defer ResetTestHooks()
+
+	var gotKeys []string
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		gotKeys = append(gotKeys, idOrName)
+		if idOrName == "alice" {
+			return &fakeInstance{}, nil
+		}
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
+	}
+	var stopCalls int
+	testStopBoxHook = func(_ *Service, _ context.Context, _ sandbox.Instance, opts sandbox.StopOptions) error {
+		stopCalls++
+		if opts != (sandbox.StopOptions{}) {
+			t.Fatalf("Stop() opts = %+v, want zero value", opts)
+		}
+		return nil
+	}
+	testBoxInfoHook = func(_ *Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{ID: "box-new", State: sandbox.StateStopped}, nil
+	}
+	defer func() {
+		testGetBoxHook = nil
+		testStopBoxHook = nil
+		testBoxInfoHook = nil
+	}()
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		BoxID:     "box-stale",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	got, err := svc.Stop(context.Background(), "u-alice")
+	if err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if strings.Join(gotKeys, ",") != "box-stale,alice" {
+		t.Fatalf("getBox() keys = %q, want stale box id then name fallback", gotKeys)
+	}
+	if stopCalls != 1 {
+		t.Fatalf("stopBox() calls = %d, want 1", stopCalls)
+	}
+	if got.BoxID != "box-new" {
+		t.Fatalf("Stop().BoxID = %q, want %q", got.BoxID, "box-new")
+	}
+	if got.Status != "stopped" {
+		t.Fatalf("Stop().Status = %q, want %q", got.Status, "stopped")
+	}
+
+	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService(reload) error = %v", err)
+	}
+	persisted, ok := reloaded.Agent("u-alice")
+	if !ok {
+		t.Fatal("reloaded Agent() missing u-alice")
+	}
+	if persisted.BoxID != "box-new" || persisted.Status != "stopped" {
+		t.Fatalf("reloaded Agent() = %+v, want refreshed box id/status", persisted)
+	}
+}
+
 func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
 	rt := &fakeRuntime{}
 	SetTestHooks(

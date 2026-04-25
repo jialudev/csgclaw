@@ -143,6 +143,50 @@ func TestExecuteAgentListUsesHTTPClient(t *testing.T) {
 	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main")
 }
 
+func TestExecuteAgentStartUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/agents/u-alice/start" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice/start")
+			}
+			return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "start", "u-alice"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main")
+}
+
+func TestExecuteAgentStopUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/agents/u-alice/stop" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice/stop")
+			}
+			return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","role":"worker","status":"stopped","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "stop", "u-alice"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "stopped", "codex-main")
+}
+
 func TestExecuteBotListUsesDefaultChannel(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{

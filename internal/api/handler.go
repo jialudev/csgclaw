@@ -195,6 +195,24 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if id, ok := strings.CutSuffix(path, "/start"); ok {
+		id = strings.TrimSpace(id)
+		if id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		h.handleAgentStart(w, r, id)
+		return
+	}
+	if id, ok := strings.CutSuffix(path, "/stop"); ok {
+		id = strings.TrimSpace(id)
+		if id == "" || strings.Contains(id, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		h.handleAgentStop(w, r, id)
+		return
+	}
 	if id, ok := strings.CutSuffix(path, "/logs"); ok {
 		id = strings.TrimSpace(id)
 		if id == "" || strings.Contains(id, "/") {
@@ -236,6 +254,48 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleAgentStart(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := h.svc.Reload(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	started, err := h.svc.Start(r.Context(), id)
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, http.StatusOK, started)
+}
+
+func (h *Handler) handleAgentStop(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := h.svc.Reload(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	stopped, err := h.svc.Stop(r.Context(), id)
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, http.StatusOK, stopped)
 }
 
 func (h *Handler) handleAgentLogs(w http.ResponseWriter, r *http.Request, id string) {

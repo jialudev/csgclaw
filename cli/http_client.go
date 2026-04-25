@@ -53,6 +53,22 @@ func (c *APIClient) DeleteAgent(ctx context.Context, id string) error {
 	return c.DoNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+id)
 }
 
+func (c *APIClient) StartAgent(ctx context.Context, id string) (apitypes.Agent, error) {
+	var started apitypes.Agent
+	if err := c.DoJSON(ctx, http.MethodPost, "/api/v1/agents/"+id+"/start", nil, &started); err != nil {
+		return apitypes.Agent{}, err
+	}
+	return started, nil
+}
+
+func (c *APIClient) StopAgent(ctx context.Context, id string) (apitypes.Agent, error) {
+	var stopped apitypes.Agent
+	if err := c.DoJSON(ctx, http.MethodPost, "/api/v1/agents/"+id+"/stop", nil, &stopped); err != nil {
+		return apitypes.Agent{}, err
+	}
+	return stopped, nil
+}
+
 func (c *APIClient) StreamAgentLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {
 	values := url.Values{}
 	if follow {

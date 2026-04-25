@@ -43,6 +43,10 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 		return c.runList(ctx, run, args[1:], globals)
 	case "create":
 		return c.runCreate(ctx, run, args[1:], globals)
+	case "start":
+		return c.runStart(ctx, run, args[1:], globals)
+	case "stop":
+		return c.runStop(ctx, run, args[1:], globals)
 	case "delete":
 		return c.runDelete(ctx, run, args[1:], globals)
 	case "logs":
@@ -59,6 +63,8 @@ func (c cmd) usage(run *command.Context) {
 	run.UsageCommandGroup(c, run.Program+" agent <subcommand> [flags]", []string{
 		"list               List agents",
 		"create             Create an agent",
+		"start <id>         Start an agent",
+		"stop <id>          Stop an agent",
 		"delete <id>        Delete an agent",
 		"logs <id>          Show agent logs",
 		"status [id]        Show one agent or list all agents",
@@ -108,6 +114,42 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		return err
 	}
 	return command.RenderAgents(globals.Output, run.Stdout, []apitypes.Agent{created})
+}
+
+func (c cmd) runStart(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
+	fs := run.NewFlagSet("agent start", run.Program+" agent start <id> [flags]", "Start an agent.")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	rest := fs.Args()
+	if len(rest) != 1 {
+		return fmt.Errorf("agent start requires exactly one id")
+	}
+
+	started, err := startAgent(ctx, run.APIClient(globals), rest[0])
+	if err != nil {
+		return err
+	}
+	return command.RenderAgents(globals.Output, run.Stdout, []apitypes.Agent{started})
+}
+
+func (c cmd) runStop(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
+	fs := run.NewFlagSet("agent stop", run.Program+" agent stop <id> [flags]", "Stop an agent.")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	rest := fs.Args()
+	if len(rest) != 1 {
+		return fmt.Errorf("agent stop requires exactly one id")
+	}
+
+	stopped, err := stopAgent(ctx, run.APIClient(globals), rest[0])
+	if err != nil {
+		return err
+	}
+	return command.RenderAgents(globals.Output, run.Stdout, []apitypes.Agent{stopped})
 }
 
 func (c cmd) runDelete(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
@@ -219,6 +261,22 @@ func createAgent(ctx context.Context, client *apiclient.Client, req apitypes.Cre
 		return apitypes.Agent{}, err
 	}
 	return created, nil
+}
+
+func startAgent(ctx context.Context, client *apiclient.Client, id string) (apitypes.Agent, error) {
+	var started apitypes.Agent
+	if err := client.DoJSON(ctx, http.MethodPost, "/api/v1/agents/"+id+"/start", nil, &started); err != nil {
+		return apitypes.Agent{}, err
+	}
+	return started, nil
+}
+
+func stopAgent(ctx context.Context, client *apiclient.Client, id string) (apitypes.Agent, error) {
+	var stopped apitypes.Agent
+	if err := client.DoJSON(ctx, http.MethodPost, "/api/v1/agents/"+id+"/stop", nil, &stopped); err != nil {
+		return apitypes.Agent{}, err
+	}
+	return stopped, nil
 }
 
 func filterAgentsByStatus(agents []apitypes.Agent, status string) []apitypes.Agent {

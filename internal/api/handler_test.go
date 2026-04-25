@@ -907,6 +907,119 @@ func TestHandleAgentLogsReloadsStateBeforeStreaming(t *testing.T) {
 	}
 }
 
+func TestHandleAgentStartStartsExistingBox(t *testing.T) {
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	agentSvc, statePath := mustNewSeededServiceWithPath(t, []agent.Agent{
+		{ID: "u-alice", Name: "alice", BoxID: "box-old", Role: agent.RoleWorker, Status: "stopped", CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{ID: "u-alice", Name: "alice", BoxID: "box-new", Role: agent.RoleWorker, Status: "stopped", CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+
+	var gotBoxID string
+	var startCalls int
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		gotBoxID = idOrName
+		return sandboxtest.NewInstance(sandbox.Info{ID: idOrName, Name: "alice", State: sandbox.StateStopped}), nil
+	})
+	agent.TestOnlySetStartBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance) error {
+		startCalls++
+		return nil
+	})
+	agent.TestOnlySetBoxInfoHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{ID: "box-new", Name: "alice", State: sandbox.StateRunning}, nil
+	})
+	defer func() {
+		agent.TestOnlySetGetBoxHook(nil)
+		agent.TestOnlySetStartBoxHook(nil)
+		agent.TestOnlySetBoxInfoHook(nil)
+	}()
+
+	srv := &Handler{svc: agentSvc}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/u-alice/start", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if gotBoxID != "box-new" {
+		t.Fatalf("getBox() idOrName = %q, want %q", gotBoxID, "box-new")
+	}
+	if startCalls != 1 {
+		t.Fatalf("startBox() calls = %d, want 1", startCalls)
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Status != "running" || got.BoxID != "box-new" {
+		t.Fatalf("agent = %+v, want running box-new", got)
+	}
+}
+
+func TestHandleAgentStopStopsExistingBox(t *testing.T) {
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	agentSvc, statePath := mustNewSeededServiceWithPath(t, []agent.Agent{
+		{ID: "u-alice", Name: "alice", BoxID: "box-old", Role: agent.RoleWorker, Status: "running", CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{ID: "u-alice", Name: "alice", BoxID: "box-new", Role: agent.RoleWorker, Status: "running", CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+
+	var gotBoxID string
+	var stopCalls int
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		gotBoxID = idOrName
+		return sandboxtest.NewInstance(sandbox.Info{ID: idOrName, Name: "alice", State: sandbox.StateRunning}), nil
+	})
+	agent.TestOnlySetStopBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance, opts sandbox.StopOptions) error {
+		stopCalls++
+		if opts != (sandbox.StopOptions{}) {
+			t.Fatalf("Stop() opts = %+v, want zero value", opts)
+		}
+		return nil
+	})
+	agent.TestOnlySetBoxInfoHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{ID: "box-new", Name: "alice", State: sandbox.StateStopped}, nil
+	})
+	defer func() {
+		agent.TestOnlySetGetBoxHook(nil)
+		agent.TestOnlySetStopBoxHook(nil)
+		agent.TestOnlySetBoxInfoHook(nil)
+	}()
+
+	srv := &Handler{svc: agentSvc}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/u-alice/stop", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if gotBoxID != "box-new" {
+		t.Fatalf("getBox() idOrName = %q, want %q", gotBoxID, "box-new")
+	}
+	if stopCalls != 1 {
+		t.Fatalf("stopBox() calls = %d, want 1", stopCalls)
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Status != "stopped" || got.BoxID != "box-new" {
+		t.Fatalf("agent = %+v, want stopped box-new", got)
+	}
+}
+
 func TestHandleAgentsDeleteRemovesAgent(t *testing.T) {
 	svc := mustNewSeededService(t, []agent.Agent{
 		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},

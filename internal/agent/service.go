@@ -49,6 +49,7 @@ var (
 	testEnsureRuntimeAtHomeHook func(*Service, string) (sandbox.Runtime, error)
 	testGetBoxHook              func(*Service, context.Context, sandbox.Runtime, string) (sandbox.Instance, error)
 	testStartBoxHook            func(*Service, context.Context, sandbox.Instance) error
+	testStopBoxHook             func(*Service, context.Context, sandbox.Instance, sandbox.StopOptions) error
 	testBoxInfoHook             func(*Service, context.Context, sandbox.Instance) (sandbox.Info, error)
 	testCloseBoxHook            func(*Service, sandbox.Instance) error
 	testCloseRuntimeHook        func(*Service, string, sandbox.Runtime) error
@@ -80,6 +81,7 @@ func ResetTestHooks() {
 	testEnsureRuntimeAtHomeHook = nil
 	testGetBoxHook = nil
 	testStartBoxHook = nil
+	testStopBoxHook = nil
 	testBoxInfoHook = nil
 	testCloseBoxHook = nil
 	testCloseRuntimeHook = nil
@@ -106,6 +108,21 @@ func TestOnlySetSandboxProvider(provider sandbox.Provider) func() {
 // TestOnlySetGetBoxHook installs a test hook for box lookup.
 func TestOnlySetGetBoxHook(hook func(*Service, context.Context, sandbox.Runtime, string) (sandbox.Instance, error)) {
 	testGetBoxHook = hook
+}
+
+// TestOnlySetStartBoxHook installs a test hook for starting a box.
+func TestOnlySetStartBoxHook(hook func(*Service, context.Context, sandbox.Instance) error) {
+	testStartBoxHook = hook
+}
+
+// TestOnlySetStopBoxHook installs a test hook for stopping a box.
+func TestOnlySetStopBoxHook(hook func(*Service, context.Context, sandbox.Instance, sandbox.StopOptions) error) {
+	testStopBoxHook = hook
+}
+
+// TestOnlySetBoxInfoHook installs a test hook for reading box info.
+func TestOnlySetBoxInfoHook(hook func(*Service, context.Context, sandbox.Instance) (sandbox.Info, error)) {
+	testBoxInfoHook = hook
 }
 
 // TestOnlySetRunBoxCommandHook installs a test hook for command execution inside a box.
@@ -578,6 +595,150 @@ func (s *Service) refreshAgentBoxID(id string, got Agent, resolvedKey string, bo
 	current.BoxID = info.ID
 	s.agents[id] = current
 	return s.saveLocked()
+}
+
+func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Agent{}, fmt.Errorf("agent id is required")
+	}
+
+	got, ok := s.Agent(id)
+	if !ok {
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+
+	rt, err := s.ensureRuntime(got.Name)
+	if err != nil {
+		return Agent{}, err
+	}
+	runtimeHome, err := s.sandboxRuntimeHome(got.Name)
+	if err != nil {
+		return Agent{}, err
+	}
+	defer func() {
+		_ = s.closeRuntime(runtimeHome, rt)
+	}()
+
+	box, resolvedKey, err := s.resolveAgentBox(ctx, rt, got)
+	if err != nil {
+		if sandbox.IsNotFound(err) {
+			return Agent{}, fmt.Errorf("agent %q not found", id)
+		}
+		return Agent{}, err
+	}
+	defer func() {
+		_ = s.closeBox(box)
+	}()
+
+	if err := s.startBox(ctx, box); err != nil {
+		return Agent{}, fmt.Errorf("start agent box: %w", err)
+	}
+	info, err := s.boxInfo(ctx, box)
+	if err != nil {
+		return Agent{}, fmt.Errorf("read agent box info: %w", err)
+	}
+
+	s.mu.Lock()
+	current, ok := s.agents[id]
+	if !ok {
+		s.mu.Unlock()
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+	if strings.TrimSpace(info.ID) != "" {
+		current.BoxID = info.ID
+	}
+	if info.State != "" {
+		current.Status = string(info.State)
+	}
+	s.agents[id] = current
+	err = s.saveLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return Agent{}, err
+	}
+
+	if err := s.refreshAgentBoxID(id, got, resolvedKey, box); err != nil {
+		return Agent{}, err
+	}
+
+	started, ok := s.Agent(id)
+	if !ok {
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+	return started, nil
+}
+
+func (s *Service) Stop(ctx context.Context, id string) (Agent, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Agent{}, fmt.Errorf("agent id is required")
+	}
+
+	got, ok := s.Agent(id)
+	if !ok {
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+
+	rt, err := s.ensureRuntime(got.Name)
+	if err != nil {
+		return Agent{}, err
+	}
+	runtimeHome, err := s.sandboxRuntimeHome(got.Name)
+	if err != nil {
+		return Agent{}, err
+	}
+	defer func() {
+		_ = s.closeRuntime(runtimeHome, rt)
+	}()
+
+	box, resolvedKey, err := s.resolveAgentBox(ctx, rt, got)
+	if err != nil {
+		if sandbox.IsNotFound(err) {
+			return Agent{}, fmt.Errorf("agent %q not found", id)
+		}
+		return Agent{}, err
+	}
+	defer func() {
+		_ = s.closeBox(box)
+	}()
+
+	if err := s.stopBox(ctx, box, sandbox.StopOptions{}); err != nil {
+		return Agent{}, fmt.Errorf("stop agent box: %w", err)
+	}
+	info, err := s.boxInfo(ctx, box)
+	if err != nil {
+		return Agent{}, fmt.Errorf("read agent box info: %w", err)
+	}
+
+	s.mu.Lock()
+	current, ok := s.agents[id]
+	if !ok {
+		s.mu.Unlock()
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+	if strings.TrimSpace(info.ID) != "" {
+		current.BoxID = info.ID
+	}
+	if info.State != "" {
+		current.Status = string(info.State)
+	}
+	s.agents[id] = current
+	err = s.saveLocked()
+	s.mu.Unlock()
+	if err != nil {
+		return Agent{}, err
+	}
+
+	if err := s.refreshAgentBoxID(id, got, resolvedKey, box); err != nil {
+		return Agent{}, err
+	}
+
+	stopped, ok := s.Agent(id)
+	if !ok {
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+	return stopped, nil
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {

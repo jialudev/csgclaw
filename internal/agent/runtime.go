@@ -89,6 +89,13 @@ func (s *Service) startBox(ctx context.Context, box sandbox.Instance) error {
 	return box.Start(ctx)
 }
 
+func (s *Service) stopBox(ctx context.Context, box sandbox.Instance, opts sandbox.StopOptions) error {
+	if testStopBoxHook != nil {
+		return testStopBoxHook(s, ctx, box, opts)
+	}
+	return box.Stop(ctx, opts)
+}
+
 func (s *Service) boxInfo(ctx context.Context, box sandbox.Instance) (sandbox.Info, error) {
 	if testBoxInfoHook != nil {
 		return testBoxInfoHook(s, ctx, box)
