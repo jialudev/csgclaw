@@ -77,7 +77,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	title := fs.String("title", "", "room title")
 	description := fs.String("description", "", "room description")
 	creatorID := fs.String("creator-id", "", "room creator id")
-	participantIDs := fs.String("participant-ids", "", "comma-separated participant ids")
+	memberIDs := fs.String("member-ids", "", "comma-separated member ids")
 	locale := fs.String("locale", "", "room locale")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -87,11 +87,11 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	}
 
 	room, err := run.APIClient(globals).CreateRoomByChannel(ctx, *channelName, apitypes.CreateRoomRequest{
-		Title:          *title,
-		Description:    *description,
-		CreatorID:      *creatorID,
-		ParticipantIDs: command.ParseCSV(*participantIDs),
-		Locale:         *locale,
+		Title:       *title,
+		Description: *description,
+		CreatorID:   *creatorID,
+		MemberIDs:   command.ParseCSV(*memberIDs),
+		Locale:      *locale,
 	})
 	if err != nil {
 		return err

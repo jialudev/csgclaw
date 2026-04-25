@@ -337,10 +337,10 @@ func (s *FeishuService) DeleteUser(userID string) error {
 	delete(s.byHandle, strings.ToLower(user.Handle))
 
 	for id, room := range s.rooms {
-		participants := make([]string, 0, len(room.Participants))
-		for _, participantID := range room.Participants {
-			if participantID != userID {
-				participants = append(participants, participantID)
+		members := make([]string, 0, len(room.Members))
+		for _, memberID := range room.Members {
+			if memberID != userID {
+				members = append(members, memberID)
 			}
 		}
 
@@ -351,14 +351,14 @@ func (s *FeishuService) DeleteUser(userID string) error {
 			}
 		}
 
-		if len(participants) < 2 {
+		if len(members) < 2 {
 			delete(s.rooms, id)
 			continue
 		}
 
-		room.Participants = participants
+		room.Members = members
 		room.Messages = messages
-		room.Subtitle = formatMembers(len(participants))
+		room.Subtitle = formatMembers(len(members))
 	}
 
 	return nil
@@ -429,8 +429,8 @@ func (s *FeishuService) CreateRoom(req im.CreateRoomRequest) (im.Room, error) {
 	if adminOpenID == "" {
 		return im.Room{}, fmt.Errorf("feishu admin_open_id is required")
 	}
-	participants := normalizeFeishuParticipants(creatorID, req.ParticipantIDs)
-	memberIDs := participants[1:]
+	members := normalizeFeishuMembers(creatorID, req.MemberIDs)
+	memberIDs := members[1:]
 	description := strings.TrimSpace(req.Description)
 
 	created, err := s.createChat(context.Background(), app, FeishuCreateChatRequest{
@@ -454,12 +454,12 @@ func (s *FeishuService) CreateRoom(req im.CreateRoomRequest) (im.Room, error) {
 	}
 
 	room := im.Room{
-		ID:           chatID,
-		Title:        title,
-		Subtitle:     formatMembers(len(participants)),
-		Description:  description,
-		Participants: participants,
-		Messages:     nil,
+		ID:          chatID,
+		Title:       title,
+		Subtitle:    formatMembers(len(members)),
+		Description: description,
+		Members:     members,
+		Messages:    nil,
 	}
 
 	s.mu.Lock()
@@ -742,14 +742,14 @@ func defaultFeishuListChats(ctx context.Context, app FeishuAppConfig) ([]im.Room
 				title = chatID
 			}
 			description := strings.TrimSpace(larkcore.StringValue(item.Description))
-			participants := normalizeNonEmptyStrings([]string{larkcore.StringValue(item.OwnerId)})
+			members := normalizeNonEmptyStrings([]string{larkcore.StringValue(item.OwnerId)})
 			rooms = append(rooms, im.Room{
-				ID:           chatID,
-				Title:        title,
-				Subtitle:     formatMembers(len(participants)),
-				Description:  description,
-				Participants: participants,
-				Messages:     nil,
+				ID:          chatID,
+				Title:       title,
+				Subtitle:    formatMembers(len(members)),
+				Description: description,
+				Members:     members,
+				Messages:    nil,
 			})
 		}
 
@@ -1089,9 +1089,9 @@ func (s *FeishuService) ListRooms() ([]im.Room, error) {
 		if !ok {
 			continue
 		}
-		if len(rooms[i].Participants) == 0 {
-			rooms[i].Participants = append([]string(nil), local.Participants...)
-			rooms[i].Subtitle = formatMembers(len(rooms[i].Participants))
+		if len(rooms[i].Members) == 0 {
+			rooms[i].Members = append([]string(nil), local.Members...)
+			rooms[i].Subtitle = formatMembers(len(rooms[i].Members))
 		}
 		rooms[i].Messages = append([]im.Message(nil), local.Messages...)
 	}
@@ -1152,7 +1152,7 @@ func (s *FeishuService) AddRoomMembers(req im.AddRoomMembersRequest) (im.Room, e
 	room, ok := s.rooms[roomID]
 	existing := make(map[string]struct{})
 	if ok {
-		for _, userID := range room.Participants {
+		for _, userID := range room.Members {
 			existing[userID] = struct{}{}
 		}
 	}
@@ -1182,8 +1182,8 @@ func (s *FeishuService) AddRoomMembers(req im.AddRoomMembersRequest) (im.Room, e
 		return im.Room{}, fmt.Errorf("no new users to invite")
 	}
 	appOwnerID := strings.TrimSpace(req.InviterID)
-	if appOwnerID == "" && room != nil && len(room.Participants) > 0 {
-		appOwnerID = room.Participants[0]
+	if appOwnerID == "" && room != nil && len(room.Members) > 0 {
+		appOwnerID = room.Members[0]
 	}
 	app, err := s.appConfigForCreatorLocked(appOwnerID)
 	if err != nil {
@@ -1206,22 +1206,22 @@ func (s *FeishuService) AddRoomMembers(req im.AddRoomMembersRequest) (im.Room, e
 	room, ok = s.rooms[roomID]
 	if !ok {
 		return im.Room{
-			ID:           roomID,
-			Subtitle:     formatMembers(len(newMembers)),
-			Participants: append([]string(nil), newMembers...),
+			ID:       roomID,
+			Subtitle: formatMembers(len(newMembers)),
+			Members:  append([]string(nil), newMembers...),
 		}, nil
 	}
-	existing = make(map[string]struct{}, len(room.Participants))
-	for _, userID := range room.Participants {
+	existing = make(map[string]struct{}, len(room.Members))
+	for _, userID := range room.Members {
 		existing[userID] = struct{}{}
 	}
 	for _, userID := range newMembers {
 		if _, ok := existing[userID]; ok {
 			continue
 		}
-		room.Participants = append(room.Participants, userID)
+		room.Members = append(room.Members, userID)
 	}
-	room.Subtitle = formatMembers(len(room.Participants))
+	room.Subtitle = formatMembers(len(room.Members))
 	return cloneRoom(*room), nil
 }
 
@@ -1259,10 +1259,10 @@ func (s *FeishuService) ListRoomMembers(roomID string) ([]im.User, error) {
 	return users, nil
 }
 
-func (s *FeishuService) normalizeParticipantsLocked(creatorID string, participantIDs []string) ([]string, error) {
+func (s *FeishuService) normalizeMembersLocked(creatorID string, memberIDs []string) ([]string, error) {
 	seen := map[string]struct{}{creatorID: {}}
-	participants := []string{creatorID}
-	for _, userID := range participantIDs {
+	members := []string{creatorID}
+	for _, userID := range memberIDs {
 		userID = strings.TrimSpace(userID)
 		if userID == "" {
 			continue
@@ -1274,9 +1274,9 @@ func (s *FeishuService) normalizeParticipantsLocked(creatorID string, participan
 			continue
 		}
 		seen[userID] = struct{}{}
-		participants = append(participants, userID)
+		members = append(members, userID)
 	}
-	return participants, nil
+	return members, nil
 }
 
 func (s *FeishuService) appConfigForCreator(creatorID string) (FeishuAppConfig, error) {
@@ -1361,10 +1361,10 @@ func normalizeNonEmptyStrings(values []string) []string {
 	return normalized
 }
 
-func normalizeFeishuParticipants(creatorID string, participantIDs []string) []string {
+func normalizeFeishuMembers(creatorID string, memberIDs []string) []string {
 	seen := map[string]struct{}{creatorID: {}}
-	participants := []string{creatorID}
-	for _, userID := range participantIDs {
+	members := []string{creatorID}
+	for _, userID := range memberIDs {
 		userID = strings.TrimSpace(userID)
 		if userID == "" {
 			continue
@@ -1373,9 +1373,9 @@ func normalizeFeishuParticipants(creatorID string, participantIDs []string) []st
 			continue
 		}
 		seen[userID] = struct{}{}
-		participants = append(participants, userID)
+		members = append(members, userID)
 	}
-	return participants
+	return members
 }
 
 func feishuRequestUUID() string {
@@ -1407,7 +1407,7 @@ func normalizeFeishuUser(user im.User) im.User {
 }
 
 func cloneRoom(room im.Room) im.Room {
-	room.Participants = append([]string(nil), room.Participants...)
+	room.Members = append([]string(nil), room.Members...)
 	room.Messages = append([]im.Message(nil), room.Messages...)
 	return room
 }

@@ -138,7 +138,7 @@ func mentionsForBot(mentions []string, botID string) []string {
 }
 
 func chatTypeForRoom(room Room) string {
-	if len(room.Participants) <= 2 {
+	if len(room.Members) <= 2 {
 		return "direct"
 	}
 	return "group"

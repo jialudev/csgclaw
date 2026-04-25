@@ -186,7 +186,7 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
   "title": "Frontend Sync",
   "description": "Discuss frontend tasks",
   "creator_id": "u-admin",
-  "participant_ids": ["u-manager", "u-alice"],
+  "member_ids": ["u-manager", "u-alice"],
   "locale": "zh-CN"
 }
 ```
@@ -199,7 +199,7 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
   "title": "Frontend Sync",
   "subtitle": "3 members",
   "description": "Discuss frontend tasks",
-  "participants": ["u-admin", "u-manager", "u-alice"],
+  "members": ["u-admin", "u-manager", "u-alice"],
   "messages": [
     {
       "id": "msg-1743139200000000002",
@@ -214,7 +214,7 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
 说明：
 
 - `title`、`creator_id` 必填
-- `participant_ids` 会和 `creator_id` 合并去重
+- `member_ids` 会和 `creator_id` 合并去重
 - 返回里的 `subtitle` 会根据人数自动生成
 
 ### `POST /api/v1/im/conversations/members`

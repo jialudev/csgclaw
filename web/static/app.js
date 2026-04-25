@@ -42,7 +42,7 @@ const messages = {
     createRoom: "创建房间",
     deleteRoom: "删除房间",
     conversationLabel: "房间",
-    participants: "成员",
+    members: "成员",
     mentionBadge: "@ 提及",
     inviteMembers: "邀请成员",
     inputPlaceholder: "输入消息，使用 @ 选择成员",
@@ -113,7 +113,7 @@ const messages = {
     createRoom: "New Room",
     deleteRoom: "Delete Room",
     conversationLabel: "Room",
-    participants: "participants",
+    members: "members",
     mentionBadge: "@ mention",
     inviteMembers: "Invite Members",
     inputPlaceholder: "Type a message and use @ to mention members",
@@ -478,7 +478,7 @@ function App() {
     if (!data || !mentionState) {
       return [];
     }
-    const allowed = new Set(activeConversation?.participants ?? []);
+    const allowed = new Set(activeConversation?.members ?? []);
     return data.users
       .filter((user) => allowed.has(user.id))
       .filter((user) => user.handle.toLowerCase().includes(mentionState.query.toLowerCase()) || user.name.toLowerCase().includes(mentionState.query.toLowerCase()))
@@ -583,7 +583,7 @@ function App() {
         title: roomTitle,
         description: roomDescription,
         creator_id: data.current_user_id,
-        participant_ids: roomMemberIDs,
+        member_ids: roomMemberIDs,
         locale,
       }),
     });
@@ -709,10 +709,10 @@ function App() {
 
   const createRoomCandidates = data.users.filter((user) => user.id !== data.current_user_id);
   const inviteCandidates = activeConversation
-    ? data.users.filter((user) => !activeConversation.participants.includes(user.id))
+    ? data.users.filter((user) => !activeConversation.members.includes(user.id))
     : [];
   const activeConversationMembers = activeConversation
-    ? activeConversation.participants.map((id) => usersById.get(id)).filter(Boolean)
+    ? activeConversation.members.map((id) => usersById.get(id)).filter(Boolean)
     : [];
   return html`
     <${React.Fragment}>
@@ -1296,12 +1296,12 @@ function userDisplayName(userID, usersById) {
 }
 
 function resolveConversationUser(conversation, currentUserID, usersById) {
-  const otherID = conversation.participants.find((id) => id !== currentUserID) ?? currentUserID;
+  const otherID = conversation.members.find((id) => id !== currentUserID) ?? currentUserID;
   return usersById.get(otherID);
 }
 
 function isTwoPersonConversation(conversation) {
-  return (conversation?.participants?.length ?? 0) === 2;
+  return (conversation?.members?.length ?? 0) === 2;
 }
 
 function getConversationSubtitle(conversation, currentUserID, usersById, locale, t) {
@@ -1399,14 +1399,14 @@ function removeUserFromData(current, userID) {
   const users = current.users.filter((item) => item.id !== userID);
   const rooms = current.rooms
     .map((room) => {
-      const participants = room.participants.filter((id) => id !== userID);
+      const members = room.members.filter((id) => id !== userID);
       const messages = room.messages.filter((message) => message.sender_id !== userID);
-      if (participants.length < 2) {
+      if (members.length < 2) {
         return null;
       }
       return {
         ...room,
-        participants,
+        members,
         messages,
       };
     })

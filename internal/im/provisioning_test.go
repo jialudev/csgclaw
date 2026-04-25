@@ -43,7 +43,7 @@ func TestProvisionerEnsureAgentUserPublishesBootstrapRoom(t *testing.T) {
 		t.Fatalf("second event.Room.Title = %q, want %q", second.Room.Title, "alice")
 	}
 	if !containsUserIDInRoom(*second.Room, "u-admin") || !containsUserIDInRoom(*second.Room, "u-alice") {
-		t.Fatalf("second event.Room.Participants = %+v, want admin and worker", second.Room.Participants)
+		t.Fatalf("second event.Room.Members = %+v, want admin and worker", second.Room.Members)
 	}
 
 	select {

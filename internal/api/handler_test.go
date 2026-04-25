@@ -162,7 +162,7 @@ func TestHandleFeishuRoomsMembers(t *testing.T) {
 	}
 }
 
-func TestHandleRoomsMembersListsCsgclawParticipants(t *testing.T) {
+func TestHandleRoomsMembersListsCsgclawMembers(t *testing.T) {
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
 		Users: []im.User{
@@ -170,7 +170,7 @@ func TestHandleRoomsMembersListsCsgclawParticipants(t *testing.T) {
 			{ID: "u-alice", Name: "Alice", Handle: "alice", Role: "worker"},
 		},
 		Rooms: []im.Room{
-			{ID: "room-1", Title: "Ops", Participants: []string{"u-admin", "u-alice"}},
+			{ID: "room-1", Title: "Ops", Members: []string{"u-admin", "u-alice"}},
 		},
 	})
 	srv := &Handler{im: imSvc}
@@ -186,11 +186,11 @@ func TestHandleRoomsMembersListsCsgclawParticipants(t *testing.T) {
 		t.Fatalf("decode members: %v", err)
 	}
 	if len(members) != 2 || members[0].ID != "u-admin" || members[1].ID != "u-alice" {
-		t.Fatalf("members = %+v, want room participants", members)
+		t.Fatalf("members = %+v, want room members", members)
 	}
 }
 
-func TestHandleRoomsMembersAddsCsgclawParticipant(t *testing.T) {
+func TestHandleRoomsMembersAddsCsgclawMember(t *testing.T) {
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
 		Users: []im.User{
@@ -198,7 +198,7 @@ func TestHandleRoomsMembersAddsCsgclawParticipant(t *testing.T) {
 			{ID: "u-alice", Name: "Alice", Handle: "alice", Role: "worker"},
 		},
 		Rooms: []im.Room{
-			{ID: "room-1", Title: "Ops", Participants: []string{"u-admin"}},
+			{ID: "room-1", Title: "Ops", Members: []string{"u-admin"}},
 		},
 	})
 	srv := &Handler{im: imSvc}
@@ -214,8 +214,8 @@ func TestHandleRoomsMembersAddsCsgclawParticipant(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&room); err != nil {
 		t.Fatalf("decode room: %v", err)
 	}
-	if len(room.Participants) != 2 || room.Participants[1] != "u-alice" {
-		t.Fatalf("participants = %+v, want u-admin and u-alice", room.Participants)
+	if len(room.Members) != 2 || room.Members[1] != "u-alice" {
+		t.Fatalf("members = %+v, want u-admin and u-alice", room.Members)
 	}
 }
 
@@ -449,7 +449,7 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 		t.Fatalf("users = %+v, want u-alice", users)
 	}
 	rooms := imSvc.ListRooms()
-	if len(rooms) != 1 || !containsParticipant(rooms[0].Participants, "u-admin") || !containsParticipant(rooms[0].Participants, "u-alice") {
+	if len(rooms) != 1 || !containsMember(rooms[0].Members, "u-admin") || !containsMember(rooms[0].Members, "u-alice") {
 		t.Fatalf("rooms = %+v, want bootstrap room with admin and u-alice", rooms)
 	}
 	first := mustReceiveIMEvent(t, events)
@@ -687,10 +687,10 @@ func TestHandleBotByIDDeleteRemovesCSGClawUser(t *testing.T) {
 		},
 		Rooms: []im.Room{
 			{
-				ID:           "room-1",
-				Title:        "Alice",
-				Participants: []string{"u-admin", "u-alice"},
-				Messages:     []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
+				ID:       "room-1",
+				Title:    "Alice",
+				Members:  []string{"u-admin", "u-alice"},
+				Messages: []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
 			},
 		},
 	})
@@ -1018,9 +1018,9 @@ func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
 			},
 			Rooms: []im.Room{
 				{
-					ID:           "room-1",
-					Title:        "Room One",
-					Participants: []string{"u-admin"},
+					ID:      "room-1",
+					Title:   "Room One",
+					Members: []string{"u-admin"},
 				},
 			},
 		}),
@@ -1041,8 +1041,8 @@ func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
 	if got.ID != "room-1" {
 		t.Fatalf("conversation id = %q, want %q", got.ID, "room-1")
 	}
-	if !containsParticipant(got.Participants, "u-manager") {
-		t.Fatalf("participants = %+v, want u-manager to be invited", got.Participants)
+	if !containsMember(got.Members, "u-manager") {
+		t.Fatalf("members = %+v, want u-manager to be invited", got.Members)
 	}
 }
 
@@ -1059,10 +1059,10 @@ func TestHandleIMAgentJoinReturnsCompactSuccessPayload(t *testing.T) {
 			},
 			Rooms: []im.Room{
 				{
-					ID:           "room-1",
-					Title:        "Room One",
-					Participants: []string{"u-admin"},
-					Messages:     []im.Message{{ID: "msg-1", SenderID: "u-admin", Content: "hello"}},
+					ID:       "room-1",
+					Title:    "Room One",
+					Members:  []string{"u-admin"},
+					Messages: []im.Message{{ID: "msg-1", SenderID: "u-admin", Content: "hello"}},
 				},
 			},
 		}),
@@ -1095,8 +1095,8 @@ func TestHandleIMAgentJoinReturnsCompactSuccessPayload(t *testing.T) {
 	if got.RoomID != "room-1" || got.AgentID != "u-alice" {
 		t.Fatalf("response = %+v, want room-1/u-alice", got)
 	}
-	if room, ok := srv.im.Room("room-1"); !ok || !containsParticipant(room.Participants, "u-alice") {
-		t.Fatalf("room participants = %+v, want agent joined", room.Participants)
+	if room, ok := srv.im.Room("room-1"); !ok || !containsMember(room.Members, "u-alice") {
+		t.Fatalf("room members = %+v, want agent joined", room.Members)
 	}
 }
 
@@ -1121,9 +1121,9 @@ func TestHandleRoomsReturnsConversationList(t *testing.T) {
 			},
 			Rooms: []im.Room{
 				{
-					ID:           "room-1",
-					Title:        "Room One",
-					Participants: []string{"u-admin", "u-alice"},
+					ID:      "room-1",
+					Title:   "Room One",
+					Members: []string{"u-admin", "u-alice"},
 					Messages: []im.Message{{
 						ID:        "msg-1",
 						SenderID:  "u-admin",
@@ -1209,7 +1209,7 @@ func TestHandleUsersCreateProvisionsIMUser(t *testing.T) {
 		t.Fatal("User(u-alice) ok = false, want true after create")
 	}
 	rooms := srv.im.ListRooms()
-	if len(rooms) != 1 || !containsParticipant(rooms[0].Participants, "u-admin") || !containsParticipant(rooms[0].Participants, "u-alice") {
+	if len(rooms) != 1 || !containsMember(rooms[0].Members, "u-admin") || !containsMember(rooms[0].Members, "u-alice") {
 		t.Fatalf("rooms = %+v, want one bootstrap room with admin and u-alice", rooms)
 	}
 
@@ -1283,9 +1283,9 @@ func TestHandleMessagesReturnsConversationMessages(t *testing.T) {
 			CurrentUserID: "u-admin",
 			Rooms: []im.Room{
 				{
-					ID:           "room-1",
-					Title:        "Room One",
-					Participants: []string{"u-admin", "u-manager"},
+					ID:      "room-1",
+					Title:   "Room One",
+					Members: []string{"u-admin", "u-manager"},
 					Messages: []im.Message{{
 						ID:        "msg-1",
 						SenderID:  "u-admin",
@@ -1343,9 +1343,9 @@ func TestHandleMessagesPostCreatesMessage(t *testing.T) {
 			},
 			Rooms: []im.Room{
 				{
-					ID:           "room-1",
-					Title:        "Room One",
-					Participants: []string{"u-admin", "u-manager"},
+					ID:      "room-1",
+					Title:   "Room One",
+					Members: []string{"u-admin", "u-manager"},
 				},
 			},
 		}),
@@ -1382,9 +1382,9 @@ func TestHandleMessagesPostPrefixesMentionID(t *testing.T) {
 			},
 			Rooms: []im.Room{
 				{
-					ID:           "room-1",
-					Title:        "Room One",
-					Participants: []string{"u-admin", "u-dev", "u-manager"},
+					ID:      "room-1",
+					Title:   "Room One",
+					Members: []string{"u-admin", "u-dev", "u-manager"},
 				},
 			},
 		}),
@@ -1634,7 +1634,7 @@ func TestHandleRoomsPostCreatesRoom(t *testing.T) {
 		}),
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/rooms", strings.NewReader(`{"title":"Launch","description":"coordination","creator_id":"u-admin","participant_ids":["u-alice","u-manager"],"locale":"en"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rooms", strings.NewReader(`{"title":"Launch","description":"coordination","creator_id":"u-admin","member_ids":["u-alice","u-manager"],"locale":"en"}`))
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
@@ -1649,8 +1649,8 @@ func TestHandleRoomsPostCreatesRoom(t *testing.T) {
 	if got.Title != "Launch" {
 		t.Fatalf("conversation.Title = %q, want Launch", got.Title)
 	}
-	if !containsParticipant(got.Participants, "u-admin") || !containsParticipant(got.Participants, "u-alice") || !containsParticipant(got.Participants, "u-manager") {
-		t.Fatalf("participants = %+v, want admin, alice, and manager", got.Participants)
+	if !containsMember(got.Members, "u-admin") || !containsMember(got.Members, "u-alice") || !containsMember(got.Members, "u-manager") {
+		t.Fatalf("members = %+v, want admin, alice, and manager", got.Members)
 	}
 }
 
@@ -1664,10 +1664,10 @@ func TestHandleUsersDeleteRemovesUser(t *testing.T) {
 			},
 			Rooms: []im.Room{
 				{
-					ID:           "room-1",
-					Title:        "Room One",
-					Participants: []string{"u-admin", "u-alice"},
-					Messages:     []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
+					ID:       "room-1",
+					Title:    "Room One",
+					Members:  []string{"u-admin", "u-alice"},
+					Messages: []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
 				},
 			},
 		}),
@@ -1725,7 +1725,7 @@ func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
 			Rooms: []im.Room{
-				{ID: "room-1", Title: "Room One", Participants: []string{"u-admin", "u-manager"}},
+				{ID: "room-1", Title: "Room One", Members: []string{"u-admin", "u-manager"}},
 			},
 		}),
 	}
@@ -2002,9 +2002,9 @@ func writeSeededAgents(statePath string, agents []agent.Agent) error {
 	return os.WriteFile(statePath, append(data, '\n'), 0o600)
 }
 
-func containsParticipant(participants []string, want string) bool {
-	for _, participant := range participants {
-		if participant == want {
+func containsMember(members []string, want string) bool {
+	for _, member := range members {
+		if member == want {
 			return true
 		}
 	}

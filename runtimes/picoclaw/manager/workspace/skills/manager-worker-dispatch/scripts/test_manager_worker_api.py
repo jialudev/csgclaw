@@ -49,7 +49,7 @@ def make_bootstrap():
         "rooms": [
             {
                 "id": ROOM_ID,
-                "participants": ["u-admin", "u-manager", "u-ux", "u-dev", "u-qa"],
+                "members": ["u-admin", "u-manager", "u-ux", "u-dev", "u-qa"],
             }
         ],
     }

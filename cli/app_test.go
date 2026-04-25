@@ -740,7 +740,7 @@ func TestExecuteRoomListUsesHTTPClient(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/rooms" {
 				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/rooms")
 			}
-			return jsonResponse(http.StatusOK, `[{"id":"room-1","title":"alpha","participants":["u-admin","u-alice"],"messages":[{"id":"msg-1"}]}]`), nil
+			return jsonResponse(http.StatusOK, `[{"id":"room-1","title":"alpha","members":["u-admin","u-alice"],"messages":[{"id":"msg-1"}]}]`), nil
 		}),
 	}
 
@@ -762,7 +762,7 @@ func TestExecuteRoomListFeishuUsesChannelRoute(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/channels/feishu/rooms" {
 				t.Fatalf("url = %q, want feishu rooms route", req.URL.String())
 			}
-			return jsonResponse(http.StatusOK, `[{"id":"fsroom-1","title":"alpha","participants":["fsu-admin"],"messages":[]}]`), nil
+			return jsonResponse(http.StatusOK, `[{"id":"fsroom-1","title":"alpha","members":["fsu-admin"],"messages":[]}]`), nil
 		}),
 	}
 
@@ -827,7 +827,7 @@ func TestExecuteMemberCreateFeishuUsesChannelRoomMembersRoute(t *testing.T) {
 			if payload["inviter_id"] != "u-manager" {
 				t.Fatalf("payload[inviter_id] = %#v, want u-manager", payload["inviter_id"])
 			}
-			return jsonResponse(http.StatusOK, `{"id":"oc_alpha","title":"alpha","participants":["u-manager","ou_alice"],"messages":[]}`), nil
+			return jsonResponse(http.StatusOK, `{"id":"oc_alpha","title":"alpha","members":["u-manager","ou_alice"],"messages":[]}`), nil
 		}),
 	}
 
@@ -911,7 +911,7 @@ func TestExecuteMemberCreateCsgclawUsesRoomMembersRoute(t *testing.T) {
 			if payload["inviter_id"] != "u-admin" {
 				t.Fatalf("payload[inviter_id] = %#v, want u-admin", payload["inviter_id"])
 			}
-			return jsonResponse(http.StatusOK, `{"id":"room-1","title":"Ops","participants":["u-admin","u-alice"],"messages":[]}`), nil
+			return jsonResponse(http.StatusOK, `{"id":"room-1","title":"Ops","members":["u-admin","u-alice"],"messages":[]}`), nil
 		}),
 	}
 
@@ -946,7 +946,7 @@ func TestExecuteMemberCreateUsesCsgclawDefault(t *testing.T) {
 			if !ok || len(userIDs) != 1 || userIDs[0] != "u-alice" {
 				t.Fatalf("payload[user_ids] = %#v, want [u-alice]", payload["user_ids"])
 			}
-			return jsonResponse(http.StatusOK, `{"id":"room-1","title":"Ops","participants":["u-admin","u-alice"],"messages":[]}`), nil
+			return jsonResponse(http.StatusOK, `{"id":"room-1","title":"Ops","members":["u-admin","u-alice"],"messages":[]}`), nil
 		}),
 	}
 
@@ -980,16 +980,16 @@ func TestExecuteRoomCreateUsesHTTPClient(t *testing.T) {
 			if payload["creator_id"] != "u-admin" {
 				t.Fatalf("payload[creator_id] = %#v, want %q", payload["creator_id"], "u-admin")
 			}
-			participantIDs, ok := payload["participant_ids"].([]any)
-			if !ok || len(participantIDs) != 2 || participantIDs[0] != "u-alice" || participantIDs[1] != "u-bob" {
-				t.Fatalf("payload[participant_ids] = %#v, want [u-alice u-bob]", payload["participant_ids"])
+			memberIDs, ok := payload["member_ids"].([]any)
+			if !ok || len(memberIDs) != 2 || memberIDs[0] != "u-alice" || memberIDs[1] != "u-bob" {
+				t.Fatalf("payload[member_ids] = %#v, want [u-alice u-bob]", payload["member_ids"])
 			}
 
-			return jsonResponse(http.StatusCreated, `{"id":"room-1","title":"alpha","participants":["u-admin","u-alice","u-bob"],"messages":[{"id":"msg-1"}]}`), nil
+			return jsonResponse(http.StatusCreated, `{"id":"room-1","title":"alpha","members":["u-admin","u-alice","u-bob"],"messages":[{"id":"msg-1"}]}`), nil
 		}),
 	}
 
-	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "room", "create", "--title", "alpha", "--creator-id", "u-admin", "--participant-ids", "u-alice, u-bob"})
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "room", "create", "--title", "alpha", "--creator-id", "u-admin", "--member-ids", "u-alice, u-bob"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

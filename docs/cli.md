@@ -403,7 +403,7 @@ Subcommands:
 - `--title string`: room title.
 - `--description string`: room description.
 - `--creator-id string`: creator user ID.
-- `--participant-ids string`: comma-separated participant IDs.
+- `--member-ids string`: comma-separated member IDs.
 - `--locale string`: room locale.
 
 `room delete` usage and flags:
@@ -471,7 +471,7 @@ Examples:
 ```bash
 csgclaw bot list
 csgclaw bot create --name alice --role worker --model-id gpt-5.4-mini
-csgclaw room create --title "release-room" --creator-id admin --participant-ids admin,manager
+csgclaw room create --title "release-room" --creator-id admin --member-ids admin,manager
 csgclaw member create --room-id room-1 --user-id u-alice --inviter-id admin
 csgclaw message list --room-id room-1
 csgclaw message create --channel csgclaw --room-id room-1 --sender-id admin --content hello

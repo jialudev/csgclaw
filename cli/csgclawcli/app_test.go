@@ -263,7 +263,7 @@ func TestExecuteRoomCreateUsesChannelRoute(t *testing.T) {
 			if payload["title"] != "alpha" || payload["creator_id"] != "ou_admin" {
 				t.Fatalf("payload = %#v, want title and creator", payload)
 			}
-			return jsonResponse(http.StatusCreated, `{"id":"oc_alpha","title":"alpha","participants":["ou_admin"],"messages":[]}`), nil
+			return jsonResponse(http.StatusCreated, `{"id":"oc_alpha","title":"alpha","members":["ou_admin"],"messages":[]}`), nil
 		}),
 	}
 

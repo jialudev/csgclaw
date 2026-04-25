@@ -89,12 +89,30 @@ type persistedBootstrap struct {
 }
 
 type persistedRoom struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	Subtitle     string   `json:"subtitle"`
-	Description  string   `json:"description,omitempty"`
-	Participants []string `json:"participants"`
-	Messages     string   `json:"messages"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Subtitle    string   `json:"subtitle"`
+	Description string   `json:"description,omitempty"`
+	Members     []string `json:"members"`
+	Messages    string   `json:"messages"`
+}
+
+func (r *persistedRoom) UnmarshalJSON(data []byte) error {
+	type persistedRoomAlias persistedRoom
+	type persistedRoomJSON struct {
+		persistedRoomAlias
+		Participants []string `json:"participants"`
+	}
+
+	var decoded persistedRoomJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*r = persistedRoom(decoded.persistedRoomAlias)
+	if len(r.Members) == 0 && len(decoded.Participants) > 0 {
+		r.Members = append([]string(nil), decoded.Participants...)
+	}
+	return nil
 }
 
 func NewService() *Service {
@@ -230,12 +248,12 @@ func loadPersistedRooms(statePath string, rooms []persistedRoom) ([]Room, error)
 			return nil, err
 		}
 		loaded = append(loaded, Room{
-			ID:           room.ID,
-			Title:        room.Title,
-			Subtitle:     room.Subtitle,
-			Description:  room.Description,
-			Participants: append([]string(nil), room.Participants...),
-			Messages:     messages,
+			ID:          room.ID,
+			Title:       room.Title,
+			Subtitle:    room.Subtitle,
+			Description: room.Description,
+			Members:     append([]string(nil), room.Members...),
+			Messages:    messages,
 		})
 	}
 	return loaded, nil
@@ -312,12 +330,12 @@ func savePersistedRooms(statePath string, rooms []Room) ([]persistedRoom, error)
 			return nil, err
 		}
 		persisted = append(persisted, persistedRoom{
-			ID:           room.ID,
-			Title:        room.Title,
-			Subtitle:     room.Subtitle,
-			Description:  room.Description,
-			Participants: append([]string(nil), room.Participants...),
-			Messages:     relativePath,
+			ID:          room.ID,
+			Title:       room.Title,
+			Subtitle:    room.Subtitle,
+			Description: room.Description,
+			Members:     append([]string(nil), room.Members...),
+			Messages:    relativePath,
 		})
 	}
 	return persisted, nil
@@ -520,11 +538,11 @@ func ensureAdminManagerRoom(rooms []Room) []Room {
 
 	now := time.Now().UTC()
 	room := Room{
-		ID:           fmt.Sprintf("room-%d", now.UnixNano()),
-		Title:        "admin & manager",
-		Subtitle:     formatConversationSubtitle(2),
-		Description:  "Bootstrap room for admin and manager.",
-		Participants: []string{"u-admin", "u-manager"},
+		ID:          fmt.Sprintf("room-%d", now.UnixNano()),
+		Title:       "admin & manager",
+		Subtitle:    formatConversationSubtitle(2),
+		Description: "Bootstrap room for admin and manager.",
+		Members:     []string{"u-admin", "u-manager"},
 		Messages: []Message{
 			{
 				ID:        fmt.Sprintf("msg-%d", now.UnixNano()+1),
@@ -538,8 +556,8 @@ func ensureAdminManagerRoom(rooms []Room) []Room {
 }
 
 func containsUserIDInRoom(room Room, userID string) bool {
-	for _, participantID := range room.Participants {
-		if participantID == userID {
+	for _, memberID := range room.Members {
+		if memberID == userID {
 			return true
 		}
 	}
@@ -615,11 +633,11 @@ func (s *Service) ListMembers(roomID string) ([]User, error) {
 		return nil, fmt.Errorf("room not found")
 	}
 
-	users := make([]User, 0, len(room.Participants))
-	for _, userID := range room.Participants {
+	users := make([]User, 0, len(room.Members))
+	for _, userID := range room.Members {
 		user, ok := s.users[userID]
 		if !ok {
-			return nil, fmt.Errorf("participant user not found: %s", userID)
+			return nil, fmt.Errorf("member user not found: %s", userID)
 		}
 		users = append(users, user)
 	}
@@ -683,10 +701,10 @@ func (s *Service) DeleteUser(userID string) error {
 	delete(s.byHandle, strings.ToLower(user.Handle))
 
 	for id, room := range s.rooms {
-		participants := make([]string, 0, len(room.Participants))
-		for _, participantID := range room.Participants {
-			if participantID != userID {
-				participants = append(participants, participantID)
+		members := make([]string, 0, len(room.Members))
+		for _, memberID := range room.Members {
+			if memberID != userID {
+				members = append(members, memberID)
 			}
 		}
 
@@ -697,14 +715,14 @@ func (s *Service) DeleteUser(userID string) error {
 			}
 		}
 
-		if len(participants) < 2 {
+		if len(members) < 2 {
 			delete(s.rooms, id)
 			continue
 		}
 
-		room.Participants = participants
+		room.Members = members
 		room.Messages = messages
-		room.Subtitle = formatRoomSubtitle(len(participants))
+		room.Subtitle = formatRoomSubtitle(len(members))
 	}
 
 	if err := s.saveLocked(); err != nil {
@@ -870,17 +888,17 @@ func (s *Service) CreateRoom(req CreateRoomRequest) (Room, error) {
 		return Room{}, fmt.Errorf("creator not found")
 	}
 
-	participants, err := s.normalizeParticipants(req.CreatorID, req.ParticipantIDs)
+	members, err := s.normalizeMembers(req.CreatorID, req.MemberIDs)
 	if err != nil {
 		return Room{}, err
 	}
 
 	room := Room{
-		ID:           fmt.Sprintf("room-%d", time.Now().UnixNano()),
-		Title:        title,
-		Subtitle:     formatRoomSubtitle(len(participants)),
-		Description:  description,
-		Participants: participants,
+		ID:          fmt.Sprintf("room-%d", time.Now().UnixNano()),
+		Title:       title,
+		Subtitle:    formatRoomSubtitle(len(members)),
+		Description: description,
+		Members:     members,
 		Messages: []Message{
 			{
 				ID:       fmt.Sprintf("msg-%d", time.Now().UnixNano()),
@@ -929,12 +947,12 @@ func (s *Service) AddRoomMembers(req AddRoomMembersRequest) (Room, error) {
 	if _, ok := s.users[req.InviterID]; !ok {
 		return Room{}, fmt.Errorf("inviter not found")
 	}
-	if !slices.Contains(room.Participants, req.InviterID) {
+	if !slices.Contains(room.Members, req.InviterID) {
 		return Room{}, fmt.Errorf("inviter is not a room member")
 	}
 
-	existing := make(map[string]struct{}, len(room.Participants))
-	for _, id := range room.Participants {
+	existing := make(map[string]struct{}, len(room.Members))
+	for _, id := range room.Members {
 		existing[id] = struct{}{}
 	}
 
@@ -951,14 +969,14 @@ func (s *Service) AddRoomMembers(req AddRoomMembersRequest) (Room, error) {
 			continue
 		}
 		existing[userID] = struct{}{}
-		room.Participants = append(room.Participants, userID)
+		room.Members = append(room.Members, userID)
 		addedIDs = append(addedIDs, userID)
 	}
 	if len(addedIDs) == 0 {
 		return Room{}, fmt.Errorf("no new users to invite")
 	}
 
-	room.Subtitle = formatRoomSubtitle(len(room.Participants))
+	room.Subtitle = formatRoomSubtitle(len(room.Members))
 	room.Messages = append(room.Messages, Message{
 		ID:       fmt.Sprintf("msg-%d", time.Now().UnixNano()),
 		SenderID: req.InviterID,
@@ -1044,10 +1062,10 @@ func (s *Service) extractMentions(content string) []string {
 	return mentions
 }
 
-func (s *Service) normalizeParticipants(creatorID string, participantIDs []string) ([]string, error) {
+func (s *Service) normalizeMembers(creatorID string, memberIDs []string) ([]string, error) {
 	seen := map[string]struct{}{creatorID: {}}
-	participants := []string{creatorID}
-	for _, userID := range participantIDs {
+	members := []string{creatorID}
+	for _, userID := range memberIDs {
 		userID = strings.TrimSpace(userID)
 		if userID == "" {
 			continue
@@ -1059,9 +1077,9 @@ func (s *Service) normalizeParticipants(creatorID string, participantIDs []strin
 			continue
 		}
 		seen[userID] = struct{}{}
-		participants = append(participants, userID)
+		members = append(members, userID)
 	}
-	return participants, nil
+	return members, nil
 }
 
 const (
@@ -1129,13 +1147,13 @@ func formatConversationSubtitle(count int) string {
 
 func (s *Service) presentRoomLocked(room Room) Room {
 	cloned := cloneRoom(room)
-	if len(cloned.Participants) != 2 {
+	if len(cloned.Members) != 2 {
 		return cloned
 	}
 
-	otherID := cloned.Participants[0]
+	otherID := cloned.Members[0]
 	if otherID == s.currentUserID {
-		otherID = cloned.Participants[1]
+		otherID = cloned.Members[1]
 	}
 	if user, ok := s.users[otherID]; ok && strings.TrimSpace(user.Name) != "" {
 		cloned.Title = user.Name
@@ -1149,7 +1167,7 @@ func (s *Service) presentConversationLocked(conv Conversation) Conversation {
 
 func cloneRoom(room Room) Room {
 	cloned := room
-	cloned.Participants = append([]string(nil), room.Participants...)
+	cloned.Members = append([]string(nil), room.Members...)
 	cloned.Messages = append([]Message(nil), room.Messages...)
 	return cloned
 }
@@ -1228,7 +1246,7 @@ func (s *Service) bootstrapLocked() Bootstrap {
 
 func (s *Service) ensureAdminAgentRoomLocked(agentID, agentName string) (*Room, bool) {
 	for _, room := range s.rooms {
-		if len(room.Participants) != 2 {
+		if len(room.Members) != 2 {
 			continue
 		}
 		if containsUserIDInRoom(*room, "u-admin") && containsUserIDInRoom(*room, agentID) {
@@ -1239,11 +1257,11 @@ func (s *Service) ensureAdminAgentRoomLocked(agentID, agentName string) (*Room, 
 
 	now := time.Now().UTC()
 	room := Room{
-		ID:           fmt.Sprintf("room-%d", now.UnixNano()),
-		Title:        agentName,
-		Subtitle:     formatRoomSubtitle(2),
-		Description:  fmt.Sprintf("Bootstrap room for admin and %s.", agentName),
-		Participants: []string{"u-admin", agentID},
+		ID:          fmt.Sprintf("room-%d", now.UnixNano()),
+		Title:       agentName,
+		Subtitle:    formatRoomSubtitle(2),
+		Description: fmt.Sprintf("Bootstrap room for admin and %s.", agentName),
+		Members:     []string{"u-admin", agentID},
 		Messages: []Message{
 			{
 				ID:        fmt.Sprintf("msg-%d", now.UnixNano()+1),

@@ -346,10 +346,10 @@ func TestServiceDeleteRemovesCSGClawUser(t *testing.T) {
 		},
 		Rooms: []im.Room{
 			{
-				ID:           "room-1",
-				Title:        "Alice",
-				Participants: []string{"u-admin", "u-alice"},
-				Messages:     []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
+				ID:       "room-1",
+				Title:    "Alice",
+				Members:  []string{"u-admin", "u-alice"},
+				Messages: []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
 			},
 		},
 	})
@@ -468,7 +468,7 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 		t.Fatalf("users = %+v, want u-alice", users)
 	}
 	rooms := imSvc.ListRooms()
-	if len(rooms) != 1 || !containsParticipant(rooms[0].Participants, "u-admin") || !containsParticipant(rooms[0].Participants, "u-alice") {
+	if len(rooms) != 1 || !containsMember(rooms[0].Members, "u-admin") || !containsMember(rooms[0].Members, "u-alice") {
 		t.Fatalf("rooms = %+v, want one bootstrap room with admin and u-alice", rooms)
 	}
 	first := mustReceiveEventWithin(t, events, time.Second)
@@ -915,9 +915,9 @@ func containsUser(users []im.User, id string) bool {
 	return false
 }
 
-func containsParticipant(participants []string, id string) bool {
-	for _, participant := range participants {
-		if participant == id {
+func containsMember(members []string, id string) bool {
+	for _, member := range members {
+		if member == id {
 			return true
 		}
 	}

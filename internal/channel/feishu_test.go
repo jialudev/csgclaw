@@ -277,7 +277,7 @@ func TestFeishuSendMessageUsesSenderAppAndStoresLocalMessage(t *testing.T) {
 			return FeishuSendMessageResponse{MessageID: "om_1", SenderOpenID: "ou_manager"}, nil
 		},
 	)
-	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager"}}
+	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Members: []string{"u-manager"}}
 
 	message, err := svc.SendMessage(im.CreateMessageRequest{
 		RoomID:   "oc_alpha",
@@ -314,7 +314,7 @@ func TestFeishuSendMessageResolvesMentionApp(t *testing.T) {
 			return FeishuSendMessageResponse{MessageID: "om_mention", SenderOpenID: "ou_manager", MentionOpenID: "ou_dev"}, nil
 		},
 	)
-	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager", "u-dev"}}
+	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Members: []string{"u-manager", "u-dev"}}
 
 	message, err := svc.SendMessage(im.CreateMessageRequest{
 		RoomID:    "oc_alpha",
@@ -347,7 +347,7 @@ func TestFeishuSendMessageWithMentionPublishesMessageEvent(t *testing.T) {
 			return FeishuSendMessageResponse{MessageID: "om_mention", SenderOpenID: "ou_manager", MentionOpenID: "ou_dev"}, nil
 		},
 	)
-	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager", "u-dev"}}
+	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Members: []string{"u-manager", "u-dev"}}
 	events, cancel := svc.MessageBus().Subscribe()
 	defer cancel()
 
@@ -390,7 +390,7 @@ func TestFeishuSendMessageWithoutMentionDoesNotPublishMessageEvent(t *testing.T)
 			return FeishuSendMessageResponse{MessageID: "om_plain", SenderOpenID: "ou_manager"}, nil
 		},
 	)
-	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Participants: []string{"u-manager"}}
+	svc.rooms["oc_alpha"] = &im.Room{ID: "oc_alpha", Title: "alpha", Members: []string{"u-manager"}}
 	events, cancel := svc.MessageBus().Subscribe()
 	defer cancel()
 
@@ -468,9 +468,9 @@ func TestFeishuListRoomsCallsConfiguredApp(t *testing.T) {
 	}
 
 	if _, err := svc.CreateRoom(im.CreateRoomRequest{
-		Title:          "alpha",
-		CreatorID:      "u-manager",
-		ParticipantIDs: []string{"ou_alice"},
+		Title:     "alpha",
+		CreatorID: "u-manager",
+		MemberIDs: []string{"ou_alice"},
 	}); err != nil {
 		t.Fatalf("CreateRoom() error = %v", err)
 	}
@@ -489,8 +489,8 @@ func TestFeishuListRoomsCallsConfiguredApp(t *testing.T) {
 	if got, want := rooms[0].ID, "oc_alpha"; got != want {
 		t.Fatalf("first room id = %q, want %q", got, want)
 	}
-	if len(rooms[0].Participants) != 2 || rooms[0].Participants[0] != "u-manager" || rooms[0].Participants[1] != "ou_alice" {
-		t.Fatalf("first room participants = %+v, want local participants", rooms[0].Participants)
+	if len(rooms[0].Members) != 2 || rooms[0].Members[0] != "u-manager" || rooms[0].Members[1] != "ou_alice" {
+		t.Fatalf("first room members = %+v, want local members", rooms[0].Members)
 	}
 }
 
@@ -608,8 +608,8 @@ func TestFeishuAddRoomMembersCallsConfiguredApp(t *testing.T) {
 	if len(gotReq.MemberAppIDs) != 1 || gotReq.MemberAppIDs[0] != "cli_alice" {
 		t.Fatalf("add members app_ids = %+v, want [cli_alice]", gotReq.MemberAppIDs)
 	}
-	if len(room.Participants) != 2 {
-		t.Fatalf("participants = %+v, want two users", room.Participants)
+	if len(room.Members) != 2 {
+		t.Fatalf("members = %+v, want two users", room.Members)
 	}
 }
 
@@ -676,8 +676,8 @@ func TestFeishuAddRoomMembersLetsFeishuValidateRoomID(t *testing.T) {
 	if got, want := room.ID, "oc_external"; got != want {
 		t.Fatalf("room id = %q, want %q", got, want)
 	}
-	if len(room.Participants) != 1 || room.Participants[0] != "ou_alice" {
-		t.Fatalf("participants = %+v, want [ou_alice]", room.Participants)
+	if len(room.Members) != 1 || room.Members[0] != "ou_alice" {
+		t.Fatalf("members = %+v, want [ou_alice]", room.Members)
 	}
 }
 

@@ -1,6 +1,9 @@
 package apitypes
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Bot struct {
 	ID          string    `json:"id"`
@@ -67,20 +70,20 @@ type EventPayload struct {
 }
 
 type Room struct {
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Subtitle     string    `json:"subtitle"`
-	Description  string    `json:"description,omitempty"`
-	Participants []string  `json:"participants"`
-	Messages     []Message `json:"messages"`
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Subtitle    string    `json:"subtitle"`
+	Description string    `json:"description,omitempty"`
+	Members     []string  `json:"members"`
+	Messages    []Message `json:"messages"`
 }
 
 type CreateRoomRequest struct {
-	Title          string   `json:"title"`
-	Description    string   `json:"description"`
-	CreatorID      string   `json:"creator_id"`
-	ParticipantIDs []string `json:"participant_ids"`
-	Locale         string   `json:"locale"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	CreatorID   string   `json:"creator_id"`
+	MemberIDs   []string `json:"member_ids"`
+	Locale      string   `json:"locale"`
 }
 
 type AddRoomMembersRequest struct {
@@ -88,4 +91,42 @@ type AddRoomMembersRequest struct {
 	InviterID string   `json:"inviter_id"`
 	UserIDs   []string `json:"user_ids"`
 	Locale    string   `json:"locale"`
+}
+
+// UnmarshalJSON keeps room payload decoding backward-compatible with legacy participants fields.
+func (r *Room) UnmarshalJSON(data []byte) error {
+	type roomAlias Room
+	type roomJSON struct {
+		roomAlias
+		Participants []string `json:"participants"`
+	}
+
+	var decoded roomJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*r = Room(decoded.roomAlias)
+	if len(r.Members) == 0 && len(decoded.Participants) > 0 {
+		r.Members = append([]string(nil), decoded.Participants...)
+	}
+	return nil
+}
+
+// UnmarshalJSON keeps create-room request decoding backward-compatible with legacy participant_ids.
+func (r *CreateRoomRequest) UnmarshalJSON(data []byte) error {
+	type createRoomAlias CreateRoomRequest
+	type createRoomJSON struct {
+		createRoomAlias
+		ParticipantIDs []string `json:"participant_ids"`
+	}
+
+	var decoded createRoomJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*r = CreateRoomRequest(decoded.createRoomAlias)
+	if len(r.MemberIDs) == 0 && len(decoded.ParticipantIDs) > 0 {
+		r.MemberIDs = append([]string(nil), decoded.ParticipantIDs...)
+	}
+	return nil
 }

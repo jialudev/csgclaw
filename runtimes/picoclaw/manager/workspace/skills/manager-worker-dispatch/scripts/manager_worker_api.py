@@ -268,9 +268,9 @@ def has_assignee_reply_after(
     return False
 
 
-def get_room_participant_index(bootstrap: dict[str, Any], room_id: str) -> dict[str, dict[str, Any]]:
+def get_room_member_index(bootstrap: dict[str, Any], room_id: str) -> dict[str, dict[str, Any]]:
     if not isinstance(bootstrap, dict):
-        raise TrackingError("Unexpected bootstrap response while resolving room participants")
+        raise TrackingError("Unexpected bootstrap response while resolving room members")
 
     rooms = bootstrap.get("rooms")
     users = bootstrap.get("users")
@@ -287,18 +287,18 @@ def get_room_participant_index(bootstrap: dict[str, Any], room_id: str) -> dict[
     if room is None:
         raise TrackingError(f'Room "{room_id}" was not found in IM bootstrap data')
 
-    participants = room.get("participants")
-    if not isinstance(participants, list):
-        raise TrackingError(f'Room "{room_id}" is missing participant data in IM bootstrap response')
+    members = room.get("members")
+    if not isinstance(members, list):
+        raise TrackingError(f'Room "{room_id}" is missing member data in IM bootstrap response')
 
-    participant_ids = {str(participant_id).strip() for participant_id in participants if str(participant_id).strip()}
+    member_ids = {str(member_id).strip() for member_id in members if str(member_id).strip()}
     index: dict[str, dict[str, Any]] = {}
     for user in users:
         if not isinstance(user, dict):
             continue
         user_id = str(user.get("id") or "").strip()
         handle = normalize_handle(user.get("handle"))
-        if user_id in participant_ids and handle:
+        if user_id in member_ids and handle:
             index[handle] = user
     return index
 
@@ -308,11 +308,11 @@ def resolve_room_assignee(bootstrap: dict[str, Any], room_id: str, assignee: Any
     if not handle:
         raise TrackingError(f'Room "{room_id}" contains a task with an empty assignee handle')
 
-    participants_by_handle = get_room_participant_index(bootstrap, room_id)
-    user = participants_by_handle.get(handle)
+    members_by_handle = get_room_member_index(bootstrap, room_id)
+    user = members_by_handle.get(handle)
     if user is None:
         raise TrackingError(
-            f'Task assignee "{assignee}" is not a known participant handle in room "{room_id}"'
+            f'Task assignee "{assignee}" is not a known member handle in room "{room_id}"'
         )
     return user
 

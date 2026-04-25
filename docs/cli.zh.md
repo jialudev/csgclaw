@@ -403,7 +403,7 @@ csgclaw room <subcommand> [flags]
 - `--title string`：房间标题。
 - `--description string`：房间描述。
 - `--creator-id string`：创建者用户 ID。
-- `--participant-ids string`：逗号分隔的参与者 ID 列表。
+- `--member-ids string`：逗号分隔的成员 ID 列表。
 - `--locale string`：房间 locale。
 
 `room delete` 用法与参数：
@@ -471,7 +471,7 @@ csgclaw message <subcommand> [flags]
 ```bash
 csgclaw bot list
 csgclaw bot create --name alice --role worker --model-id gpt-5.4-mini
-csgclaw room create --title "release-room" --creator-id admin --participant-ids admin,manager
+csgclaw room create --title "release-room" --creator-id admin --member-ids admin,manager
 csgclaw member create --room-id room-1 --user-id u-alice --inviter-id admin
 csgclaw message list --room-id room-1
 csgclaw message create --channel csgclaw --room-id room-1 --sender-id admin --content hello
