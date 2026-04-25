@@ -116,29 +116,27 @@ func shouldNotifyBot(room Room, message Message, botID string) bool {
 	if chatTypeForRoom(room) == "direct" {
 		return true
 	}
-	for _, mentionedID := range message.Mentions {
-		if mentionedID == botID {
-			return true
-		}
+	if containsMentionID(message.Mentions, botID) {
+		return true
 	}
 	return false
 }
 
-func mentionsForBot(mentions []string, botID string) []string {
+func mentionsForBot(mentions []Mention, botID string) []string {
 	if len(mentions) == 0 {
 		return nil
 	}
 	result := make([]string, 0, len(mentions))
-	for _, mentionedID := range mentions {
-		if mentionedID == botID {
-			result = append(result, mentionedID)
+	for _, mention := range mentions {
+		if mention.ID == botID {
+			result = append(result, mention.ID)
 		}
 	}
 	return result
 }
 
 func chatTypeForRoom(room Room) string {
-	if len(room.Members) <= 2 {
+	if room.IsDirect {
 		return "direct"
 	}
 	return "group"

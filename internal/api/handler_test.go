@@ -1528,7 +1528,7 @@ func TestHandleMessagesPostCreatesMessage(t *testing.T) {
 	if got.SenderID != "u-admin" || got.Content != "hello @manager" {
 		t.Fatalf("message = %+v, want sender/content populated", got)
 	}
-	if len(got.Mentions) != 1 || got.Mentions[0] != "u-manager" {
+	if len(got.Mentions) != 1 || got.Mentions[0].ID != "u-manager" || got.Mentions[0].Name != "manager" {
 		t.Fatalf("mentions = %+v, want u-manager", got.Mentions)
 	}
 }
@@ -1567,7 +1567,7 @@ func TestHandleMessagesPostPrefixesMentionID(t *testing.T) {
 	if got.Content != `<at user_id="u-dev">dev</at> hi` {
 		t.Fatalf(`content = %q, want <at user_id="u-dev">dev</at> hi`, got.Content)
 	}
-	if len(got.Mentions) != 1 || got.Mentions[0] != "u-dev" {
+	if len(got.Mentions) != 1 || got.Mentions[0].ID != "u-dev" || got.Mentions[0].Name != "dev" {
 		t.Fatalf("mentions = %+v, want u-dev", got.Mentions)
 	}
 }
@@ -1661,7 +1661,7 @@ func TestHandleFeishuEventsStreamsMessageBusEvents(t *testing.T) {
 			ID:       "om_ignored",
 			SenderID: "ou_manager",
 			Content:  "hello @worker",
-			Mentions: []string{"u-worker"},
+			Mentions: []im.Mention{{ID: "u-worker"}},
 		},
 	})
 	feishuSvc.MessageBus().Publish(channel.FeishuMessageEvent{
@@ -1671,7 +1671,7 @@ func TestHandleFeishuEventsStreamsMessageBusEvents(t *testing.T) {
 			ID:       "om_1",
 			SenderID: "ou_manager",
 			Content:  "hello @alice",
-			Mentions: []string{"u-manager"},
+			Mentions: []im.Mention{{ID: "u-manager"}},
 		},
 	})
 	time.Sleep(20 * time.Millisecond)

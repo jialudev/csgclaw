@@ -45,6 +45,11 @@ type CreateUserRequest struct {
 	Role   string `json:"role,omitempty"`
 }
 
+type Mention struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
 type Message struct {
 	ID        string        `json:"id"`
 	SenderID  string        `json:"sender_id"`
@@ -52,7 +57,7 @@ type Message struct {
 	Content   string        `json:"content"`
 	Event     *EventPayload `json:"event,omitempty"`
 	CreatedAt time.Time     `json:"created_at"`
-	Mentions  []string      `json:"mentions"`
+	Mentions  []Mention     `json:"mentions"`
 }
 
 type CreateMessageRequest struct {
@@ -128,6 +133,40 @@ func (r *CreateRoomRequest) UnmarshalJSON(data []byte) error {
 	*r = CreateRoomRequest(decoded.createRoomAlias)
 	if len(r.MemberIDs) == 0 && len(decoded.ParticipantIDs) > 0 {
 		r.MemberIDs = append([]string(nil), decoded.ParticipantIDs...)
+	}
+	return nil
+}
+
+// UnmarshalJSON keeps message payload decoding backward-compatible with legacy string mentions.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	type messageAlias Message
+	type messageJSON struct {
+		messageAlias
+		Mentions json.RawMessage `json:"mentions"`
+	}
+
+	var decoded messageJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*m = Message(decoded.messageAlias)
+	if len(decoded.Mentions) == 0 || string(decoded.Mentions) == "null" {
+		return nil
+	}
+
+	var mentions []Mention
+	if err := json.Unmarshal(decoded.Mentions, &mentions); err == nil {
+		m.Mentions = mentions
+		return nil
+	}
+
+	var legacy []string
+	if err := json.Unmarshal(decoded.Mentions, &legacy); err != nil {
+		return err
+	}
+	m.Mentions = make([]Mention, 0, len(legacy))
+	for _, id := range legacy {
+		m.Mentions = append(m.Mentions, Mention{ID: id})
 	}
 	return nil
 }

@@ -90,7 +90,7 @@ func feishuEventMentions(evt channel.FeishuMessageEvent, botOpenID string) bool 
 		return false
 	}
 	for _, mention := range evt.Message.Mentions {
-		if strings.TrimSpace(mention) == botOpenID {
+		if strings.TrimSpace(mention.ID) == botOpenID {
 			return true
 		}
 	}

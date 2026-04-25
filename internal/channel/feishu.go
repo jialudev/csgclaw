@@ -836,7 +836,7 @@ func feishuSDKMessageToIMMessage(item *larkim.Message) (im.Message, bool) {
 		Kind:      im.MessageKindMessage,
 		Content:   content,
 		CreatedAt: feishuMessageCreatedAt(larkcore.StringValue(item.CreateTime)),
-		Mentions:  feishuMessageMentionIDs(item.Mentions),
+		Mentions:  feishuMessageMentions(item.Mentions),
 	}, true
 }
 
@@ -867,15 +867,22 @@ func feishuMessageCreatedAt(createTime string) time.Time {
 	return time.UnixMilli(timestamp.Milliseconds()).UTC()
 }
 
-func feishuMessageMentionIDs(mentions []*larkim.Mention) []string {
-	ids := make([]string, 0, len(mentions))
+func feishuMessageMentions(mentions []*larkim.Mention) []im.Mention {
+	result := make([]im.Mention, 0, len(mentions))
 	for _, mention := range mentions {
 		if mention == nil {
 			continue
 		}
-		ids = append(ids, larkcore.StringValue(mention.Id))
+		id := larkcore.StringValue(mention.Id)
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		result = append(result, im.Mention{
+			ID:   id,
+			Name: larkcore.StringValue(mention.Name),
+		})
 	}
-	return normalizeNonEmptyStrings(ids)
+	return result
 }
 
 func defaultFeishuSendMessage(ctx context.Context, app FeishuAppConfig, req FeishuSendMessageRequest) (FeishuSendMessageResponse, error) {
@@ -1024,7 +1031,10 @@ func (s *FeishuService) SendMessage(req im.CreateMessageRequest) (im.Message, er
 		Kind:      im.MessageKindMessage,
 		Content:   content,
 		CreatedAt: time.Now().UTC(),
-		Mentions:  normalizeNonEmptyStrings([]string{mentionOpenID}),
+		Mentions:  nil,
+	}
+	if mentionOpenID != "" {
+		message.Mentions = []im.Mention{{ID: mentionOpenID, Name: mentionID}}
 	}
 
 	s.mu.Lock()

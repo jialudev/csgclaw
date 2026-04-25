@@ -21,6 +21,8 @@ type User = apitypes.User
 
 type Message = apitypes.Message
 
+type Mention = apitypes.Mention
+
 type EventPayload = apitypes.EventPayload
 
 type Room = apitypes.Room
@@ -570,6 +572,15 @@ func containsUserIDInRoom(room Room, userID string) bool {
 	return false
 }
 
+func containsMentionID(mentions []Mention, userID string) bool {
+	for _, mention := range mentions {
+		if mention.ID == userID {
+			return true
+		}
+	}
+	return false
+}
+
 func containsUserIDInConversation(conv Conversation, userID string) bool {
 	return containsUserIDInRoom(conv, userID)
 }
@@ -997,7 +1008,7 @@ func (s *Service) AddRoomMembers(req AddRoomMembersRequest) (Room, error) {
 			TargetIDs: append([]string(nil), addedIDs...),
 		},
 		CreatedAt: time.Now().UTC(),
-		Mentions:  append([]string(nil), addedIDs...),
+		Mentions:  s.mentionsForUserIDs(addedIDs),
 	})
 	if err := s.saveLocked(); err != nil {
 		return Room{}, err
@@ -1051,7 +1062,7 @@ func (s *Service) User(userID string) (User, bool) {
 	return user, ok
 }
 
-func (s *Service) extractMentions(content string) []string {
+func (s *Service) extractMentions(content string) []Mention {
 	tagMatches := mentionTagPattern.FindAllStringSubmatch(content, -1)
 	handleMatches := mentionPattern.FindAllStringSubmatch(content, -1)
 	if len(tagMatches) == 0 && len(handleMatches) == 0 {
@@ -1059,17 +1070,21 @@ func (s *Service) extractMentions(content string) []string {
 	}
 
 	seen := make(map[string]struct{}, len(tagMatches)+len(handleMatches))
-	mentions := make([]string, 0, len(tagMatches)+len(handleMatches))
+	mentions := make([]Mention, 0, len(tagMatches)+len(handleMatches))
 	for _, match := range tagMatches {
 		userID := strings.TrimSpace(match[1])
-		if _, ok := s.users[userID]; !ok {
+		user, ok := s.users[userID]
+		if !ok {
 			continue
 		}
 		if _, exists := seen[userID]; exists {
 			continue
 		}
 		seen[userID] = struct{}{}
-		mentions = append(mentions, userID)
+		mentions = append(mentions, Mention{
+			ID:   userID,
+			Name: s.userMentionName(user),
+		})
 	}
 	for _, match := range handleMatches {
 		handle := strings.ToLower(match[2])
@@ -1078,7 +1093,10 @@ func (s *Service) extractMentions(content string) []string {
 				continue
 			}
 			seen[userID] = struct{}{}
-			mentions = append(mentions, userID)
+			mentions = append(mentions, Mention{
+				ID:   userID,
+				Name: s.userMentionName(s.users[userID]),
+			})
 		}
 	}
 	return mentions
@@ -1141,6 +1159,16 @@ func (s *Service) userDisplayName(userID string) string {
 		}
 	}
 	return userID
+}
+
+func (s *Service) userMentionName(user User) string {
+	if strings.TrimSpace(user.Name) != "" {
+		return user.Name
+	}
+	if strings.TrimSpace(user.Handle) != "" {
+		return user.Handle
+	}
+	return user.ID
 }
 
 func (s *Service) userDisplayNames(userIDs []string) []string {
@@ -1238,6 +1266,27 @@ func (s *Service) contentWithMentionPrefixLocked(content, mentionID string) (str
 		return content, nil
 	}
 	return prefix + " " + strings.TrimSpace(content), nil
+}
+
+func (s *Service) mentionsForUserIDs(userIDs []string) []Mention {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	mentions := make([]Mention, 0, len(userIDs))
+	for _, userID := range userIDs {
+		user, ok := s.users[userID]
+		if !ok {
+			continue
+		}
+		mentions = append(mentions, Mention{
+			ID:   userID,
+			Name: s.userMentionName(user),
+		})
+	}
+	if len(mentions) == 0 {
+		return nil
+	}
+	return mentions
 }
 
 func (s *Service) saveLocked() error {

@@ -332,7 +332,7 @@ func TestFeishuSendMessageResolvesMentionApp(t *testing.T) {
 	if message.SenderID != "ou_manager" {
 		t.Fatalf("message sender_id = %q, want ou_manager", message.SenderID)
 	}
-	if len(message.Mentions) != 1 || message.Mentions[0] != "ou_dev" {
+	if len(message.Mentions) != 1 || message.Mentions[0].ID != "ou_dev" || message.Mentions[0].Name != "u-dev" {
 		t.Fatalf("message mentions = %+v, want ou_dev", message.Mentions)
 	}
 }
@@ -375,7 +375,7 @@ func TestFeishuSendMessageWithMentionPublishesMessageEvent(t *testing.T) {
 		if evt.Message.SenderID != "ou_manager" {
 			t.Fatalf("event sender_id = %q, want ou_manager", evt.Message.SenderID)
 		}
-		if len(evt.Message.Mentions) != 1 || evt.Message.Mentions[0] != "ou_dev" {
+		if len(evt.Message.Mentions) != 1 || evt.Message.Mentions[0].ID != "ou_dev" || evt.Message.Mentions[0].Name != "u-dev" {
 			t.Fatalf("event mentions = %+v, want ou_dev", evt.Message.Mentions)
 		}
 	case <-time.After(time.Second):

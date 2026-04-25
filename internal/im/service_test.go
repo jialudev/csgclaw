@@ -174,7 +174,7 @@ func TestCreateMessagePrefixesMentionTag(t *testing.T) {
 	if message.Content != `<at user_id="u-dev">dev</at> hi` {
 		t.Fatalf(`CreateMessage() content = %q, want <at user_id="u-dev">dev</at> hi`, message.Content)
 	}
-	if len(message.Mentions) != 1 || message.Mentions[0] != "u-dev" {
+	if len(message.Mentions) != 1 || message.Mentions[0].ID != "u-dev" || message.Mentions[0].Name != "dev" {
 		t.Fatalf("CreateMessage() mentions = %+v, want [u-dev]", message.Mentions)
 	}
 }

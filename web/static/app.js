@@ -1284,7 +1284,7 @@ function formatEventMessage(message, usersById, locale) {
   }
   if (message.event?.key === "room_members_added") {
     const actor = userDisplayName(message.event.actor_id || message.sender_id, usersById);
-    const targets = (message.event.target_ids || message.mentions || []).map((id) => userDisplayName(id, usersById)).filter(Boolean);
+    const targets = (message.event.target_ids || mentionIDs(message.mentions) || []).map((id) => userDisplayName(id, usersById)).filter(Boolean);
     if (targets.length > 0) {
       return locale === "zh"
         ? `${actor} 邀请 ${targets.join("、")} 加入了房间`
@@ -1292,6 +1292,15 @@ function formatEventMessage(message, usersById, locale) {
     }
   }
   return message.content || "";
+}
+
+function mentionIDs(mentions) {
+  return (mentions || []).map((mention) => {
+    if (typeof mention === "string") {
+      return mention;
+    }
+    return mention?.id || "";
+  }).filter(Boolean);
 }
 
 function isLegacySystemEventContent(content) {
