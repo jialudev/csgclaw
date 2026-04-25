@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -28,36 +30,77 @@ const (
 )
 
 type runtimeConfig struct {
-	clientCfg    csghubsdk.Config
-	clusterID    string
-	resourceID   int
-	port         int
-	timeout      int
-	pvcMountPath string
-	readyTimeout time.Duration
-	pollInterval time.Duration
+	clientCfg       csghubsdk.Config
+	clusterID       string
+	resourceID      int
+	port            int
+	timeout         int
+	pvcMountPath    string
+	pvcMountSubpath string
+	readyTimeout    time.Duration
+	pollInterval    time.Duration
+	namePrefix      string
 }
 
 // Provider is the sandbox.Provider implementation for [sandbox].provider = csghub.
-type Provider struct{}
+type Provider struct {
+	options []ProviderOption
+}
 
-func NewProvider() Provider {
-	return Provider{}
+type ProviderOption func(*runtimeConfig)
+
+// WithPVCMountPath sets the host PVC mount root used to compute subpaths for
+// sandbox volume mounts.
+func WithPVCMountPath(path string) ProviderOption {
+	return func(cfg *runtimeConfig) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		cfg.pvcMountPath = path
+	}
+}
+
+// WithPVCMountSubpathPrefix prepends a PVC subpath prefix to all computed sandbox
+// mount subpaths.
+func WithPVCMountSubpathPrefix(path string) ProviderOption {
+	return func(cfg *runtimeConfig) {
+		cfg.pvcMountSubpath = normalizePVCSubpath(path)
+	}
+}
+
+func NewProvider(opts ...ProviderOption) Provider {
+	return Provider{options: opts}
 }
 
 func (Provider) Name() string {
 	return providerName
 }
 
-func (Provider) Open(_ context.Context, _ string) (sandbox.Runtime, error) {
+func (p Provider) Open(_ context.Context, _ string) (sandbox.Runtime, error) {
 	cfg, err := loadRuntimeConfigFromEnv()
 	if err != nil {
 		return nil, err
 	}
+	p.applyRuntimeOptions(&cfg)
 	return &Runtime{
-		cfg:    cfg,
-		client: csghubsdk.New(cfg.clientCfg),
+		cfg: cfg,
+		client: csghubsdk.New(
+			cfg.clientCfg,
+			csghubsdk.WithLogger(runtimeLogger{}),
+		),
 	}, nil
+}
+
+func (p Provider) applyRuntimeOptions(cfg *runtimeConfig) {
+	if cfg == nil {
+		return
+	}
+	for _, opt := range p.options {
+		if opt != nil {
+			opt(cfg)
+		}
+	}
 }
 
 var _ sandbox.Provider = Provider{}
@@ -66,6 +109,16 @@ var _ sandbox.Provider = Provider{}
 type Runtime struct {
 	cfg    runtimeConfig
 	client *csghubsdk.Client
+}
+
+type runtimeLogger struct{}
+
+func (runtimeLogger) Infof(format string, args ...any) {
+	log.Printf("[csghub-runtime] "+format, args...)
+}
+
+func (runtimeLogger) Errorf(format string, args ...any) {
+	log.Printf("[csghub-runtime] "+format, args...)
 }
 
 var _ sandbox.Runtime = (*Runtime)(nil)
@@ -94,20 +147,28 @@ func (r *Runtime) Create(ctx context.Context, spec sandbox.CreateSpec) (sandbox.
 		}
 	}
 
-	started, startErr := r.startSandboxIdempotent(ctx, req.SandboxName)
-	if startErr != nil {
-		return nil, startErr
-	}
-	if started != nil {
-		resp = started
-	}
-
 	if !isSandboxRunning(resp.State.Status) {
-		resp, err = r.waitForRunning(ctx, req.SandboxName)
-		if err != nil {
-			return nil, err
+		if isSandboxDeploying(resp.State.Status) {
+			// Deploying indicates a previously created sandbox needs an explicit
+			// start trigger before polling until running.
+		}
+		if shouldStartOnCreate(resp.State.Status) {
+			started, startErr := r.startSandboxIdempotent(ctx, req.SandboxName)
+			if startErr != nil {
+				return nil, startErr
+			}
+			if started != nil {
+				resp = started
+			}
+			if !isSandboxRunning(resp.State.Status) {
+				resp, err = r.waitForRunning(ctx, req.SandboxName)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
+
 	if err := r.waitForRuntimeHealth(ctx, req.SandboxName); err != nil {
 		return nil, err
 	}
@@ -121,9 +182,9 @@ func (r *Runtime) Get(ctx context.Context, idOrName string) (sandbox.Instance, e
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("invalid csghub runtime")
 	}
-	name := strings.TrimSpace(idOrName)
-	if name == "" {
-		return nil, fmt.Errorf("csghub sandbox id or name is required")
+	name, err := r.sandboxName(idOrName)
+	if err != nil {
+		return nil, err
 	}
 	if _, err := r.client.Get(ctx, name); err != nil {
 		return nil, wrapError("get csghub sandbox", err)
@@ -138,9 +199,9 @@ func (r *Runtime) Remove(ctx context.Context, idOrName string, _ sandbox.RemoveO
 	if r == nil || r.client == nil {
 		return fmt.Errorf("invalid csghub runtime")
 	}
-	name := strings.TrimSpace(idOrName)
-	if name == "" {
-		return fmt.Errorf("csghub sandbox id or name is required")
+	name, err := r.sandboxName(idOrName)
+	if err != nil {
+		return err
 	}
 	return wrapError("remove csghub sandbox", r.client.Delete(ctx, name))
 }
@@ -158,6 +219,7 @@ func (r *Runtime) createRequest(spec sandbox.CreateSpec) (csghubsdk.CreateReques
 	if name == "" {
 		return csghubsdk.CreateRequest{}, fmt.Errorf("invalid sandbox name: name is required")
 	}
+	name = withNamePrefix(name, r.cfg.namePrefix)
 
 	volumes, err := r.volumeSpecs(spec.Mounts)
 	if err != nil {
@@ -167,7 +229,7 @@ func (r *Runtime) createRequest(spec sandbox.CreateSpec) (csghubsdk.CreateReques
 	req := csghubsdk.CreateRequest{
 		Image:        image,
 		SandboxName:  name,
-		Environments: cloneStringMap(spec.Env),
+		Environments: r.createEnvironments(spec.Env),
 		Volumes:      volumes,
 		ClusterID:    strings.TrimSpace(r.cfg.clusterID),
 		ResourceID:   r.cfg.resourceID,
@@ -175,6 +237,16 @@ func (r *Runtime) createRequest(spec sandbox.CreateSpec) (csghubsdk.CreateReques
 		Timeout:      r.cfg.timeout,
 	}
 	return req, nil
+}
+
+func (r *Runtime) createEnvironments(specEnv map[string]string) map[string]string {
+	env := cloneStringMap(specEnv)
+	if env == nil {
+		env = make(map[string]string, 2)
+	}
+	env["CSGHUB_API_BASE_URL"] = strings.TrimSpace(r.cfg.clientCfg.BaseURL)
+	env["CSGHUB_USER_TOKEN"] = strings.TrimSpace(r.cfg.clientCfg.Token)
+	return env
 }
 
 func (r *Runtime) volumeSpecs(mounts []sandbox.Mount) ([]csghubsdk.VolumeSpec, error) {
@@ -202,6 +274,12 @@ func (r *Runtime) volumeSpecs(mounts []sandbox.Mount) ([]csghubsdk.VolumeSpec, e
 		if rel == "." || strings.HasPrefix(rel, "../") || rel == ".." {
 			return nil, fmt.Errorf("invalid sandbox mount: host path %q must be under %q", host, root)
 		}
+		if rel == "." {
+			rel = ""
+		}
+		if strings.TrimSpace(r.cfg.pvcMountSubpath) != "" {
+			rel = path.Join(r.cfg.pvcMountSubpath, rel)
+		}
 		volumes = append(volumes, csghubsdk.VolumeSpec{
 			SandboxMountSubpath: rel,
 			SandboxMountPath:    guest,
@@ -226,8 +304,11 @@ func (r *Runtime) waitForRunning(ctx context.Context, sandboxName string) (*csgh
 		resp, err := r.client.Get(waitCtx, sandboxName)
 		if err == nil {
 			lastStatus = strings.TrimSpace(resp.State.Status)
-			if isSandboxRunning(lastStatus) {
+			if isSandboxUpOrComingUp(lastStatus) {
 				return resp, nil
+			}
+			if isSandboxTerminalFailure(lastStatus) {
+				return nil, fmt.Errorf("wait csghub sandbox failed to start: status=%q", lastStatus)
 			}
 		} else if shouldRaiseImmediately(err) {
 			return nil, wrapError("poll csghub sandbox status", err)
@@ -328,17 +409,21 @@ func (i *Instance) Start(ctx context.Context) error {
 	if err := i.valid(); err != nil {
 		return err
 	}
-	resp, err := i.runtime.startSandboxIdempotent(ctx, i.name)
+	name, err := i.runtime.sandboxName(i.name)
+	if err != nil {
+		return err
+	}
+	resp, err := i.runtime.startSandboxIdempotent(ctx, name)
 	if err != nil {
 		return err
 	}
 	if resp != nil && !isSandboxRunning(resp.State.Status) {
-		_, err = i.runtime.waitForRunning(ctx, i.name)
+		_, err = i.runtime.waitForRunning(ctx, name)
 		if err != nil {
 			return err
 		}
 	}
-	return i.runtime.waitForRuntimeHealth(ctx, i.name)
+	return i.runtime.waitForRuntimeHealth(ctx, name)
 }
 
 func (i *Instance) Stop(ctx context.Context, opts sandbox.StopOptions) error {
@@ -351,14 +436,22 @@ func (i *Instance) Stop(ctx context.Context, opts sandbox.StopOptions) error {
 	if opts.Timeout != 0 {
 		return fmt.Errorf("unsupported sandbox option: stop timeout")
 	}
-	return wrapError("stop csghub sandbox", i.runtime.client.Stop(ctx, i.name))
+	name, err := i.runtime.sandboxName(i.name)
+	if err != nil {
+		return err
+	}
+	return wrapError("stop csghub sandbox", i.runtime.client.Stop(ctx, name))
 }
 
 func (i *Instance) Info(ctx context.Context) (sandbox.Info, error) {
 	if err := i.valid(); err != nil {
 		return sandbox.Info{}, err
 	}
-	resp, err := i.runtime.client.Get(ctx, i.name)
+	name, err := i.runtime.sandboxName(i.name)
+	if err != nil {
+		return sandbox.Info{}, err
+	}
+	resp, err := i.runtime.client.Get(ctx, name)
 	if err != nil {
 		return sandbox.Info{}, wrapError("read csghub sandbox info", err)
 	}
@@ -388,7 +481,11 @@ func (i *Instance) Run(ctx context.Context, spec sandbox.CommandSpec) (sandbox.C
 		}
 		return nil
 	}
-	if err := i.runtime.client.StreamExecute(ctx, i.name, command, emit); err != nil {
+	name, err := i.runtime.sandboxName(i.name)
+	if err != nil {
+		return sandbox.CommandResult{}, err
+	}
+	if err := i.runtime.client.StreamExecute(ctx, name, command, emit); err != nil {
 		return sandbox.CommandResult{}, fmt.Errorf("run csghub command: %w", err)
 	}
 	if firstStreamError != "" {
@@ -456,6 +553,7 @@ func loadRuntimeConfigFromEnv() (runtimeConfig, error) {
 	if pvcMountPath == "" {
 		pvcMountPath = defaultPVCMountPath
 	}
+	subpathPrefix := normalizePVCSubpath(os.Getenv("CSGCLAW_PVC_SUBPATH_PREFIX"))
 
 	return runtimeConfig{
 		clientCfg: csghubsdk.Config{
@@ -463,14 +561,53 @@ func loadRuntimeConfigFromEnv() (runtimeConfig, error) {
 			AIGatewayURL: strings.TrimSpace(os.Getenv("CSGHUB_AIGATEWAY_URL")),
 			Token:        token,
 		},
-		clusterID:    strings.TrimSpace(os.Getenv("CSGCLAW_CLUSTER_ID")),
-		resourceID:   resourceID,
-		port:         port,
-		timeout:      timeout,
-		pvcMountPath: pvcMountPath,
-		readyTimeout: readyTimeout,
-		pollInterval: pollInterval,
+		clusterID:       strings.TrimSpace(os.Getenv("CSGCLAW_CLUSTER_ID")),
+		resourceID:      resourceID,
+		port:            port,
+		timeout:         timeout,
+		pvcMountPath:    pvcMountPath,
+		pvcMountSubpath: subpathPrefix,
+		readyTimeout:    readyTimeout,
+		pollInterval:    pollInterval,
+		namePrefix:      strings.TrimSpace(os.Getenv("CSGCLAW_NAME")),
 	}, nil
+}
+
+func normalizePVCSubpath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	normalized := path.Clean(filepath.ToSlash(raw))
+	normalized = strings.TrimPrefix(normalized, "./")
+	normalized = strings.Trim(normalized, "/")
+	if normalized == "." || normalized == "" {
+		return ""
+	}
+	if normalized == ".." || strings.HasPrefix(normalized, "../") {
+		return ""
+	}
+	return normalized
+}
+
+func withNamePrefix(name, prefix string) string {
+	name = strings.TrimSpace(name)
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return name
+	}
+	if strings.HasPrefix(name, prefix+"-") {
+		return name
+	}
+	return prefix + "-" + name
+}
+
+func (r *Runtime) sandboxName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", fmt.Errorf("csghub sandbox id or name is required")
+	}
+	return withNamePrefix(name, r.cfg.namePrefix), nil
 }
 
 func parseOptionalIntEnv(key string) (int, error) {

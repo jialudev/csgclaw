@@ -287,7 +287,6 @@ app_secret = "${FEISHU_APP_SECRET}"
 		}
 	}
 }
-
 func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
 		Provider:         config.BoxLiteCLIProvider,

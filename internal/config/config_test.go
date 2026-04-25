@@ -109,6 +109,7 @@ provider = "boxlite-cli"
 home_dir_name = "sandbox-home"
 boxlite_cli_path = "/usr/local/bin/boxlite"
 debian_registries = ["registry.a", " docker.io ", "registry.a"]
+storage_path = "/shared/csgclaw"
 
 [models]
 default = "default.minimax-m2.7"
@@ -137,6 +138,41 @@ models = ["minimax-m2.7"]
 	}
 	if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), "registry.a,docker.io"; got != want {
 		t.Fatalf("cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
+	}
+	if got, want := cfg.Sandbox.StoragePath, "/shared/csgclaw"; got != want {
+		t.Fatalf("cfg.Sandbox.StoragePath = %q, want %q", got, want)
+	}
+}
+
+func TestLoadExpandsEnvironmentVariablesInConfigValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	t.Setenv("SANDBOX_PROVIDER", CSGHubProvider)
+
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[sandbox]
+provider = "${SANDBOX_PROVIDER}"
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Sandbox.Provider, CSGHubProvider; got != want {
+		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 }
 
@@ -320,6 +356,7 @@ func TestSaveWritesModelsSection(t *testing.T) {
 			Provider:         BoxLiteCLIProvider,
 			HomeDirName:      "sandbox-home",
 			BoxLiteCLIPath:   "/opt/boxlite/bin/boxlite",
+			StoragePath:      "/mnt/csgclaw",
 			DebianRegistries: []string{"registry.a", "docker.io"},
 		},
 		Bootstrap: BootstrapConfig{
@@ -363,6 +400,9 @@ func TestSaveWritesModelsSection(t *testing.T) {
 	}
 	if !strings.Contains(content, `debian_registries = ["registry.a", "docker.io"]`) {
 		t.Fatalf("saved config missing sandbox debian_registries:\n%s", content)
+	}
+	if !strings.Contains(content, `storage_path = "/mnt/csgclaw"`) {
+		t.Fatalf("saved config missing storage_path:\n%s", content)
 	}
 	if !strings.Contains(content, `default = "default.minimax-m2.7"`) {
 		t.Fatalf("saved config missing canonical models.default:\n%s", content)
