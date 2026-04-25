@@ -664,6 +664,64 @@ func TestHandleBotByIDDeleteUsesChannel(t *testing.T) {
 	}
 }
 
+func TestHandleBotByIDDeleteRemovesCSGClawUser(t *testing.T) {
+	store, err := bot.NewMemoryStore([]bot.Bot{
+		{
+			ID:        "u-alice",
+			Name:      "Alice",
+			Role:      string(bot.RoleWorker),
+			Channel:   string(bot.ChannelCSGClaw),
+			AgentID:   "u-alice",
+			UserID:    "u-alice",
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", IsOnline: true},
+			{ID: "u-alice", Name: "Alice", Handle: "alice", IsOnline: true},
+		},
+		Rooms: []im.Room{
+			{
+				ID:           "room-1",
+				Title:        "Alice",
+				Participants: []string{"u-admin", "u-alice"},
+				Messages:     []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
+			},
+		},
+	})
+	botSvc, err := bot.NewServiceWithDependencies(store, nil, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+	srv := &Handler{botSvc: botSvc}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/bots/u-alice?channel=csgclaw", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if _, ok := imSvc.User("u-alice"); ok {
+		t.Fatal("User(u-alice) ok = true, want false after bot delete")
+	}
+	if _, ok := imSvc.Room("room-1"); ok {
+		t.Fatal("Room(room-1) ok = true, want false after removing DM user")
+	}
+	bots, err := botSvc.List(string(bot.ChannelCSGClaw), "")
+	if err != nil {
+		t.Fatalf("List(csgclaw) error = %v", err)
+	}
+	if len(bots) != 0 {
+		t.Fatalf("csgclaw bots = %+v, want deleted", bots)
+	}
+}
+
 func TestHandleAgentsListReturnsUnifiedAgents(t *testing.T) {
 	svc := mustNewSeededService(t, []agent.Agent{
 		{ID: "u-manager", Name: "manager", Role: agent.RoleManager, CreatedAt: time.Date(2026, 3, 28, 9, 0, 0, 0, time.UTC)},
@@ -1596,7 +1654,7 @@ func TestHandleRoomsPostCreatesRoom(t *testing.T) {
 	}
 }
 
-func TestHandleUsersDeleteKicksUser(t *testing.T) {
+func TestHandleUsersDeleteRemovesUser(t *testing.T) {
 	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
@@ -1626,7 +1684,7 @@ func TestHandleUsersDeleteKicksUser(t *testing.T) {
 		t.Fatal("User() ok = true, want false after delete")
 	}
 	if _, ok := srv.im.Room("room-1"); ok {
-		t.Fatal("Room() ok = true, want false for DM after kicked user")
+		t.Fatal("Room() ok = true, want false for DM after deleted user")
 	}
 }
 

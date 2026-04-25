@@ -202,6 +202,9 @@ func (s *Service) Delete(ctx context.Context, channel, id string) error {
 	if !ok {
 		return fmt.Errorf("bot %q not found", id)
 	}
+	if err := s.deleteChannelUser(deleted); err != nil {
+		return err
+	}
 	if s.agents == nil {
 		return nil
 	}
@@ -219,6 +222,23 @@ func (s *Service) Delete(ctx context.Context, channel, id string) error {
 	}
 	if err := s.agents.Delete(ctx, agentID); err != nil {
 		return fmt.Errorf("delete backing agent %q: %w", agentID, err)
+	}
+	return nil
+}
+
+func (s *Service) deleteChannelUser(deleted Bot) error {
+	if strings.TrimSpace(deleted.Channel) != string(ChannelCSGClaw) || s.im == nil {
+		return nil
+	}
+	userID := strings.TrimSpace(deleted.UserID)
+	if userID == "" {
+		userID = strings.TrimSpace(deleted.ID)
+	}
+	if userID == "" {
+		return nil
+	}
+	if err := s.im.DeleteUser(userID); err != nil && !strings.Contains(err.Error(), "user not found") {
+		return fmt.Errorf("delete csgclaw user %q: %w", userID, err)
 	}
 	return nil
 }

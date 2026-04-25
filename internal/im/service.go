@@ -648,7 +648,7 @@ func (s *Service) DeleteConversation(conversationID string) error {
 	return s.DeleteRoom(conversationID)
 }
 
-func (s *Service) KickUser(userID string) error {
+func (s *Service) DeleteUser(userID string) error {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return fmt.Errorf("user_id is required")
@@ -662,7 +662,7 @@ func (s *Service) KickUser(userID string) error {
 		return fmt.Errorf("user not found")
 	}
 	if userID == s.currentUserID {
-		return fmt.Errorf("cannot kick current user")
+		return fmt.Errorf("cannot delete current user")
 	}
 
 	delete(s.users, userID)

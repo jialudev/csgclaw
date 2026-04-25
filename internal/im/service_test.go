@@ -267,7 +267,7 @@ func TestDeleteRoomRemovesRoom(t *testing.T) {
 	}
 }
 
-func TestKickUserRemovesUserFromStateConversationsAndMessages(t *testing.T) {
+func TestDeleteUserRemovesUserFromStateConversationsAndMessages(t *testing.T) {
 	svc := NewServiceFromBootstrap(Bootstrap{
 		CurrentUserID: "u-admin",
 		Users: []User{
@@ -294,11 +294,11 @@ func TestKickUserRemovesUserFromStateConversationsAndMessages(t *testing.T) {
 		},
 	})
 
-	if err := svc.KickUser("u-alice"); err != nil {
-		t.Fatalf("KickUser() error = %v", err)
+	if err := svc.DeleteUser("u-alice"); err != nil {
+		t.Fatalf("DeleteUser() error = %v", err)
 	}
 	if _, ok := svc.User("u-alice"); ok {
-		t.Fatal("User() ok = true, want false after kick")
+		t.Fatal("User() ok = true, want false after delete")
 	}
 
 	group, ok := svc.Room("room-group")
@@ -313,15 +313,15 @@ func TestKickUserRemovesUserFromStateConversationsAndMessages(t *testing.T) {
 	}
 
 	if _, ok := svc.Room("room-dm"); ok {
-		t.Fatal("Room(room-dm) ok = true, want DM deleted after kick")
+		t.Fatal("Room(room-dm) ok = true, want DM deleted after user delete")
 	}
 }
 
-func TestKickUserRejectsCurrentUser(t *testing.T) {
+func TestDeleteUserRejectsCurrentUser(t *testing.T) {
 	svc := NewService()
 
-	if err := svc.KickUser("u-admin"); err == nil {
-		t.Fatal("KickUser(current user) error = nil, want error")
+	if err := svc.DeleteUser("u-admin"); err == nil {
+		t.Fatal("DeleteUser(current user) error = nil, want error")
 	}
 }
 

@@ -524,12 +524,12 @@ func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodDelete:
-		if err := h.im.KickUser(id); err != nil {
+		if err := h.im.DeleteUser(id); err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				http.Error(w, "user not found", http.StatusNotFound)
 				return
 			}
-			if strings.Contains(err.Error(), "cannot kick current user") {
+			if strings.Contains(err.Error(), "cannot delete current user") {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}

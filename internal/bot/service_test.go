@@ -323,6 +323,60 @@ func TestServiceDeleteRemovesBotForChannel(t *testing.T) {
 	}
 }
 
+func TestServiceDeleteRemovesCSGClawUser(t *testing.T) {
+	store, err := NewMemoryStore([]Bot{
+		{
+			ID:        "u-alice",
+			Name:      "Alice",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelCSGClaw),
+			AgentID:   "u-alice",
+			UserID:    "u-alice",
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", IsOnline: true},
+			{ID: "u-alice", Name: "Alice", Handle: "alice", IsOnline: true},
+		},
+		Rooms: []im.Room{
+			{
+				ID:           "room-1",
+				Title:        "Alice",
+				Participants: []string{"u-admin", "u-alice"},
+				Messages:     []im.Message{{ID: "msg-1", SenderID: "u-alice", Content: "hello"}},
+			},
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, nil, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	if err := svc.Delete(context.Background(), "csgclaw", "u-alice"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	bots, err := svc.List("csgclaw", "")
+	if err != nil {
+		t.Fatalf("List(csgclaw) error = %v", err)
+	}
+	if len(bots) != 0 {
+		t.Fatalf("List(csgclaw) = %+v, want deleted", bots)
+	}
+	if _, ok := imSvc.User("u-alice"); ok {
+		t.Fatal("User(u-alice) ok = true, want false after bot delete")
+	}
+	if _, ok := imSvc.Room("room-1"); ok {
+		t.Fatal("Room(room-1) ok = true, want false after removing DM user")
+	}
+}
+
 func TestServiceDeleteRemovesBackingAgentWhenLastReference(t *testing.T) {
 	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
 		{
@@ -665,8 +719,8 @@ func TestServiceCreateCSGClawManagerReusesExistingBotAndRestoresMissingUser(t *t
 	}); err != nil {
 		t.Fatalf("first Create(manager) error = %v", err)
 	}
-	if err := imSvc.KickUser(agent.ManagerUserID); err != nil {
-		t.Fatalf("KickUser(manager) error = %v", err)
+	if err := imSvc.DeleteUser(agent.ManagerUserID); err != nil {
+		t.Fatalf("DeleteUser(manager) error = %v", err)
 	}
 	if containsUser(imSvc.ListUsers(), agent.ManagerUserID) {
 		t.Fatalf("users = %+v, want u-manager removed before second create", imSvc.ListUsers())
