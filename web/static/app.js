@@ -408,6 +408,7 @@ function App() {
   const [loadingError, setLoadingError] = useState("");
   const editorRef = useRef(null);
   const messageListRef = useRef(null);
+  const memberMenuRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
@@ -520,6 +521,23 @@ function App() {
   useEffect(() => {
     setShowMemberList(false);
   }, [activeConversationId]);
+
+  useEffect(() => {
+    if (!showMemberList) {
+      return undefined;
+    }
+
+    function handlePointerDown(event) {
+      const menu = memberMenuRef.current;
+      if (!menu || menu.contains(event.target)) {
+        return;
+      }
+      setShowMemberList(false);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [showMemberList]);
 
   useEffect(() => {
     if (!data) {
@@ -959,7 +977,7 @@ function App() {
                       <div className="chat-title-row">
                         <div className="chat-title-group">
                           <div className="chat-title truncate">${activeConversation.title}</div>
-                          <div className="header-menu">
+                          <div ref=${memberMenuRef} className="header-menu">
                             <button
                               className=${`member-badge-button ${showMemberList ? "active" : ""}`}
                               aria-label=${t("membersTitle")}
