@@ -9,6 +9,7 @@ const html = htm.bind(React.createElement);
 const LOCALE_STORAGE_KEY = "csgclaw.im.locale";
 const TOOL_CALLS_STORAGE_KEY = "csgclaw.im.showToolCalls";
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "csgclaw.im.sidebarCollapsed";
+const MESSAGE_LIST_BOTTOM_THRESHOLD = 24;
 
 marked.setOptions({
   gfm: true,
@@ -407,6 +408,7 @@ function App() {
   const [loadingError, setLoadingError] = useState("");
   const editorRef = useRef(null);
   const messageListRef = useRef(null);
+  const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
     fetch("api/v1/bootstrap")
@@ -539,8 +541,31 @@ function App() {
     if (!el) {
       return;
     }
+    const updateAutoScrollState = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      shouldAutoScrollRef.current = distanceFromBottom <= MESSAGE_LIST_BOTTOM_THRESHOLD;
+    };
+    updateAutoScrollState();
+    el.addEventListener("scroll", updateAutoScrollState);
+    return () => el.removeEventListener("scroll", updateAutoScrollState);
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    const el = messageListRef.current;
+    if (!el) {
+      return;
+    }
+    shouldAutoScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
-  }, [activeConversationId, visibleMessages.length]);
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    const el = messageListRef.current;
+    if (!el || !shouldAutoScrollRef.current) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, [visibleMessages.length]);
 
   useEffect(() => {
     const editor = editorRef.current;
