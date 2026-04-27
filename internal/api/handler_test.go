@@ -1170,6 +1170,56 @@ func TestHandleBootstrapAliasReturnsIMBootstrap(t *testing.T) {
 	}
 }
 
+func TestHandleBootstrapReloadsIMStateBeforeResponse(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	initial := im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", Role: "admin"},
+			{ID: "u-manager", Name: "manager", Handle: "manager", Role: "manager"},
+		},
+	}
+	if err := im.SaveBootstrap(statePath, initial); err != nil {
+		t.Fatalf("SaveBootstrap() initial error = %v", err)
+	}
+
+	imSvc, err := im.NewServiceFromPath(statePath)
+	if err != nil {
+		t.Fatalf("NewServiceFromPath() error = %v", err)
+	}
+
+	updated := initial
+	updated.Rooms = []im.Room{{
+		ID:       "room-1",
+		Title:    "admin & manager",
+		IsDirect: true,
+		Members:  []string{"u-admin", "u-manager"},
+	}}
+	if err := im.SaveBootstrap(statePath, updated); err != nil {
+		t.Fatalf("SaveBootstrap() updated error = %v", err)
+	}
+
+	srv := &Handler{im: imSvc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got struct {
+		Rooms []im.Room `json:"rooms"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Rooms) != 1 || got.Rooms[0].ID != "room-1" {
+		t.Fatalf("rooms = %+v, want reloaded room-1", got.Rooms)
+	}
+}
+
 func TestHandleRoomsInviteAliasAddsConversationMembers(t *testing.T) {
 	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
@@ -1310,6 +1360,54 @@ func TestHandleRoomsReturnsConversationList(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "room-1" {
 		t.Fatalf("rooms = %+v, want room-1", got)
+	}
+}
+
+func TestHandleRoomsReloadsIMStateBeforeList(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	initial := im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", Role: "admin"},
+			{ID: "u-manager", Name: "manager", Handle: "manager", Role: "manager"},
+		},
+	}
+	if err := im.SaveBootstrap(statePath, initial); err != nil {
+		t.Fatalf("SaveBootstrap() initial error = %v", err)
+	}
+
+	imSvc, err := im.NewServiceFromPath(statePath)
+	if err != nil {
+		t.Fatalf("NewServiceFromPath() error = %v", err)
+	}
+
+	updated := initial
+	updated.Rooms = []im.Room{{
+		ID:       "room-1",
+		Title:    "admin & manager",
+		IsDirect: true,
+		Members:  []string{"u-admin", "u-manager"},
+	}}
+	if err := im.SaveBootstrap(statePath, updated); err != nil {
+		t.Fatalf("SaveBootstrap() updated error = %v", err)
+	}
+
+	srv := &Handler{im: imSvc}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/rooms", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got []im.Conversation
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "room-1" {
+		t.Fatalf("rooms = %+v, want reloaded room-1", got)
 	}
 }
 

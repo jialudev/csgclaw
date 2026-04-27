@@ -451,6 +451,10 @@ func (h *Handler) handleIMBootstrap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if err := h.reloadIM(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, presentBootstrap(h.im.Bootstrap()))
 }
 
@@ -461,6 +465,10 @@ func (h *Handler) handleRooms(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if err := h.reloadIM(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		writeJSON(w, http.StatusOK, h.im.ListRooms())
 	case http.MethodPost:
 		h.handleCreateRoom(w, r)
@@ -476,6 +484,10 @@ func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if err := h.reloadIM(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		writeJSON(w, http.StatusOK, h.im.ListUsers())
 	case http.MethodPost:
 		h.handleCreateUser(w, r)
@@ -491,6 +503,10 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		if err := h.reloadIM(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		roomID, err := roomIDFromQuery(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -550,6 +566,10 @@ func (h *Handler) handleRoomByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleRoomMembersByID(w http.ResponseWriter, r *http.Request, roomID string) {
 	switch r.Method {
 	case http.MethodGet:
+		if err := h.reloadIM(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	case http.MethodPost:
 		h.handleAddRoomMembers(w, r, roomID)
 		return
@@ -912,6 +932,13 @@ func parseRoomMembersPath(path string) (string, bool) {
 		return parts[0], true
 	}
 	return "", false
+}
+
+func (h *Handler) reloadIM() error {
+	if h == nil || h.im == nil {
+		return nil
+	}
+	return h.im.Reload()
 }
 
 func (h *Handler) publishMessageCreated(conversationID, senderID string, message im.Message) {

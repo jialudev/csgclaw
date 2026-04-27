@@ -146,25 +146,10 @@ func NewServiceFromBootstrap(state Bootstrap) *Service {
 }
 
 func NewServiceFromBootstrapWithBus(state Bootstrap, bus *Bus) *Service {
-	state = normalizeBootstrap(state)
-
-	users := state.Users
-	rooms := state.Rooms
 	svc := &Service{
-		bus:           bus,
-		currentUserID: state.CurrentUserID,
-		users:         make(map[string]User, len(users)),
-		byHandle:      make(map[string]string, len(users)),
-		rooms:         make(map[string]*Room, len(rooms)),
+		bus: bus,
 	}
-	for _, user := range users {
-		svc.users[user.ID] = user
-		svc.byHandle[strings.ToLower(user.Handle)] = user.ID
-	}
-	for i := range rooms {
-		room := rooms[i]
-		svc.rooms[room.ID] = &room
-	}
+	svc.replaceState(normalizeBootstrap(state))
 	return svc
 }
 
@@ -194,6 +179,22 @@ func LoadBootstrap(path string) (Bootstrap, error) {
 		return Bootstrap{}, err
 	}
 	return normalizeBootstrap(state), nil
+}
+
+func (s *Service) Reload() error {
+	if s == nil || strings.TrimSpace(s.statePath) == "" {
+		return nil
+	}
+
+	state, err := LoadBootstrap(s.statePath)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.replaceStateLocked(state)
+	return nil
 }
 
 func SaveBootstrap(path string, state Bootstrap) error {
@@ -1294,6 +1295,32 @@ func (s *Service) saveLocked() error {
 		return nil
 	}
 	return SaveBootstrap(s.statePath, s.bootstrapLocked())
+}
+
+func (s *Service) replaceState(state Bootstrap) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.replaceStateLocked(state)
+}
+
+func (s *Service) replaceStateLocked(state Bootstrap) {
+	state = normalizeBootstrap(state)
+	users := state.Users
+	rooms := state.Rooms
+
+	s.currentUserID = state.CurrentUserID
+	s.users = make(map[string]User, len(users))
+	s.byHandle = make(map[string]string, len(users))
+	s.rooms = make(map[string]*Room, len(rooms))
+
+	for _, user := range users {
+		s.users[user.ID] = user
+		s.byHandle[strings.ToLower(user.Handle)] = user.ID
+	}
+	for i := range rooms {
+		room := rooms[i]
+		s.rooms[room.ID] = &room
+	}
 }
 
 func (s *Service) bootstrapLocked() Bootstrap {

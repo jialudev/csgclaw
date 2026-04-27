@@ -618,3 +618,51 @@ func TestEnsureBootstrapStateCreatesAdminManagerDMWhenOnlyGroupExists(t *testing
 		t.Fatalf("dm.Title = %q, want admin & manager", dm.Title)
 	}
 }
+
+func TestReloadRefreshesRoomsFromStateFile(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	initial := Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", Role: "admin"},
+			{ID: "u-manager", Name: "manager", Handle: "manager", Role: "manager"},
+		},
+	}
+	if err := SaveBootstrap(statePath, initial); err != nil {
+		t.Fatalf("SaveBootstrap() initial error = %v", err)
+	}
+
+	svc, err := NewServiceFromPath(statePath)
+	if err != nil {
+		t.Fatalf("NewServiceFromPath() error = %v", err)
+	}
+	if rooms := svc.ListRooms(); len(rooms) != 0 {
+		t.Fatalf("initial rooms = %+v, want none", rooms)
+	}
+
+	updated := Bootstrap{
+		CurrentUserID: "u-admin",
+		Users:         initial.Users,
+		Rooms: []Room{
+			{
+				ID:       "room-1",
+				Title:    "admin & manager",
+				IsDirect: true,
+				Members:  []string{"u-admin", "u-manager"},
+			},
+		},
+	}
+	if err := SaveBootstrap(statePath, updated); err != nil {
+		t.Fatalf("SaveBootstrap() updated error = %v", err)
+	}
+
+	if err := svc.Reload(); err != nil {
+		t.Fatalf("Reload() error = %v", err)
+	}
+
+	rooms := svc.ListRooms()
+	if len(rooms) != 1 || rooms[0].ID != "room-1" {
+		t.Fatalf("rooms after reload = %+v, want room-1", rooms)
+	}
+}
