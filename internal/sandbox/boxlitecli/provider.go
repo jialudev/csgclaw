@@ -20,15 +20,13 @@ type Provider struct {
 
 func NewProvider(opts ...ProviderOption) Provider {
 	p := Provider{
-		path:   "boxlite",
+		path:   defaultCLIPath,
 		runner: execRunner{},
 	}
 	for _, opt := range opts {
 		opt(&p)
 	}
-	if p.path == "" {
-		p.path = "boxlite"
-	}
+	p.path = ResolvePath(p.path)
 	if p.runner == nil {
 		p.runner = execRunner{}
 	}

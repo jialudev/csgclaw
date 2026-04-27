@@ -113,7 +113,7 @@ debian_registries = ["harbor.opencsg.com", "docker.io"]
 
 CSGClaw 通过配置的 sandbox provider 隔离 Worker 执行环境。默认 provider 是 `boxlite-sdk`，使用仓库内 vendored BoxLite Go SDK。
 
-如果你已经预先安装了 `boxlite` 命令行程序，可以显式切换到基于 CLI 的 provider：
+如果你希望通过外部 CLI 进程来运行 BoxLite，可以显式切换到基于 CLI 的 provider：
 
 ```toml
 [sandbox]
@@ -123,7 +123,7 @@ boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
-`boxlite_cli_path` 只在 `provider = "boxlite-cli"` 时使用。默认值 `boxlite` 会从 `PATH` 中查找；如果二进制安装在其他位置，可以配置为绝对路径。
+`boxlite_cli_path` 只在 `provider = "boxlite-cli"` 时使用。对于官方 release bundle，默认值 `boxlite` 会优先解析为 `csgclaw` 同 bundle 内置的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`；只有在你需要覆盖内置二进制或指向自定义安装路径时，才需要配置绝对路径。
 
 `debian_registries` 用于控制 BoxLite 拉取 `debian:bookworm-slim` 时的仓库顺序。若省略或为空，默认顺序为 `harbor.opencsg.com`、`docker.io`。可通过 `onboard` 持久化自定义列表：
 

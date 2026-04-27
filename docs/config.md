@@ -113,7 +113,7 @@ debian_registries = ["harbor.opencsg.com", "docker.io"]
 
 CSGClaw runs Workers through the configured sandbox provider. The default is `boxlite-sdk`, which uses the vendored BoxLite Go SDK.
 
-You can opt in to the CLI-backed provider when you already have the `boxlite` binary installed:
+You can opt in to the CLI-backed provider when you want to run BoxLite through the external CLI process:
 
 ```toml
 [sandbox]
@@ -123,7 +123,7 @@ boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
-`boxlite_cli_path` is the executable path used only by `provider = "boxlite-cli"`. The default value, `boxlite`, resolves from `PATH`; set an absolute path if the binary is installed elsewhere.
+`boxlite_cli_path` is the executable path used only by `provider = "boxlite-cli"`. For official release bundles, the default value `boxlite` first resolves to the bundled sibling binary next to `csgclaw`, then falls back to `PATH` if that bundle is missing. Set an absolute path only when you need to override the bundled binary or point to a custom installation.
 
 `debian_registries` controls where BoxLite pulls `debian:bookworm-slim`. If omitted or empty, CSGClaw defaults to `harbor.opencsg.com` then `docker.io`. Use `onboard` to persist a custom list:
 

@@ -9,9 +9,20 @@ on:
       version:
         description: "Release version, for example v0.1.0"
         required: true
+      package_mode:
+        description: "Packaging mode for the csgclaw release artifact"
+        required: false
+        default: "bundled-boxlite-cli"
+        type: choice
+        options:
+          - bundled-boxlite-cli
+          - legacy-single-binary
 
 permissions:
   contents: write
+
+env:
+  BOXLITE_CLI_VERSION: v0.8.2
 
 jobs:
   build-and-release:
@@ -51,6 +62,17 @@ jobs:
           fi
           echo "value=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve package mode
+        id: package_mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.package_mode }}" ]; then
+            package_mode="${{ github.event.inputs.package_mode }}"
+          else
+            package_mode="bundled-boxlite-cli"
+          fi
+          echo "value=${package_mode}" >> "$GITHUB_OUTPUT"
+
       - name: Resolve build metadata
         id: build_meta
         shell: bash
@@ -59,6 +81,7 @@ jobs:
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch BoxLite native library
+        if: steps.package_mode.outputs.value == 'legacy-single-binary'
         shell: bash
         working-directory: third_party/boxlite-go
         env:
@@ -69,13 +92,19 @@ jobs:
         shell: bash
         run: |
           chmod +x scripts/package-release.sh
+          csgclaw_go_build_tags=""
+          if [ "${{ steps.package_mode.outputs.value }}" = "legacy-single-binary" ]; then
+            csgclaw_go_build_tags="boxlite_sdk"
+          fi
           VERSION="${{ steps.version.outputs.value }}" \
           COMMIT="${{ steps.build_meta.outputs.commit }}" \
           BUILD_TIME="${{ steps.build_meta.outputs.build_time }}" \
           DIST_DIR=dist \
           APP=csgclaw \
           GOCACHE="${{ github.workspace }}/.gocache" \
-          GO_BUILD_TAGS=boxlite_sdk \
+          PACKAGE_MODE="${{ steps.package_mode.outputs.value }}" \
+          BOXLITE_CLI_VERSION="${{ env.BOXLITE_CLI_VERSION }}" \
+          GO_BUILD_TAGS="${csgclaw_go_build_tags}" \
           CGO_ENABLED=1 \
           ./scripts/package-release.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
           VERSION="${{ steps.version.outputs.value }}" \

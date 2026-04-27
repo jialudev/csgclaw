@@ -10,7 +10,7 @@ import (
 // in every csgclaw build, including binaries compiled without boxlite_sdk.
 func init() {
 	Register(config.BoxLiteCLIProvider, func(cfg config.SandboxConfig) (agent.ServiceOption, error) {
-		opts := []boxlitecli.ProviderOption{boxlitecli.WithPath(cfg.BoxLiteCLIPath)}
+		opts := []boxlitecli.ProviderOption{boxlitecli.WithPath(boxlitecli.ResolvePath(cfg.BoxLiteCLIPath))}
 		for _, registry := range cfg.DebianRegistries {
 			opts = append(opts, boxlitecli.WithRegistry(registry))
 		}

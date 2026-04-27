@@ -5,6 +5,7 @@ APP="${APP:-csgclaw}"
 REPO="${REPO:-OpenCSGs/csgclaw}"
 VERSION="${VERSION:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+LIB_DIR="${LIB_DIR:-$HOME/.local/lib/${APP}}"
 BASE_URL="${BASE_URL:-https://github.com/${REPO}/releases/download}"
 TMPDIR_INSTALL=""
 
@@ -69,6 +70,10 @@ ensure_install_dir() {
   mkdir -p "$INSTALL_DIR"
 }
 
+ensure_lib_dir() {
+  mkdir -p "$LIB_DIR"
+}
+
 check_path_hint() {
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
@@ -89,7 +94,7 @@ main() {
   need_cmd mktemp
   need_cmd install
 
-  local os arch version archive_name download_url archive_path extracted_path
+  local os arch version archive_name download_url archive_path extracted_path bundle_path bundle_bin_path install_root
   os="$(detect_os)"
   arch="$(detect_arch)"
   ensure_supported_platform "$os" "$arch"
@@ -109,17 +114,31 @@ main() {
   curl -fsSL "$download_url" -o "$archive_path"
 
   tar -xzf "$archive_path" -C "$TMPDIR_INSTALL"
-  extracted_path="${TMPDIR_INSTALL}/${APP}"
-  if [ ! -f "$extracted_path" ]; then
-    echo "archive did not contain ${APP}" >&2
-    exit 1
-  fi
+  bundle_path="${TMPDIR_INSTALL}/${APP}"
+  bundle_bin_path="${bundle_path}/bin/${APP}"
 
   ensure_install_dir
-  install -m 0755 "$extracted_path" "${INSTALL_DIR}/${APP}"
+  ensure_lib_dir
+
+  if [ -f "$bundle_bin_path" ]; then
+    install_root="${LIB_DIR}/${version}"
+    rm -rf "$install_root"
+    mkdir -p "$install_root"
+    cp -R "$bundle_path" "$install_root/"
+    ln -sfn "${install_root}/${APP}/bin/${APP}" "${INSTALL_DIR}/${APP}"
+    extracted_path="${install_root}/${APP}/bin/${APP}"
+  else
+    extracted_path="${TMPDIR_INSTALL}/${APP}"
+    if [ ! -f "$extracted_path" ]; then
+      echo "archive did not contain ${APP}" >&2
+      exit 1
+    fi
+    install -m 0755 "$extracted_path" "${INSTALL_DIR}/${APP}"
+    extracted_path="${INSTALL_DIR}/${APP}"
+  fi
 
   cat <<EOF
-Installed ${APP} ${version} to ${INSTALL_DIR}/${APP}
+Installed ${APP} ${version} to ${extracted_path}
 
 Next steps:
   ${APP} onboard --base-url <url> --api-key <key> --model-id <model>
