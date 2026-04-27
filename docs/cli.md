@@ -101,6 +101,7 @@ Flags:
 - `--models string`: comma-separated model IDs.
 - `--reasoning-effort string`: optional upstream `reasoning_effort` default.
 - `--manager-image string`: bootstrap manager image.
+- `--debian-registries string`: comma-separated OCI registries for `debian:bookworm-slim` pulls. Persisted to config.
 - `--force-recreate-manager`: remove and recreate the bootstrap manager box.
 
 Behavior:
@@ -108,6 +109,7 @@ Behavior:
 - If no config exists and no explicit model flags are provided, `onboard` can prompt interactively.
 - In non-interactive usage, pass model settings explicitly.
 - It writes config, ensures bootstrap IM state, and ensures the bootstrap manager bot.
+- If `--debian-registries` is set, it updates `sandbox.debian_registries` in config.
 - If model config is incomplete, later `serve` commands fail with a remediation hint.
 
 Examples:
@@ -185,6 +187,8 @@ Subcommands:
 
 - `list`
 - `create`
+- `start`
+- `stop`
 - `delete`
 - `logs`
 - `status`
@@ -222,6 +226,34 @@ Usage:
 
 ```bash
 csgclaw agent delete <id>
+csgclaw agent delete --all [-f|--force]
+```
+
+Flags:
+
+- `--all`, `-a`: delete all agents.
+- `--force`, `-f`: skip confirmation when deleting all agents.
+
+Behavior:
+
+- Without `--all`, exactly one agent ID is required.
+- With `--all`, no positional ID is allowed.
+- Bulk delete prompts for confirmation unless `--force` is set.
+
+#### `csgclaw agent start`
+
+Usage:
+
+```bash
+csgclaw agent start <id>
+```
+
+#### `csgclaw agent stop`
+
+Usage:
+
+```bash
+csgclaw agent stop <id>
 ```
 
 #### `csgclaw agent logs`
@@ -262,11 +294,14 @@ Examples:
 csgclaw agent list
 csgclaw agent list --filter running
 csgclaw agent create --name alice --description "frontend worker" --profile openai.gpt-5.4-mini
+csgclaw agent start agent-alice
 csgclaw agent status
 csgclaw agent status agent-alice
+csgclaw agent stop agent-alice
 csgclaw agent logs agent-alice -n 50
 csgclaw agent logs agent-alice --follow
 csgclaw agent delete agent-alice
+csgclaw agent delete --all --force
 ```
 
 ### `csgclaw user`
@@ -307,16 +342,17 @@ csgclaw user create [flags]
 
 Flags:
 
-- `--channel string`: must be `feishu`.
+- `--channel string`: `csgclaw` or `feishu`. Default `csgclaw`.
 - `--id string`: user ID.
 - `--name string`: user name.
 - `--handle string`: user handle.
 - `--role string`: user role.
-- `--avatar string`: avatar initials.
+- `--avatar string`: avatar initials. Used only for `feishu`.
 
 Behavior:
 
-- This command currently supports only `--channel feishu`.
+- `--name` is required.
+- `csgclaw` and `feishu` use different backend routes and payload shapes.
 
 #### `csgclaw user delete`
 
@@ -335,6 +371,7 @@ Examples:
 ```bash
 csgclaw user list
 csgclaw user list --channel feishu
+csgclaw user create --name Alice --handle alice --role worker
 csgclaw user create --channel feishu --name Alice --handle alice --role manager --avatar AL
 csgclaw user delete u-alice
 ```
@@ -440,6 +477,10 @@ Subcommands:
 - `--inviter-id string`: inviter user ID.
 - `--locale string`: room locale.
 
+`member create` behavior:
+
+- `--user-id` is required.
+
 #### `message`
 
 Usage:
@@ -465,6 +506,10 @@ Subcommands:
 - `--sender-id string`: required.
 - `--content string`: required.
 - `--mention-id string`: optional mentioned user ID.
+
+`message list` behavior:
+
+- `--room-id` is required.
 
 Examples:
 

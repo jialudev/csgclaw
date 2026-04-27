@@ -648,6 +648,161 @@ func TestExecuteAgentDeleteUsesHTTPClient(t *testing.T) {
 	}
 }
 
+func TestExecuteAgentDeleteAllUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	requests := 0
+	app := &App{
+		stdin:  strings.NewReader("y\n"),
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				if req.Method != http.MethodGet {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+				}
+				return jsonResponse(http.StatusOK, `[{"id":"u-alice","name":"alice","role":"worker","status":"running"},{"id":"u-bob","name":"bob","role":"worker","status":"stopped"}]`), nil
+			case 2:
+				if req.Method != http.MethodDelete {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     http.StatusText(http.StatusNoContent),
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			case 3:
+				if req.Method != http.MethodDelete {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-bob" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-bob")
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     http.StatusText(http.StatusNoContent),
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			default:
+				t.Fatalf("unexpected request #%d: %s %s", requests, req.Method, req.URL.String())
+				return nil, nil
+			}
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "delete", "--all"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := stdout.String(); !strings.Contains(got, "This will remove all agents. Are you sure? [y/N] ") {
+		t.Fatalf("stdout = %q, want confirmation prompt", got)
+	}
+	if got := stdout.String(); !strings.Contains(got, "deleted 2 agents") {
+		t.Fatalf("stdout = %q, want message about deleting 2 agents", got)
+	}
+}
+
+func TestExecuteAgentDeleteAllCancelledWithoutConfirmation(t *testing.T) {
+	var stdout bytes.Buffer
+	requests := 0
+	app := &App{
+		stdin:  strings.NewReader("n\n"),
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "delete", "--all"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("requests = %d, want 0", requests)
+	}
+	if got := stdout.String(); !strings.Contains(got, "This will remove all agents. Are you sure? [y/N] ") {
+		t.Fatalf("stdout = %q, want confirmation prompt", got)
+	}
+	if got := stdout.String(); !strings.Contains(got, "cancelled deleting all agents") {
+		t.Fatalf("stdout = %q, want cancellation message", got)
+	}
+}
+
+func TestExecuteAgentDeleteAllForceSkipsConfirmation(t *testing.T) {
+	var stdout bytes.Buffer
+	requests := 0
+	app := &App{
+		stdin:  strings.NewReader("n\n"),
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				if req.Method != http.MethodGet {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+				}
+				return jsonResponse(http.StatusOK, `[{"id":"u-alice","name":"alice","role":"worker","status":"running"}]`), nil
+			case 2:
+				if req.Method != http.MethodDelete {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     http.StatusText(http.StatusNoContent),
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			default:
+				t.Fatalf("unexpected request #%d: %s %s", requests, req.Method, req.URL.String())
+				return nil, nil
+			}
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "delete", "--all", "--force"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := stdout.String(); strings.Contains(got, "Are you sure?") {
+		t.Fatalf("stdout = %q, want no confirmation prompt", got)
+	}
+	if got := stdout.String(); !strings.Contains(got, "deleted 1 agents") {
+		t.Fatalf("stdout = %q, want delete message", got)
+	}
+}
+
+func TestExecuteAgentDeleteAllRejectsID(t *testing.T) {
+	app := &App{
+		stdout:     &bytes.Buffer{},
+		stderr:     &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "delete", "--all", "u-alice"})
+	if err == nil {
+		t.Fatal("Execute() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "does not accept an id") {
+		t.Fatalf("error = %q, want id rejection", err)
+	}
+}
+
 func TestExecuteAgentStatusByIDUsesHTTPClient(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{
@@ -1412,6 +1567,33 @@ func TestAgentSubcommandHelpIncludesUsageAndFlags(t *testing.T) {
 		"csgclaw agent list [flags]",
 		"Flags:",
 		"-filter string",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("help = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestAgentDeleteSubcommandHelpShowsShortAndLongFlags(t *testing.T) {
+	var stderr bytes.Buffer
+	app := &App{
+		stdout:     &bytes.Buffer{},
+		stderr:     &stderr,
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+	}
+
+	err := app.Execute(context.Background(), []string{"agent", "delete", "-h"})
+	if err != flag.ErrHelp {
+		t.Fatalf("Execute() error = %v, want %v", err, flag.ErrHelp)
+	}
+
+	got := stderr.String()
+	for _, want := range []string{
+		"Delete one agent or all agents.",
+		"csgclaw agent delete <id> [flags]",
+		"csgclaw agent delete --all [flags]",
+		"-a, --all     delete all agents",
+		"-f, --force   delete all agents without confirmation",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("help = %q, want substring %q", got, want)

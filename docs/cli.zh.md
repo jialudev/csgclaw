@@ -101,6 +101,7 @@ csgclaw onboard [flags]
 - `--models string`：逗号分隔的模型 ID 列表。
 - `--reasoning-effort string`：可选，上游 `reasoning_effort` 默认值。
 - `--manager-image string`：引导 Manager 使用的镜像。
+- `--debian-registries string`：用于拉取 `debian:bookworm-slim` 的 OCI registry 列表，逗号分隔，并持久化到配置文件。
 - `--force-recreate-manager`：删除并重建引导 Manager box。
 
 行为说明：
@@ -108,6 +109,7 @@ csgclaw onboard [flags]
 - 如果本地还没有配置，且没有显式传入模型相关参数，`onboard` 可以进入交互式引导。
 - 非交互场景下，建议显式传入模型参数。
 - 命令会写入配置、确保 IM 引导状态存在，并确保引导 Manager Bot 存在。
+- 如果传入 `--debian-registries`，命令会同步更新配置中的 `sandbox.debian_registries`。
 - 如果模型配置不完整，后续 `serve` 会报错，并提示如何补齐配置。
 
 示例：
@@ -185,6 +187,8 @@ csgclaw agent <subcommand> [flags]
 
 - `list`
 - `create`
+- `start`
+- `stop`
 - `delete`
 - `logs`
 - `status`
@@ -222,6 +226,34 @@ csgclaw agent create [flags]
 
 ```bash
 csgclaw agent delete <id>
+csgclaw agent delete --all [-f|--force]
+```
+
+参数：
+
+- `--all`、`-a`：删除全部 Agent。
+- `--force`、`-f`：删除全部 Agent 时跳过确认。
+
+行为说明：
+
+- 不带 `--all` 时，必须且只能传入一个 Agent ID。
+- 带 `--all` 时，不能再传位置参数 ID。
+- 批量删除默认会要求确认，只有传入 `--force` 才会跳过。
+
+#### `csgclaw agent start`
+
+用法：
+
+```bash
+csgclaw agent start <id>
+```
+
+#### `csgclaw agent stop`
+
+用法：
+
+```bash
+csgclaw agent stop <id>
 ```
 
 #### `csgclaw agent logs`
@@ -262,11 +294,14 @@ csgclaw agent status [id]
 csgclaw agent list
 csgclaw agent list --filter running
 csgclaw agent create --name alice --description "frontend worker" --profile openai.gpt-5.4-mini
+csgclaw agent start agent-alice
 csgclaw agent status
 csgclaw agent status agent-alice
+csgclaw agent stop agent-alice
 csgclaw agent logs agent-alice -n 50
 csgclaw agent logs agent-alice --follow
 csgclaw agent delete agent-alice
+csgclaw agent delete --all --force
 ```
 
 ### `csgclaw user`
@@ -307,16 +342,17 @@ csgclaw user create [flags]
 
 参数：
 
-- `--channel string`：必须是 `feishu`。
+- `--channel string`：`csgclaw` 或 `feishu`，默认 `csgclaw`。
 - `--id string`：用户 ID。
 - `--name string`：用户名。
 - `--handle string`：用户 handle。
 - `--role string`：用户角色。
-- `--avatar string`：头像缩写。
+- `--avatar string`：头像缩写，仅 `feishu` 使用。
 
 行为说明：
 
-- 该命令当前只支持 `--channel feishu`。
+- `--name` 为必填。
+- `csgclaw` 与 `feishu` 会走不同的后端路由和请求体结构。
 
 #### `csgclaw user delete`
 
@@ -335,6 +371,7 @@ csgclaw user delete <id> [flags]
 ```bash
 csgclaw user list
 csgclaw user list --channel feishu
+csgclaw user create --name Alice --handle alice --role worker
 csgclaw user create --channel feishu --name Alice --handle alice --role manager --avatar AL
 csgclaw user delete u-alice
 ```
@@ -440,6 +477,10 @@ csgclaw member <subcommand> [flags]
 - `--inviter-id string`：邀请人用户 ID。
 - `--locale string`：房间 locale。
 
+`member create` 行为说明：
+
+- `--user-id` 为必填。
+
 #### `message`
 
 用法：
@@ -465,6 +506,10 @@ csgclaw message <subcommand> [flags]
 - `--sender-id string`：必填。
 - `--content string`：必填。
 - `--mention-id string`：可选，被提及用户 ID。
+
+`message list` 行为说明：
+
+- `--room-id` 为必填。
 
 示例：
 

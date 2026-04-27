@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -65,7 +68,8 @@ func (c cmd) usage(run *command.Context) {
 		"create             Create an agent",
 		"start <id>         Start an agent",
 		"stop <id>          Stop an agent",
-		"delete <id>        Delete an agent",
+		"delete <id>        Delete one agent",
+		"delete --all       Delete all agents",
 		"logs <id>          Show agent logs",
 		"status [id]        Show one agent or list all agents",
 	})
@@ -153,14 +157,35 @@ func (c cmd) runStop(ctx context.Context, run *command.Context, args []string, g
 }
 
 func (c cmd) runDelete(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
-	fs := run.NewFlagSet("agent delete", run.Program+" agent delete <id> [flags]", "Delete an agent.")
+	fs := run.NewFlagSet("agent delete", run.Program+" agent delete <id> [flags]\n  "+run.Program+" agent delete --all [flags]", "Delete one agent or all agents.")
+	all := fs.Bool("all", false, "delete all agents")
+	fs.BoolVar(all, "a", false, "delete all agents")
+	force := fs.Bool("force", false, "delete all agents without confirmation")
+	fs.BoolVar(force, "f", false, "delete all agents without confirmation")
+	fs.Usage = func() {
+		fmt.Fprintln(run.Stderr, "Delete one agent or all agents.")
+		fmt.Fprintln(run.Stderr)
+		fmt.Fprintln(run.Stderr, "Usage:")
+		fmt.Fprintf(run.Stderr, "  %s agent delete <id> [flags]\n", run.Program)
+		fmt.Fprintf(run.Stderr, "  %s agent delete --all [flags]\n", run.Program)
+		fmt.Fprintln(run.Stderr)
+		fmt.Fprintln(run.Stderr, "Flags:")
+		fmt.Fprintln(run.Stderr, "  -a, --all     delete all agents")
+		fmt.Fprintln(run.Stderr, "  -f, --force   delete all agents without confirmation")
+	}
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	rest := fs.Args()
+	if *all {
+		if len(rest) != 0 {
+			return fmt.Errorf("agent delete with --all does not accept an id")
+		}
+		return c.runDeleteAll(ctx, run, globals, *force)
+	}
 	if len(rest) != 1 {
-		return fmt.Errorf("agent delete requires exactly one id")
+		return fmt.Errorf("agent delete requires exactly one id unless --all is set")
 	}
 
 	if err := run.APIClient(globals).DoNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+rest[0]); err != nil {
@@ -173,6 +198,54 @@ func (c cmd) runDelete(ctx context.Context, run *command.Context, args []string,
 		ID:      rest[0],
 		Message: fmt.Sprintf("deleted agent %s", rest[0]),
 	})
+}
+
+func (c cmd) runDeleteAll(ctx context.Context, run *command.Context, globals command.GlobalOptions, force bool) error {
+	if !force {
+		confirmed, err := confirmDeleteAll(run)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return command.RenderAction(globals.Output, run.Stdout, command.ActionResult{
+				Command: "agent",
+				Action:  "delete",
+				Status:  "cancelled",
+				Message: "cancelled deleting all agents",
+			})
+		}
+	}
+	agents, err := listAgents(ctx, run.APIClient(globals))
+	if err != nil {
+		return err
+	}
+	for _, a := range agents {
+		if err := run.APIClient(globals).DoNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+a.ID); err != nil {
+			return err
+		}
+	}
+	return command.RenderAction(globals.Output, run.Stdout, command.ActionResult{
+		Command: "agent",
+		Action:  "delete",
+		Status:  "deleted",
+		Message: fmt.Sprintf("deleted %d agents", len(agents)),
+	})
+}
+
+func confirmDeleteAll(run *command.Context) (bool, error) {
+	if _, err := fmt.Fprint(run.Stdout, "This will remove all agents. Are you sure? [y/N] "); err != nil {
+		return false, err
+	}
+	answer, err := bufio.NewReader(run.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 func (c cmd) runLogs(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
