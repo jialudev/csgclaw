@@ -31,22 +31,24 @@ LOCAL_IMAGE ?= picoclaw:local
 
 .DEFAULT_GOAL := build-all
 
-.PHONY: help fmt test test-without-boxlite-sdk build build-without-boxlite-sdk build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run onboard clean package package-all release tag push publish boxlite-setup sync-agent-runtimes
+.PHONY: help fmt test test-with-boxlite-sdk build build-with-boxlite-sdk build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run run-with-boxlite-sdk onboard onboard-with-boxlite-sdk clean package package-all release tag push publish boxlite-setup sync-agent-runtimes
 
 help:
 	@printf '%s\n' \
 		'make fmt       - format Go files' \
 		'make sync-agent-runtimes - stage PicoClaw runtime workspaces for Go embed' \
 		'make boxlite-setup - fetch BoxLite native library if missing' \
-		'make test      - run Go tests with the BoxLite SDK provider enabled' \
-		'make test-without-boxlite-sdk - run Go tests without the BoxLite SDK provider' \
-		'make build     - build $(BIN) with the BoxLite SDK provider enabled' \
-		'make build-without-boxlite-sdk - build $(BIN) without the BoxLite SDK provider' \
+		'make test      - run Go tests with the default boxlite-cli build shape' \
+		'make test-with-boxlite-sdk - run Go tests with the BoxLite SDK provider enabled' \
+		'make build     - build $(BIN) with the default boxlite-cli build shape' \
+		'make build-with-boxlite-sdk - build $(BIN) with the BoxLite SDK provider enabled' \
 		'make build-csgclaw-cli - build $(CLI_BIN) for TARGET_OS/TARGET_ARCH (defaults to current platform)' \
 		'make build-csgclaw-cli-for-picoclaw - build PicoClaw CLI binaries for linux/amd64 and linux/arm64' \
 		'make build-all - build bin/csgclaw and bin/csgclaw-cli' \
-		'make run       - run the server in foreground' \
-		'make onboard   - initialize ~/.csgclaw/config.toml with defaults' \
+		'make run       - run the server in foreground with the default boxlite-cli build shape' \
+		'make run-with-boxlite-sdk - run the server in foreground with the BoxLite SDK provider enabled' \
+		'make onboard   - initialize ~/.csgclaw/config.toml with the default boxlite-cli build shape' \
+		'make onboard-with-boxlite-sdk - initialize ~/.csgclaw/config.toml with the BoxLite SDK provider enabled' \
 		'make package   - package APP binary into dist/' \
 		'make package-all - package csgclaw and csgclaw-cli for current platform' \
 		'make release   - build csgclaw and csgclaw-cli release archives for macOS/Linux' \
@@ -67,21 +69,21 @@ boxlite-setup:
 		cd third_party/boxlite-go && BOXLITE_SDK_VERSION=v0.7.6 $(GO) run ./cmd/setup; \
 	fi
 
-test: boxlite-setup sync-agent-runtimes
-	env GOCACHE=$(GOCACHE) $(GO) test -tags $(BOXLITE_SDK_TAG) ./...
-
-test-without-boxlite-sdk: sync-agent-runtimes
+test: sync-agent-runtimes
 	env GOCACHE=$(GOCACHE) $(GO) test ./...
 
-build: boxlite-setup sync-agent-runtimes
-	mkdir -p $(BIN_DIR)
-	env GOCACHE=$(GOCACHE) $(GO) build -tags $(BOXLITE_SDK_TAG) -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_PATH)
+test-with-boxlite-sdk: boxlite-setup sync-agent-runtimes
+	env GOCACHE=$(GOCACHE) $(GO) test -tags $(BOXLITE_SDK_TAG) ./...
 
-build-without-boxlite-sdk: sync-agent-runtimes
+build: sync-agent-runtimes
 	mkdir -p $(BIN_DIR)
 	env GOCACHE=$(GOCACHE) $(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_PATH)
 
-build-csgclaw: boxlite-setup
+build-with-boxlite-sdk: boxlite-setup sync-agent-runtimes
+	mkdir -p $(BIN_DIR)
+	env GOCACHE=$(GOCACHE) $(GO) build -tags $(BOXLITE_SDK_TAG) -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_PATH)
+
+build-csgclaw:
 	$(MAKE) build APP=csgclaw
 
 build-csgclaw-cli: sync-agent-runtimes
@@ -94,10 +96,20 @@ build-csgclaw-cli-for-picoclaw:
 
 build-all: build-csgclaw build-csgclaw-cli
 
-run: boxlite-setup
+run: sync-agent-runtimes
+	env GOCACHE=$(GOCACHE) $(GO) run -ldflags "$(LDFLAGS)" ./cmd/csgclaw serve
+
+run-with-boxlite-sdk: boxlite-setup sync-agent-runtimes
 	env GOCACHE=$(GOCACHE) $(GO) run -tags $(BOXLITE_SDK_TAG) -ldflags "$(LDFLAGS)" ./cmd/csgclaw serve
 
-onboard: boxlite-setup
+onboard: sync-agent-runtimes
+	env GOCACHE=$(GOCACHE) $(GO) run -ldflags "$(LDFLAGS)" ./cmd/csgclaw onboard \
+		--base-url $(ONBOARD_BASE_URL) \
+		--api-key $(ONBOARD_API_KEY) \
+		--models $(ONBOARD_MODEL_ID) \
+		--manager-image $(ONBOARD_MANAGER_IMAGE)
+
+onboard-with-boxlite-sdk: boxlite-setup sync-agent-runtimes
 	env GOCACHE=$(GOCACHE) $(GO) run -tags $(BOXLITE_SDK_TAG) -ldflags "$(LDFLAGS)" ./cmd/csgclaw onboard \
 		--base-url $(ONBOARD_BASE_URL) \
 		--api-key $(ONBOARD_API_KEY) \

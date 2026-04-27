@@ -49,7 +49,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
 
 [sandbox]
-provider = "boxlite-sdk"
+provider = "boxlite-cli"
 home_dir_name = "boxlite"
 boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
@@ -76,7 +76,7 @@ models = ["gpt-5.4"]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
 
 [sandbox]
-provider = "boxlite-sdk"
+provider = "boxlite-cli"
 home_dir_name = "boxlite"
 boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
@@ -103,7 +103,7 @@ models = ["gpt-5.4"]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
 
 [sandbox]
-provider = "boxlite-sdk"
+provider = "boxlite-cli"
 home_dir_name = "boxlite"
 boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
@@ -111,9 +111,9 @@ debian_registries = ["harbor.opencsg.com", "docker.io"]
 
 ## Sandbox Providers
 
-CSGClaw runs Workers through the configured sandbox provider. The default is `boxlite-sdk`, which uses the vendored BoxLite Go SDK.
+CSGClaw runs Workers through the configured sandbox provider. The default build shape uses `boxlite-cli`, which runs BoxLite through the external CLI process. SDK-enabled builds still default to `boxlite-sdk`, which uses the vendored BoxLite Go SDK.
 
-You can opt in to the CLI-backed provider when you want to run BoxLite through the external CLI process:
+The default source build and official release bundles already align with the CLI-backed provider:
 
 ```toml
 [sandbox]
@@ -135,8 +135,8 @@ CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the
 
 The `boxlite-cli` provider does not need the vendored Go SDK at runtime. `boxlite-sdk` is the only sandbox provider that gets special build-time treatment because it pulls in CGO, the native SDK archive, and the larger embedded runtime payload. The repository now supports two build shapes:
 
-- `make build`, `make test`, and `make package` include the `boxlite_sdk` build tag, keeping the SDK-backed `boxlite-sdk` provider compiled in.
-- `make build-without-boxlite-sdk` and `make test-without-boxlite-sdk` skip that build tag, so the resulting binary excludes only the SDK-backed `boxlite-sdk` provider. `boxlite-cli` and other non-SDK providers remain compiled in.
+- `make build`, `make test`, `make run`, `make onboard`, and `make package` use the default `boxlite-cli` build shape. The resulting binary excludes only the SDK-backed `boxlite-sdk` provider, while `boxlite-cli` and other non-SDK providers remain compiled in.
+- `make build-with-boxlite-sdk`, `make test-with-boxlite-sdk`, `make run-with-boxlite-sdk`, and `make onboard-with-boxlite-sdk` add the `boxlite_sdk` build tag and keep the SDK-backed `boxlite-sdk` provider compiled in.
 
 ## Channel Configuration
 

@@ -20,12 +20,12 @@ CSGClaw is a multi-agent collaboration platform built by OpenCSG — designed ar
 curl -fsSL https://csgclaw.opencsg.com/install.sh | bash
 ```
 
-The installer downloads a prebuilt release bundle, installs it under `~/.local/lib/csgclaw/<version>/`, and links `csgclaw` into your `PATH`. Official `csgclaw` bundles already include the `boxlite` helper used by the `boxlite-cli` sandbox provider, so no separate `boxlite-cli` installation is required on supported platforms. Prebuilt bundles are available for macOS arm64 and Linux amd64.
+The installer downloads a prebuilt release bundle, installs it into user-local directories, and links `csgclaw` into your `PATH`. Prebuilt bundles are currently available for macOS arm64 and Linux amd64.
 
 **Build from source:**
 
 ```bash
-make build-without-boxlite-sdk
+make build
 ```
 
 For most users, the install script above is the simpler option.
@@ -54,7 +54,7 @@ csgclaw onboard --base-url <url> --api-key <key> --models <model[,model...]> [--
 ## Configuration
 
 `csgclaw onboard` writes a local config with server, model, bootstrap, sandbox, and channel settings. See [docs/config.md](docs/config.md) for model provider examples, sandbox provider options, and Worker override examples.
-For the official release bundles, `boxlite-cli` works out of the box with the bundled `boxlite` binary; `boxlite_cli_path` is mainly for advanced override and debugging scenarios.
+For the official release bundles and the default source build, `boxlite-cli` works out of the box with the bundled or configured `boxlite` binary; `boxlite_cli_path` is mainly for advanced override and debugging scenarios.
 
 ## Features
 
