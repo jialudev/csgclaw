@@ -229,10 +229,10 @@ Behavior:
 
 - Without `--replace`, the command creates a new agent.
 - With `--replace`, `--id` is required.
-- With `--replace` and no extra field flags, the command preserves the existing agent's `id`, `name`, `description`, and `profile`, then deletes and recreates the agent.
-- With `--replace` and any explicit field flags, only those provided fields override the existing agent before the agent is deleted and recreated.
+- With `--replace`, the CLI sends a single create request with `replace: true` and a `field_mask` containing the flags explicitly passed this time.
+- The API/service loads the existing agent, preserves unmasked fields, applies masked fields, then recreates the agent.
 - Replacing an agent prompts for confirmation unless `--force` is set.
-- The replace merge logic also preserves or overrides `image` using the same visited-flag behavior.
+- `image` follows the same field-mask behavior: omitted keeps the old image, explicit `--image` overrides it.
 
 #### `csgclaw agent delete`
 

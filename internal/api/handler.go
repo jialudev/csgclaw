@@ -368,20 +368,36 @@ func parseBoolQuery(v string) bool {
 }
 
 func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request) {
-	var req agent.CreateRequest
+	var req apitypes.CreateAgentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
-	req.Role = agent.RoleWorker
-
-	created, err := h.svc.CreateWorker(r.Context(), req)
+	created, err := h.svc.Create(r.Context(), agentCreateRequestFromAPI(req))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, created)
+}
+
+func agentCreateRequestFromAPI(req apitypes.CreateAgentRequest) agent.CreateRequest {
+	return agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			ID:          req.ID,
+			Name:        req.Name,
+			Description: req.Description,
+			Image:       req.Image,
+			Role:        req.Role,
+			Status:      req.Status,
+			CreatedAt:   req.CreatedAt,
+			Profile:     req.Profile,
+			ModelID:     req.ModelID,
+		},
+		Replace:   req.Replace,
+		FieldMask: req.FieldMask,
+	}
 }
 
 func (h *Handler) workerIMProvisioner() *im.Provisioner {

@@ -218,7 +218,7 @@ func TestCreateWorkerRejectsReservedManagerName(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	_, err = svc.CreateWorker(context.Background(), CreateRequest{
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{
 		ID:   "worker-1",
 		Name: "manager",
 	})
@@ -244,7 +244,7 @@ func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
 		Role:      RoleWorker,
 	}
 
-	_, err = svc.CreateWorker(context.Background(), CreateRequest{
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{
 		ID:   "worker-2",
 		Name: "Alice",
 	})
@@ -253,6 +253,35 @@ func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("CreateWorker() duplicate error = %q, want duplicate-name error", err)
+	}
+}
+
+func TestCreateRejectsDuplicateAgentIDWithoutReplace(t *testing.T) {
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		Status:    "active",
+		CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC),
+		Role:      RoleWorker,
+	}
+
+	_, err = svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   "u-alice",
+			Name: "alice-v2",
+			Role: RoleWorker,
+		},
+	})
+	if err == nil {
+		t.Fatal("Create() duplicate error = nil, want duplicate-id error")
+	}
+	if !strings.Contains(err.Error(), `agent id "u-alice" already exists`) {
+		t.Fatalf("Create() duplicate error = %q, want duplicate-id error", err)
 	}
 }
 
@@ -268,7 +297,7 @@ func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	_, err = svc.CreateWorker(context.Background(), CreateRequest{Name: "alice"})
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
 	if err == nil {
 		t.Fatal("CreateWorker() error = nil, want invalid runtime error")
 	}
@@ -306,7 +335,7 @@ func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
 		t.Fatalf("EnsureManager() = %+v, want running box-manager", manager)
 	}
 
-	worker, err := svc.CreateWorker(context.Background(), CreateRequest{
+	worker, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
 		ID:   "u-alice",
 		Name: "alice",
 	})
@@ -348,6 +377,253 @@ func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
 		if len(req.Args) > 2 && req.Args[2] == "run" && !containsAny(req.Args, "/bin/sh", "/usr/local/bin/picoclaw") {
 			t.Fatalf("boxlite-cli run args missing gateway command: %q", req.Args)
 		}
+	}
+}
+
+func TestCreateReplaceWorkerRecreatesExistingAgent(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	orig := localIPv4Resolver
+	localIPv4Resolver = func() string { return "10.0.0.8" }
+	defer func() { localIPv4Resolver = orig }()
+
+	runner := newAgentBoxliteCLIRunner()
+	provider := boxlitecli.NewProvider(boxlitecli.WithRunner(runner))
+	statePath := filepath.Join(homeDir, "agents.json")
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
+		"picoclaw:latest",
+		statePath,
+		WithSandboxProvider(provider),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   "u-alice",
+			Name: "alice",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() seed error = %v", err)
+	}
+	if created.Role != RoleWorker {
+		t.Fatalf("Create() role = %q, want %q", created.Role, RoleWorker)
+	}
+
+	replaced, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   "u-alice",
+			Name: "alice-v2",
+		},
+		Replace: true,
+	})
+	if err != nil {
+		t.Fatalf("Create() replace error = %v", err)
+	}
+	if replaced.ID != "u-alice" || replaced.Name != "alice-v2" || replaced.Role != RoleWorker {
+		t.Fatalf("Create() replaced = %+v, want replaced worker", replaced)
+	}
+	if !hasBoxliteCLICommandArgs(runner.requests, "rm", "-f", "box-alice") {
+		t.Fatalf("boxlite-cli remove command not found in requests: %#v", requestArgs(runner.requests))
+	}
+	if !hasBoxliteCLICommandArgs(runner.requests, "run", "--name", "alice-v2") {
+		t.Fatalf("boxlite-cli run command for alice-v2 not found in requests: %#v", requestArgs(runner.requests))
+	}
+}
+
+func TestCreateReplaceRequiresExistingAgent(t *testing.T) {
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   "u-missing",
+			Name: "missing",
+		},
+		Replace: true,
+	})
+	if err == nil {
+		t.Fatal("Create() error = nil, want missing agent error")
+	}
+	if !strings.Contains(err.Error(), `agent "u-missing" not found`) {
+		t.Fatalf("Create() error = %q, want missing agent error", err)
+	}
+}
+
+func TestCreateReplaceFieldMaskMergesExistingAgent(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	runner := newAgentBoxliteCLIRunner()
+	provider := boxlitecli.NewProvider(boxlitecli.WithRunner(runner))
+	statePath := filepath.Join(homeDir, "agents.json")
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
+		"picoclaw:latest",
+		statePath,
+		WithSandboxProvider(provider),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if _, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:          "u-alice",
+			Name:        "alice",
+			Description: "worker",
+			Image:       "agent-image:v1",
+		},
+	}); err != nil {
+		t.Fatalf("Create() seed error = %v", err)
+	}
+
+	replaced, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:          "u-alice",
+			Name:        "alice-v2",
+			Description: "",
+			Image:       "agent-image:v2",
+		},
+		Replace:   true,
+		FieldMask: []string{"id", "name"},
+	})
+	if err != nil {
+		t.Fatalf("Create() replace error = %v", err)
+	}
+	if replaced.ID != "u-alice" || replaced.Name != "alice-v2" {
+		t.Fatalf("Create() replaced = %+v, want id u-alice name alice-v2", replaced)
+	}
+	if replaced.Description != "worker" {
+		t.Fatalf("Create() description = %q, want preserved description", replaced.Description)
+	}
+	if replaced.Image != "agent-image:v1" {
+		t.Fatalf("Create() image = %q, want preserved image", replaced.Image)
+	}
+}
+
+func TestCreateReplaceManagerUsesRequestedImage(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	var gotImages []string
+	SetTestHooks(
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return &fakeRuntime{}, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, image, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+			gotImages = append(gotImages, image)
+			return &fakeInstance{}, sandbox.Info{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     sandbox.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			}, nil
+		},
+	)
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
+	}
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) error {
+		return nil
+	}
+	defer ResetTestHooks()
+
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:1", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if _, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   ManagerUserID,
+			Name: ManagerName,
+		},
+	}); err != nil {
+		t.Fatalf("seed Create() error = %v", err)
+	}
+
+	replaced, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:    ManagerUserID,
+			Name:  ManagerName,
+			Image: "manager-image:2",
+		},
+		Replace:   true,
+		FieldMask: []string{"id", "image"},
+	})
+	if err != nil {
+		t.Fatalf("Create() replace error = %v", err)
+	}
+	if len(gotImages) != 2 {
+		t.Fatalf("createGatewayBox() calls = %d, want 2", len(gotImages))
+	}
+	if gotImages[0] != "manager-image:1" || gotImages[1] != "manager-image:2" {
+		t.Fatalf("createGatewayBox() images = %#v, want manager-image:1 then manager-image:2", gotImages)
+	}
+	if replaced.Image != "manager-image:2" {
+		t.Fatalf("Create() image = %q, want requested image", replaced.Image)
+	}
+}
+
+func TestCreateReplaceManagerWithoutRequestedImageUsesManagerDefault(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	var gotImages []string
+	SetTestHooks(
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return &fakeRuntime{}, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, image, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+			gotImages = append(gotImages, image)
+			return &fakeInstance{}, sandbox.Info{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     sandbox.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			}, nil
+		},
+	)
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
+	}
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) error {
+		return nil
+	}
+	defer ResetTestHooks()
+
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:1", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents[ManagerUserID] = Agent{
+		ID:        ManagerUserID,
+		Name:      ManagerName,
+		Image:     "old-manager-image:0",
+		Role:      RoleManager,
+		Status:    string(sandbox.StateRunning),
+		CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	replaced, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   ManagerUserID,
+			Name: ManagerName,
+		},
+		Replace:   true,
+		FieldMask: []string{"id"},
+	})
+	if err != nil {
+		t.Fatalf("Create() replace error = %v", err)
+	}
+	if len(gotImages) != 1 || gotImages[0] != "manager-image:1" {
+		t.Fatalf("createGatewayBox() images = %#v, want manager-image:1", gotImages)
+	}
+	if replaced.Image != "manager-image:1" {
+		t.Fatalf("Create() image = %q, want manager default image", replaced.Image)
 	}
 }
 
@@ -717,7 +993,7 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.CreateWorker(context.Background(), CreateRequest{Name: "alice"})
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
 	}
@@ -758,7 +1034,7 @@ func TestCreateWorkerUsesRequestedImageOrManagerFallback(t *testing.T) {
 				t.Fatalf("NewService() error = %v", err)
 			}
 
-			got, err := svc.CreateWorker(context.Background(), CreateRequest{Name: "alice", Image: tt.reqImage})
+			got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice", Image: tt.reqImage})
 			if err != nil {
 				t.Fatalf("CreateWorker() error = %v", err)
 			}
@@ -802,7 +1078,7 @@ func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.CreateWorker(context.Background(), CreateRequest{
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
 		Name:    "alice",
 		Profile: "remote-main",
 	})
@@ -857,7 +1133,7 @@ func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.CreateWorker(context.Background(), CreateRequest{Name: "alice"})
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
 	}
@@ -1166,10 +1442,12 @@ func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
 	}
 
 	got, err := svc.Create(context.Background(), CreateRequest{
-		ID:    "agent-1",
-		Name:  "alice",
-		Image: "test-image",
-		Role:  RoleAgent,
+		Spec: CreateAgentSpec{
+			ID:    "agent-1",
+			Name:  "alice",
+			Image: "test-image",
+			Role:  RoleAgent,
+		},
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -1224,10 +1502,12 @@ func TestCreateUsesRequestedImageOrManagerFallback(t *testing.T) {
 			}
 
 			got, err := svc.Create(context.Background(), CreateRequest{
-				ID:    "agent-1",
-				Name:  "alice",
-				Image: tt.reqImage,
-				Role:  RoleAgent,
+				Spec: CreateAgentSpec{
+					ID:    "agent-1",
+					Name:  "alice",
+					Image: tt.reqImage,
+					Role:  RoleAgent,
+				},
 			})
 			if err != nil {
 				t.Fatalf("Create() error = %v", err)

@@ -67,6 +67,20 @@ ok
 }
 ```
 
+替换已有 agent 时传入 `replace: true` 和目标 `id`。如果同时传入
+`field_mask`，服务端会先读取已有 agent 配置，只用 mask 中列出的字段覆盖
+已有值，再执行重建；这可以区分“未传字段”和“显式传空值”。
+
+```json
+{
+  "id": "u-alice",
+  "name": "alice-v2",
+  "description": "",
+  "replace": true,
+  "field_mask": ["id", "name", "description"]
+}
+```
+
 响应：`201 Created`
 
 ```json

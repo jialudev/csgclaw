@@ -304,7 +304,7 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 		}
 	} else {
 		var err error
-		created, err = s.agents.CreateWorker(ctx, agent.CreateRequest{
+		created, err = s.agents.CreateWorker(ctx, agent.CreateAgentSpec{
 			ID:          normalized.ID,
 			Name:        normalized.Name,
 			Description: normalized.Description,

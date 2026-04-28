@@ -131,18 +131,17 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		Name:        *name,
 		Description: *description,
 		Image:       *image,
+		Replace:     *replace,
 		Profile:     *profile,
 	}
+	req.ID = normalizeAgentID(req.ID)
 	client := run.APIClient(globals)
 	if *replace {
 		if strings.TrimSpace(req.ID) == "" {
 			return fmt.Errorf("agent create --replace requires --id")
 		}
-		merged, err := mergeReplaceAgentRequest(ctx, client, req, visitedFlags(fs))
-		if err != nil {
-			return err
-		}
-		req = merged
+		req.FieldMask = createAgentFieldMask(visitedFlags(fs))
+		req.Replace = true
 		if !*force {
 			confirmed, err := confirmReplaceAgent(run, req.ID)
 			if err != nil {
@@ -157,9 +156,6 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 					Message: fmt.Sprintf("cancelled replacing agent %s", req.ID),
 				})
 			}
-		}
-		if err := client.DoNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+req.ID); err != nil {
-			return err
 		}
 	}
 
@@ -238,15 +234,16 @@ func (c cmd) runDelete(ctx context.Context, run *command.Context, args []string,
 		return fmt.Errorf("agent delete requires exactly one id unless --all is set")
 	}
 
-	if err := run.APIClient(globals).DoNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+rest[0]); err != nil {
+	id := normalizeAgentID(rest[0])
+	if err := run.APIClient(globals).DoNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+id); err != nil {
 		return err
 	}
 	return command.RenderAction(globals.Output, run.Stdout, command.ActionResult{
 		Command: "agent",
 		Action:  "delete",
 		Status:  "deleted",
-		ID:      rest[0],
-		Message: fmt.Sprintf("deleted agent %s", rest[0]),
+		ID:      id,
+		Message: fmt.Sprintf("deleted agent %s", id),
 	})
 }
 
@@ -398,43 +395,30 @@ func filterAgentsByStatus(agents []apitypes.Agent, status string) []apitypes.Age
 	return filtered
 }
 
-func mergeReplaceAgentRequest(ctx context.Context, client *apiclient.Client, req apitypes.CreateAgentRequest, visited map[string]bool) (apitypes.CreateAgentRequest, error) {
-	var existing apitypes.Agent
-	if err := client.GetJSON(ctx, "/api/v1/agents/"+req.ID, &existing); err != nil {
-		return apitypes.CreateAgentRequest{}, err
-	}
-
-	merged := apitypes.CreateAgentRequest{
-		ID:          existing.ID,
-		Name:        existing.Name,
-		Description: existing.Description,
-		Image:       existing.Image,
-		Profile:     existing.Profile,
-	}
-	if visited["id"] {
-		merged.ID = req.ID
-	}
-	if visited["name"] {
-		merged.Name = req.Name
-	}
-	if visited["description"] {
-		merged.Description = req.Description
-	}
-	if visited["image"] {
-		merged.Image = req.Image
-	}
-	if visited["profile"] {
-		merged.Profile = req.Profile
-	}
-	return merged, nil
-}
-
 func visitedFlags(fs interface{ Visit(func(*flag.Flag)) }) map[string]bool {
 	visited := make(map[string]bool)
 	fs.Visit(func(f *flag.Flag) {
 		visited[f.Name] = true
 	})
 	return visited
+}
+
+func createAgentFieldMask(visited map[string]bool) []string {
+	fields := []string{"id", "name", "description", "image", "profile"}
+	mask := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if visited[field] {
+			mask = append(mask, field)
+		}
+	}
+	return mask
+}
+
+func normalizeAgentID(id string) string {
+	if strings.EqualFold(strings.TrimSpace(id), "manager") {
+		return "u-manager"
+	}
+	return id
 }
 
 func splitLogsArgs(args []string) ([]string, []string) {

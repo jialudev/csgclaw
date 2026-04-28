@@ -22,6 +22,8 @@ type CreateAgentRequest struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	Image       string    `json:"image,omitempty"`
+	Replace     bool      `json:"replace,omitempty"`
+	FieldMask   []string  `json:"field_mask,omitempty"`
 	Role        string    `json:"role,omitempty"`
 	Status      string    `json:"status,omitempty"`
 	CreatedAt   time.Time `json:"created_at,omitempty"`

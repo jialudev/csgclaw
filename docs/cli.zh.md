@@ -229,10 +229,10 @@ csgclaw agent create [-r|--replace] --id <id> [flags]
 
 - 不带 `--replace` 时，命令会创建一个新 Agent。
 - 带 `--replace` 时，必须传入 `--id`。
-- 带 `--replace` 且不传其他字段参数时，命令会保留现有 Agent 的 `id`、`name`、`description` 和 `profile`，然后执行删除并重建。
-- 带 `--replace` 且显式传入字段参数时，只有这些显式传入的字段会覆盖现有 Agent，然后再执行删除并重建。
+- 带 `--replace` 时，CLI 会发送一次带有 `replace: true` 的 create 请求，并在 `field_mask` 中列出本次显式传入的字段。
+- API/service 会读取现有 Agent，保留未被 mask 选中的字段，应用 mask 中的字段，然后执行重建。
 - 原地替换默认会要求确认，除非传入 `--force`。
-- `image` 字段也遵循同样的 visited-flag 合并逻辑：未显式传入时保留原值，显式传入时覆盖原值。
+- `image` 字段也遵循同样的 field-mask 行为：未显式传入时保留原值，显式传入 `--image` 时覆盖原值。
 
 #### `csgclaw agent delete`
 

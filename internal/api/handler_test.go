@@ -1144,6 +1144,129 @@ func TestHandleAgentsCreateDoesNotProvisionIMState(t *testing.T) {
 	}
 }
 
+func TestHandleAgentsCreateManagerUsesBootstrapManager(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	svc := mustNewService(t)
+	srv := &Handler{svc: svc}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"id":"manager","name":"manager"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != agent.ManagerUserID || got.Name != agent.ManagerName || got.Role != agent.RoleManager {
+		t.Fatalf("agent = %+v, want bootstrapped manager", got)
+	}
+}
+
+func TestHandleAgentsCreateReplaceUsesUnifiedServiceEntry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	svc := mustNewService(t)
+	if _, err := svc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			ID:   "u-alice",
+			Name: "alice",
+			Role: agent.RoleWorker,
+		},
+	}); err != nil {
+		t.Fatalf("seed Create() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"id":"u-alice","name":"alice-v2","role":"worker","replace":true}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-alice" || got.Name != "alice-v2" || got.Role != agent.RoleWorker {
+		t.Fatalf("agent = %+v, want replaced worker", got)
+	}
+}
+
+func TestHandleAgentsCreateReplaceFieldMaskMergesInService(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	svc := mustNewService(t)
+	if _, err := svc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			ID:          "u-alice",
+			Name:        "alice",
+			Description: "worker",
+			Image:       "agent-image:v1",
+			Role:        agent.RoleWorker,
+		},
+	}); err != nil {
+		t.Fatalf("seed Create() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"id":"u-alice","name":"alice-v2","description":"","image":"agent-image:v2","replace":true,"field_mask":["id","name"]}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "u-alice" || got.Name != "alice-v2" || got.Description != "worker" || got.Image != "agent-image:v1" {
+		t.Fatalf("agent = %+v, want masked replace preserving unmasked fields", got)
+	}
+}
+
+func TestHandleAgentsCreateReplaceManagerUsesUnifiedServiceEntry(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	svc := mustNewService(t)
+	if _, err := svc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			ID:   agent.ManagerUserID,
+			Name: agent.ManagerName,
+		},
+	}); err != nil {
+		t.Fatalf("seed Create() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"id":"u-manager","name":"manager","replace":true}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != agent.ManagerUserID || got.Name != agent.ManagerName || got.Role != agent.RoleManager {
+		t.Fatalf("agent = %+v, want replaced manager", got)
+	}
+}
+
 func TestHandleBootstrapAliasReturnsIMBootstrap(t *testing.T) {
 	srv := &Handler{im: im.NewService()}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/bootstrap", nil)

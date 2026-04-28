@@ -27,7 +27,7 @@ type Agent struct {
 	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
 }
 
-type CreateRequest struct {
+type CreateAgentSpec struct {
 	ID          string    `json:"id,omitempty"`
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
@@ -37,6 +37,12 @@ type CreateRequest struct {
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 	Profile     string    `json:"profile,omitempty"`
 	ModelID     string    `json:"model_id,omitempty"`
+}
+
+type CreateRequest struct {
+	Spec      CreateAgentSpec
+	Replace   bool
+	FieldMask []string
 }
 
 func normalizeRole(role string) string {

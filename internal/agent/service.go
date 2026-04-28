@@ -266,8 +266,16 @@ func (svc *Service) EnsureBootstrapManager(ctx context.Context, forceRecreate bo
 }
 
 func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent, error) {
+	return s.ensureManager(ctx, forceRecreate, "")
+}
+
+func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOverride string) (Agent, error) {
 	if s == nil {
 		return Agent{}, fmt.Errorf("agent service is required")
+	}
+	managerImage := strings.TrimSpace(imageOverride)
+	if managerImage == "" {
+		managerImage = s.managerImage
 	}
 	defaultProfile, defaultModel, err := s.llm.Resolve("")
 	if err != nil {
@@ -322,7 +330,7 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 	}
 	var info sandbox.Info
 	if box == nil {
-		log.Printf("bootstrap manager box %q not found, creating it with image %q", ManagerName, s.managerImage)
+		log.Printf("bootstrap manager box %q not found, creating it with image %q", ManagerName, managerImage)
 		log.Printf("if the image is not present locally, the first pull may take a while")
 		progressDone := make(chan struct{})
 		go func() {
@@ -333,11 +341,11 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 				case <-progressDone:
 					return
 				case <-ticker.C:
-					log.Printf("still creating bootstrap manager box %q with image %q; image download may still be in progress", ManagerName, s.managerImage)
+					log.Printf("still creating bootstrap manager box %q with image %q; image download may still be in progress", ManagerName, managerImage)
 				}
 			}
 		}()
-		box, info, err = s.createGatewayBox(ctx, rt, s.managerImage, ManagerName, ManagerUserID, defaultModel)
+		box, info, err = s.createGatewayBox(ctx, rt, managerImage, ManagerName, ManagerUserID, defaultModel)
 		close(progressDone)
 		if err != nil {
 			return Agent{}, fmt.Errorf("create bootstrap manager box: %w", err)
@@ -362,7 +370,7 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 	manager := Agent{
 		ID:              ManagerUserID,
 		Name:            ManagerName,
-		Image:           s.managerImage,
+		Image:           managerImage,
 		BoxID:           info.ID,
 		Status:          string(info.State),
 		CreatedAt:       info.CreatedAt.UTC(),
@@ -409,14 +417,29 @@ func (s *Service) bootstrapManagerLookupKeys() []string {
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) {
-	id := strings.TrimSpace(req.ID)
-	name := strings.TrimSpace(req.Name)
-	description := strings.TrimSpace(req.Description)
-	image := strings.TrimSpace(req.Image)
+	if req.Replace {
+		return s.replace(ctx, req)
+	}
+	return s.createNew(ctx, req.Spec)
+}
+
+func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, error) {
+	if isManagerCreateSpec(spec) {
+		return s.EnsureManager(ctx, false)
+	}
+	if shouldCreateWorkerSpec(spec) {
+		spec.Role = RoleWorker
+		return s.CreateWorker(ctx, spec)
+	}
+
+	id := strings.TrimSpace(spec.ID)
+	name := strings.TrimSpace(spec.Name)
+	description := strings.TrimSpace(spec.Description)
+	image := strings.TrimSpace(spec.Image)
 	if image == "" {
 		image = s.managerImage
 	}
-	role := normalizeRole(req.Role)
+	role := normalizeRole(spec.Role)
 	if name == "" {
 		return Agent{}, fmt.Errorf("name is required")
 	}
@@ -453,11 +476,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 		_ = s.closeRuntime(runtimeHome, rt)
 	}()
 
-	requestedProfile := strings.TrimSpace(req.Profile)
-	if requestedProfile == "" && strings.TrimSpace(req.ModelID) != "" {
-		matchedProfile, _, ok := s.llm.MatchProfile(config.ModelConfig{ModelID: req.ModelID})
+	requestedProfile := strings.TrimSpace(spec.Profile)
+	if requestedProfile == "" && strings.TrimSpace(spec.ModelID) != "" {
+		matchedProfile, _, ok := s.llm.MatchProfile(config.ModelConfig{ModelID: spec.ModelID})
 		if !ok {
-			return Agent{}, fmt.Errorf("no llm profile matches model %q", strings.TrimSpace(req.ModelID))
+			return Agent{}, fmt.Errorf("no llm profile matches model %q", strings.TrimSpace(spec.ModelID))
 		}
 		requestedProfile = matchedProfile
 	}
@@ -494,11 +517,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 		_ = s.closeBox(box)
 	}()
 
-	createdAt := req.CreatedAt.UTC()
-	if req.CreatedAt.IsZero() {
+	createdAt := spec.CreatedAt.UTC()
+	if spec.CreatedAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	status := strings.TrimSpace(req.Status)
+	status := strings.TrimSpace(spec.Status)
 	if status == "" {
 		status = "running"
 	}
@@ -524,6 +547,129 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 		return Agent{}, err
 	}
 	return agent, nil
+}
+
+func (s *Service) replace(ctx context.Context, req CreateRequest) (Agent, error) {
+	spec := req.Spec
+	id := normalizeCreateID(spec.ID)
+	if id == "" {
+		return Agent{}, fmt.Errorf("agent create --replace requires id")
+	}
+	managerImageOverride := replaceImageOverride(req)
+
+	s.mu.RLock()
+	existing, ok := s.agents[id]
+	s.mu.RUnlock()
+	if !ok {
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+
+	if len(req.FieldMask) > 0 {
+		var err error
+		spec, err = mergeReplaceSpec(existing, spec, req.FieldMask)
+		if err != nil {
+			return Agent{}, err
+		}
+	} else {
+		spec.ID = existing.ID
+		if strings.TrimSpace(spec.Role) == "" {
+			spec.Role = existing.Role
+		}
+	}
+
+	if isManagerAgent(existing) || isManagerCreateSpec(spec) {
+		return s.ensureManager(ctx, true, managerImageOverride)
+	}
+	if shouldCreateWorkerSpec(spec) || strings.EqualFold(existing.Role, RoleWorker) {
+		if err := s.Delete(ctx, existing.ID); err != nil {
+			return Agent{}, err
+		}
+		spec.Role = RoleWorker
+		return s.CreateWorker(ctx, spec)
+	}
+
+	if err := s.Delete(ctx, existing.ID); err != nil {
+		return Agent{}, err
+	}
+	return s.createNew(ctx, spec)
+}
+
+func replaceImageOverride(req CreateRequest) string {
+	if len(req.FieldMask) == 0 {
+		return req.Spec.Image
+	}
+	for _, field := range req.FieldMask {
+		if strings.EqualFold(strings.TrimSpace(field), "image") {
+			return req.Spec.Image
+		}
+	}
+	return ""
+}
+
+func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) (CreateAgentSpec, error) {
+	merged := CreateAgentSpec{
+		ID:          existing.ID,
+		Name:        existing.Name,
+		Description: existing.Description,
+		Image:       existing.Image,
+		Role:        existing.Role,
+		Status:      existing.Status,
+		CreatedAt:   existing.CreatedAt,
+		Profile:     existing.Profile,
+		ModelID:     existing.ModelID,
+	}
+	for _, field := range fieldMask {
+		switch strings.ToLower(strings.TrimSpace(field)) {
+		case "", "replace":
+		case "id":
+			if id := normalizeCreateID(next.ID); id != "" && id != existing.ID {
+				return CreateAgentSpec{}, fmt.Errorf("replace id %q does not match existing agent %q", id, existing.ID)
+			}
+		case "name":
+			merged.Name = next.Name
+		case "description":
+			merged.Description = next.Description
+		case "image":
+			merged.Image = next.Image
+		case "role":
+			merged.Role = next.Role
+		case "status":
+			merged.Status = next.Status
+		case "created_at":
+			merged.CreatedAt = next.CreatedAt
+		case "profile":
+			merged.Profile = next.Profile
+			merged.ModelID = ""
+		case "model_id":
+			merged.ModelID = next.ModelID
+			merged.Profile = ""
+		default:
+			return CreateAgentSpec{}, fmt.Errorf("unsupported agent field mask path %q", field)
+		}
+	}
+	return merged, nil
+}
+
+func isManagerCreateSpec(spec CreateAgentSpec) bool {
+	id := normalizeCreateID(spec.ID)
+	name := strings.TrimSpace(spec.Name)
+	role := strings.TrimSpace(spec.Role)
+	return strings.EqualFold(id, ManagerName) ||
+		strings.EqualFold(id, ManagerUserID) ||
+		strings.EqualFold(name, ManagerName) ||
+		strings.EqualFold(role, RoleManager)
+}
+
+func shouldCreateWorkerSpec(spec CreateAgentSpec) bool {
+	role := strings.ToLower(strings.TrimSpace(spec.Role))
+	return role == "" || role == RoleWorker
+}
+
+func normalizeCreateID(id string) string {
+	if strings.EqualFold(strings.TrimSpace(id), ManagerName) {
+		return ManagerUserID
+	}
+	return strings.TrimSpace(id)
 }
 
 func (s *Service) Agent(id string) (Agent, bool) {
@@ -811,11 +957,11 @@ func (s *Service) List() []Agent {
 	return agents
 }
 
-func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, error) {
-	id := strings.TrimSpace(req.ID)
-	name := strings.TrimSpace(req.Name)
-	description := strings.TrimSpace(req.Description)
-	image := strings.TrimSpace(req.Image)
+func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent, error) {
+	id := strings.TrimSpace(spec.ID)
+	name := strings.TrimSpace(spec.Name)
+	description := strings.TrimSpace(spec.Description)
+	image := strings.TrimSpace(spec.Image)
 	if image == "" {
 		image = s.managerImage
 	}
@@ -855,7 +1001,7 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	defer func() {
 		_ = s.closeRuntime(runtimeHome, rt)
 	}()
-	profileName, resolvedModel, err := s.resolveModelProfile(req.Profile)
+	profileName, resolvedModel, err := s.resolveModelProfile(spec.Profile)
 	if err != nil {
 		return Agent{}, err
 	}
