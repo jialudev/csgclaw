@@ -114,10 +114,9 @@ const (
 	IMDirName       = "im"
 	ChannelsDirName = "channels"
 
-	DefaultHTTPPort    = apiclient.DefaultHTTPPort
-	DefaultAccessToken = "your_access_token"
-	// Temporary default; later switch to opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw.
-	DefaultManagerImage       = "ghcr.io/russellluo/picoclaw:2026.4.26"
+	DefaultHTTPPort           = apiclient.DefaultHTTPPort
+	DefaultAccessToken        = "your_access_token"
+	DefaultManagerImage       = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.27.0"
 	CSGHubProvider            = "csghub"
 	BoxLiteSDKProvider        = "boxlite-sdk"
 	BoxLiteCLIProvider        = "boxlite-cli"
