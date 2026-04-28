@@ -211,14 +211,25 @@ csgclaw agent list [flags]
 
 ```bash
 csgclaw agent create [flags]
+csgclaw agent create [-r|--replace] --id <id> [flags]
 ```
 
 参数：
 
+- `--replace`、`-r`：原地替换一个已存在的 Agent。
+- `--force`、`-f`：原地替换时跳过确认。
 - `--id string`：Agent ID。
 - `--name string`：Agent 名称。
 - `--description string`：Agent 描述。
 - `--profile string`：Agent 使用的 LLM profile。
+
+行为说明：
+
+- 不带 `--replace` 时，命令会创建一个新 Agent。
+- 带 `--replace` 时，必须传入 `--id`。
+- 带 `--replace` 且不传其他字段参数时，命令会保留现有 Agent 的 `id`、`name`、`description` 和 `profile`，然后执行删除并重建。
+- 带 `--replace` 且显式传入字段参数时，只有这些显式传入的字段会覆盖现有 Agent，然后再执行删除并重建。
+- 原地替换默认会要求确认，除非传入 `--force`。
 
 #### `csgclaw agent delete`
 
@@ -281,6 +292,8 @@ csgclaw agent logs <id> [-f|--follow] [-n lines]
 csgclaw agent list
 csgclaw agent list --filter running
 csgclaw agent create --name alice --description "frontend worker" --profile openai.gpt-5.4-mini
+csgclaw agent create -r --id agent-alice
+csgclaw agent create --replace --id agent-alice --name alice-v2 --profile openai.gpt-5.4-mini --force
 csgclaw agent start agent-alice
 csgclaw agent stop agent-alice
 csgclaw agent logs agent-alice -n 50

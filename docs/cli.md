@@ -211,14 +211,25 @@ Usage:
 
 ```bash
 csgclaw agent create [flags]
+csgclaw agent create [-r|--replace] --id <id> [flags]
 ```
 
 Flags:
 
+- `--replace`, `-r`: replace an existing agent in place.
+- `--force`, `-f`: skip confirmation when replacing an existing agent.
 - `--id string`: agent ID.
 - `--name string`: agent name.
 - `--description string`: agent description.
 - `--profile string`: agent LLM profile.
+
+Behavior:
+
+- Without `--replace`, the command creates a new agent.
+- With `--replace`, `--id` is required.
+- With `--replace` and no extra field flags, the command preserves the existing agent's `id`, `name`, `description`, and `profile`, then deletes and recreates the agent.
+- With `--replace` and any explicit field flags, only those provided fields override the existing agent before the agent is deleted and recreated.
+- Replacing an agent prompts for confirmation unless `--force` is set.
 
 #### `csgclaw agent delete`
 
@@ -281,6 +292,8 @@ Examples:
 csgclaw agent list
 csgclaw agent list --filter running
 csgclaw agent create --name alice --description "frontend worker" --profile openai.gpt-5.4-mini
+csgclaw agent create -r --id agent-alice
+csgclaw agent create --replace --id agent-alice --name alice-v2 --profile openai.gpt-5.4-mini --force
 csgclaw agent start agent-alice
 csgclaw agent stop agent-alice
 csgclaw agent logs agent-alice -n 50

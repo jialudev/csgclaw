@@ -623,6 +623,252 @@ func TestExecuteAgentCreateUsesHTTPClient(t *testing.T) {
 	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main")
 }
 
+func TestExecuteAgentCreateReplaceKeepsExistingFieldsWhenNoOverrides(t *testing.T) {
+	var stdout bytes.Buffer
+	requests := 0
+	app := &App{
+		stdin:  strings.NewReader("y\n"),
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				if req.Method != http.MethodGet {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","description":"worker","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			case 2:
+				if req.Method != http.MethodDelete {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     http.StatusText(http.StatusNoContent),
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			case 3:
+				if req.Method != http.MethodPost {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+				}
+
+				var payload map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if payload["id"] != "u-alice" {
+					t.Fatalf("payload[id] = %#v, want %q", payload["id"], "u-alice")
+				}
+				if payload["name"] != "alice" {
+					t.Fatalf("payload[name] = %#v, want %q", payload["name"], "alice")
+				}
+				if payload["description"] != "worker" {
+					t.Fatalf("payload[description] = %#v, want %q", payload["description"], "worker")
+				}
+				if payload["profile"] != "codex-main" {
+					t.Fatalf("payload[profile] = %#v, want %q", payload["profile"], "codex-main")
+				}
+
+				return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","description":"worker","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			default:
+				t.Fatalf("unexpected request #%d: %s %s", requests, req.Method, req.URL.String())
+				return nil, nil
+			}
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "create", "-r", "--id", "u-alice"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "This will recreate agent u-alice in place. Are you sure? [y/N] ") {
+		t.Fatalf("stdout = %q, want confirmation prompt", stdout.String())
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main")
+}
+
+func TestExecuteAgentCreateReplaceOverridesExplicitFields(t *testing.T) {
+	var stdout bytes.Buffer
+	requests := 0
+	app := &App{
+		stdin:  strings.NewReader("y\n"),
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				if req.Method != http.MethodGet {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","description":"worker","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			case 2:
+				if req.Method != http.MethodDelete {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     http.StatusText(http.StatusNoContent),
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			case 3:
+				if req.Method != http.MethodPost {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+				}
+
+				var payload map[string]any
+				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+					t.Fatalf("decode request: %v", err)
+				}
+				if payload["id"] != "u-alice" {
+					t.Fatalf("payload[id] = %#v, want %q", payload["id"], "u-alice")
+				}
+				if payload["name"] != "alice-v2" {
+					t.Fatalf("payload[name] = %#v, want %q", payload["name"], "alice-v2")
+				}
+				if _, ok := payload["description"]; ok {
+					t.Fatalf("payload should omit description when explicitly cleared, got %#v", payload["description"])
+				}
+				if payload["profile"] != "codex-fast" {
+					t.Fatalf("payload[profile] = %#v, want %q", payload["profile"], "codex-fast")
+				}
+
+				return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice-v2","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-fast"}`), nil
+			default:
+				t.Fatalf("unexpected request #%d: %s %s", requests, req.Method, req.URL.String())
+				return nil, nil
+			}
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{
+		"--endpoint", "http://example.test",
+		"agent", "create",
+		"--replace",
+		"--id", "u-alice",
+		"--name", "alice-v2",
+		"--description", "",
+		"--profile", "codex-fast",
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice-v2", "worker", "running", "codex-fast")
+}
+
+func TestExecuteAgentCreateReplaceCancelledWithoutForce(t *testing.T) {
+	var stdout bytes.Buffer
+	requests := 0
+	app := &App{
+		stdin:  strings.NewReader("n\n"),
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				if req.Method != http.MethodGet {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","description":"worker","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			default:
+				t.Fatalf("unexpected request #%d: %s %s", requests, req.Method, req.URL.String())
+				return nil, nil
+			}
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "create", "--replace", "--id", "u-alice"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
+	if !strings.Contains(stdout.String(), "cancelled replacing agent u-alice") {
+		t.Fatalf("stdout = %q, want cancellation message", stdout.String())
+	}
+}
+
+func TestExecuteAgentCreateReplaceForceSkipsConfirmation(t *testing.T) {
+	var stdout bytes.Buffer
+	requests := 0
+	app := &App{
+		stdin:  strings.NewReader("n\n"),
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			requests++
+			switch requests {
+			case 1:
+				if req.Method != http.MethodGet {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","description":"worker","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			case 2:
+				if req.Method != http.MethodDelete {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents/u-alice" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice")
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     http.StatusText(http.StatusNoContent),
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			case 3:
+				if req.Method != http.MethodPost {
+					t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+				}
+				if req.URL.String() != "http://example.test/api/v1/agents" {
+					t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+				}
+				return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","description":"worker","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			default:
+				t.Fatalf("unexpected request #%d: %s %s", requests, req.Method, req.URL.String())
+				return nil, nil
+			}
+		}),
+	}
+
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "create", "--replace", "--force", "--id", "u-alice"})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if strings.Contains(stdout.String(), "Are you sure?") {
+		t.Fatalf("stdout = %q, want no confirmation prompt", stdout.String())
+	}
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main")
+}
+
 func TestExecuteAgentDeleteUsesHTTPClient(t *testing.T) {
 	app := &App{
 		stdout: &bytes.Buffer{},
@@ -1590,6 +1836,37 @@ func TestAgentDeleteSubcommandHelpShowsShortAndLongFlags(t *testing.T) {
 		"csgclaw agent delete --all [flags]",
 		"-a, --all     delete all agents",
 		"-f, --force   delete all agents without confirmation",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("help = %q, want substring %q", got, want)
+		}
+	}
+}
+
+func TestAgentCreateSubcommandHelpShowsReplaceAndForceFlags(t *testing.T) {
+	var stderr bytes.Buffer
+	app := &App{
+		stdout:     &bytes.Buffer{},
+		stderr:     &stderr,
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) { return nil, nil }),
+	}
+
+	err := app.Execute(context.Background(), []string{"agent", "create", "-h"})
+	if err != flag.ErrHelp {
+		t.Fatalf("Execute() error = %v, want %v", err, flag.ErrHelp)
+	}
+
+	got := stderr.String()
+	for _, want := range []string{
+		"Create an agent.",
+		"csgclaw agent create [flags]",
+		"csgclaw agent create --replace --id <id> [flags]",
+		"-r, --replace           replace an existing agent in place",
+		"-f, --force             replace an existing agent without confirmation",
+		"--id string             agent id",
+		"--name string           agent name",
+		"--description string    agent description",
+		"--profile string        agent llm profile",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("help = %q, want substring %q", got, want)

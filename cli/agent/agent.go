@@ -94,10 +94,29 @@ func (c cmd) runList(ctx context.Context, run *command.Context, args []string, g
 
 func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
 	fs := run.NewFlagSet("agent create", run.Program+" agent create [flags]", "Create an agent.")
+	replace := fs.Bool("replace", false, "replace an existing agent in place")
+	fs.BoolVar(replace, "r", false, "replace an existing agent in place")
+	force := fs.Bool("force", false, "replace an existing agent without confirmation")
+	fs.BoolVar(force, "f", false, "replace an existing agent without confirmation")
 	id := fs.String("id", "", "agent id")
 	name := fs.String("name", "", "agent name")
 	description := fs.String("description", "", "agent description")
 	profile := fs.String("profile", "", "agent llm profile")
+	fs.Usage = func() {
+		fmt.Fprintln(run.Stderr, "Create an agent.")
+		fmt.Fprintln(run.Stderr)
+		fmt.Fprintln(run.Stderr, "Usage:")
+		fmt.Fprintf(run.Stderr, "  %s agent create [flags]\n", run.Program)
+		fmt.Fprintf(run.Stderr, "  %s agent create --replace --id <id> [flags]\n", run.Program)
+		fmt.Fprintln(run.Stderr)
+		fmt.Fprintln(run.Stderr, "Flags:")
+		fmt.Fprintln(run.Stderr, "  -r, --replace           replace an existing agent in place")
+		fmt.Fprintln(run.Stderr, "  -f, --force             replace an existing agent without confirmation")
+		fmt.Fprintln(run.Stderr, "  --id string             agent id")
+		fmt.Fprintln(run.Stderr, "  --name string           agent name")
+		fmt.Fprintln(run.Stderr, "  --description string    agent description")
+		fmt.Fprintln(run.Stderr, "  --profile string        agent llm profile")
+	}
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -105,12 +124,43 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		return fmt.Errorf("agent create does not accept positional arguments")
 	}
 
-	created, err := createAgent(ctx, run.APIClient(globals), apitypes.CreateAgentRequest{
+	req := apitypes.CreateAgentRequest{
 		ID:          *id,
 		Name:        *name,
 		Description: *description,
 		Profile:     *profile,
-	})
+	}
+	client := run.APIClient(globals)
+	if *replace {
+		if strings.TrimSpace(req.ID) == "" {
+			return fmt.Errorf("agent create --replace requires --id")
+		}
+		merged, err := mergeReplaceAgentRequest(ctx, client, req, visitedFlags(fs))
+		if err != nil {
+			return err
+		}
+		req = merged
+		if !*force {
+			confirmed, err := confirmReplaceAgent(run, req.ID)
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				return command.RenderAction(globals.Output, run.Stdout, command.ActionResult{
+					Command: "agent",
+					Action:  "create",
+					Status:  "cancelled",
+					ID:      req.ID,
+					Message: fmt.Sprintf("cancelled replacing agent %s", req.ID),
+				})
+			}
+		}
+		if err := client.DoNoContent(ctx, http.MethodDelete, "/api/v1/agents/"+req.ID); err != nil {
+			return err
+		}
+	}
+
+	created, err := createAgent(ctx, client, req)
 	if err != nil {
 		return err
 	}
@@ -245,6 +295,22 @@ func confirmDeleteAll(run *command.Context) (bool, error) {
 	}
 }
 
+func confirmReplaceAgent(run *command.Context, id string) (bool, error) {
+	if _, err := fmt.Fprintf(run.Stdout, "This will recreate agent %s in place. Are you sure? [y/N] ", id); err != nil {
+		return false, err
+	}
+	answer, err := bufio.NewReader(run.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
 func (c cmd) runLogs(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
 	fs := run.NewFlagSet("agent logs", run.Program+" agent logs <id> [-f] [-n lines]", "Show agent logs.")
 	follow := fs.Bool("f", false, "follow log output")
@@ -327,6 +393,41 @@ func filterAgentsByStatus(agents []apitypes.Agent, status string) []apitypes.Age
 		}
 	}
 	return filtered
+}
+
+func mergeReplaceAgentRequest(ctx context.Context, client *apiclient.Client, req apitypes.CreateAgentRequest, visited map[string]bool) (apitypes.CreateAgentRequest, error) {
+	var existing apitypes.Agent
+	if err := client.GetJSON(ctx, "/api/v1/agents/"+req.ID, &existing); err != nil {
+		return apitypes.CreateAgentRequest{}, err
+	}
+
+	merged := apitypes.CreateAgentRequest{
+		ID:          existing.ID,
+		Name:        existing.Name,
+		Description: existing.Description,
+		Profile:     existing.Profile,
+	}
+	if visited["id"] {
+		merged.ID = req.ID
+	}
+	if visited["name"] {
+		merged.Name = req.Name
+	}
+	if visited["description"] {
+		merged.Description = req.Description
+	}
+	if visited["profile"] {
+		merged.Profile = req.Profile
+	}
+	return merged, nil
+}
+
+func visitedFlags(fs interface{ Visit(func(*flag.Flag)) }) map[string]bool {
+	visited := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) {
+		visited[f.Name] = true
+	})
+	return visited
 }
 
 func splitLogsArgs(args []string) ([]string, []string) {
