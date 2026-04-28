@@ -85,9 +85,8 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 				ManagerImage: config.DefaultManagerImage,
 			},
 			Sandbox: config.SandboxConfig{
-				Provider:       config.DefaultSandboxProvider,
-				HomeDirName:    config.DefaultSandboxHomeDirName,
-				BoxLiteCLIPath: config.DefaultBoxLiteCLIPath,
+				Provider:    config.DefaultSandboxProvider,
+				HomeDirName: config.DefaultSandboxHomeDirName,
 			},
 		}
 	}

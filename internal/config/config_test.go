@@ -84,9 +84,6 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Sandbox.HomeDirName, DefaultSandboxHomeDirName; got != want {
 		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
 	}
-	if got, want := cfg.Sandbox.BoxLiteCLIPath, DefaultBoxLiteCLIPath; got != want {
-		t.Fatalf("cfg.Sandbox.BoxLiteCLIPath = %q, want %q", got, want)
-	}
 	if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), strings.Join(DefaultDebianRegistries, ","); got != want {
 		t.Fatalf("cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
 	}
@@ -107,7 +104,6 @@ listen_addr = "127.0.0.1:18080"
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "sandbox-home"
-boxlite_cli_path = "/usr/local/bin/boxlite"
 debian_registries = ["registry.a", " docker.io ", "registry.a"]
 storage_path = "/shared/csgclaw"
 
@@ -132,9 +128,6 @@ models = ["minimax-m2.7"]
 	}
 	if got, want := cfg.Sandbox.HomeDirName, "sandbox-home"; got != want {
 		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
-	}
-	if got, want := cfg.Sandbox.BoxLiteCLIPath, "/usr/local/bin/boxlite"; got != want {
-		t.Fatalf("cfg.Sandbox.BoxLiteCLIPath = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), "registry.a,docker.io"; got != want {
 		t.Fatalf("cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
@@ -355,7 +348,6 @@ func TestSaveWritesModelsSection(t *testing.T) {
 		Sandbox: SandboxConfig{
 			Provider:         BoxLiteCLIProvider,
 			HomeDirName:      "sandbox-home",
-			BoxLiteCLIPath:   "/opt/boxlite/bin/boxlite",
 			StoragePath:      "/mnt/csgclaw",
 			DebianRegistries: []string{"registry.a", "docker.io"},
 		},
@@ -395,8 +387,11 @@ func TestSaveWritesModelsSection(t *testing.T) {
 	if !strings.Contains(content, "[models]") || !strings.Contains(content, "[models.providers.default]") {
 		t.Fatalf("saved config missing models sections:\n%s", content)
 	}
-	if !strings.Contains(content, "[sandbox]") || !strings.Contains(content, `provider = "boxlite-cli"`) || !strings.Contains(content, `home_dir_name = "sandbox-home"`) || !strings.Contains(content, `boxlite_cli_path = "/opt/boxlite/bin/boxlite"`) {
+	if !strings.Contains(content, "[sandbox]") || !strings.Contains(content, `provider = "boxlite-cli"`) || !strings.Contains(content, `home_dir_name = "sandbox-home"`) {
 		t.Fatalf("saved config missing sandbox section:\n%s", content)
+	}
+	if strings.Contains(content, "boxlite_cli_path") {
+		t.Fatalf("saved config should not contain boxlite_cli_path:\n%s", content)
 	}
 	if !strings.Contains(content, `debian_registries = ["registry.a", "docker.io"]`) {
 		t.Fatalf("saved config missing sandbox debian_registries:\n%s", content)
@@ -499,7 +494,6 @@ func TestSaveFormatsTopLevelSectionsWithoutExtraWhitespace(t *testing.T) {
 		Sandbox: SandboxConfig{
 			Provider:         BoxLiteCLIProvider,
 			HomeDirName:      DefaultSandboxHomeDirName,
-			BoxLiteCLIPath:   DefaultBoxLiteCLIPath,
 			DebianRegistries: DefaultDebianRegistries,
 		},
 	}
@@ -528,7 +522,6 @@ manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-boxlite_cli_path = "boxlite"
 
 [models]
 default = "default.local.minimax-m2.5"
@@ -592,7 +585,6 @@ func TestLoadExpandsNonServerEnvValues(t *testing.T) {
 	t.Setenv("MANAGER_IMAGE", "picoclaw:test")
 	t.Setenv("SANDBOX_PROVIDER", BoxLiteCLIProvider)
 	t.Setenv("SANDBOX_HOME", "env-home")
-	t.Setenv("BOXLITE_PATH", "/env/bin/boxlite")
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
 	t.Setenv("MODEL_BASE_HOST", "models.example.test")
 	t.Setenv("MODEL_API_KEY", "sk-env")
@@ -613,7 +605,6 @@ manager_image = "${MANAGER_IMAGE}"
 [sandbox]
 provider = "${SANDBOX_PROVIDER}"
 home_dir_name = "${SANDBOX_HOME}"
-boxlite_cli_path = "${BOXLITE_PATH}"
 
 [models]
 default = "${MODEL_SELECTOR}"
@@ -648,9 +639,6 @@ app_secret = "${FEISHU_APP_SECRET}"
 	}
 	if got, want := cfg.Sandbox.HomeDirName, "env-home"; got != want {
 		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
-	}
-	if got, want := cfg.Sandbox.BoxLiteCLIPath, "/env/bin/boxlite"; got != want {
-		t.Fatalf("cfg.Sandbox.BoxLiteCLIPath = %q, want %q", got, want)
 	}
 	if got, want := cfg.Models.Default, "remote.gpt-env"; got != want {
 		t.Fatalf("cfg.Models.Default = %q, want %q", got, want)
@@ -688,7 +676,6 @@ func TestSavePreservesEnvPlaceholdersAfterLoad(t *testing.T) {
 	t.Setenv("MANAGER_IMAGE", "picoclaw:test")
 	t.Setenv("SANDBOX_PROVIDER", BoxLiteCLIProvider)
 	t.Setenv("SANDBOX_HOME", "env-home")
-	t.Setenv("BOXLITE_PATH", "/env/bin/boxlite")
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
 	t.Setenv("MODEL_BASE_HOST", "models.example.test")
 	t.Setenv("MODEL_API_KEY", "sk-env")
@@ -711,7 +698,6 @@ manager_image = "${MANAGER_IMAGE}"
 [sandbox]
 provider = "${SANDBOX_PROVIDER}"
 home_dir_name = "${SANDBOX_HOME}"
-boxlite_cli_path = "${BOXLITE_PATH}"
 
 [models]
 default = "${MODEL_SELECTOR}"
@@ -760,7 +746,6 @@ app_secret = "${FEISHU_APP_SECRET}"
 		`manager_image = "${MANAGER_IMAGE}"`,
 		`provider = "${SANDBOX_PROVIDER}"`,
 		`home_dir_name = "${SANDBOX_HOME}"`,
-		`boxlite_cli_path = "${BOXLITE_PATH}"`,
 		`default = "${MODEL_SELECTOR}"`,
 		`base_url = "https://${MODEL_BASE_HOST}/v1"`,
 		`api_key = "${MODEL_API_KEY}"`,
@@ -843,6 +828,41 @@ models = ["${MODEL_ID}", "gpt-static"]
 		if strings.Contains(saved, stale) {
 			t.Fatalf("saved config kept stale placeholder %q:\n%s", stale, saved)
 		}
+	}
+}
+
+func TestLoadIgnoresLegacyBoxLiteCLIPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[sandbox]
+provider = "boxlite-cli"
+home_dir_name = "sandbox-home"
+boxlite_cli_path = "/custom/boxlite"
+
+[models]
+default = "default.gpt-test"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["gpt-test"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
+		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
+	}
+	if got, want := cfg.Sandbox.HomeDirName, "sandbox-home"; got != want {
+		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
 	}
 }
 

@@ -51,7 +51,6 @@ manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
@@ -78,7 +77,6 @@ manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
@@ -105,7 +103,6 @@ manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
@@ -119,11 +116,10 @@ The default source build and official release bundles already align with the CLI
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
-`boxlite_cli_path` is the executable path used only by `provider = "boxlite-cli"`. For official release bundles, the default value `boxlite` first resolves to the bundled sibling binary next to `csgclaw`, then falls back to `PATH` if that bundle is missing. Set an absolute path only when you need to override the bundled binary or point to a custom installation.
+For `provider = "boxlite-cli"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
 
 `debian_registries` controls where BoxLite pulls `debian:bookworm-slim`. If omitted or empty, CSGClaw defaults to `harbor.opencsg.com` then `docker.io`. Use `onboard` to persist a custom list:
 

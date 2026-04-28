@@ -55,7 +55,6 @@ type BootstrapConfig struct {
 type SandboxConfig struct {
 	Provider         string
 	HomeDirName      string
-	BoxLiteCLIPath   string
 	StoragePath      string
 	DebianRegistries []string
 }
@@ -66,9 +65,6 @@ func (c SandboxConfig) Resolved() SandboxConfig {
 	}
 	if strings.TrimSpace(c.HomeDirName) == "" {
 		c.HomeDirName = DefaultSandboxHomeDirName
-	}
-	if strings.TrimSpace(c.BoxLiteCLIPath) == "" {
-		c.BoxLiteCLIPath = DefaultBoxLiteCLIPath
 	}
 	c.StoragePath = strings.TrimSpace(c.StoragePath)
 	c.DebianRegistries = normalizeStringList(c.DebianRegistries)
@@ -125,7 +121,6 @@ const (
 	CSGHubProvider            = "csghub"
 	BoxLiteSDKProvider        = "boxlite-sdk"
 	BoxLiteCLIProvider        = "boxlite-cli"
-	DefaultBoxLiteCLIPath     = "boxlite"
 	DefaultSandboxHomeDirName = "boxlite"
 	RuntimeHomeDirName        = DefaultSandboxHomeDirName
 )
@@ -302,9 +297,6 @@ func Load(path string) (Config, error) {
 			case "home_dir_name":
 				cfg.raw.sandbox.HomeDirName = parseRawStringValue(rawValue)
 				cfg.Sandbox.HomeDirName = value
-			case "boxlite_cli_path":
-				cfg.raw.sandbox.BoxLiteCLIPath = parseRawStringValue(rawValue)
-				cfg.Sandbox.BoxLiteCLIPath = value
 			case "storage_path":
 				cfg.raw.sandbox.StoragePath = parseRawStringValue(rawValue)
 				cfg.Sandbox.StoragePath = value
@@ -422,8 +414,7 @@ manager_image = %q
 [sandbox]
 provider = %q
 home_dir_name = %q
-boxlite_cli_path = %q
-`, cfg.rawOrResolvedString(cfg.raw.sandbox.Provider, loadedRaw.sandbox.Provider, resolvedSandbox.Provider), cfg.rawOrResolvedString(cfg.raw.sandbox.HomeDirName, loadedRaw.sandbox.HomeDirName, resolvedSandbox.HomeDirName), cfg.rawOrResolvedString(cfg.raw.sandbox.BoxLiteCLIPath, loadedRaw.sandbox.BoxLiteCLIPath, resolvedSandbox.BoxLiteCLIPath))
+`, cfg.rawOrResolvedString(cfg.raw.sandbox.Provider, loadedRaw.sandbox.Provider, resolvedSandbox.Provider), cfg.rawOrResolvedString(cfg.raw.sandbox.HomeDirName, loadedRaw.sandbox.HomeDirName, resolvedSandbox.HomeDirName))
 	if strings.TrimSpace(resolvedSandbox.StoragePath) != "" {
 		sandboxSection = strings.Replace(sandboxSection, "[sandbox]\n", fmt.Sprintf("[sandbox]\nstorage_path = %q\n", cfg.rawOrResolvedString(cfg.raw.sandbox.StoragePath, loadedRaw.sandbox.StoragePath, resolvedSandbox.StoragePath)), 1)
 	}
@@ -740,9 +731,6 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	}
 	if c.raw.sandbox.HomeDirName != "" {
 		out.sandbox.HomeDirName = c.Sandbox.HomeDirName
-	}
-	if c.raw.sandbox.BoxLiteCLIPath != "" {
-		out.sandbox.BoxLiteCLIPath = c.Sandbox.BoxLiteCLIPath
 	}
 	if c.raw.sandbox.StoragePath != "" {
 		out.sandbox.StoragePath = c.Sandbox.StoragePath

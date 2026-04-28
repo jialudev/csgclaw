@@ -54,7 +54,7 @@ csgclaw onboard --base-url <url> --api-key <key> --models <model[,model...]> [--
 ## Configuration
 
 `csgclaw onboard` writes a local config with server, model, bootstrap, sandbox, and channel settings. See [docs/config.md](docs/config.md) for model provider examples, sandbox provider options, and Worker override examples.
-For the official release bundles and the default source build, `boxlite-cli` works out of the box with the bundled or configured `boxlite` binary; `boxlite_cli_path` is mainly for advanced override and debugging scenarios.
+For the official release bundles and the default source build, `boxlite-cli` resolves the bundled sibling `boxlite` binary first and falls back to `PATH` only when that bundled binary is missing.
 
 ## Features
 

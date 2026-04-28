@@ -53,7 +53,7 @@ csgclaw onboard --base-url <url> --api-key <key> --models <model[,model...]> [--
 
 ## 配置
 
-`csgclaw onboard` 会写入本地配置，包含 server、model、bootstrap、sandbox 和 channel 设置。模型 provider 示例、sandbox provider 选项和 Worker 覆盖示例见 [docs/config.zh.md](docs/config.zh.md)。对于官方 release bundle 和默认源码构建，`boxlite-cli` 默认会直接使用随包分发或已配置的 `boxlite`；`boxlite_cli_path` 主要用于高级覆盖和调试场景。
+`csgclaw onboard` 会写入本地配置，包含 server、model、bootstrap、sandbox 和 channel 设置。模型 provider 示例、sandbox provider 选项和 Worker 覆盖示例见 [docs/config.zh.md](docs/config.zh.md)。对于官方 release bundle 和默认源码构建，`boxlite-cli` 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
 
 ## 功能特性
 

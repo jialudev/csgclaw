@@ -11,7 +11,7 @@ import (
 	"csgclaw/internal/sandbox/boxlitecli"
 )
 
-func TestBoxLiteCLIProviderFactoryUsesConfiguredPath(t *testing.T) {
+func TestBoxLiteCLIProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
 	factory, ok := factories[config.BoxLiteCLIProvider]
 	if !ok {
 		t.Fatalf("boxlite-cli provider factory not registered")
@@ -19,7 +19,6 @@ func TestBoxLiteCLIProviderFactoryUsesConfiguredPath(t *testing.T) {
 
 	opt, err := factory(config.SandboxConfig{
 		Provider:         config.BoxLiteCLIProvider,
-		BoxLiteCLIPath:   "/opt/boxlite/bin/boxlite",
 		DebianRegistries: []string{"registry.a"},
 	})
 	if err != nil {
@@ -31,7 +30,7 @@ func TestBoxLiteCLIProviderFactoryUsesConfiguredPath(t *testing.T) {
 	if !ok {
 		t.Fatalf("provider = %T, want boxlitecli.Provider", provider)
 	}
-	if got, want := providerPath(t, boxliteProvider), "/opt/boxlite/bin/boxlite"; got != want {
+	if got, want := providerPath(t, boxliteProvider), boxlitecli.ResolvePath(""); got != want {
 		t.Fatalf("provider path = %q, want %q", got, want)
 	}
 	if got, want := provider.Name(), config.BoxLiteCLIProvider; got != want {

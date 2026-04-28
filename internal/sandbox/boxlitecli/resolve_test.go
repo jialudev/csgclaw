@@ -73,3 +73,7 @@ func stubExecutablePath(t *testing.T, path string) func() {
 		executablePath = previous
 	}
 }
+
+func StubExecutablePathForTest(t *testing.T, path string) func() {
+	return stubExecutablePath(t, path)
+}

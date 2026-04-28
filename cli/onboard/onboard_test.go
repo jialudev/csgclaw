@@ -90,11 +90,13 @@ func TestRunInteractiveDefaultUsesCSGHubLiteModels(t *testing.T) {
 		`[sandbox]`,
 		fmt.Sprintf(`provider = %q`, config.DefaultSandboxProvider),
 		fmt.Sprintf(`home_dir_name = %q`, config.DefaultSandboxHomeDirName),
-		fmt.Sprintf(`boxlite_cli_path = %q`, config.DefaultBoxLiteCLIPath),
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("saved config missing %q:\n%s", want, content)
 		}
+	}
+	if strings.Contains(content, "boxlite_cli_path") {
+		t.Fatalf("saved config should not contain boxlite_cli_path:\n%s", content)
 	}
 }
 
@@ -102,7 +104,6 @@ func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
 		Provider:         config.BoxLiteCLIProvider,
 		HomeDirName:      "sandbox-home",
-		BoxLiteCLIPath:   "/opt/boxlite/bin/boxlite",
 		DebianRegistries: []string{"registry.a"},
 	})
 	if err != nil {

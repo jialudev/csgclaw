@@ -191,7 +191,6 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`[sandbox]`,
 		fmt.Sprintf(`provider = %q`, config.DefaultSandboxProvider),
 		fmt.Sprintf(`home_dir_name = %q`, config.DefaultSandboxHomeDirName),
-		fmt.Sprintf(`boxlite_cli_path = %q`, config.DefaultBoxLiteCLIPath),
 		`[models]`,
 		`default = "default.model-test"`,
 		`[models.providers.default]`,
@@ -307,7 +306,6 @@ func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T
 		Sandbox: config.SandboxConfig{
 			Provider:         config.BoxLiteCLIProvider,
 			HomeDirName:      config.DefaultSandboxHomeDirName,
-			BoxLiteCLIPath:   config.DefaultBoxLiteCLIPath,
 			DebianRegistries: config.DefaultDebianRegistries,
 		},
 	}
@@ -325,7 +323,6 @@ manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-boxlite_cli_path = "boxlite"
 
 [models]
 default = "default.local.minimax-m2.5"
@@ -344,7 +341,6 @@ func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
 		Provider:         config.BoxLiteCLIProvider,
 		HomeDirName:      "sandbox-home",
-		BoxLiteCLIPath:   "/opt/boxlite/bin/boxlite",
 		DebianRegistries: []string{"registry.a"},
 	})
 	if err != nil {
