@@ -101,6 +101,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	id := fs.String("id", "", "agent id")
 	name := fs.String("name", "", "agent name")
 	description := fs.String("description", "", "agent description")
+	image := fs.String("image", "", "agent image")
 	profile := fs.String("profile", "", "agent llm profile")
 	fs.Usage = func() {
 		fmt.Fprintln(run.Stderr, "Create an agent.")
@@ -115,6 +116,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		fmt.Fprintln(run.Stderr, "  --id string             agent id")
 		fmt.Fprintln(run.Stderr, "  --name string           agent name")
 		fmt.Fprintln(run.Stderr, "  --description string    agent description")
+		fmt.Fprintln(run.Stderr, "  --image string          agent image")
 		fmt.Fprintln(run.Stderr, "  --profile string        agent llm profile")
 	}
 	if err := fs.Parse(args); err != nil {
@@ -128,6 +130,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		ID:          *id,
 		Name:        *name,
 		Description: *description,
+		Image:       *image,
 		Profile:     *profile,
 	}
 	client := run.APIClient(globals)
@@ -405,6 +408,7 @@ func mergeReplaceAgentRequest(ctx context.Context, client *apiclient.Client, req
 		ID:          existing.ID,
 		Name:        existing.Name,
 		Description: existing.Description,
+		Image:       existing.Image,
 		Profile:     existing.Profile,
 	}
 	if visited["id"] {
@@ -415,6 +419,9 @@ func mergeReplaceAgentRequest(ctx context.Context, client *apiclient.Client, req
 	}
 	if visited["description"] {
 		merged.Description = req.Description
+	}
+	if visited["image"] {
+		merged.Image = req.Image
 	}
 	if visited["profile"] {
 		merged.Profile = req.Profile

@@ -413,12 +413,12 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	name := strings.TrimSpace(req.Name)
 	description := strings.TrimSpace(req.Description)
 	image := strings.TrimSpace(req.Image)
+	if image == "" {
+		image = s.managerImage
+	}
 	role := normalizeRole(req.Role)
 	if name == "" {
 		return Agent{}, fmt.Errorf("name is required")
-	}
-	if image == "" {
-		return Agent{}, fmt.Errorf("image is required")
 	}
 	if role == RoleManager {
 		return Agent{}, fmt.Errorf("role %q is reserved", role)
@@ -815,6 +815,10 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	id := strings.TrimSpace(req.ID)
 	name := strings.TrimSpace(req.Name)
 	description := strings.TrimSpace(req.Description)
+	image := strings.TrimSpace(req.Image)
+	if image == "" {
+		image = s.managerImage
+	}
 	switch {
 	case name == "":
 		return Agent{}, fmt.Errorf("name is required")
@@ -855,7 +859,7 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	if err != nil {
 		return Agent{}, err
 	}
-	box, info, err := s.createGatewayBox(ctx, rt, s.managerImage, name, id, resolvedModel)
+	box, info, err := s.createGatewayBox(ctx, rt, image, name, id, resolvedModel)
 	if err != nil {
 		return Agent{}, fmt.Errorf("create worker box: %w", err)
 	}
@@ -876,7 +880,7 @@ func (s *Service) CreateWorker(ctx context.Context, req CreateRequest) (Agent, e
 	worker := Agent{
 		ID:              id,
 		Name:            name,
-		Image:           s.managerImage,
+		Image:           image,
 		BoxID:           info.ID,
 		Description:     description,
 		Status:          string(info.State),

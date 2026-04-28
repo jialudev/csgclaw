@@ -726,6 +726,52 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 	}
 }
 
+func TestCreateWorkerUsesRequestedImageOrManagerFallback(t *testing.T) {
+	tests := []struct {
+		name      string
+		reqImage  string
+		wantImage string
+	}{
+		{name: "requested image", reqImage: "worker-image:2", wantImage: "worker-image:2"},
+		{name: "manager fallback", reqImage: "", wantImage: "manager-image:1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotImage string
+			SetTestHooks(
+				func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
+				func(_ *Service, _ context.Context, _ sandbox.Runtime, image, name, _ string, _ config.ModelConfig) (sandbox.Instance, sandbox.Info, error) {
+					gotImage = image
+					return nil, sandbox.Info{
+						ID:        "box-" + name,
+						Name:      name,
+						State:     sandbox.StateRunning,
+						CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+					}, nil
+				},
+			)
+			defer ResetTestHooks()
+
+			svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:1", "")
+			if err != nil {
+				t.Fatalf("NewService() error = %v", err)
+			}
+
+			got, err := svc.CreateWorker(context.Background(), CreateRequest{Name: "alice", Image: tt.reqImage})
+			if err != nil {
+				t.Fatalf("CreateWorker() error = %v", err)
+			}
+			if gotImage != tt.wantImage {
+				t.Fatalf("createGatewayBox() image = %q, want %q", gotImage, tt.wantImage)
+			}
+			if got.Image != tt.wantImage {
+				t.Fatalf("CreateWorker().Image = %q, want %q", got.Image, tt.wantImage)
+			}
+		})
+	}
+}
+
 func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
@@ -1136,6 +1182,63 @@ func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
 	}
 	if closeRuntimeCalls != 1 {
 		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
+	}
+}
+
+func TestCreateUsesRequestedImageOrManagerFallback(t *testing.T) {
+	tests := []struct {
+		name      string
+		reqImage  string
+		wantImage string
+	}{
+		{name: "requested image", reqImage: "agent-image:2", wantImage: "agent-image:2"},
+		{name: "manager fallback", reqImage: "", wantImage: "manager-image:1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rt := &fakeRuntime{}
+			var gotSpec sandbox.CreateSpec
+			SetTestHooks(
+				func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil },
+				nil,
+			)
+			defer ResetTestHooks()
+
+			testCreateBoxHook = func(_ *Service, _ context.Context, gotRT sandbox.Runtime, spec sandbox.CreateSpec) (sandbox.Instance, error) {
+				if gotRT != rt {
+					t.Fatalf("createBox() runtime = %p, want %p", gotRT, rt)
+				}
+				gotSpec = spec
+				return &fakeInstance{}, nil
+			}
+
+			svc, err := NewService(
+				config.ModelConfig{BaseURL: "http://127.0.0.1:4000", APIKey: "sk-test", ModelID: "model-1"},
+				config.ServerConfig{},
+				"manager-image:1",
+				"",
+			)
+			if err != nil {
+				t.Fatalf("NewService() error = %v", err)
+			}
+
+			got, err := svc.Create(context.Background(), CreateRequest{
+				ID:    "agent-1",
+				Name:  "alice",
+				Image: tt.reqImage,
+				Role:  RoleAgent,
+			})
+			if err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+			if gotSpec.Image != tt.wantImage {
+				t.Fatalf("createBox() spec.Image = %q, want %q", gotSpec.Image, tt.wantImage)
+			}
+			if got.Image != tt.wantImage {
+				t.Fatalf("Create().Image = %q, want %q", got.Image, tt.wantImage)
+			}
+		})
 	}
 }
 

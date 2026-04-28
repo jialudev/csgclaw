@@ -103,6 +103,7 @@ Flags:
 - `--manager-image string`: bootstrap manager image.
 - `--debian-registries string`: comma-separated OCI registries for `debian:bookworm-slim` pulls. Persisted to config.
 - `--force-recreate-manager`: remove and recreate the bootstrap manager box.
+- `--log-level string`: log level for onboarding logs. Supported values: `debug`, `info`, `warn`, `error`. Default `info`.
 
 Behavior:
 
@@ -134,6 +135,7 @@ csgclaw serve [-d|--daemon] [flags]
 Flags:
 
 - `--daemon`, `-d`: run in background.
+- `--log-level string`: log level. Supported values: `debug`, `info`, `warn`, `error`. Default `info`.
 - `--log string`: daemon log path. Daemon mode only. Default `~/.csgclaw/server.log`.
 - `--pid string`: daemon PID path. Daemon mode only. Default `~/.csgclaw/server.pid`.
 
@@ -191,7 +193,6 @@ Subcommands:
 - `stop`
 - `delete`
 - `logs`
-- `status`
 
 #### `csgclaw agent list`
 
@@ -221,6 +222,7 @@ Flags:
 - `--id string`: agent ID.
 - `--name string`: agent name.
 - `--description string`: agent description.
+- `--image string`: agent image.
 - `--profile string`: agent LLM profile.
 
 Behavior:
@@ -230,6 +232,7 @@ Behavior:
 - With `--replace` and no extra field flags, the command preserves the existing agent's `id`, `name`, `description`, and `profile`, then deletes and recreates the agent.
 - With `--replace` and any explicit field flags, only those provided fields override the existing agent before the agent is deleted and recreated.
 - Replacing an agent prompts for confirmation unless `--force` is set.
+- The replace merge logic also preserves or overrides `image` using the same visited-flag behavior.
 
 #### `csgclaw agent delete`
 

@@ -103,6 +103,7 @@ csgclaw onboard [flags]
 - `--manager-image string`：引导 Manager 使用的镜像。
 - `--debian-registries string`：用于拉取 `debian:bookworm-slim` 的 OCI registry 列表，逗号分隔，并持久化到配置文件。
 - `--force-recreate-manager`：删除并重建引导 Manager box。
+- `--log-level string`：初始化阶段日志级别，支持 `debug`、`info`、`warn`、`error`，默认 `info`。
 
 行为说明：
 
@@ -134,6 +135,7 @@ csgclaw serve [-d|--daemon] [flags]
 参数：
 
 - `--daemon`、`-d`：后台运行。
+- `--log-level string`：日志级别，支持 `debug`、`info`、`warn`、`error`，默认 `info`。
 - `--log string`：后台模式日志路径，仅 daemon 模式有效。默认 `~/.csgclaw/server.log`。
 - `--pid string`：后台模式 PID 文件路径，仅 daemon 模式有效。默认 `~/.csgclaw/server.pid`。
 
@@ -191,7 +193,6 @@ csgclaw agent <subcommand> [flags]
 - `stop`
 - `delete`
 - `logs`
-- `status`
 
 #### `csgclaw agent list`
 
@@ -221,6 +222,7 @@ csgclaw agent create [-r|--replace] --id <id> [flags]
 - `--id string`：Agent ID。
 - `--name string`：Agent 名称。
 - `--description string`：Agent 描述。
+- `--image string`：Agent 镜像。
 - `--profile string`：Agent 使用的 LLM profile。
 
 行为说明：
@@ -230,6 +232,7 @@ csgclaw agent create [-r|--replace] --id <id> [flags]
 - 带 `--replace` 且不传其他字段参数时，命令会保留现有 Agent 的 `id`、`name`、`description` 和 `profile`，然后执行删除并重建。
 - 带 `--replace` 且显式传入字段参数时，只有这些显式传入的字段会覆盖现有 Agent，然后再执行删除并重建。
 - 原地替换默认会要求确认，除非传入 `--force`。
+- `image` 字段也遵循同样的 visited-flag 合并逻辑：未显式传入时保留原值，显式传入时覆盖原值。
 
 #### `csgclaw agent delete`
 
