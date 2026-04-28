@@ -247,11 +247,14 @@ func TestConfigureServeLoggerSetsDebugLevel(t *testing.T) {
 func TestServeForegroundEnforcesDefaultManagerImage(t *testing.T) {
 	origRunServer := RunServer
 	origNewAgentService := NewAgentService
+	origEnsureBootstrapManager := EnsureBootstrapManager
 	t.Cleanup(func() {
 		RunServer = origRunServer
 		NewAgentService = origNewAgentService
+		EnsureBootstrapManager = origEnsureBootstrapManager
 	})
 	RunServer = func(server.Options) error { return nil }
+	EnsureBootstrapManager = func(context.Context, *agent.Service, bool) error { return nil }
 
 	cfg := config.Config{
 		Server: config.ServerConfig{

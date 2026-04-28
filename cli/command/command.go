@@ -43,7 +43,6 @@ type ActionResult struct {
 	ConfigPath      string   `json:"config_path,omitempty"`
 	ManagerImage    string   `json:"manager_image,omitempty"`
 	Users           []string `json:"users,omitempty"`
-	ForceRecreated  bool     `json:"force_recreated,omitempty"`
 	Logs            string   `json:"logs,omitempty"`
 	Lines           int      `json:"lines,omitempty"`
 	Follow          bool     `json:"follow,omitempty"`

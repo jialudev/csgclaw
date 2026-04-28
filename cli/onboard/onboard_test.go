@@ -18,7 +18,7 @@ import (
 )
 
 func TestRunInteractiveDefaultUsesCSGHubLiteModels(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
 		if got, want := cfg.Models.Default, "csghub-lite.Qwen/Qwen3-0.6B-GGUF"; got != want {
 			t.Fatalf("cfg.Models.Default = %q, want %q", got, want)
 		}
@@ -178,7 +178,7 @@ func TestRunInteractiveCSGHubLiteUsesSpecifiedBaseURL(t *testing.T) {
 	}))
 	defer modelServer.Close()
 
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
 		provider := cfg.Models.Providers["csghub-lite"]
 		if got, want := provider.BaseURL, modelServer.URL+"/v1"; got != want {
 			t.Fatalf("provider.BaseURL = %q, want %q", got, want)
@@ -217,7 +217,7 @@ func TestRunRequiresLLMFlagsForFirstTimeSetup(t *testing.T) {
 		EnsureIMBootstrapState = origEnsureIMBootstrapState
 	})
 
-	CreateManagerBot = func(context.Context, string, string, config.Config, bool) (bot.Bot, error) {
+	CreateManagerBot = func(context.Context, string, string, config.Config) (bot.Bot, error) {
 		t.Fatal("bot manager create should not run when config is incomplete")
 		return bot.Bot{}, nil
 	}
@@ -237,7 +237,7 @@ func TestRunRequiresLLMFlagsForFirstTimeSetup(t *testing.T) {
 }
 
 func TestRunInteractiveExistingConfigKeepsCurrentProviderByDefault(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
 		if got, want := cfg.Models.Default, "default.gpt-test"; got != want {
 			t.Fatalf("cfg.Models.Default = %q, want %q", got, want)
 		}
@@ -294,7 +294,7 @@ models = ["gpt-test"]
 }
 
 func TestRunInteractiveCustomProvider(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
 		if got, want := cfg.Models.Default, "default.gpt-custom"; got != want {
 			t.Fatalf("cfg.Models.Default = %q, want %q", got, want)
 		}
@@ -330,7 +330,7 @@ func TestRunInteractiveCustomProvider(t *testing.T) {
 }
 
 func TestRunInteractiveCustomProviderKeepsExistingSecretWithoutEchoing(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
 		provider := cfg.Models.Providers["default"]
 		if provider.BaseURL != "http://llm.test/v1" || provider.APIKey != "secret-token" {
 			t.Fatalf("provider = %#v, want existing base URL/API key", provider)
@@ -380,7 +380,7 @@ models = ["gpt-old"]
 }
 
 func TestRunCSGHubLiteProviderUnavailableReturnsStartHint(t *testing.T) {
-	restore := stubBootstrap(t, func(context.Context, string, string, config.Config, bool) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(context.Context, string, string, config.Config) (bot.Bot, error) {
 		t.Fatal("bot manager create should not run when csghub-lite is unavailable")
 		return bot.Bot{}, nil
 	})
@@ -413,7 +413,7 @@ func TestRunReusesExistingLLMConfig(t *testing.T) {
 	})
 
 	callCount := 0
-	CreateManagerBot = func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+	CreateManagerBot = func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
 		callCount++
 		if got, want := cfg.Models.Default, "default.gpt-test"; got != want {
 			t.Fatalf("cfg.Models.Default = %q, want %q", got, want)
@@ -478,7 +478,7 @@ func TestRunReusesExistingLLMConfig(t *testing.T) {
 }
 
 func TestRunDebianRegistriesFlagPersistsToConfig(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config, _ bool) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
 		if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), "registry.a,docker.io"; got != want {
 			t.Fatalf("bootstrap cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
 		}
@@ -555,7 +555,7 @@ func enableInteractiveTest(t *testing.T, baseURL string) func() {
 	}
 }
 
-func stubBootstrap(t *testing.T, create func(context.Context, string, string, config.Config, bool) (bot.Bot, error)) func() {
+func stubBootstrap(t *testing.T, create func(context.Context, string, string, config.Config) (bot.Bot, error)) func() {
 	t.Helper()
 	origCreateManager := CreateManagerBot
 	origEnsureIMBootstrapState := EnsureIMBootstrapState

@@ -100,9 +100,7 @@ Flags:
 - `--api-key string`: LLM provider API key.
 - `--models string`: comma-separated model IDs.
 - `--reasoning-effort string`: optional upstream `reasoning_effort` default.
-- `--manager-image string`: bootstrap manager image.
 - `--debian-registries string`: comma-separated OCI registries for `debian:bookworm-slim` pulls. Persisted to config.
-- `--force-recreate-manager`: remove and recreate the bootstrap manager box.
 - `--log-level string`: log level for onboarding logs. Supported values: `debug`, `info`, `warn`, `error`. Default `info`.
 
 Behavior:
@@ -119,7 +117,7 @@ Examples:
 csgclaw onboard
 csgclaw onboard --provider csghub-lite --models Qwen/Qwen3-0.6B-GGUF
 csgclaw onboard --base-url https://api.openai.com/v1 --api-key "$OPENAI_API_KEY" --models gpt-5.4-mini
-csgclaw onboard --manager-image ghcr.io/example/manager:latest --force-recreate-manager
+csgclaw agent create --replace --force --id manager --image ghcr.io/example/manager:latest
 ```
 
 ### `csgclaw serve`

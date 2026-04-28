@@ -27,8 +27,7 @@
 csgclaw onboard \
   --base-url http://127.0.0.1:4000 \
   --api-key sk-please-change-me \
-  --model-id gpt-4o-mini \
-  --manager-image opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.27.0
+  --models gpt-4o-mini
 ```
 
 参数含义：

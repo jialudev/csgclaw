@@ -23,7 +23,6 @@ CLI_BIN ?= $(BIN_DIR)/csgclaw-cli
 ONBOARD_BASE_URL ?= http://127.0.0.1:4000
 ONBOARD_API_KEY ?= sk-1234567890
 ONBOARD_MODEL_ID ?= minimax-m2.7
-ONBOARD_MANAGER_IMAGE ?= opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.27.0
 
 IMAGE ?= opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw
 TAG ?= 2026.4.27.0
@@ -106,15 +105,13 @@ onboard: sync-agent-runtimes
 	env GOCACHE=$(GOCACHE) $(GO) run -ldflags "$(LDFLAGS)" ./cmd/csgclaw onboard \
 		--base-url $(ONBOARD_BASE_URL) \
 		--api-key $(ONBOARD_API_KEY) \
-		--models $(ONBOARD_MODEL_ID) \
-		--manager-image $(ONBOARD_MANAGER_IMAGE)
+		--models $(ONBOARD_MODEL_ID)
 
 onboard-with-boxlite-sdk: boxlite-setup sync-agent-runtimes
 	env GOCACHE=$(GOCACHE) $(GO) run -tags $(BOXLITE_SDK_TAG) -ldflags "$(LDFLAGS)" ./cmd/csgclaw onboard \
 		--base-url $(ONBOARD_BASE_URL) \
 		--api-key $(ONBOARD_API_KEY) \
-		--models $(ONBOARD_MODEL_ID) \
-		--manager-image $(ONBOARD_MANAGER_IMAGE)
+		--models $(ONBOARD_MODEL_ID)
 
 package: sync-agent-runtimes
 	mkdir -p $(DIST_DIR)

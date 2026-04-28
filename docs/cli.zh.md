@@ -100,9 +100,7 @@ csgclaw onboard [flags]
 - `--api-key string`：LLM 提供方 API Key。
 - `--models string`：逗号分隔的模型 ID 列表。
 - `--reasoning-effort string`：可选，上游 `reasoning_effort` 默认值。
-- `--manager-image string`：引导 Manager 使用的镜像。
 - `--debian-registries string`：用于拉取 `debian:bookworm-slim` 的 OCI registry 列表，逗号分隔，并持久化到配置文件。
-- `--force-recreate-manager`：删除并重建引导 Manager box。
 - `--log-level string`：初始化阶段日志级别，支持 `debug`、`info`、`warn`、`error`，默认 `info`。
 
 行为说明：
@@ -119,7 +117,7 @@ csgclaw onboard [flags]
 csgclaw onboard
 csgclaw onboard --provider csghub-lite --models Qwen/Qwen3-0.6B-GGUF
 csgclaw onboard --base-url https://api.openai.com/v1 --api-key "$OPENAI_API_KEY" --models gpt-5.4-mini
-csgclaw onboard --manager-image ghcr.io/example/manager:latest --force-recreate-manager
+csgclaw agent create --replace --force --id manager --image ghcr.io/example/manager:latest
 ```
 
 ### `csgclaw serve`
