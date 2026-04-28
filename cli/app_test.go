@@ -1252,7 +1252,7 @@ func TestExecuteRoomListUsesHTTPClient(t *testing.T) {
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "room", "list"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "room-1", "alpha", "2", "1")
+	assertTableHasRow(t, stdout.String(), "room-1", "alpha", "false", "2", "1")
 }
 
 func TestExecuteRoomListFeishuUsesChannelRoute(t *testing.T) {
@@ -1274,7 +1274,7 @@ func TestExecuteRoomListFeishuUsesChannelRoute(t *testing.T) {
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "room", "list", "--channel", "feishu"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "fsroom-1", "alpha", "1", "0")
+	assertTableHasRow(t, stdout.String(), "fsroom-1", "alpha", "false", "1", "0")
 }
 
 func TestExecuteUserCreateFeishuUsesChannelRoute(t *testing.T) {
@@ -1340,7 +1340,7 @@ func TestExecuteMemberCreateFeishuUsesChannelRoomMembersRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "oc_alpha", "alpha", "2", "0")
+	assertTableHasRow(t, stdout.String(), "oc_alpha", "alpha", "false", "2", "0")
 }
 
 func TestExecuteMemberListFeishuUsesChannelRoomMembersRoute(t *testing.T) {
@@ -1424,7 +1424,7 @@ func TestExecuteMemberCreateCsgclawUsesRoomMembersRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "room-1", "Ops", "2", "0")
+	assertTableHasRow(t, stdout.String(), "room-1", "Ops", "false", "2", "0")
 }
 
 func TestExecuteMemberCreateUsesCsgclawDefault(t *testing.T) {
@@ -1459,7 +1459,7 @@ func TestExecuteMemberCreateUsesCsgclawDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "room-1", "Ops", "2", "0")
+	assertTableHasRow(t, stdout.String(), "room-1", "Ops", "false", "2", "0")
 }
 
 func TestExecuteRoomCreateUsesHTTPClient(t *testing.T) {
