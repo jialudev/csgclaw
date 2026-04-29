@@ -1745,6 +1745,33 @@ function App() {
     }
   }
 
+  async function deletePreviewBot(item) {
+    if (!item?.id || agentActionBusy) {
+      return;
+    }
+    if (!window.confirm(`${t("agentDelete")} ${item.name}?`)) {
+      return;
+    }
+    setAgentActionBusy(`${item.id}:delete-bot`);
+    setAgentsError("");
+    try {
+      const resp = await fetch(`api/v1/bots/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      if (!resp.ok) {
+        throw new Error((await resp.text()).trim());
+      }
+      closeProfilePreview();
+      await refreshAgents();
+      await refreshBootstrap();
+      if (item.id === "u-manager") {
+        await refreshManagerProfile();
+      }
+    } catch (err) {
+      setAgentsError(err.message || t("agentActionFailed"));
+    } finally {
+      setAgentActionBusy("");
+    }
+  }
+
   async function inviteAgentToRoom(item, options = {}) {
     if (!activeConversation || isDirectConversation(activeConversation) || !data?.current_user_id || !item?.id) {
       return;
@@ -2249,6 +2276,7 @@ function App() {
               user=${previewUser}
               t=${t}
               activeRoom=${activeChannel}
+              busyKey=${agentActionBusy}
               onClose=${closeProfilePreview}
               onOpenAgent=${(item) => {
                 selectAgent(item);
@@ -2256,6 +2284,7 @@ function App() {
               }}
               onInvite=${inviteAgentToRoom}
               onOpenDM=${openAgentDirectMessage}
+              onDelete=${deletePreviewBot}
             />
           `
         : null}
@@ -3011,13 +3040,14 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
   `;
 }
 
-function ProfilePreviewDrawer({ agent, user, t, activeRoom, onClose, onOpenAgent, onInvite, onOpenDM }) {
+function ProfilePreviewDrawer({ agent, user, t, activeRoom, busyKey, onClose, onOpenAgent, onInvite, onOpenDM, onDelete }) {
   const running = agent ? isAgentRunning(agent) : false;
   const incomplete = agent ? isAgentIncomplete(agent) : false;
   const restartNeeded = agent ? isAgentRestartNeeded(agent) : false;
   const provider = agent?.provider || agent?.agent_profile?.provider;
   const displayName = agent?.name || user?.name || "";
   const displayRole = agent ? (agent.role || "worker") : user?.role;
+  const deleteBusy = agent ? busyKey === `${agent.id}:delete-bot` : false;
   return html`
     <aside className="profile-preview-drawer" aria-label=${t("profilePreview")}>
       <div className="preview-header">
@@ -3068,6 +3098,9 @@ function ProfilePreviewDrawer({ agent, user, t, activeRoom, onClose, onOpenAgent
               <button className="secondary-button" onClick=${() => onOpenDM(agent)}>${t("openDM")}</button>
               ${activeRoom && agent.role !== "manager" && agent.id !== "u-manager"
                 ? html`<button className="secondary-button" onClick=${() => onInvite(agent)}>${t("inviteToRoom")}</button>`
+                : null}
+              ${agent.role !== "manager" && agent.id !== "u-manager"
+                ? html`<button className="danger-button preview-actions-delete" disabled=${deleteBusy} onClick=${() => onDelete(agent)}>${t("agentDelete")}</button>`
                 : null}
             </div>
           `

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"csgclaw/internal/config"
@@ -33,7 +34,11 @@ const (
 
 var localIPv4Resolver = localIPv4
 
+var osRemoveAll = os.RemoveAll
+
 var defaultSandboxProvider sandbox.Provider = unconfiguredSandboxProvider{}
+
+const removeAllRetryAttempts = 5
 
 type unconfiguredSandboxProvider struct{}
 
@@ -317,7 +322,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		if err != nil {
 			return Agent{}, err
 		}
-		if err := os.RemoveAll(managerHome); err != nil {
+		if err := removeAllWithRetry(managerHome); err != nil {
 			return Agent{}, fmt.Errorf("remove bootstrap manager home: %w", err)
 		}
 		rt, err = s.ensureRuntimeAtHome(runtimeHome)
@@ -977,7 +982,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(agentHome); err != nil {
+	if err := removeAllWithRetry(agentHome); err != nil {
 		return fmt.Errorf("remove agent home: %w", err)
 	}
 
@@ -997,6 +1002,35 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		delete(s.runtimes, runtimeHome)
 	}
 	return s.saveLocked()
+}
+
+func removeAllWithRetry(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("path is required")
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < removeAllRetryAttempts; attempt++ {
+		if err := osRemoveAll(path); err == nil || os.IsNotExist(err) {
+			return nil
+		} else {
+			lastErr = err
+			// Defensive retry: BoxLite runtime cleanup can briefly lag behind Close(),
+			// so agent home removal may transiently fail with "directory not empty".
+			// If runtime shutdown semantics improve later, prefer fixing that timing
+			// instead of relying on retries here.
+			if !isRetryableRemoveAllError(err) || attempt == removeAllRetryAttempts-1 {
+				return err
+			}
+		}
+		time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
+	}
+	return lastErr
+}
+
+func isRetryableRemoveAllError(err error) bool {
+	return errors.Is(err, syscall.ENOTEMPTY) || strings.Contains(strings.ToLower(err.Error()), "directory not empty")
 }
 
 func (s *Service) List() []Agent {

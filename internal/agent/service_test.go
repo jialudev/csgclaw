@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1055,6 +1056,67 @@ func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
 	}
 	if closeRuntimeCalls != 1 {
 		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
+	}
+}
+
+func TestDeleteRetriesAgentHomeRemovalOnDirectoryNotEmpty(t *testing.T) {
+	rt := &fakeRuntime{}
+	SetTestHooks(func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil }, nil)
+	defer ResetTestHooks()
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) error {
+		return nil
+	}
+	defer func() {
+		testForceRemoveBoxHook = nil
+	}()
+
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	agentHome, err := agentHomeDir("alice")
+	if err != nil {
+		t.Fatalf("agentHomeDir() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(agentHome, "boxlite", "images"), 0o755); err != nil {
+		t.Fatalf("os.MkdirAll(agentHome) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentHome, "boxlite", "images", "cache.txt"), []byte("cache"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile(cache.txt) error = %v", err)
+	}
+
+	origRemoveAll := osRemoveAll
+	var removeCalls int
+	osRemoveAll = func(path string) error {
+		removeCalls++
+		if path == agentHome && removeCalls == 1 {
+			return &os.PathError{Op: "unlinkat", Path: filepath.Join(agentHome, "boxlite", "images"), Err: syscall.ENOTEMPTY}
+		}
+		return os.RemoveAll(path)
+	}
+	defer func() {
+		osRemoveAll = origRemoveAll
+	}()
+
+	if err := svc.Delete(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if removeCalls < 2 {
+		t.Fatalf("osRemoveAll() calls = %d, want at least 2", removeCalls)
+	}
+	if _, err := os.Stat(agentHome); !os.IsNotExist(err) {
+		t.Fatalf("agent home still exists after delete: err=%v", err)
 	}
 }
 

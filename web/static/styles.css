@@ -2483,6 +2483,10 @@ body::after {
   flex-wrap: wrap;
 }
 
+.preview-actions-delete {
+  margin-left: auto;
+}
+
 .workspace-row-icon-clickable {
   cursor: pointer;
 }
