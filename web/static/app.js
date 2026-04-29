@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.3.1";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.3.1";
 import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
 import htm from "https://esm.sh/htm@3.1.1";
 import { marked } from "https://esm.sh/marked@13.0.2";
@@ -764,6 +764,7 @@ function App() {
   const messageListRef = useRef(null);
   const memberMenuRef = useRef(null);
   const channelToolsRef = useRef(null);
+  const profilePreviewRef = useRef(null);
   const agentRefreshTimerRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
 
@@ -981,6 +982,34 @@ function App() {
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [showChannelTools]);
+
+  useEffect(() => {
+    if (!profilePreview) {
+      return undefined;
+    }
+
+    function handlePointerDown(event) {
+      const preview = profilePreviewRef.current;
+      const anchor = profilePreview?.anchorEl;
+      if (!preview || preview.contains(event.target) || anchor?.contains?.(event.target)) {
+        return;
+      }
+      closeProfilePreview();
+    }
+
+    function handleViewportChange() {
+      closeProfilePreview();
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [profilePreview]);
 
   useEffect(() => {
     if (!data) {
@@ -1918,21 +1947,61 @@ function App() {
     }
   }
 
-  function openParticipantPreview(user) {
+  function openParticipantPreview(user, anchor) {
     if (!user?.id) {
       return;
     }
+    const rect = anchor?.getBoundingClientRect?.();
+    if (!rect) {
+      return;
+    }
     const agent = agents.find((item) => agentMatchesUser(item, user));
-    setProfilePreview(agent ? { type: "agent", id: agent.id } : { type: "user", id: user.id });
+    setProfilePreview((current) => {
+      const nextType = agent ? "agent" : "user";
+      const nextID = agent ? agent.id : user.id;
+      if (current?.type === nextType && current?.id === nextID) {
+        return null;
+      }
+      return {
+        type: nextType,
+        id: nextID,
+        anchorRect: {
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          left: rect.left,
+        },
+        anchorEl: anchor,
+      };
+    });
     setShowMemberList(false);
     setShowChannelTools(false);
   }
 
-  function openAgentPreview(item) {
+  function openAgentPreview(item, anchor) {
     if (!item?.id) {
       return;
     }
-    setProfilePreview({ type: "agent", id: item.id });
+    const rect = anchor?.getBoundingClientRect?.();
+    if (!rect) {
+      return;
+    }
+    setProfilePreview((current) => {
+      if (current?.type === "agent" && current?.id === item.id) {
+        return null;
+      }
+      return {
+        type: "agent",
+        id: item.id,
+        anchorRect: {
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          left: rect.left,
+        },
+        anchorEl: anchor,
+      };
+    });
     setShowChannelTools(false);
   }
 
@@ -2209,7 +2278,7 @@ function App() {
                                             className="avatar avatar-button"
                                             style=${{ background: `linear-gradient(135deg, ${user.accent_hex}, #10233f)` }}
                                             aria-label=${`${t("profilePreview")} ${user.name}`}
-                                            onClick=${() => openParticipantPreview(user)}
+                                            onClick=${(event) => openParticipantPreview(user, event.currentTarget)}
                                           >${user.avatar}</button>
                                           <div className="member-row-main">
                                             <div className="member-row-name">${user.name}</div>
@@ -2307,7 +2376,7 @@ function App() {
                           className="avatar avatar-button"
                           style=${{ background: `linear-gradient(135deg, ${user.accent_hex}, #10233f)` }}
                           aria-label=${`${t("profilePreview")} ${user.name}`}
-                          onClick=${() => openParticipantPreview(user)}
+                          onClick=${(event) => openParticipantPreview(user, event.currentTarget)}
                         >${user.avatar}</button>
                         <div className="message-card">
                           <div className="message-meta">
@@ -2393,18 +2462,19 @@ function App() {
 
       ${profilePreview && (previewAgent || previewUser)
         ? html`
-            <${ProfilePreviewDrawer}
+            <${ProfilePreviewPopover}
+              previewRef=${profilePreviewRef}
               agent=${previewAgent}
               user=${previewUser}
+              anchorRect=${profilePreview.anchorRect}
               t=${t}
-              activeRoom=${activeChannel}
+              inDirectConversation=${Boolean(selectedConversation && isDirectConversation(selectedConversation))}
               busyKey=${agentActionBusy}
               onClose=${closeProfilePreview}
               onOpenAgent=${(item) => {
                 selectAgent(item);
                 closeProfilePreview();
               }}
-              onInvite=${inviteAgentToRoom}
               onOpenDM=${openAgentDirectMessage}
               onDelete=${deletePreviewBot}
             />
@@ -2943,13 +3013,13 @@ function WorkspaceAgentRow({ item, active, t, onSelect, onPreview }) {
         aria-label=${`${t("profilePreview")} ${item.name}`}
         onClick=${(event) => {
           event.stopPropagation();
-          onPreview?.(item);
+          onPreview?.(item, event.currentTarget);
         }}
         onKeyDown=${(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             event.stopPropagation();
-            onPreview?.(item);
+            onPreview?.(item, event.currentTarget);
           }
         }}
       ><${AgentIcon} /></span>
@@ -2984,7 +3054,7 @@ function WorkspaceConversationRow({ conversation, active, currentUserID, usersBy
         onClick=${isDirect && displayUser
           ? (event) => {
               event.stopPropagation();
-              onPreviewUser?.(displayUser);
+              onPreviewUser?.(displayUser, event.currentTarget);
             }
           : undefined}
         onKeyDown=${isDirect && displayUser
@@ -2992,7 +3062,7 @@ function WorkspaceConversationRow({ conversation, active, currentUserID, usersBy
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 event.stopPropagation();
-                onPreviewUser?.(displayUser);
+                onPreviewUser?.(displayUser, event.currentTarget);
               }
             }
           : undefined}
@@ -3172,7 +3242,24 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
   `;
 }
 
-function ProfilePreviewDrawer({ agent, user, t, activeRoom, busyKey, onClose, onOpenAgent, onInvite, onOpenDM, onDelete }) {
+function profilePreviewStyle(anchorRect, cardHeight = 420) {
+  const offset = 12;
+  const viewportPadding = 12;
+  const width = Math.min(360, window.innerWidth - 24);
+  const preferRight = anchorRect ? anchorRect.right + offset + width <= window.innerWidth - viewportPadding : true;
+  const left = anchorRect
+    ? preferRight
+      ? Math.max(viewportPadding, anchorRect.right + offset)
+      : Math.max(viewportPadding, anchorRect.left - width - offset)
+    : viewportPadding;
+  const maxTop = Math.max(viewportPadding, window.innerHeight - viewportPadding - Math.min(cardHeight, window.innerHeight - viewportPadding * 2));
+  const top = anchorRect
+    ? Math.min(Math.max(viewportPadding, anchorRect.top - 12), maxTop)
+    : viewportPadding;
+  return { top: `${top}px`, left: `${left}px`, width: `${width}px` };
+}
+
+function ProfilePreviewPopover({ previewRef, agent, user, anchorRect, t, inDirectConversation, busyKey, onClose, onOpenAgent, onOpenDM, onDelete }) {
   const running = agent ? isAgentRunning(agent) : false;
   const incomplete = agent ? isAgentIncomplete(agent) : false;
   const restartNeeded = agent ? isAgentRestartNeeded(agent) : false;
@@ -3180,8 +3267,27 @@ function ProfilePreviewDrawer({ agent, user, t, activeRoom, busyKey, onClose, on
   const displayName = agent?.name || user?.name || "";
   const displayRole = agent ? (agent.role || "worker") : user?.role;
   const deleteBusy = agent ? busyKey === `${agent.id}:delete-bot` : false;
+  const canOpenDM = !inDirectConversation;
+  const [cardHeight, setCardHeight] = useState(420);
+
+  useLayoutEffect(() => {
+    const preview = previewRef?.current;
+    if (!preview) {
+      return;
+    }
+    const nextHeight = Math.ceil(preview.getBoundingClientRect().height);
+    if (nextHeight > 0 && nextHeight !== cardHeight) {
+      setCardHeight(nextHeight);
+    }
+  }, [previewRef, cardHeight, agent?.id, user?.id, inDirectConversation]);
+
   return html`
-    <aside className="profile-preview-drawer" aria-label=${t("profilePreview")}>
+    <aside
+      ref=${previewRef}
+      className="profile-preview-popover"
+      style=${profilePreviewStyle(anchorRect, cardHeight)}
+      aria-label=${t("profilePreview")}
+    >
       <div className="preview-header">
         <div className="preview-title">${agent ? t("profilePreview") : t("personProfile")}</div>
         <button className="modal-close" aria-label=${t("close")} onClick=${onClose}>
@@ -3227,9 +3333,8 @@ function ProfilePreviewDrawer({ agent, user, t, activeRoom, busyKey, onClose, on
             </div>
             <div className="preview-actions">
               <button className="preview-action-button preview-action-button-primary" onClick=${() => onOpenAgent(agent)}>${t("openProfile")}</button>
-              <button className="preview-action-button" onClick=${() => onOpenDM(agent)}>${t("openDM")}</button>
-              ${activeRoom && agent.role !== "manager" && agent.id !== "u-manager"
-                ? html`<button className="preview-action-button" onClick=${() => onInvite(agent)}>${t("inviteToRoom")}</button>`
+              ${canOpenDM
+                ? html`<button className="preview-action-button" onClick=${() => onOpenDM(agent)}>${t("openDM")}</button>`
                 : null}
               ${agent.role !== "manager" && agent.id !== "u-manager"
                 ? html`<button className="preview-action-button preview-action-button-danger preview-actions-delete" disabled=${deleteBusy} onClick=${() => onDelete(agent)}>${t("agentDelete")}</button>`

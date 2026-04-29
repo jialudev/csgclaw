@@ -2499,21 +2499,20 @@ body::after {
   flex-wrap: wrap;
 }
 
-.profile-preview-drawer {
+.profile-preview-popover {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
   z-index: 40;
-  width: min(420px, calc(100vw - 28px));
   display: grid;
   align-content: start;
   gap: 18px;
+  max-height: calc(100vh - 24px);
   padding: 18px;
   overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 22px;
   background: color-mix(in oklab, var(--panel) 96%, black);
-  border-left: 1px solid var(--line);
-  box-shadow: -18px 0 48px oklch(0.08 0.01 248 / 0.45);
+  box-shadow: 0 22px 56px oklch(0.08 0.01 248 / 0.3);
+  backdrop-filter: blur(18px);
   animation: drawer-in 180ms ease both;
 }
 
@@ -2646,6 +2645,22 @@ body::after {
 
 .preview-actions-delete {
   margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .profile-preview-popover {
+    max-height: calc(100vh - 16px);
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .preview-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .preview-actions-delete {
+    margin-left: 0;
+  }
 }
 
 .workspace-row-icon-clickable {
