@@ -32,10 +32,33 @@ func bundledPath() string {
 	if err != nil {
 		return ""
 	}
-	candidate := filepath.Join(filepath.Dir(exe), defaultCLIPath)
+
+	for _, exePath := range executablePathCandidates(exe) {
+		candidate := filepath.Join(filepath.Dir(exePath), defaultCLIPath)
+		if isExecutableFile(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func executablePathCandidates(exe string) []string {
+	exe = strings.TrimSpace(exe)
+	if exe == "" {
+		return nil
+	}
+
+	candidates := []string{exe}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil && resolved != "" && resolved != exe {
+		candidates = append(candidates, resolved)
+	}
+	return candidates
+}
+
+func isExecutableFile(candidate string) bool {
 	info, err := os.Stat(candidate)
 	if err != nil || info.IsDir() {
-		return ""
+		return false
 	}
-	return candidate
+	return info.Mode()&0o111 != 0
 }

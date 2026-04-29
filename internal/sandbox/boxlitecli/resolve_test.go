@@ -51,6 +51,41 @@ func TestResolvePathUsesBundledBinaryWhenUnset(t *testing.T) {
 	}
 }
 
+func TestResolvePathUsesBundledBinaryBehindExecutableSymlink(t *testing.T) {
+	dir := t.TempDir()
+	installBinDir := filepath.Join(dir, "local", "bin")
+	bundleBinDir := filepath.Join(dir, "local", "lib", "csgclaw", "v0.2.6", "csgclaw", "bin")
+	if err := os.MkdirAll(installBinDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(install) error = %v", err)
+	}
+	if err := os.MkdirAll(bundleBinDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(bundle) error = %v", err)
+	}
+
+	realExecutable := filepath.Join(bundleBinDir, "csgclaw")
+	if err := os.WriteFile(realExecutable, []byte(""), 0o755); err != nil {
+		t.Fatalf("WriteFile(csgclaw) error = %v", err)
+	}
+	bundled := filepath.Join(bundleBinDir, defaultCLIPath)
+	if err := os.WriteFile(bundled, []byte(""), 0o755); err != nil {
+		t.Fatalf("WriteFile(boxlite) error = %v", err)
+	}
+	executableSymlink := filepath.Join(installBinDir, "csgclaw")
+	if err := os.Symlink(realExecutable, executableSymlink); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+	restore := stubExecutablePath(t, executableSymlink)
+	defer restore()
+
+	want, err := filepath.EvalSymlinks(bundled)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(boxlite) error = %v", err)
+	}
+	if got := ResolvePath(""); got != want {
+		t.Fatalf("ResolvePath(\"\") = %q, want %q", got, want)
+	}
+}
+
 func TestResolvePathFallsBackToPATHValue(t *testing.T) {
 	restore := stubExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
 	defer restore()
