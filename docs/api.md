@@ -37,7 +37,7 @@ ok
   "provider": "llm-api",
   "model_id": "gpt-5.4",
   "reasoning_effort": "medium",
-  "image": "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.27.0"
+  "image": "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
 }
 ```
 
@@ -95,7 +95,7 @@ ok
   "provider": "llm-api",
   "model_id": "gpt-5.4",
   "reasoning_effort": "medium",
-  "image": "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.27.0"
+  "image": "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
 }
 ```
 

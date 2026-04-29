@@ -1,5 +1,8 @@
 import importlib.util
+import json
+import tempfile
 import unittest
+from argparse import Namespace
 from pathlib import Path
 
 
@@ -282,6 +285,46 @@ class CSGClawAPITests(unittest.TestCase):
         )
 
         self.assertEqual(api.list_messages("feishu", "oc_alpha"), [])
+
+
+class RunTrackingTests(unittest.TestCase):
+    def test_missing_todo_file_logs_retry_without_crashing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            todo_path = str(Path(temp_dir) / "missing.json")
+            log_path = manager_worker_api.get_tracking_state_paths(todo_path)[1]
+            args = Namespace(
+                base_url="http://example.test",
+                token=None,
+                timeout=30,
+                dry_run=True,
+                channel="csgclaw",
+                room_id=ROOM_ID,
+                bot_id=BOT_ID,
+                todo_path=todo_path,
+                interval=0.01,
+                once=False,
+            )
+
+            sleep_calls = {"count": 0}
+            original_sleep = manager_worker_api.time.sleep
+
+            def fake_sleep(_seconds):
+                sleep_calls["count"] += 1
+                raise KeyboardInterrupt
+
+            manager_worker_api.time.sleep = fake_sleep
+            try:
+                with self.assertRaises(KeyboardInterrupt):
+                    manager_worker_api.cmd_run_tracking(args)
+            finally:
+                manager_worker_api.time.sleep = original_sleep
+
+            self.assertEqual(sleep_calls["count"], 1)
+            log_lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+            events = [json.loads(line)["event"] for line in log_lines]
+            self.assertIn("tracking-run-started", events)
+            self.assertIn("tracking-loop-start", events)
+            self.assertIn("tracking-read-retry", events)
 
 
 if __name__ == "__main__":
