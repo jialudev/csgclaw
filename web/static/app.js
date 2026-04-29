@@ -3027,19 +3027,19 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
         </div>
       </header>
       <div className="entity-toolbar">
-        <button className="send-button compact" disabled=${saving || !draft?.name?.trim() || !draft?.model_id} onClick=${onSave}>${saving ? t("profileLoadingModels") : t("agentUpdateSave")}</button>
-        <button className="secondary-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => running ? onStop(item) : onStart(item)}>
+        <button className="preview-action-button preview-action-button-primary" disabled=${saving || !draft?.name?.trim() || !draft?.model_id} onClick=${onSave}>${saving ? t("profileLoadingModels") : t("agentUpdateSave")}</button>
+        <button className="preview-action-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => running ? onStop(item) : onStart(item)}>
           ${running ? t("agentStop") : t("agentStart")}
         </button>
-        <button className="secondary-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>
+        <button className="preview-action-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>
         ${activeRoom && !isManager
-          ? html`<button className="secondary-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onInvite(item)}>${t("inviteToRoom")}</button>`
+          ? html`<button className="preview-action-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onInvite(item)}>${t("inviteToRoom")}</button>`
           : null}
         ${!isManager
-          ? html`<button className="secondary-button" onClick=${() => onOpenDM(item)}>${t("openDM")}</button>`
+          ? html`<button className="preview-action-button" onClick=${() => onOpenDM(item)}>${t("openDM")}</button>`
           : null}
         ${!isManager
-          ? html`<button className="danger-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onDelete(item)}>${t("agentDelete")}</button>`
+          ? html`<button className="preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onDelete(item)}>${t("agentDelete")}</button>`
           : null}
       </div>
       ${error ? html`<div className="form-error">${error}</div>` : null}
@@ -3226,13 +3226,13 @@ function ProfilePreviewDrawer({ agent, user, t, activeRoom, busyKey, onClose, on
               ${restartNeeded ? html`<span className="agent-badge warn">${t("profileRestartRequired")}</span>` : null}
             </div>
             <div className="preview-actions">
-              <button className="send-button compact" onClick=${() => onOpenAgent(agent)}>${t("openProfile")}</button>
-              <button className="secondary-button" onClick=${() => onOpenDM(agent)}>${t("openDM")}</button>
+              <button className="preview-action-button preview-action-button-primary" onClick=${() => onOpenAgent(agent)}>${t("openProfile")}</button>
+              <button className="preview-action-button" onClick=${() => onOpenDM(agent)}>${t("openDM")}</button>
               ${activeRoom && agent.role !== "manager" && agent.id !== "u-manager"
-                ? html`<button className="secondary-button" onClick=${() => onInvite(agent)}>${t("inviteToRoom")}</button>`
+                ? html`<button className="preview-action-button" onClick=${() => onInvite(agent)}>${t("inviteToRoom")}</button>`
                 : null}
               ${agent.role !== "manager" && agent.id !== "u-manager"
-                ? html`<button className="danger-button preview-actions-delete" disabled=${deleteBusy} onClick=${() => onDelete(agent)}>${t("agentDelete")}</button>`
+                ? html`<button className="preview-action-button preview-action-button-danger preview-actions-delete" disabled=${deleteBusy} onClick=${() => onDelete(agent)}>${t("agentDelete")}</button>`
                 : null}
             </div>
           `

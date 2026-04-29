@@ -2582,6 +2582,68 @@ body::after {
   flex-wrap: wrap;
 }
 
+.preview-action-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.preview-action-button-primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: 0 14px 28px rgba(43, 109, 246, 0.24);
+}
+
+.preview-action-button:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--field) 82%, var(--panel-strong));
+  border-color: color-mix(in oklab, var(--line) 74%, var(--text));
+  transform: translateY(-1px);
+}
+
+.preview-action-button-primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--primary) 86%, white);
+  border-color: transparent;
+}
+
+.preview-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+  transform: none;
+}
+
+.preview-action-button-danger {
+  border-color: color-mix(in oklab, var(--danger) 56%, var(--line));
+  background: color-mix(in oklab, var(--panel) 90%, var(--danger) 10%);
+  color: color-mix(in oklab, var(--danger) 86%, white);
+}
+
+.preview-action-button-danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--panel) 84%, var(--danger) 16%);
+  border-color: color-mix(in oklab, var(--danger) 74%, white);
+  color: color-mix(in oklab, var(--danger) 92%, white);
+}
+
+:root[data-theme="light"] .preview-action-button-danger {
+  background: color-mix(in oklab, white 92%, var(--danger) 8%);
+  color: color-mix(in oklab, var(--danger) 90%, black);
+}
+
+:root[data-theme="light"] .preview-action-button-danger:hover:not(:disabled) {
+  background: color-mix(in oklab, white 86%, var(--danger) 14%);
+  border-color: color-mix(in oklab, var(--danger) 78%, black);
+  color: color-mix(in oklab, var(--danger) 96%, black);
+}
+
 .preview-actions-delete {
   margin-left: auto;
 }
