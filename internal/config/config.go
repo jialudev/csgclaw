@@ -49,7 +49,14 @@ type LLMConfig struct {
 }
 
 type BootstrapConfig struct {
-	ManagerImage string
+	ManagerImageOverride string
+}
+
+func (c BootstrapConfig) EffectiveManagerImage() string {
+	if strings.TrimSpace(c.ManagerImageOverride) == "" {
+		return DefaultManagerImage
+	}
+	return c.ManagerImageOverride
 }
 
 type SandboxConfig struct {
@@ -284,9 +291,9 @@ func Load(path string) (Config, error) {
 			}
 		case section == "bootstrap":
 			switch key {
-			case "manager_image":
-				cfg.raw.bootstrap.ManagerImage = parseRawStringValue(rawValue)
-				cfg.Bootstrap.ManagerImage = value
+			case "manager_image_override":
+				cfg.raw.bootstrap.ManagerImageOverride = parseRawStringValue(rawValue)
+				cfg.Bootstrap.ManagerImageOverride = value
 			}
 		case section == "sandbox":
 			switch key {
@@ -366,9 +373,6 @@ func Load(path string) (Config, error) {
 	if cfg.Server.ListenAddr == "" {
 		cfg.Server.ListenAddr = DefaultListenAddr()
 	}
-	if cfg.Bootstrap.ManagerImage == "" {
-		cfg.Bootstrap.ManagerImage = DefaultManagerImage
-	}
 	if cfg.Server.AccessToken == "" {
 		cfg.Server.AccessToken = DefaultAccessToken
 	}
@@ -406,8 +410,8 @@ access_token = %q
 no_auth = %t
 
 [bootstrap]
-manager_image = %q
-`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.rawOrResolvedString(cfg.raw.bootstrap.ManagerImage, loadedRaw.bootstrap.ManagerImage, cfg.Bootstrap.ManagerImage))
+manager_image_override = %q
+`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.rawOrResolvedString(cfg.raw.bootstrap.ManagerImageOverride, loadedRaw.bootstrap.ManagerImageOverride, cfg.Bootstrap.ManagerImageOverride))
 	sandboxSection := fmt.Sprintf(`
 [sandbox]
 provider = %q
@@ -737,8 +741,8 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	if c.raw.server.AccessToken != "" {
 		out.server.AccessToken = c.Server.AccessToken
 	}
-	if c.raw.bootstrap.ManagerImage != "" {
-		out.bootstrap.ManagerImage = c.Bootstrap.ManagerImage
+	if c.raw.bootstrap.ManagerImageOverride != "" {
+		out.bootstrap.ManagerImageOverride = c.Bootstrap.ManagerImageOverride
 	}
 	if c.raw.sandbox.Provider != "" {
 		out.sandbox.Provider = c.Sandbox.Provider

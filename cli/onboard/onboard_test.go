@@ -58,6 +58,7 @@ func TestRunInteractiveFreshSkipsModelProviderPrompt(t *testing.T) {
 	for _, want := range []string{
 		`[server]`,
 		`[bootstrap]`,
+		`manager_image_override = ""`,
 		`[sandbox]`,
 		fmt.Sprintf(`provider = %q`, config.DefaultSandboxProvider),
 		fmt.Sprintf(`home_dir_name = %q`, config.DefaultSandboxHomeDirName),
@@ -106,7 +107,7 @@ advertise_base_url = ""
 access_token = "your_access_token"
 
 [bootstrap]
-manager_image = "img"
+manager_image_override = "img"
 
 [models]
 default = "default.gpt-test"

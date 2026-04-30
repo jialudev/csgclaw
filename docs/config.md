@@ -46,7 +46,7 @@ api_key = "local"
 models = ["Qwen/Qwen3-0.6B-GGUF"]
 
 [bootstrap]
-manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
+manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
@@ -72,7 +72,7 @@ api_key = "sk-your-api-key"
 models = ["gpt-5.4"]
 
 [bootstrap]
-manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
+manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
@@ -90,7 +90,7 @@ access_token = "your_access_token"
 no_auth = false
 
 [bootstrap]
-manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
+manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
@@ -99,6 +99,8 @@ debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
 Codex and Claude Code profiles are configured in agent state through the Web UI. CSGClaw starts an embedded CLIProxyAPI on a private localhost port at serve time, so static CLIProxy base URLs are not required.
+
+Leave `[bootstrap].manager_image_override` empty to use the built-in default manager image. Set it only when you need to override that default.
 
 ## Sandbox Providers
 

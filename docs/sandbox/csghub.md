@@ -60,7 +60,8 @@ The SaaS uses **two** container images (no runtime role switch):
   into its own Deployment (not into any csgclaw env).
 - **`csgclaw-agent-sandbox:<tag>`** — picoclaw gateway + supervisor +
   python-sandbox. Runs in manager and worker pods. The csgclaw server
-  reads this image from `[bootstrap].manager_image` and propagates it
+  reads this image from `[bootstrap].manager_image_override` when set,
+  otherwise from the built-in default, and propagates it
   into every manager/worker `sandbox.CreateRequest`.
 
 Both images are built in the `sandbox-runtime` repo under
@@ -125,7 +126,8 @@ drive those values from env, put env placeholders such as
 them when loading.
 
 The manager / worker image is the service's `managerImage`, normally
-from `[bootstrap].manager_image`.
+from the built-in default unless `[bootstrap].manager_image_override`
+is set.
 
 ## 3. Manager sandbox env (injected by the server)
 
@@ -197,8 +199,9 @@ populate, at minimum:
 - `CSGHUB_API_BASE_URL`, `CSGHUB_USER_TOKEN`
 - `CSGCLAW_RESOURCE_ID`, `CSGCLAW_CLUSTER_ID` *(optional but recommended)*
 - a `config.toml` whose `[sandbox].provider` is `csghub`, whose
-  `[bootstrap].manager_image` points at the `csgclaw-agent-sandbox`
-  image, and whose `[server]` / `[models]` sections are valid for the
+  `[bootstrap].manager_image_override` points at the
+  `csgclaw-agent-sandbox` image when you need to override the built-in
+  default, and whose `[server]` / `[models]` sections are valid for the
   deployment
 
 The server pod's own container image (`csgclaw-server-sandbox:<tag>`)

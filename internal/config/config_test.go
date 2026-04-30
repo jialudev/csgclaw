@@ -46,7 +46,7 @@ func TestDefaultIMStatePathUsesDomainSubdirectory(t *testing.T) {
 	}
 }
 
-func TestLoadAppliesDefaultManagerImage(t *testing.T) {
+func TestLoadUsesDefaultManagerImageWhenOverrideIsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	content := `[server]
@@ -69,8 +69,11 @@ models = ["minimax-m2.7"]
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got, want := cfg.Bootstrap.ManagerImage, DefaultManagerImage; got != want {
-		t.Fatalf("cfg.Bootstrap.ManagerImage = %q, want %q", got, want)
+	if got := cfg.Bootstrap.ManagerImageOverride; got != "" {
+		t.Fatalf("cfg.Bootstrap.ManagerImageOverride = %q, want empty", got)
+	}
+	if got, want := cfg.Bootstrap.EffectiveManagerImage(), DefaultManagerImage; got != want {
+		t.Fatalf("cfg.Bootstrap.EffectiveManagerImage() = %q, want %q", got, want)
 	}
 	if got, want := cfg.Server.AccessToken, DefaultAccessToken; got != want {
 		t.Fatalf("cfg.Server.AccessToken = %q, want %q", got, want)
@@ -352,7 +355,7 @@ func TestSaveWritesModelsSection(t *testing.T) {
 			DebianRegistries: []string{"registry.a", "docker.io"},
 		},
 		Bootstrap: BootstrapConfig{
-			ManagerImage: "img",
+			ManagerImageOverride: "img",
 		},
 		Channels: ChannelsConfig{
 			FeishuAdminOpenID: "ou_admin",
@@ -445,7 +448,7 @@ func TestSaveWritesCSGHubLiteProvider(t *testing.T) {
 		Models: models,
 		LLM:    models,
 		Bootstrap: BootstrapConfig{
-			ManagerImage: "img",
+			ManagerImageOverride: "img",
 		},
 	}
 
@@ -489,7 +492,7 @@ func TestSaveFormatsTopLevelSectionsWithoutExtraWhitespace(t *testing.T) {
 		Models: models,
 		LLM:    models,
 		Bootstrap: BootstrapConfig{
-			ManagerImage: "ghcr.io/russellluo/picoclaw:2026.4.25",
+			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
 		},
 		Sandbox: SandboxConfig{
 			Provider:         BoxLiteCLIProvider,
@@ -516,7 +519,7 @@ access_token = "your_access_token"
 no_auth = true
 
 [bootstrap]
-manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
+manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 
 [sandbox]
 debian_registries = ["harbor.opencsg.com", "docker.io"]
@@ -600,7 +603,7 @@ func TestLoadExpandsNonServerEnvValues(t *testing.T) {
 listen_addr = "127.0.0.1:18080"
 
 [bootstrap]
-manager_image = "${MANAGER_IMAGE}"
+manager_image_override = "${MANAGER_IMAGE}"
 
 [sandbox]
 provider = "${SANDBOX_PROVIDER}"
@@ -631,8 +634,8 @@ app_secret = "${FEISHU_APP_SECRET}"
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if got, want := cfg.Bootstrap.ManagerImage, "picoclaw:test"; got != want {
-		t.Fatalf("cfg.Bootstrap.ManagerImage = %q, want %q", got, want)
+	if got, want := cfg.Bootstrap.ManagerImageOverride, "picoclaw:test"; got != want {
+		t.Fatalf("cfg.Bootstrap.ManagerImageOverride = %q, want %q", got, want)
 	}
 	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
@@ -693,7 +696,7 @@ advertise_base_url = "http://${IP}:${PORT}"
 access_token = "${ACCESS_TOKEN}"
 
 [bootstrap]
-manager_image = "${MANAGER_IMAGE}"
+manager_image_override = "${MANAGER_IMAGE}"
 
 [sandbox]
 provider = "${SANDBOX_PROVIDER}"
@@ -743,7 +746,7 @@ app_secret = "${FEISHU_APP_SECRET}"
 		`listen_addr = "0.0.0.0:${PORT}"`,
 		`advertise_base_url = "http://${IP}:${PORT}"`,
 		`access_token = "${ACCESS_TOKEN}"`,
-		`manager_image = "${MANAGER_IMAGE}"`,
+		`manager_image_override = "${MANAGER_IMAGE}"`,
 		`provider = "${SANDBOX_PROVIDER}"`,
 		`home_dir_name = "${SANDBOX_HOME}"`,
 		`default = "${MODEL_SELECTOR}"`,

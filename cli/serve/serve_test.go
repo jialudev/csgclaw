@@ -186,7 +186,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 			ModelID: "model-test",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			ManagerImage: "ghcr.io/example/manager:latest",
+			ManagerImageOverride: "ghcr.io/example/manager:latest",
 		},
 		Channels: config.ChannelsConfig{
 			FeishuAdminOpenID: "ou_admin",
@@ -300,7 +300,7 @@ func TestConfigureServeLoggerSetsDebugLevel(t *testing.T) {
 	}
 }
 
-func TestServeForegroundEnforcesDefaultManagerImage(t *testing.T) {
+func TestServeForegroundPreservesManagerImageOverride(t *testing.T) {
 	origRunServer := RunServer
 	origNewAgentService := NewAgentService
 	origEnsureBootstrapManager := EnsureBootstrapManager
@@ -326,12 +326,12 @@ func TestServeForegroundEnforcesDefaultManagerImage(t *testing.T) {
 			ModelID: "model-test",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			ManagerImage: "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0",
+			ManagerImageOverride: "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0",
 		},
 	}
 	NewAgentService = func(got config.Config) (*agent.Service, error) {
-		if got.Bootstrap.ManagerImage != config.DefaultManagerImage {
-			t.Fatalf("manager image = %q, want %q", got.Bootstrap.ManagerImage, config.DefaultManagerImage)
+		if got.Bootstrap.ManagerImageOverride != "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0" {
+			t.Fatalf("manager image override = %q, want preserved override", got.Bootstrap.ManagerImageOverride)
 		}
 		return &agent.Service{}, nil
 	}
@@ -386,6 +386,7 @@ app_secret = "${FEISHU_APP_SECRET}"
 		`advertise_base_url = "http://1.2.3.4:18080"`,
 		`access_token = "pc*********et"`,
 		`no_auth = true`,
+		fmt.Sprintf(`# using default image: %q`, config.DefaultManagerImage),
 		`default = "remote.gpt-env"`,
 		`base_url = "https://models.example.test/v1"`,
 		`api_key = "sk*********et"`,
@@ -426,7 +427,7 @@ func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T
 			ModelID: "local.minimax-m2.5",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			ManagerImage: "ghcr.io/russellluo/picoclaw:2026.4.25",
+			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
 		},
 		Sandbox: config.SandboxConfig{
 			Provider:         config.BoxLiteCLIProvider,
@@ -442,7 +443,7 @@ access_token = "yo*************en"
 no_auth = true
 
 [bootstrap]
-manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
+manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 
 [sandbox]
 debian_registries = ["harbor.opencsg.com", "docker.io"]
@@ -509,7 +510,7 @@ func csgHubLiteServeConfig(baseURL string) config.Config {
 			},
 		},
 		Bootstrap: config.BootstrapConfig{
-			ManagerImage: "ghcr.io/example/manager:latest",
+			ManagerImageOverride: "ghcr.io/example/manager:latest",
 		},
 	}
 }

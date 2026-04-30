@@ -108,7 +108,6 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	if err != nil {
 		return err
 	}
-	enforceDefaultManagerImage(&cfg)
 	if globals.Endpoint != "" {
 		cfg.Server.AdvertiseBaseURL = strings.TrimRight(globals.Endpoint, "/")
 	}
@@ -210,7 +209,6 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	if err != nil {
 		return err
 	}
-	enforceDefaultManagerImage(&cfg)
 	if globals.Endpoint != "" {
 		cfg.Server.AdvertiseBaseURL = strings.TrimRight(globals.Endpoint, "/")
 	}
@@ -243,7 +241,6 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 }
 
 func serveForeground(ctx context.Context, run *command.Context, cfg config.Config, output string) error {
-	enforceDefaultManagerImage(&cfg)
 	_ = preflightDefaultModelProvider(ctx, cfg)
 	imBus := im.NewBus()
 	svc, err := NewAgentService(cfg)
@@ -565,12 +562,15 @@ access_token = %q
 no_auth = %t
 
 [bootstrap]
-manager_image = %q
+manager_image_override = %q
 
 [sandbox]
 provider = %q
 home_dir_name = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImage, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImageOverride, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName)
+	if strings.TrimSpace(cfg.Bootstrap.ManagerImageOverride) == "" {
+		content = strings.Replace(content, "[bootstrap]\nmanager_image_override", fmt.Sprintf("[bootstrap]\n# using default image: %q\nmanager_image_override", config.DefaultManagerImage), 1)
+	}
 	if len(cfg.Sandbox.Resolved().DebianRegistries) > 0 {
 		content = strings.Replace(content, "[sandbox]\n", fmt.Sprintf("[sandbox]\ndebian_registries = %s\n", formatModelList(cfg.Sandbox.Resolved().DebianRegistries)), 1)
 	}
@@ -637,15 +637,6 @@ func validateModelConfig(cfg config.Config) error {
 	return nil
 }
 
-func enforceDefaultManagerImage(cfg *config.Config) {
-	if cfg == nil {
-		return
-	}
-	if strings.TrimSpace(cfg.Bootstrap.ManagerImage) != strings.TrimSpace(config.DefaultManagerImage) {
-		cfg.Bootstrap.ManagerImage = config.DefaultManagerImage
-	}
-}
-
 func missingModelFlags(fields []string) []string {
 	flags := make([]string, 0, len(fields))
 	for _, field := range fields {
@@ -674,7 +665,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
+	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
 }
 
 func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, error) {

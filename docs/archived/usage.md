@@ -35,7 +35,7 @@ csgclaw onboard \
 - `onboard` 只负责写入基础配置并初始化本地状态
 - `listen_addr` 使用内置默认值
 - `advertise_base_url` 是可选扩展配置，本地使用通常不需要设置
-- `manager_image` 会写入 `~/.csgclaw/config.toml`，后续可按需修改
+- `manager_image_override` 默认为空；如有需要，可在 `~/.csgclaw/config.toml` 中手动设置以覆盖内置默认镜像
 - 访问 server 用的共享 `access_token` 需要在初始化后手动修改 `~/.csgclaw/config.toml` 的 `[server]` 版块
 
 初始化完成后启动服务：
@@ -222,7 +222,7 @@ api_key = "sk-please-change-me"
 model_id = "gpt-4o-mini"
 
 [bootstrap]
-manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.27.0"
+manager_image_override = ""
 ```
 
 ## 6. 联调建议

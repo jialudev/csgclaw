@@ -69,9 +69,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 				AccessToken: config.DefaultAccessToken,
 				NoAuth:      false,
 			},
-			Bootstrap: config.BootstrapConfig{
-				ManagerImage: config.DefaultManagerImage,
-			},
+			Bootstrap: config.BootstrapConfig{},
 			Sandbox: config.SandboxConfig{
 				Provider:    config.DefaultSandboxProvider,
 				HomeDirName: config.DefaultSandboxHomeDirName,
@@ -107,7 +105,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 		Action:       "initialize",
 		Status:       "initialized",
 		ConfigPath:   path,
-		ManagerImage: cfg.Bootstrap.ManagerImage,
+		ManagerImage: cfg.Bootstrap.EffectiveManagerImage(),
 		Users:        []string{"admin", "manager"},
 		Message:      fmt.Sprintf("initialized config at %s", path),
 	}
@@ -115,7 +113,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 		return command.RenderAction(globals.Output, run.Stdout, result)
 	}
 	fmt.Fprintln(run.Stdout, result.Message)
-	fmt.Fprintf(run.Stdout, "ensured bootstrap agent %q with image %q\n", agent.ManagerName, cfg.Bootstrap.ManagerImage)
+	fmt.Fprintf(run.Stdout, "ensured bootstrap agent %q with image %q\n", agent.ManagerName, cfg.Bootstrap.EffectiveManagerImage())
 	fmt.Fprintf(run.Stdout, "ensured IM members %q and %q\n", "admin", "manager")
 	fmt.Fprintln(run.Stdout, "cleared IM invite draft data")
 	return nil
@@ -126,7 +124,7 @@ func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg c
 	if err != nil {
 		return bot.Bot{}, err
 	}
-	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
+	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
 	if err != nil {
 		return bot.Bot{}, err
 	}
