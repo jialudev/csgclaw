@@ -77,11 +77,25 @@ csgclaw [global-flags] <command> [args]
 - `serve`
 - `stop`
 - `agent`
+- `model`
 - `user`
 - `bot`
 - `room`
 - `member`
 - `message`
+- `completion`
+
+### Shell 补全
+
+两个 CLI 都可以生成 `bash`、`zsh` 和 `fish` 的 shell 补全脚本。
+
+示例：
+
+```bash
+csgclaw completion bash
+csgclaw completion zsh
+csgclaw completion fish
+```
 
 ### `csgclaw onboard`
 
@@ -172,6 +186,39 @@ csgclaw stop [flags]
 
 - 从 PID 文件读取进程号并发送 `SIGTERM`。
 - 如果进程已经不存在，会删除失效的 PID 文件并返回对应状态。
+
+### `csgclaw model auth`
+
+管理模型 Provider 通过嵌入式 CLIProxyAPI 使用的本地 Codex 和 Claude Code 鉴权。
+
+用法：
+
+```bash
+csgclaw model auth login <provider> [flags]
+```
+
+Provider：
+
+- `codex`
+- `claude-code`
+
+参数：
+
+- `--no-browser`：打印 OAuth URL，而不是自动打开浏览器。
+
+行为说明：
+
+- `codex` 会优先复用 `~/.codex/auth.json`，没有可用 token 时再启动 OAuth。
+- `claude-code` 会在 macOS 上优先探测 Keychain，没有可用 token 时再启动 OAuth。
+- 鉴权文件会写入 CLIProxy auth 目录，默认是 `~/.cli-proxy-api`。
+- 模型 Provider 鉴权放在 `csgclaw model auth` 下，不和服务端自身 API 鉴权混在一起。
+
+示例：
+
+```bash
+csgclaw model auth login codex
+csgclaw model auth login claude-code --no-browser
+```
 
 ### `csgclaw agent`
 
@@ -544,6 +591,17 @@ csgclaw-cli [global-flags] <command> [args]
 - `room`
 - `member`
 - `message`
+- `completion`
+
+### Shell 补全
+
+示例：
+
+```bash
+csgclaw-cli completion bash
+csgclaw-cli completion zsh
+csgclaw-cli completion fish
+```
 
 ### 命令组
 

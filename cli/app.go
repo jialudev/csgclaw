@@ -12,8 +12,10 @@ import (
 	agentcmd "csgclaw/cli/agent"
 	"csgclaw/cli/bot"
 	"csgclaw/cli/command"
+	completioncmd "csgclaw/cli/completion"
 	"csgclaw/cli/member"
 	"csgclaw/cli/message"
+	modelcmd "csgclaw/cli/model"
 	onboardcmd "csgclaw/cli/onboard"
 	"csgclaw/cli/room"
 	servecmd "csgclaw/cli/serve"
@@ -72,11 +74,14 @@ func (a *App) registerDefaultCommands() {
 		servecmd.NewServeCmd(),
 		servecmd.NewStopCmd(),
 		agentcmd.NewCmd(),
+		modelcmd.NewCmd(),
 		usercmd.NewCmd(),
 		bot.NewCmd(),
 		room.NewCmd(),
 		member.NewCmd(),
 		message.NewCmd(),
+		completioncmd.NewCmd("csgclaw", completioncmd.FullSpec()),
+		completioncmd.NewCompleteCmd("csgclaw", completioncmd.FullSpec()),
 		servecmd.NewInternalServeCmd(),
 	)
 }

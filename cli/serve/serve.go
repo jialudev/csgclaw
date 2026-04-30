@@ -379,14 +379,6 @@ func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, bot
 		defer cancel()
 		_ = ShutdownCLIProxy(shutdownCtx)
 	}()
-	if err := EnsureBootstrapManager(ctx, svc, false); err != nil {
-		return err
-	}
-	go func() {
-		if err := StartConfiguredAgents(ctx, svc); err != nil {
-			slog.Warn("some configured agents failed to start", "error", err)
-		}
-	}()
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishuSvc)
 	}
@@ -406,6 +398,14 @@ func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, bot
 		AccessToken: cfg.Server.AccessToken,
 		NoAuth:      cfg.Server.NoAuth,
 		Context:     ctx,
+		OnReady: func() {
+			if err := EnsureBootstrapManager(ctx, svc, false); err != nil {
+				slog.Warn("bootstrap manager failed to start", "error", err)
+			}
+			if err := StartConfiguredAgents(ctx, svc); err != nil {
+				slog.Warn("some configured agents failed to start", "error", err)
+			}
+		},
 	})
 }
 

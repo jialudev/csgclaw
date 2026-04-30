@@ -14,6 +14,7 @@ const WORKSPACE_GROUPS_COLLAPSED_STORAGE_KEY = "csgclaw.im.workspaceGroupsCollap
 const MESSAGE_LIST_BOTTOM_THRESHOLD = 24;
 const AGENT_STATUS_REFRESH_INTERVAL_MS = 2000;
 const PROVIDERS = ["csghub_lite", "codex", "claude_code", "api"];
+const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
 const WORKSPACE_TAB_MESSAGES = "messages";
 const WORKSPACE_TAB_AGENTS = "agents";
@@ -32,6 +33,7 @@ mermaid.initialize({
 const messages = {
   zh: {
     pageTitle: "CSGClaw IM",
+    localAgentConsole: "本地 Agent 控制台",
     loading: "正在加载 IM 工作区...",
     loadingFailed: "加载失败，请稍后重试。",
     emptyConversation: "请选择一个房间或私信",
@@ -127,6 +129,11 @@ const messages = {
     noChannels: "还没有房间。",
     noDirectMessages: "还没有私信。",
     modelLoadFailed: "模型加载失败",
+    authConnected: "已连接",
+    authMissing: "需要登录",
+    authConnect: "连接",
+    authConnecting: "连接中...",
+    authRequired: "请先连接当前 Provider 后再发送消息。",
     detectionResults: "自动检测结果",
     createRoomTitle: "创建房间",
     createRoomSubtitle: "为一个新主题建立房间，并预先邀请成员。",
@@ -137,6 +144,7 @@ const messages = {
     roomDescription: "说明",
     roomDescriptionPlaceholder: "简单说明这个房间的用途",
     initialMembers: "初始成员",
+    allMembers: "全部成员",
     cancel: "取消",
     create: "创建",
     inviteTitle: "添加成员",
@@ -182,6 +190,7 @@ const messages = {
   },
   en: {
     pageTitle: "CSGClaw IM",
+    localAgentConsole: "Local agent console",
     loading: "Loading IM workspace...",
     loadingFailed: "Failed to load the workspace. Please try again.",
     emptyConversation: "Select a room or DM",
@@ -277,6 +286,11 @@ const messages = {
     noChannels: "No rooms yet.",
     noDirectMessages: "No direct messages yet.",
     modelLoadFailed: "Failed to load models",
+    authConnected: "Connected",
+    authMissing: "Login required",
+    authConnect: "Connect",
+    authConnecting: "Connecting...",
+    authRequired: "Connect the current provider before sending messages.",
     detectionResults: "Auto-detection",
     createRoomTitle: "New Room",
     createRoomSubtitle: "Create a new room and invite members in advance.",
@@ -287,6 +301,7 @@ const messages = {
     roomDescription: "Details",
     roomDescriptionPlaceholder: "Briefly describe what this room is for",
     initialMembers: "Initial Members",
+    allMembers: "All members",
     cancel: "Cancel",
     create: "Create",
     inviteTitle: "Add Members",
@@ -331,6 +346,23 @@ const messages = {
     },
   },
 };
+
+function requiredFieldLabel(label) {
+  return html`
+    <span className="field-label">
+      ${label}
+      <span className="field-required-star" aria-hidden="true">*</span>
+    </span>
+  `;
+}
+
+function isBlank(value) {
+  return !String(value ?? "").trim();
+}
+
+function profileBaseURLMissing(draft) {
+  return draft?.provider === "api" && isBlank(draft.base_url);
+}
 
 function GlobeIcon() {
   return html`
@@ -742,6 +774,8 @@ function App() {
   const [profileError, setProfileError] = useState("");
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileModelBusy, setProfileModelBusy] = useState(false);
+  const [cliproxyAuthStatuses, setCLIProxyAuthStatuses] = useState({});
+  const [cliproxyAuthBusy, setCLIProxyAuthBusy] = useState("");
   const [agents, setAgents] = useState([]);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [agentsError, setAgentsError] = useState("");
@@ -767,6 +801,7 @@ function App() {
   const profilePreviewRef = useRef(null);
   const agentRefreshTimerRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
+  const autoScrollConversationRef = useRef(activeConversationId);
 
   useEffect(() => {
     refreshBootstrap();
@@ -1101,6 +1136,22 @@ function App() {
   }, [managerProfileIncomplete, profileDraft?.provider, profileDraft?.base_url, profileDraft?.api_key, profileDraft?.headersText]);
 
   useEffect(() => {
+    refreshCLIProxyAuthStatus(managerProfile?.provider);
+  }, [managerProfile?.provider]);
+
+  useEffect(() => {
+    refreshCLIProxyAuthStatus(profileDraft?.provider);
+  }, [profileDraft?.provider]);
+
+  useEffect(() => {
+    refreshCLIProxyAuthStatus(agentDraft?.provider);
+  }, [agentDraft?.provider]);
+
+  useEffect(() => {
+    refreshCLIProxyAuthStatus(agentPageDraft?.provider);
+  }, [agentPageDraft?.provider]);
+
+  useEffect(() => {
     const el = messageListRef.current;
     if (!el) {
       return;
@@ -1114,17 +1165,26 @@ function App() {
     return () => el.removeEventListener("scroll", updateAutoScrollState);
   }, [activeConversationId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (activePane.type !== "conversation") {
+      return;
+    }
     const el = messageListRef.current;
     if (!el) {
       return;
     }
-    shouldAutoScrollRef.current = true;
+    autoScrollConversationRef.current = activeConversationId;
     el.scrollTop = el.scrollHeight;
-  }, [activeConversationId]);
+    shouldAutoScrollRef.current = true;
+  }, [activePane.type, activeConversationId]);
 
   useEffect(() => {
     const el = messageListRef.current;
+    if (autoScrollConversationRef.current !== activeConversationId) {
+      autoScrollConversationRef.current = activeConversationId;
+      shouldAutoScrollRef.current = false;
+      return;
+    }
     if (!el || !shouldAutoScrollRef.current) {
       return;
     }
@@ -1187,6 +1247,11 @@ function App() {
   async function sendMessage() {
     if (managerProfileIncomplete) {
       setComposerError(t("profileIncomplete"));
+      return;
+    }
+    const managerProvider = normalizeAuthProviderName(managerProfile?.provider);
+    if (providerNeedsAuth(managerProvider) && cliproxyAuthStatuses[managerProvider]?.authenticated === false) {
+      setComposerError(t("authRequired"));
       return;
     }
     if (!data || !activeConversation || !draftText.trim()) {
@@ -1313,6 +1378,7 @@ function App() {
       return;
     }
     setSubmitError("");
+    setInviteUserIDs([]);
     setShowInvite(true);
   }
 
@@ -1462,9 +1528,16 @@ function App() {
   }
 
   const createRoomCandidates = data.users;
+  const createRoomCandidateIDs = createRoomCandidates.map((user) => user.id).filter(Boolean);
+  const createRoomSelectableMemberIDs = createRoomCandidateIDs.filter((id) => !lockedRoomMemberIDs.includes(id));
+  const allCreateRoomMembersSelected = createRoomCandidateIDs.length > 0 && createRoomCandidateIDs.every((id) => roomMemberIDs.includes(id));
+  const createRoomSelectedMemberCount = createRoomCandidateIDs.filter((id) => roomMemberIDs.includes(id)).length;
   const inviteCandidates = activeConversation
     ? data.users.filter((user) => !activeConversation.members.includes(user.id))
     : [];
+  const inviteCandidateIDs = inviteCandidates.map((user) => user.id).filter(Boolean);
+  const allInviteCandidatesSelected = inviteCandidateIDs.length > 0 && inviteCandidateIDs.every((id) => inviteUserIDs.includes(id));
+  const inviteSelectedMemberCount = inviteCandidateIDs.filter((id) => inviteUserIDs.includes(id)).length;
   const activeConversationMembers = activeConversation
     ? activeConversation.members.map((id) => usersById.get(id)).filter(Boolean)
     : [];
@@ -1475,9 +1548,16 @@ function App() {
   const managerAgent = agents.find((item) => item.role === "manager" || item.id === "u-manager");
   const workerAgents = agents.filter((item) => item.id !== managerAgent?.id);
   const agentItems = [managerAgent, ...workerAgents].filter(Boolean);
+  const runningAgentCount = agentItems.filter(isAgentRunning).length;
   const selectedAgent = selectedAgentForPage;
   const selectedConversation = activePane.type === "conversation" ? activeConversation : null;
   const activeChannel = selectedConversation && !isDirectConversation(selectedConversation) ? selectedConversation : null;
+  const selectedMessageCount = selectedConversation?.messages?.length ?? 0;
+  const currentWorkspaceLabel = activePane.type === "agent"
+    ? t("agentOverview")
+    : activePane.type === "computer"
+      ? t("computerOverview")
+      : t("conversationOverview");
   const previewUser = profilePreview?.type === "user"
     ? usersById.get(profilePreview.id) ?? null
     : profilePreview?.type === "agent"
@@ -1498,6 +1578,72 @@ function App() {
       setProfileDraft(profileToDraft(profile));
     } catch (_) {
       // The manager may not exist during the first bootstrap milliseconds.
+    }
+  }
+
+  async function refreshCLIProxyAuthStatus(provider) {
+    const normalized = normalizeAuthProviderName(provider);
+    if (!providerNeedsAuth(normalized)) {
+      return;
+    }
+    try {
+      const resp = await fetch(`api/v1/cliproxy/auth/status?provider=${encodeURIComponent(normalized)}`);
+      if (!resp.ok) {
+        throw new Error((await resp.text()).trim() || t("authMissing"));
+      }
+      const status = await resp.json();
+      setCLIProxyAuthStatuses((current) => ({ ...current, [normalized]: status }));
+      setComposerError("");
+    } catch (err) {
+      setCLIProxyAuthStatuses((current) => ({
+        ...current,
+        [normalized]: {
+          provider: normalized,
+          authenticated: false,
+          login_required: true,
+          message: err.message || t("authMissing"),
+        },
+      }));
+    }
+  }
+
+  async function loginCLIProxyProvider(provider) {
+    const normalized = normalizeAuthProviderName(provider);
+    if (!providerNeedsAuth(normalized) || cliproxyAuthBusy) {
+      return;
+    }
+    setCLIProxyAuthBusy(normalized);
+    setCLIProxyAuthStatuses((current) => ({
+      ...current,
+      [normalized]: {
+        ...(current[normalized] || {}),
+        provider: normalized,
+        message: t("authConnecting"),
+      },
+    }));
+    try {
+      const resp = await fetch("api/v1/cliproxy/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: normalized }),
+      });
+      if (!resp.ok) {
+        throw new Error((await resp.text()).trim() || t("authMissing"));
+      }
+      const status = await resp.json();
+      setCLIProxyAuthStatuses((current) => ({ ...current, [normalized]: status }));
+    } catch (err) {
+      setCLIProxyAuthStatuses((current) => ({
+        ...current,
+        [normalized]: {
+          provider: normalized,
+          authenticated: false,
+          login_required: true,
+          message: err.message || t("authMissing"),
+        },
+      }));
+    } finally {
+      setCLIProxyAuthBusy("");
     }
   }
 
@@ -2020,7 +2166,9 @@ function App() {
           >
             <div className="sidebar-header workspace-header">
               <div className="sidebar-brand-row">
-                <div className="sidebar-brand">CSGClaw</div>
+                <div className="sidebar-brand-lockup" aria-label="CSGClaw">
+                  <div className="sidebar-brand-mark sidebar-brand-wordmark" aria-hidden="true">CSGClaw</div>
+                </div>
                 <div className="sidebar-controls">
                   <div className="theme-switch" role="group" aria-label=${t("themeSwitcher")}>
                     <div className=${`theme-switch-track ${theme === "dark" ? "is-dark" : "is-light"}`}>
@@ -2063,6 +2211,17 @@ function App() {
                   </button>
                 </div>
               </div>
+              <div className="workspace-signal-panel" aria-label=${currentWorkspaceLabel}>
+                <div className="workspace-signal-copy">
+                  <span>${currentWorkspaceLabel}</span>
+                  <strong>${runningAgentCount}/${agentItems.length || 0} ${t("activeNow")}</strong>
+                </div>
+                <div className="workspace-signal-meter" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
             </div>
             <nav className="workspace-nav" aria-label="Workspace">
               <div className="workspace-tabbar" role="tablist" aria-label="Workspace sections">
@@ -2075,6 +2234,10 @@ function App() {
                   onClick=${() => setWorkspaceTab(WORKSPACE_TAB_MESSAGES)}
                 >
                   <span className="workspace-tab-icon" aria-hidden="true"><${RoomsIcon} /></span>
+                  <span className="workspace-tab-copy">
+                    <strong>${t("messagesTab")}</strong>
+                    <small>${roomCount}</small>
+                  </span>
                 </button>
                 <button
                   className=${`workspace-tab ${workspaceTab === WORKSPACE_TAB_AGENTS ? "active" : ""}`}
@@ -2085,6 +2248,10 @@ function App() {
                   onClick=${() => setWorkspaceTab(WORKSPACE_TAB_AGENTS)}
                 >
                   <span className="workspace-tab-icon" aria-hidden="true"><${UsersIcon} /></span>
+                  <span className="workspace-tab-copy">
+                    <strong>${t("agentsTab")}</strong>
+                    <small>${agentItems.length}</small>
+                  </span>
                 </button>
               </div>
               ${workspaceTab === WORKSPACE_TAB_MESSAGES
@@ -2196,10 +2363,10 @@ function App() {
               <button className=${`sidebar-rail-button ${activePane.type === "computer" ? "active" : ""}`} aria-label=${t("localComputer")} title=${t("localComputer")} onClick=${selectComputer}>
                 <span className="sidebar-rail-icon" aria-hidden="true"><${ComputerIcon} /></span>
               </button>
-              <button className="sidebar-rail-button" aria-label=${t("createAgent")} title=${t("createAgent")} onClick=${openCreateAgentModal}>
+              <button type="button" className="sidebar-rail-button" aria-label=${t("createAgent")} title=${t("createAgent")} onClick=${openCreateAgentModal}>
                 <span className="sidebar-rail-icon" aria-hidden="true"><${AgentIcon} /></span>
               </button>
-              <button className="sidebar-rail-button" aria-label=${t("createRoom")} title=${t("createRoom")} onClick=${() => openCreateRoomModal()}>
+              <button type="button" className="sidebar-rail-button" aria-label=${t("createRoom")} title=${t("createRoom")} onClick=${() => openCreateRoomModal()}>
                 <span className="sidebar-rail-icon" aria-hidden="true"><${RoomPlusIcon} /></span>
               </button>
             </nav>
@@ -2220,8 +2387,11 @@ function App() {
                   modelBusy=${agentPageModelBusy}
                   saving=${agentPageBusy}
                   saveError=${agentPageError}
+                  authStatuses=${cliproxyAuthStatuses}
+                  authBusyProvider=${cliproxyAuthBusy}
                   onDraftChange=${setAgentPageDraft}
                   onSave=${saveAgentPage}
+                  onProviderLogin=${loginCLIProxyProvider}
                   onStart=${(item) => runAgentAction(item, "start")}
                   onStop=${(item) => runAgentAction(item, "stop")}
                   onRecreate=${(item) => runAgentAction(item, "recreate")}
@@ -2251,6 +2421,10 @@ function App() {
                     <div className="chat-title-bar">
                       <div className="chat-title-row">
                         <div className="chat-title-group">
+                          <div className="chat-kicker">
+                            <span>${isDirectConversation(activeConversation) ? t("directMessagesSection") : t("conversationLabel")}</span>
+                            <strong>${selectedMessageCount}</strong>
+                          </div>
                           <div className="chat-title truncate">${activeConversation.title}</div>
                           <div ref=${memberMenuRef} className="header-menu">
                             <button
@@ -2334,10 +2508,15 @@ function App() {
                             : null}
                         </div>
                         <button
+                          type="button"
                           className="icon-button"
                           aria-label=${inviteActionLabel}
                           title=${inviteActionLabel}
-                          onClick=${handleInviteAction}
+                          onClick=${(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleInviteAction();
+                          }}
                         >
                           <span className="icon-button-mark"><${AddUserIcon} /></span>
                         </button>
@@ -2351,9 +2530,19 @@ function App() {
 
                 <section ref=${messageListRef} className="messages">
                   ${activeConversation.messages.length === 0
-                    ? html`<div className="messages-empty">${t("noMessages")}</div>`
+                    ? html`
+                        <div className="messages-empty rich-empty">
+                          <span aria-hidden="true" className="rich-empty-mark">></span>
+                          <strong>${t("noMessages")}</strong>
+                        </div>
+                      `
                     : visibleMessages.length === 0
-                      ? html`<div className="messages-empty">${t("noVisibleMessages")}</div>`
+                      ? html`
+                          <div className="messages-empty rich-empty">
+                            <span aria-hidden="true" className="rich-empty-mark">#</span>
+                            <strong>${t("noVisibleMessages")}</strong>
+                          </div>
+                        `
                       : null}
                   ${visibleMessages.map((message) => {
                     if (isEventMessage(message)) {
@@ -2413,6 +2602,15 @@ function App() {
                         </div>
                       `
                     : null}
+                  ${managerProfile && providerNeedsAuth(managerProfile.provider) && cliproxyAuthStatuses[normalizeAuthProviderName(managerProfile.provider)]?.authenticated === false
+                    ? html`<${CLIProxyAuthControl}
+                        provider=${managerProfile.provider}
+                        t=${t}
+                        status=${cliproxyAuthStatuses[normalizeAuthProviderName(managerProfile.provider)]}
+                        busy=${cliproxyAuthBusy === normalizeAuthProviderName(managerProfile.provider)}
+                        onLogin=${loginCLIProxyProvider}
+                      />`
+                    : null}
                   <div className="composer-box">
                     <div className="composer-input-wrap">
                       ${draftSegments.length === 0
@@ -2456,7 +2654,12 @@ function App() {
                   <div className="composer-tip">${t("composerTip")}</div>
                 </footer>
               `
-            : html`<div className="empty-state">${t("emptyConversation")}</div>`}
+            : html`
+                <div className="empty-state shell-empty-state">
+                  <span className="rich-empty-mark" aria-hidden="true">></span>
+                  <strong>${t("emptyConversation")}</strong>
+                </div>
+              `}
         </main>
       </div>
 
@@ -2493,8 +2696,14 @@ function App() {
                   <button className="modal-close" onClick=${() => setShowCreateRoom(false)}>${t("close")}</button>
                 </div>
                 <label className="field">
-                  <span>${t("roomName")}</span>
-                  <input value=${roomTitle} onInput=${(event) => setRoomTitle(event.target.value)} placeholder=${t("roomNamePlaceholder")} />
+                  ${requiredFieldLabel(t("roomName"))}
+                  <input
+                    value=${roomTitle}
+                    required
+                    aria-required="true"
+                    onInput=${(event) => setRoomTitle(event.target.value)}
+                    placeholder=${t("roomNamePlaceholder")}
+                  />
                 </label>
                 <label className="field">
                   <span>${t("roomDescription")}</span>
@@ -2503,6 +2712,24 @@ function App() {
                 <div className="field">
                   <span>${t("initialMembers")}</span>
                   <div className="selection-list">
+                    <label className="selection-item selection-all-item">
+                      <input
+                        type="checkbox"
+                        checked=${allCreateRoomMembersSelected}
+                        disabled=${createRoomSelectableMemberIDs.length === 0}
+                        onChange=${() => {
+                          setRoomMemberIDs((current) => {
+                            const allSelected = createRoomCandidateIDs.length > 0 && createRoomCandidateIDs.every((id) => current.includes(id));
+                            if (allSelected) {
+                              return current.filter((id) => !createRoomSelectableMemberIDs.includes(id));
+                            }
+                            return Array.from(new Set([...current, ...createRoomSelectableMemberIDs]));
+                          });
+                        }}
+                      />
+                      <span>${t("allMembers")}</span>
+                      <small>${createRoomSelectedMemberCount}/${createRoomCandidateIDs.length}</small>
+                    </label>
                     ${createRoomCandidates.map((user) => html`
                       <label key=${user.id} className="selection-item">
                         <input
@@ -2520,7 +2747,7 @@ function App() {
                 ${submitError ? html`<div className="form-error">${submitError}</div>` : null}
                 <div className="modal-actions">
                   <button className="secondary-button" onClick=${() => setShowCreateRoom(false)}>${t("cancel")}</button>
-                  <button className="send-button" disabled=${!roomTitle.trim()} onClick=${createRoom}>${t("create")}</button>
+                  <button className="send-button" disabled=${isBlank(roomTitle)} onClick=${createRoom}>${t("create")}</button>
                 </div>
               </div>
             </div>
@@ -2542,17 +2769,36 @@ function App() {
                   <span>${t("inviteCandidates")}</span>
                   <div className="selection-list">
                     ${inviteCandidates.length > 0
-                      ? inviteCandidates.map((user) => html`
-                          <label key=${user.id} className="selection-item">
+                      ? html`
+                          <label className="selection-item selection-all-item">
                             <input
                               type="checkbox"
-                              checked=${inviteUserIDs.includes(user.id)}
-                              onChange=${() => setInviteUserIDs((current) => toggleSelection(current, user.id))}
+                              checked=${allInviteCandidatesSelected}
+                              onChange=${() => {
+                                setInviteUserIDs((current) => {
+                                  const allSelected = inviteCandidateIDs.length > 0 && inviteCandidateIDs.every((id) => current.includes(id));
+                                  if (allSelected) {
+                                    return current.filter((id) => !inviteCandidateIDs.includes(id));
+                                  }
+                                  return Array.from(new Set([...current, ...inviteCandidateIDs]));
+                                });
+                              }}
                             />
-                            <span>${user.name}</span>
-                            <small>@${user.handle}</small>
+                            <span>${t("allMembers")}</span>
+                            <small>${inviteSelectedMemberCount}/${inviteCandidateIDs.length}</small>
                           </label>
-                        `)
+                          ${inviteCandidates.map((user) => html`
+                            <label key=${user.id} className="selection-item">
+                              <input
+                                type="checkbox"
+                                checked=${inviteUserIDs.includes(user.id)}
+                                onChange=${() => setInviteUserIDs((current) => toggleSelection(current, user.id))}
+                              />
+                              <span>${user.name}</span>
+                              <small>@${user.handle}</small>
+                            </label>
+                          `)}
+                        `
                       : html`<div className="selection-empty">${t("noInviteCandidates")}</div>`}
                   </div>
                 </div>
@@ -2582,10 +2828,12 @@ function App() {
                     <div className="profile-section-title">${t("profileBasics")}</div>
                     <div className="profile-grid profile-grid-compact">
                       <label className="field">
-                        <span>${t("agentName")}</span>
+                        ${requiredFieldLabel(t("agentName"))}
                         <input
                           value=${agentDraft.name}
                           disabled=${agentModalMode === "edit" && editingAgent?.id === "u-manager"}
+                          required
+                          aria-required="true"
                           onInput=${(event) => setAgentDraft({ ...agentDraft, name: event.target.value })}
                           placeholder=${t("agentNamePlaceholder")}
                         />
@@ -2619,8 +2867,13 @@ function App() {
                         </select>
                       </label>
                       <label className="field">
-                        <span>${t("profileModel")}</span>
-                        <select value=${agentDraft.model_id} onChange=${(event) => setAgentDraft({ ...agentDraft, model_id: event.target.value })}>
+                        ${requiredFieldLabel(t("profileModel"))}
+                        <select
+                          value=${agentDraft.model_id}
+                          required
+                          aria-required="true"
+                          onChange=${(event) => setAgentDraft({ ...agentDraft, model_id: event.target.value })}
+                        >
                           <option value="">${agentModelBusy ? t("profileLoadingModels") : t("profileSelectModel")}</option>
                           ${agentModels.map((model) => html`<option key=${model} value=${model}>${model}</option>`)}
                           ${agentDraft.model_id && !agentModels.includes(agentDraft.model_id)
@@ -2642,6 +2895,13 @@ function App() {
                         <span>${t("profileFastMode")}</span>
                       </label>
                     </div>
+                    <${CLIProxyAuthControl}
+                      provider=${agentDraft.provider}
+                      t=${t}
+                      status=${cliproxyAuthStatuses[normalizeAuthProviderName(agentDraft.provider)]}
+                      busy=${cliproxyAuthBusy === normalizeAuthProviderName(agentDraft.provider)}
+                      onLogin=${loginCLIProxyProvider}
+                    />
                   </section>
                   ${agentDraft.provider === "api"
                     ? html`
@@ -2649,8 +2909,14 @@ function App() {
                           <div className="profile-section-title">${t("profileAPIProvider")}</div>
                           <div className="profile-api-grid">
                             <label className="field">
-                              <span>${t("profileBaseURL")}</span>
-                              <input value=${agentDraft.base_url} onInput=${(event) => setAgentDraft({ ...agentDraft, base_url: event.target.value })} placeholder="https://api.openai.com/v1" />
+                              ${requiredFieldLabel(t("profileBaseURL"))}
+                              <input
+                                value=${agentDraft.base_url}
+                                required
+                                aria-required="true"
+                                onInput=${(event) => setAgentDraft({ ...agentDraft, base_url: event.target.value })}
+                                placeholder="https://api.openai.com/v1"
+                              />
                             </label>
                             <label className="field">
                               <span>${t("profileAPIKey")}</span>
@@ -2685,7 +2951,7 @@ function App() {
                 ${agentError ? html`<div className="form-error">${agentError}</div>` : null}
                 <div className="modal-actions">
                   <button className="secondary-button" onClick=${() => setShowAgentModal(false)}>${t("cancel")}</button>
-                  <button className="send-button" disabled=${agentBusy || !agentDraft.name.trim() || !agentDraft.model_id} onClick=${saveAgent}>
+                  <button className="send-button" disabled=${agentBusy || isBlank(agentDraft.name) || !agentDraft.model_id || profileBaseURLMissing(agentDraft)} onClick=${saveAgent}>
                     ${agentBusy ? "..." : agentModalMode === "create" ? t("agentCreateSave") : t("agentUpdateSave")}
                   </button>
                 </div>
@@ -2737,9 +3003,11 @@ function App() {
                         </select>
                       </label>
                       <label className="field">
-                        <span>${t("profileModel")}</span>
+                        ${requiredFieldLabel(t("profileModel"))}
                         <select
                           value=${profileDraft.model_id}
+                          required
+                          aria-required="true"
                           onChange=${(event) => setProfileDraft({ ...profileDraft, model_id: event.target.value })}
                         >
                           <option value="">${profileModelBusy ? t("profileLoadingModels") : t("profileSelectModel")}</option>
@@ -2767,6 +3035,13 @@ function App() {
                         <span>${t("profileFastMode")}</span>
                       </label>
                     </div>
+                    <${CLIProxyAuthControl}
+                      provider=${profileDraft.provider}
+                      t=${t}
+                      status=${cliproxyAuthStatuses[normalizeAuthProviderName(profileDraft.provider)]}
+                      busy=${cliproxyAuthBusy === normalizeAuthProviderName(profileDraft.provider)}
+                      onLogin=${loginCLIProxyProvider}
+                    />
                   </section>
                   ${profileDraft.provider === "api"
                     ? html`
@@ -2774,8 +3049,14 @@ function App() {
                           <div className="profile-section-title">${t("profileAPIProvider")}</div>
                           <div className="profile-api-grid">
                             <label className="field">
-                              <span>${t("profileBaseURL")}</span>
-                              <input value=${profileDraft.base_url} onInput=${(event) => setProfileDraft({ ...profileDraft, base_url: event.target.value })} placeholder="https://api.openai.com/v1" />
+                              ${requiredFieldLabel(t("profileBaseURL"))}
+                              <input
+                                value=${profileDraft.base_url}
+                                required
+                                aria-required="true"
+                                onInput=${(event) => setProfileDraft({ ...profileDraft, base_url: event.target.value })}
+                                placeholder="https://api.openai.com/v1"
+                              />
                             </label>
                             <label className="field">
                               <span>${t("profileAPIKey")}</span>
@@ -2809,7 +3090,7 @@ function App() {
                 </div>
                 ${profileError ? html`<div className="form-error">${profileError}</div>` : null}
                 <div className="modal-actions">
-                  <button className="send-button" disabled=${profileBusy || !profileDraft.model_id} onClick=${saveManagerProfile}>
+                  <button className="send-button" disabled=${profileBusy || !profileDraft.model_id || profileBaseURLMissing(profileDraft)} onClick=${saveManagerProfile}>
                     ${profileBusy ? "..." : t("profileSave")}
                   </button>
                 </div>
@@ -2976,7 +3257,17 @@ function WorkspaceGroup({ id, title, count, collapsed, onToggle, onAdd, addLabel
         </button>
         ${onAdd
           ? html`
-              <button className="workspace-add-button" aria-label=${addLabel || title} title=${addLabel || title} onClick=${onAdd}>
+              <button
+                type="button"
+                className="workspace-add-button"
+                aria-label=${addLabel || title}
+                title=${addLabel || title}
+                onClick=${(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onAdd?.();
+                }}
+              >
                 <span aria-hidden="true">+</span>
               </button>
             `
@@ -3076,7 +3367,7 @@ function WorkspaceConversationRow({ conversation, active, currentUserID, usersBy
   `;
 }
 
-function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, modelBusy, saving, saveError, onDraftChange, onSave, onStart, onStop, onRecreate, onDelete, onInvite, onOpenDM }) {
+function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, modelBusy, saving, saveError, authStatuses, authBusyProvider, onDraftChange, onSave, onProviderLogin, onStart, onStop, onRecreate, onDelete, onInvite, onOpenDM }) {
   const isManager = item.role === "manager" || item.id === "u-manager";
   const running = isAgentRunning(item);
   const incomplete = isAgentIncomplete(item);
@@ -3097,7 +3388,13 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
         </div>
       </header>
       <div className="entity-toolbar">
-        <button className="preview-action-button preview-action-button-primary" disabled=${saving || !draft?.name?.trim() || !draft?.model_id} onClick=${onSave}>${saving ? t("profileLoadingModels") : t("agentUpdateSave")}</button>
+        <button
+          className="preview-action-button preview-action-button-primary"
+          disabled=${saving || isBlank(draft?.name) || !draft?.model_id || profileBaseURLMissing(draft)}
+          onClick=${onSave}
+        >
+          ${saving ? t("profileLoadingModels") : t("agentUpdateSave")}
+        </button>
         <button className="preview-action-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => running ? onStop(item) : onStart(item)}>
           ${running ? t("agentStop") : t("agentStart")}
         </button>
@@ -3105,9 +3402,7 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
         ${activeRoom && !isManager
           ? html`<button className="preview-action-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onInvite(item)}>${t("inviteToRoom")}</button>`
           : null}
-        ${!isManager
-          ? html`<button className="preview-action-button" onClick=${() => onOpenDM(item)}>${t("openDM")}</button>`
-          : null}
+        <button className="preview-action-button" onClick=${() => onOpenDM(item)}>${t("openDM")}</button>
         ${!isManager
           ? html`<button className="preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onDelete(item)}>${t("agentDelete")}</button>`
           : null}
@@ -3147,8 +3442,14 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
                 <div className="profile-section-title">${t("profileBasics")}</div>
                 <div className="profile-grid-compact">
                   <label className="field">
-                    <span>${t("agentName")}</span>
-                    <input value=${draft.name} onInput=${(event) => updateDraft({ name: event.target.value })} placeholder=${t("agentNamePlaceholder")} />
+                    ${requiredFieldLabel(t("agentName"))}
+                    <input
+                      value=${draft.name}
+                      required
+                      aria-required="true"
+                      onInput=${(event) => updateDraft({ name: event.target.value })}
+                      placeholder=${t("agentNamePlaceholder")}
+                    />
                   </label>
                   <label className="field">
                     <span>${t("agentImage")}</span>
@@ -3174,8 +3475,13 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
                     </select>
                   </label>
                   <label className="field">
-                    <span>${t("profileModel")}</span>
-                    <select value=${draft.model_id} onChange=${(event) => updateDraft({ model_id: event.target.value })}>
+                    ${requiredFieldLabel(t("profileModel"))}
+                    <select
+                      value=${draft.model_id}
+                      required
+                      aria-required="true"
+                      onChange=${(event) => updateDraft({ model_id: event.target.value })}
+                    >
                       <option value="">${modelBusy ? t("profileLoadingModels") : t("profileSelectModel")}</option>
                       ${models.map((model) => html`<option key=${model} value=${model}>${model}</option>`)}
                       ${draft.model_id && !models.includes(draft.model_id)
@@ -3194,6 +3500,13 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
                     <span>${t("profileFastMode")}</span>
                   </label>
                 </div>
+                <${CLIProxyAuthControl}
+                  provider=${draft.provider}
+                  t=${t}
+                  status=${authStatuses?.[normalizeAuthProviderName(draft.provider)]}
+                  busy=${authBusyProvider === normalizeAuthProviderName(draft.provider)}
+                  onLogin=${onProviderLogin}
+                />
               </section>
 
               ${draft.provider === "api"
@@ -3202,8 +3515,14 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
                       <div className="profile-section-title">${t("profileAPIProvider")}</div>
                       <div className="profile-api-grid">
                         <label className="field">
-                          <span>${t("profileBaseURL")}</span>
-                          <input value=${draft.base_url} onInput=${(event) => updateDraft({ base_url: event.target.value })} placeholder="https://api.openai.com/v1" />
+                          ${requiredFieldLabel(t("profileBaseURL"))}
+                          <input
+                            value=${draft.base_url}
+                            required
+                            aria-required="true"
+                            onInput=${(event) => updateDraft({ base_url: event.target.value })}
+                            placeholder="https://api.openai.com/v1"
+                          />
                         </label>
                         <label className="field">
                           <span>${t("profileAPIKey")}</span>
@@ -3880,6 +4199,42 @@ function parseJSONMap(text) {
     throw new Error("Expected a JSON object");
   }
   return parsed;
+}
+
+function normalizeAuthProviderName(provider) {
+  const value = String(provider ?? "").trim().toLowerCase();
+  if (value === "claude" || value === "claude-code") {
+    return "claude_code";
+  }
+  return value;
+}
+
+function providerNeedsAuth(provider) {
+  return CLIPROXY_AUTH_PROVIDERS.has(normalizeAuthProviderName(provider));
+}
+
+function CLIProxyAuthControl({ provider, t, status, busy, onLogin }) {
+  const normalized = normalizeAuthProviderName(provider);
+  if (!providerNeedsAuth(normalized)) {
+    return null;
+  }
+  const connected = Boolean(status?.authenticated);
+  const message = connected
+    ? `${formatProviderLabel(normalized)} ${t("authConnected")}`
+    : (status?.message || `${formatProviderLabel(normalized)} ${t("authMissing")}`);
+  return html`
+    <div className=${`auth-status-row ${connected ? "connected" : "missing"}`}>
+      <span className="auth-status-dot" aria-hidden="true"></span>
+      <span className="auth-status-message">${message}</span>
+      ${connected
+        ? null
+        : html`
+            <button type="button" className="secondary-button compact" disabled=${busy || !onLogin} onClick=${() => onLogin?.(normalized)}>
+              ${busy ? t("authConnecting") : `${t("authConnect")} ${formatProviderLabel(normalized)}`}
+            </button>
+          `}
+    </div>
+  `;
 }
 
 function formatProviderLabel(provider) {

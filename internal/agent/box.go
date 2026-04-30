@@ -22,11 +22,11 @@ func (s *Service) createGatewayBox(ctx context.Context, rt sandbox.Runtime, imag
 	if err != nil {
 		return nil, sandbox.Info{}, err
 	}
-	box, err := rt.Create(ctx, spec)
+	box, err := s.createBox(ctx, rt, spec)
 	if err != nil {
 		return nil, sandbox.Info{}, fmt.Errorf("create gateway box: %w", err)
 	}
-	info, err := box.Info(ctx)
+	info, err := s.boxInfo(ctx, box)
 	if err != nil {
 		_ = s.closeBox(box)
 		return nil, sandbox.Info{}, fmt.Errorf("read gateway box info: %w", err)
@@ -53,6 +53,17 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, profile AgentProf
 	modelID := profile.ModelID
 	managerBaseURL := resolveManagerBaseURL(s.server)
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, botID)
+	if _, err := ensureAgentPicoClawConfig(name, botID, s.server, config.ModelConfig{ModelID: modelID}); err != nil {
+		return sandbox.CreateSpec{}, err
+	}
+	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID))
+	if err != nil {
+		return sandbox.CreateSpec{}, err
+	}
+	projectsRoot, err := ensureAgentProjectsRoot()
+	if err != nil {
+		return sandbox.CreateSpec{}, err
+	}
 	envVars := picoclawBoxEnvVars(managerBaseURL, s.server.AccessToken, botID, llmBaseURL, modelID)
 	addFeishuBoxEnvVars(envVars, botID, s.channels)
 	addProfileEnvVars(envVars, profile.Env)
@@ -66,18 +77,10 @@ func (s *Service) gatewayCreateSpec(image, name, botID string, profile AgentProf
 		Cmd: []string{
 			"/bin/sh",
 			"-c",
-			"/usr/local/bin/picoclaw gateway -d 1>~/.picoclaw/gateway.log 2>/dev/null",
+			gatewayRunCommand(),
 		},
 	}
 
-	hostWorkspaceRoot, err := ensureAgentWorkspace(name, workspaceTemplateForAgent(name, botID))
-	if err != nil {
-		return sandbox.CreateSpec{}, err
-	}
-	projectsRoot, err := ensureAgentProjectsRoot()
-	if err != nil {
-		return sandbox.CreateSpec{}, err
-	}
 	for _, mount := range gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot) {
 		spec.Mounts = append(spec.Mounts, sandbox.Mount{
 			HostPath:  mount.hostPath,
@@ -125,6 +128,19 @@ func gatewayVolumeMounts(hostWorkspaceRoot, projectsRoot string) []gatewayVolume
 			guestPath: boxProjectsDir,
 		},
 	}
+}
+
+func gatewayRunCommand() string {
+	configPath := boxWorkspaceConfigPath(hostPicoClawConfig)
+	securityPath := boxWorkspaceConfigPath(hostPicoClawSecurity)
+	return "mkdir -p " + boxPicoClawDir +
+		" && cp " + configPath + " " + filepath.Join(boxPicoClawDir, hostPicoClawConfig) +
+		" && cp " + securityPath + " " + filepath.Join(boxPicoClawDir, hostPicoClawSecurity) +
+		" && /usr/local/bin/picoclaw gateway -d 1>" + boxGatewayLogPath + " 2>/dev/null"
+}
+
+func boxWorkspaceConfigPath(name string) string {
+	return filepath.Join(boxWorkspaceDir, filepath.FromSlash(hostPicoClawStateDir), name)
 }
 
 func gatewayStartCommand(debug bool) ([]string, []string) {

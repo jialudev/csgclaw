@@ -77,11 +77,25 @@ Top-level commands:
 - `serve`
 - `stop`
 - `agent`
+- `model`
 - `user`
 - `bot`
 - `room`
 - `member`
 - `message`
+- `completion`
+
+### Shell completion
+
+Both CLIs can generate shell completion scripts for `bash`, `zsh`, and `fish`.
+
+Examples:
+
+```bash
+csgclaw completion bash
+csgclaw completion zsh
+csgclaw completion fish
+```
 
 ### `csgclaw onboard`
 
@@ -164,6 +178,39 @@ Behavior:
 
 - Sends `SIGTERM` to the PID stored in the PID file.
 - If the process is already gone, it removes the stale PID file and reports that state.
+
+### `csgclaw model auth`
+
+Manages local Codex and Claude Code authentication for model providers through the embedded CLIProxyAPI.
+
+Usage:
+
+```bash
+csgclaw model auth login <provider> [flags]
+```
+
+Providers:
+
+- `codex`
+- `claude-code`
+
+Flags:
+
+- `--no-browser`: print the OAuth URL instead of opening a browser.
+
+Behavior:
+
+- `codex` first reuses `~/.codex/auth.json` when available, then starts OAuth if needed.
+- `claude-code` first probes macOS Keychain when available, then starts OAuth if needed.
+- Auth is stored in the CLIProxy auth directory, defaulting to `~/.cli-proxy-api`.
+- Model provider auth is scoped under `csgclaw model auth`, not the server's own API authentication.
+
+Examples:
+
+```bash
+csgclaw model auth login codex
+csgclaw model auth login claude-code --no-browser
+```
 
 ### `csgclaw agent`
 
@@ -536,6 +583,17 @@ Top-level commands:
 - `room`
 - `member`
 - `message`
+- `completion`
+
+### Shell completion
+
+Examples:
+
+```bash
+csgclaw-cli completion bash
+csgclaw-cli completion zsh
+csgclaw-cli completion fish
+```
 
 ### Command groups
 
