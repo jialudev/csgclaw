@@ -9,7 +9,10 @@ import (
 type PicoClawBridge struct {
 	mu          sync.Mutex
 	subscribers map[string]map[chan PicoClawEvent]struct{}
+	pending     map[string][]PicoClawEvent
 }
+
+const picoClawEventBufferSize = 64
 
 type PicoClawEvent struct {
 	MessageID string         `json:"message_id"`
@@ -35,13 +38,18 @@ type PicoClawSendMessageRequest struct {
 func NewPicoClawBridge(string) *PicoClawBridge {
 	return &PicoClawBridge{
 		subscribers: make(map[string]map[chan PicoClawEvent]struct{}),
+		pending:     make(map[string][]PicoClawEvent),
 	}
 }
 
 func (b *PicoClawBridge) Subscribe(botID string) (<-chan PicoClawEvent, func()) {
-	ch := make(chan PicoClawEvent, 16)
+	ch := make(chan PicoClawEvent, picoClawEventBufferSize)
 
 	b.mu.Lock()
+	for _, evt := range b.pending[botID] {
+		ch <- evt
+	}
+	delete(b.pending, botID)
 	if b.subscribers[botID] == nil {
 		b.subscribers[botID] = make(map[chan PicoClawEvent]struct{})
 	}
@@ -56,26 +64,26 @@ func (b *PicoClawBridge) Subscribe(botID string) (<-chan PicoClawEvent, func()) 
 				delete(b.subscribers, botID)
 			}
 		}
-		b.mu.Unlock()
 		close(ch)
+		b.mu.Unlock()
 	}
 	return ch, cancel
 }
 
 func (b *PicoClawBridge) PublishMessageEvent(room Room, sender User, message Message) {
 	b.mu.Lock()
-	targets := make(map[string][]chan PicoClawEvent, len(b.subscribers))
-	for botID, subs := range b.subscribers {
+	defer b.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(room.Members))
+	for _, botID := range room.Members {
+		if _, ok := seen[botID]; ok {
+			continue
+		}
+		seen[botID] = struct{}{}
 		if !shouldNotifyBot(room, message, botID) {
 			continue
 		}
-		for ch := range subs {
-			targets[botID] = append(targets[botID], ch)
-		}
-	}
-	b.mu.Unlock()
 
-	for botID, subs := range targets {
 		evt := PicoClawEvent{
 			MessageID: message.ID,
 			RoomID:    room.ID,
@@ -89,13 +97,33 @@ func (b *PicoClawBridge) PublishMessageEvent(room Room, sender User, message Mes
 			Timestamp: fmt.Sprintf("%d", message.CreatedAt.UnixMilli()),
 			Mentions:  mentionsForBot(message.Mentions, botID),
 		}
-		for _, ch := range subs {
+
+		subs := b.subscribers[botID]
+		if len(subs) == 0 {
+			b.appendPendingLocked(botID, evt)
+			continue
+		}
+
+		delivered := false
+		for ch := range subs {
 			select {
 			case ch <- evt:
+				delivered = true
 			default:
 			}
 		}
+		if !delivered {
+			b.appendPendingLocked(botID, evt)
+		}
 	}
+}
+
+func (b *PicoClawBridge) appendPendingLocked(botID string, evt PicoClawEvent) {
+	events := append(b.pending[botID], evt)
+	if len(events) > picoClawEventBufferSize {
+		events = events[len(events)-picoClawEventBufferSize:]
+	}
+	b.pending[botID] = events
 }
 
 func (e PicoClawEvent) MarshalJSONLine() ([]byte, error) {
