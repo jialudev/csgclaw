@@ -58,6 +58,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 	modelsValue := fs.String("models", "", "comma-separated LLM model identifiers")
 	reasoningEffort := fs.String("reasoning-effort", "", "optional upstream reasoning_effort default")
 	managerImage := fs.String("manager-image", "", "bootstrap manager image")
+	agentRuntime := fs.String("agent-runtime", "", `bootstrap sandbox runtime ("picoclaw"|"openclaw"); built-in default image unless --manager-image is set`)
 	debianRegistries := fs.String("debian-registries", "", "comma-separated OCI registries used for debian:bookworm-slim pulls (persisted to config)")
 	forceRecreateManager := fs.Bool("force-recreate-manager", false, "remove and recreate the bootstrap manager box")
 	if err := fs.Parse(args); err != nil {
@@ -93,6 +94,10 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 	}
 
 	llmCfg := effectiveLLMConfig(cfg)
+	var stdinReader *bufio.Reader
+	if !hasExplicitLLMFlags(visited) && canPrompt(run, globals.Output) {
+		stdinReader = bufio.NewReader(run.Stdin)
+	}
 	if hasExplicitLLMFlags(visited) {
 		var err error
 		llmCfg, err = applyExplicitModelFlags(ctx, llmCfg, hasExistingConfig, *provider, *baseURL, *apiKey, *modelsValue, *reasoningEffort, visited)
@@ -101,15 +106,34 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 		}
 	} else if canPrompt(run, globals.Output) {
 		var err error
-		llmCfg, err = promptModelConfig(ctx, run, llmCfg, hasExistingConfig)
+		llmCfg, err = promptModelConfig(ctx, stdinReader, run, llmCfg, hasExistingConfig)
 		if err != nil {
 			return err
 		}
 	}
 
 	syncConfigWithLLM(&cfg, llmCfg)
-	if *managerImage != "" {
+
+	explicitManagerImage := visited["manager-image"]
+	explicitAgentRuntime := visited["agent-runtime"]
+	if explicitAgentRuntime {
+		cfg.Bootstrap.AgentRuntime = strings.TrimSpace(strings.ToLower(*agentRuntime))
+		if !explicitManagerImage {
+			cfg.Bootstrap.ManagerImage = config.DefaultManagerImageForAgentRuntime(cfg.Bootstrap.AgentRuntime)
+		}
+	}
+	if explicitManagerImage {
 		cfg.Bootstrap.ManagerImage = *managerImage
+	}
+	if needsInteractiveBootstrapAgentRuntime(visited, run, globals.Output) {
+		if stdinReader == nil {
+			stdinReader = bufio.NewReader(run.Stdin)
+		}
+		var err error
+		cfg, err = promptBootstrapAgentRuntime(stdinReader, run, cfg, hasExistingConfig)
+		if err != nil {
+			return err
+		}
 	}
 	if strings.TrimSpace(*debianRegistries) != "" {
 		cfg.Sandbox.DebianRegistries = parseRegistriesFlag(*debianRegistries)
@@ -263,8 +287,7 @@ func isEmptyProvider(provider config.ProviderConfig) bool {
 	return provider.BaseURL == "" && provider.APIKey == "" && len(provider.Models) == 0 && provider.ReasoningEffort == ""
 }
 
-func promptModelConfig(ctx context.Context, run *command.Context, llmCfg config.LLMConfig, hasExistingConfig bool) (config.LLMConfig, error) {
-	reader := bufio.NewReader(run.Stdin)
+func promptModelConfig(ctx context.Context, reader *bufio.Reader, run *command.Context, llmCfg config.LLMConfig, hasExistingConfig bool) (config.LLMConfig, error) {
 	defaultProvider := modelprovider.CSGHubLiteProviderName
 	printProviderPromptIntro(run.Stdout, llmCfg, hasExistingConfig)
 	if hasExistingConfig {
@@ -527,6 +550,64 @@ func chooseCSGHubLiteDefaultModel(llmCfg config.LLMConfig, models []string) stri
 	return models[0]
 }
 
+func needsInteractiveBootstrapAgentRuntime(visited map[string]bool, run *command.Context, output string) bool {
+	if visited["manager-image"] || visited["agent-runtime"] {
+		return false
+	}
+	return canPrompt(run, output)
+}
+
+func promptBootstrapAgentRuntime(reader *bufio.Reader, run *command.Context, cfg config.Config, hasExistingConfig bool) (config.Config, error) {
+	defaultRuntime := config.AgentRuntimePicoclaw
+	if hasExistingConfig {
+		if rt := strings.TrimSpace(cfg.Bootstrap.AgentRuntime); rt != "" {
+			defaultRuntime = rt
+		} else {
+			defaultRuntime = cfg.Bootstrap.ResolvedGatewayRuntime()
+		}
+	}
+	fmt.Fprintln(run.Stdout)
+	fmt.Fprintln(run.Stdout, "Bootstrap agent runtime")
+	fmt.Fprintln(run.Stdout, "Choose PicoClaw or OpenClaw tooling inside sandbox boxes.")
+	if hasExistingConfig {
+		fmt.Fprintln(run.Stdout, "Leave blank to keep your current bootstrap manager_image and agent_runtime.")
+	}
+	fmt.Fprintf(run.Stdout, "  1. %s — default image: %s\n", config.AgentRuntimePicoclaw, config.DefaultManagerImage)
+	fmt.Fprintf(run.Stdout, "  2. %s — default image: %s\n", config.AgentRuntimeOpenClaw, config.DefaultOpenClawManagerImage)
+	fmt.Fprintf(run.Stdout, "Agent runtime [%s]: ", defaultRuntime)
+	answer, err := readPromptLine(reader)
+	if err != nil {
+		return config.Config{}, err
+	}
+	if hasExistingConfig && strings.TrimSpace(answer) == "" {
+		return cfg, nil
+	}
+	rt := normalizeAgentRuntimeSelection(answer, defaultRuntime)
+	switch rt {
+	case config.AgentRuntimePicoclaw, config.AgentRuntimeOpenClaw:
+		cfg.Bootstrap.AgentRuntime = rt
+		cfg.Bootstrap.ManagerImage = config.DefaultManagerImageForAgentRuntime(rt)
+		return cfg, nil
+	default:
+		return config.Config{}, fmt.Errorf("unsupported agent runtime %q; enter %q, %q, 1, or 2", rt, config.AgentRuntimePicoclaw, config.AgentRuntimeOpenClaw)
+	}
+}
+
+func normalizeAgentRuntimeSelection(answer, defaultRuntime string) string {
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer == "" {
+		return defaultRuntime
+	}
+	switch answer {
+	case "1":
+		return config.AgentRuntimePicoclaw
+	case "2":
+		return config.AgentRuntimeOpenClaw
+	default:
+		return answer
+	}
+}
+
 func canPrompt(run *command.Context, output string) bool {
 	if output != "" && output != "table" {
 		return false
@@ -550,6 +631,7 @@ func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg c
 	if err != nil {
 		return bot.Bot{}, err
 	}
+	opts = append(opts, agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntime()))
 	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.ManagerImage, agentsPath, opts...)
 	if err != nil {
 		return bot.Bot{}, err
@@ -604,6 +686,9 @@ func configPath(path string) (string, error) {
 }
 
 func validateModelConfig(cfg config.Config) error {
+	if err := cfg.Bootstrap.Validate(); err != nil {
+		return err
+	}
 	if err := effectiveLLMConfig(cfg).Validate(); err != nil {
 		var validationErr *config.ModelValidationError
 		if errors.As(err, &validationErr) && len(validationErr.MissingFields) > 0 {

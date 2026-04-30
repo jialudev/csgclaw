@@ -20,10 +20,11 @@ TARGET_OS ?= $(shell $(GO) env GOOS)
 TARGET_ARCH ?= $(shell $(GO) env GOARCH)
 CLI_BIN ?= $(BIN_DIR)/csgclaw-cli
 
-ONBOARD_BASE_URL ?= http://127.0.0.1:4000
+ONBOARD_BASE_URL ?= https://api.minimaxi.com/v1
 ONBOARD_API_KEY ?= sk-1234567890
-ONBOARD_MODEL_ID ?= minimax-m2.7
-ONBOARD_MANAGER_IMAGE ?= opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0
+ONBOARD_MODEL_ID ?= MiniMax-M2.7
+ONBOARD_MANAGER_IMAGE ?= opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw:20260429.2-csgclaw
+ONBOARD_AGENT_RUNTIME ?= picoclaw
 
 IMAGE ?= opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw
 TAG ?= 2026.4.24.0
@@ -114,7 +115,8 @@ onboard-with-boxlite-sdk: boxlite-setup sync-agent-runtimes
 		--base-url $(ONBOARD_BASE_URL) \
 		--api-key $(ONBOARD_API_KEY) \
 		--models $(ONBOARD_MODEL_ID) \
-		--manager-image $(ONBOARD_MANAGER_IMAGE)
+		--manager-image $(ONBOARD_MANAGER_IMAGE) \
+		--agent-runtime $(ONBOARD_AGENT_RUNTIME)
 
 package: sync-agent-runtimes
 	mkdir -p $(DIST_DIR)

@@ -47,6 +47,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -74,6 +75,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -101,6 +103,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -108,6 +111,28 @@ home_dir_name = "boxlite"
 boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
+
+## OpenClaw Runtime
+
+CSGClaw defaults to PicoClaw. To run the bootstrap manager and created workers with OpenClaw instead, configure both the OpenClaw-capable image and `agent_runtime = "openclaw"`.
+
+The recommended image shape is a slim OpenClaw base image with the CSGClaw channel plugin baked under `/home/node/openclaw-plugins/csgclaw-extension`. Runtime state still comes from `~/.csgclaw/agents/<agent>/.openclaw/openclaw.json`; do not mount an empty host directory over `/home/node/openclaw-plugins`, because that hides baked plugins.
+
+```toml
+[models]
+default = "minimax.MiniMax-M2.7"
+
+[models.providers.minimax]
+base_url = "https://api.minimaxi.com/v1"
+api_key = "${MINIMAX_API_KEY}"
+models = ["MiniMax-M2.7"]
+
+[bootstrap]
+manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw:20260429.2-csgclaw"
+agent_runtime = "openclaw"
+```
+
+`base_url` should be the OpenAI-compatible API root, such as `https://api.minimaxi.com/v1`.
 
 ## Sandbox Providers
 

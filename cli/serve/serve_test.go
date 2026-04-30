@@ -320,6 +320,7 @@ no_auth = true
 
 [bootstrap]
 manager_image = "ghcr.io/russellluo/picoclaw:2026.4.25"
+agent_runtime = "picoclaw"
 
 [sandbox]
 debian_registries = ["harbor.opencsg.com", "docker.io"]

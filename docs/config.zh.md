@@ -47,6 +47,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -74,6 +75,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -101,6 +103,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"
@@ -108,6 +111,28 @@ home_dir_name = "boxlite"
 boxlite_cli_path = "boxlite"
 debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
+
+## OpenClaw Runtime
+
+CSGClaw 默认使用 PicoClaw。若要让 bootstrap manager 和新建 worker 都使用 OpenClaw，需要同时配置 OpenClaw 镜像和 `agent_runtime = "openclaw"`。
+
+推荐镜像形态是基于 OpenClaw slim 二次封装，并把 CSGClaw channel plugin 烘焙到 `/home/node/openclaw-plugins/csgclaw-extension`。运行时状态仍由 `~/.csgclaw/agents/<agent>/.openclaw/openclaw.json` 提供；不要把空的宿主机目录挂载到 `/home/node/openclaw-plugins`，否则会遮住镜像内已经烘焙好的插件。
+
+```toml
+[models]
+default = "minimax.MiniMax-M2.7"
+
+[models.providers.minimax]
+base_url = "https://api.minimaxi.com/v1"
+api_key = "${MINIMAX_API_KEY}"
+models = ["MiniMax-M2.7"]
+
+[bootstrap]
+manager_image = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsg_public/openclaw:20260429.2-csgclaw"
+agent_runtime = "openclaw"
+```
+
+`base_url` 应填写 OpenAI-compatible API 根地址，例如 `https://api.minimaxi.com/v1`。
 
 ## Sandbox Provider
 

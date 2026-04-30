@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"csgclaw/internal/config"
@@ -131,17 +132,21 @@ func TestOnlySetRunBoxCommandHook(hook func(*Service, context.Context, sandbox.I
 }
 
 type Service struct {
-	model        config.ModelConfig
-	llm          config.LLMConfig
-	server       config.ServerConfig
-	channels     config.ChannelsConfig
-	managerImage string
-	state        string
-	sandbox      sandbox.Provider
-	sandboxHome  string
-	mu           sync.RWMutex
-	runtimes     map[string]sandbox.Runtime
-	agents       map[string]Agent
+	model          config.ModelConfig
+	llm            config.LLMConfig
+	server         config.ServerConfig
+	channels       config.ChannelsConfig
+	managerImage   string
+	gatewayRuntime string
+	state          string
+	sandbox        sandbox.Provider
+	sandboxHome    string
+	mu             sync.RWMutex
+	runtimes       map[string]sandbox.Runtime
+	agents         map[string]Agent
+
+	// gatewayWorkPhase is set by createGatewayBox for bootstrap progress logs (best-effort if concurrent).
+	gatewayWorkPhase atomic.Uint32
 }
 
 type ServiceOption func(*Service) error
@@ -165,6 +170,33 @@ func WithSandboxHomeDirName(name string) ServiceOption {
 		s.sandboxHome = name
 		return nil
 	}
+}
+
+// WithGatewayRuntime sets picoclaw vs openclaw gateway behavior (from [bootstrap] or image inference).
+func WithGatewayRuntime(runtime string) ServiceOption {
+	return func(s *Service) error {
+		runtime = strings.TrimSpace(strings.ToLower(runtime))
+		switch runtime {
+		case "", config.AgentRuntimePicoclaw:
+			s.gatewayRuntime = config.AgentRuntimePicoclaw
+		case config.AgentRuntimeOpenClaw:
+			s.gatewayRuntime = config.AgentRuntimeOpenClaw
+		default:
+			return fmt.Errorf("gateway runtime %q is not supported (use %q or %q)", runtime, config.AgentRuntimePicoclaw, config.AgentRuntimeOpenClaw)
+		}
+		return nil
+	}
+}
+
+func (s *Service) useOpenClawGateway() bool {
+	return s != nil && s.gatewayRuntime == config.AgentRuntimeOpenClaw
+}
+
+func (s *Service) gatewayLogPath() string {
+	if s.useOpenClawGateway() {
+		return openClawGatewayLog
+	}
+	return boxPicoClawDir + "/gateway.log"
 }
 
 func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
@@ -257,12 +289,35 @@ func (svc *Service) EnsureBootstrapManager(ctx context.Context, forceRecreate bo
 	if err != nil {
 		return err
 	}
-	if _, err := ensureAgentPicoClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
-		return err
+	if svc.useOpenClawGateway() {
+		if _, err := ensureAgentOpenClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
+			return err
+		}
+		if err := ensureOpenClawCsgSkills(ManagerName, ManagerUserID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := ensureAgentPicoClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
+			return err
+		}
 	}
 
 	_, err = svc.EnsureManager(ctx, forceRecreate)
 	return err
+}
+
+func (s *Service) logBootstrapManagerBoxProgress(elapsed time.Duration) {
+	// Round so logs stay readable during long stalls (minute-scale OpenClaw image + VM startup).
+	wait := elapsed.Round(time.Second).String()
+	ph := s.gatewayWorkPhase.Load()
+	switch ph {
+	case gatewayBoxPhasePreparing:
+		log.Printf(`still in stage "preparing" for bootstrap manager %q [%s elapsed]: host filesystem + gateway config/skills mounts (no registry pull yet)`, ManagerName, wait)
+	case gatewayBoxPhaseCreating:
+		log.Printf(`still in stage "creating" for manager %q [%s elapsed]: boxlite provisioning the sandbox (unpack layers if needed, disk/VM shim, boot, then CMD — often longer than pull alone)`, ManagerName, wait)
+	default:
+		log.Printf(`still working on bootstrap manager %q [%s elapsed] (phase tracker idle or racing; rely on gateway box stage lines above), image=%q`, ManagerName, wait, s.managerImage)
+	}
 }
 
 func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent, error) {
@@ -325,6 +380,7 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 		log.Printf("bootstrap manager box %q not found, creating it with image %q", ManagerName, s.managerImage)
 		log.Printf("if the image is not present locally, the first pull may take a while")
 		progressDone := make(chan struct{})
+		waitStarted := time.Now()
 		go func() {
 			ticker := time.NewTicker(10 * time.Second)
 			defer ticker.Stop()
@@ -333,7 +389,7 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 				case <-progressDone:
 					return
 				case <-ticker.C:
-					log.Printf("still creating bootstrap manager box %q with image %q; image download may still be in progress", ManagerName, s.managerImage)
+					s.logBootstrapManagerBoxProgress(time.Since(waitStarted))
 				}
 			}
 		}()
@@ -946,7 +1002,7 @@ func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines 
 	if follow {
 		args = append(args, "-f")
 	}
-	args = append(args, boxPicoClawDir+"/gateway.log")
+	args = append(args, s.gatewayLogPath())
 
 	exitCode, err := s.runBoxCommand(ctx, box, "tail", args, w)
 	if err != nil {
