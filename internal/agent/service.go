@@ -400,12 +400,18 @@ func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent,
 		}
 		log.Printf("bootstrap manager box %q created", ManagerName)
 	} else {
-		if err := s.startBox(ctx, box); err != nil {
-			return Agent{}, fmt.Errorf("start bootstrap manager box: %w", err)
-		}
 		info, err = s.boxInfo(ctx, box)
 		if err != nil {
 			return Agent{}, fmt.Errorf("read bootstrap manager box info: %w", err)
+		}
+		if info.State != sandbox.StateRunning {
+			if err := s.startBox(ctx, box); err != nil {
+				return Agent{}, fmt.Errorf("start bootstrap manager box: %w", err)
+			}
+			info, err = s.boxInfo(ctx, box)
+			if err != nil {
+				return Agent{}, fmt.Errorf("read bootstrap manager box info after start: %w", err)
+			}
 		}
 	}
 	defer func() {
@@ -686,12 +692,18 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 		_ = s.closeBox(box)
 	}()
 
-	if err := s.startBox(ctx, box); err != nil {
-		return Agent{}, fmt.Errorf("start agent box: %w", err)
-	}
 	info, err := s.boxInfo(ctx, box)
 	if err != nil {
 		return Agent{}, fmt.Errorf("read agent box info: %w", err)
+	}
+	if info.State != sandbox.StateRunning {
+		if err := s.startBox(ctx, box); err != nil {
+			return Agent{}, fmt.Errorf("start agent box: %w", err)
+		}
+		info, err = s.boxInfo(ctx, box)
+		if err != nil {
+			return Agent{}, fmt.Errorf("read agent box info after start: %w", err)
+		}
 	}
 
 	s.mu.Lock()

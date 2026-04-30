@@ -956,7 +956,11 @@ func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 		return nil
 	}
 	testBoxInfoHook = func(_ *Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
-		return sandbox.Info{ID: "box-new", State: sandbox.StateRunning}, nil
+		state := sandbox.StateStopped
+		if startCalls > 0 {
+			state = sandbox.StateRunning
+		}
+		return sandbox.Info{ID: "box-new", State: state}, nil
 	}
 	defer func() {
 		testGetBoxHook = nil
@@ -1006,6 +1010,58 @@ func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 	}
 	if persisted.BoxID != "box-new" || persisted.Status != "running" {
 		t.Fatalf("reloaded Agent() = %+v, want refreshed box id/status", persisted)
+	}
+}
+
+func TestStartSkipsStartBoxWhenAlreadyRunning(t *testing.T) {
+	rt := &fakeRuntime{}
+	SetTestHooks(func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil }, nil)
+	defer ResetTestHooks()
+
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		if idOrName == "alice" {
+			return &fakeInstance{}, nil
+		}
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
+	}
+	var startCalls int
+	testStartBoxHook = func(_ *Service, _ context.Context, _ sandbox.Instance) error {
+		startCalls++
+		return nil
+	}
+	testBoxInfoHook = func(_ *Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{ID: "box-new", State: sandbox.StateRunning}, nil
+	}
+	defer func() {
+		testGetBoxHook = nil
+		testStartBoxHook = nil
+		testBoxInfoHook = nil
+	}()
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:        "u-alice",
+		Name:      "alice",
+		BoxID:     "box-stale",
+		Role:      RoleWorker,
+		Status:    "running",
+		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+	}
+
+	got, err := svc.Start(context.Background(), "u-alice")
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if startCalls != 0 {
+		t.Fatalf("startBox() calls = %d, want 0", startCalls)
+	}
+	if got.Status != "running" {
+		t.Fatalf("Start().Status = %q, want running", got.Status)
 	}
 }
 
