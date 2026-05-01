@@ -18,8 +18,8 @@ func TestBoxLiteCLIProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
 	}
 
 	opt, err := factory(config.SandboxConfig{
-		Provider:         config.BoxLiteCLIProvider,
-		DebianRegistries: []string{"registry.a"},
+		Provider:                 config.BoxLiteCLIProvider,
+		DebianRegistriesOverride: []string{"registry.a"},
 	})
 	if err != nil {
 		t.Fatalf("factory() error = %v", err)

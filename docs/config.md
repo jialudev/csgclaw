@@ -51,7 +51,6 @@ manager_image_override = ""
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
 ### Remote LLM API
@@ -77,7 +76,6 @@ manager_image_override = ""
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
 ### Dynamic Codex or Claude Code profiles
@@ -95,7 +93,6 @@ manager_image_override = ""
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
 Codex and Claude Code profiles are configured in agent state through the Web UI. CSGClaw starts an embedded CLIProxyAPI on a private localhost port at serve time, so static CLIProxy base URLs are not required.
@@ -122,15 +119,15 @@ The default source build and official release bundles already align with the CLI
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
-debian_registries = ["harbor.opencsg.com", "docker.io"]
 ```
 
 For `provider = "boxlite-cli"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
 
-`debian_registries` controls where BoxLite pulls `debian:bookworm-slim`. If omitted or empty, CSGClaw defaults to `harbor.opencsg.com` then `docker.io`. Use `onboard` to persist a custom list:
+`debian_registries_override` controls where BoxLite pulls `debian:bookworm-slim` when you need to override the built-in default order. If omitted or empty, CSGClaw uses `harbor.opencsg.com` then `docker.io`. Normal `onboard` runs do not write this field; advanced users can add it manually to `config.toml`:
 
-```bash
-csgclaw onboard --debian-registries "harbor.opencsg.com,docker.io"
+```toml
+[sandbox]
+debian_registries_override = ["harbor.opencsg.com", "docker.io"]
 ```
 
 CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the agent directory plus `home_dir_name` such as `~/.csgclaw/agents/<agent-id>/boxlite`. That explicit home takes precedence over `BOXLITE_HOME` for CSGClaw-managed sandboxes, while `BOXLITE_HOME` still applies when you run `boxlite` manually without `--home`.

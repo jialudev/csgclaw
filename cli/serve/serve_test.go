@@ -621,9 +621,8 @@ func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T
 			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
 		},
 		Sandbox: config.SandboxConfig{
-			Provider:         config.BoxLiteCLIProvider,
-			HomeDirName:      config.DefaultSandboxHomeDirName,
-			DebianRegistries: config.DefaultDebianRegistries,
+			Provider:    config.BoxLiteCLIProvider,
+			HomeDirName: config.DefaultSandboxHomeDirName,
 		},
 	}
 
@@ -637,7 +636,7 @@ no_auth = true
 manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 
 [sandbox]
-debian_registries = ["harbor.opencsg.com", "docker.io"]
+# using default debian registries: ["harbor.opencsg.com", "docker.io"]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
 
@@ -656,9 +655,9 @@ models = ["local.minimax-m2.5"]
 
 func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
-		Provider:         config.BoxLiteCLIProvider,
-		HomeDirName:      "sandbox-home",
-		DebianRegistries: []string{"registry.a"},
+		Provider:                 config.BoxLiteCLIProvider,
+		HomeDirName:              "sandbox-home",
+		DebianRegistriesOverride: []string{"registry.a"},
 	})
 	if err != nil {
 		t.Fatalf("sandboxServiceOptions() error = %v", err)

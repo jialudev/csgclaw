@@ -250,36 +250,6 @@ func TestConfigureOnboardLoggerUsesCompactTerminalFormat(t *testing.T) {
 	}
 }
 
-func TestRunDebianRegistriesFlagPersistsToConfig(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) error {
-		if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), "registry.a,docker.io"; got != want {
-			t.Fatalf("bootstrap cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
-		}
-		return nil
-	})
-	defer restore()
-
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	run := testContext()
-	err := NewCmd().Run(context.Background(), run, []string{
-		"--debian-registries", "registry.a,docker.io",
-	}, command.GlobalOptions{Config: configPath})
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-	if !strings.Contains(string(data), `debian_registries = ["registry.a", "docker.io"]`) {
-		t.Fatalf("saved config should persist onboard --debian-registries:\n%s", string(data))
-	}
-	if strings.Contains(string(data), "[models]") {
-		t.Fatalf("saved config should not contain static model config:\n%s", string(data))
-	}
-}
-
 func testContext() *command.Context {
 	return &command.Context{
 		Program: "csgclaw",

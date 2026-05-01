@@ -109,7 +109,6 @@ csgclaw onboard [flags]
 
 参数：
 
-- `--debian-registries string`：用于拉取 `debian:bookworm-slim` 的 OCI registry 列表，逗号分隔，并持久化到配置文件。
 - `--log-level string`：初始化阶段日志级别，支持 `debug`、`info`、`warn`、`error`，默认 `info`。
 
 行为说明：
@@ -117,14 +116,13 @@ csgclaw onboard [flags]
 - 普通首次启动不必先运行它；如果本地状态缺失，`csgclaw serve` 会自动执行同一套 bootstrap 流程。
 - 命令会写入配置、确保 IM 引导状态存在，并确保引导 Manager Bot 存在。
 - 命令不会提示你配置模型 provider。Manager 和 Worker 的 LLM profile 会在启动时自动检测，并在 Web UI 中管理。
-- 如果传入 `--debian-registries`，命令会同步更新配置中的 `sandbox.debian_registries`。
+- 命令不会写入 `sandbox.debian_registries_override`；当该字段缺失或为空时，运行时会使用内置的 `DefaultDebianRegistries`。
 - 如果 profile 自动检测失败，`serve` 仍会启动，Web UI 会提示管理员补全 Manager profile。
 
 示例：
 
 ```bash
 csgclaw onboard
-csgclaw onboard --debian-registries "harbor.opencsg.com,docker.io"
 ```
 
 ### `csgclaw serve`

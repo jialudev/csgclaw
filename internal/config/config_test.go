@@ -87,8 +87,8 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Sandbox.HomeDirName, DefaultSandboxHomeDirName; got != want {
 		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
 	}
-	if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), strings.Join(DefaultDebianRegistries, ","); got != want {
-		t.Fatalf("cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
+	if got, want := strings.Join(cfg.Sandbox.EffectiveDebianRegistries(), ","), strings.Join(DefaultDebianRegistries, ","); got != want {
+		t.Fatalf("cfg.Sandbox.EffectiveDebianRegistries() = %q, want %q", got, want)
 	}
 	if got, want := cfg.Model.Provider, ProviderLLMAPI; got != want {
 		t.Fatalf("cfg.Model.Provider = %q, want %q", got, want)
@@ -107,7 +107,7 @@ listen_addr = "127.0.0.1:18080"
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "sandbox-home"
-debian_registries = ["registry.a", " docker.io ", "registry.a"]
+debian_registries_override = ["registry.a", " docker.io ", "registry.a"]
 storage_path = "/shared/csgclaw"
 
 [models]
@@ -132,8 +132,11 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Sandbox.HomeDirName, "sandbox-home"; got != want {
 		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
 	}
-	if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), "registry.a,docker.io"; got != want {
-		t.Fatalf("cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
+	if got, want := strings.Join(cfg.Sandbox.DebianRegistriesOverride, ","), "registry.a,docker.io"; got != want {
+		t.Fatalf("cfg.Sandbox.DebianRegistriesOverride = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(cfg.Sandbox.EffectiveDebianRegistries(), ","), "registry.a,docker.io"; got != want {
+		t.Fatalf("cfg.Sandbox.EffectiveDebianRegistries() = %q, want %q", got, want)
 	}
 	if got, want := cfg.Sandbox.StoragePath, "/shared/csgclaw"; got != want {
 		t.Fatalf("cfg.Sandbox.StoragePath = %q, want %q", got, want)
@@ -349,10 +352,10 @@ func TestSaveWritesModelsSection(t *testing.T) {
 		Models: models,
 		LLM:    models,
 		Sandbox: SandboxConfig{
-			Provider:         BoxLiteCLIProvider,
-			HomeDirName:      "sandbox-home",
-			StoragePath:      "/mnt/csgclaw",
-			DebianRegistries: []string{"registry.a", "docker.io"},
+			Provider:                 BoxLiteCLIProvider,
+			HomeDirName:              "sandbox-home",
+			StoragePath:              "/mnt/csgclaw",
+			DebianRegistriesOverride: []string{"registry.a", "docker.io"},
 		},
 		Bootstrap: BootstrapConfig{
 			ManagerImageOverride: "img",
@@ -396,8 +399,8 @@ func TestSaveWritesModelsSection(t *testing.T) {
 	if strings.Contains(content, "boxlite_cli_path") {
 		t.Fatalf("saved config should not contain boxlite_cli_path:\n%s", content)
 	}
-	if !strings.Contains(content, `debian_registries = ["registry.a", "docker.io"]`) {
-		t.Fatalf("saved config missing sandbox debian_registries:\n%s", content)
+	if !strings.Contains(content, `debian_registries_override = ["registry.a", "docker.io"]`) {
+		t.Fatalf("saved config missing sandbox debian_registries_override:\n%s", content)
 	}
 	if !strings.Contains(content, `storage_path = "/mnt/csgclaw"`) {
 		t.Fatalf("saved config missing storage_path:\n%s", content)
@@ -495,9 +498,8 @@ func TestSaveFormatsTopLevelSectionsWithoutExtraWhitespace(t *testing.T) {
 			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
 		},
 		Sandbox: SandboxConfig{
-			Provider:         BoxLiteCLIProvider,
-			HomeDirName:      DefaultSandboxHomeDirName,
-			DebianRegistries: DefaultDebianRegistries,
+			Provider:    BoxLiteCLIProvider,
+			HomeDirName: DefaultSandboxHomeDirName,
 		},
 	}
 
@@ -522,7 +524,6 @@ no_auth = true
 manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 
 [sandbox]
-debian_registries = ["harbor.opencsg.com", "docker.io"]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
 

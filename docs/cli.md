@@ -109,7 +109,6 @@ csgclaw onboard [flags]
 
 Flags:
 
-- `--debian-registries string`: comma-separated OCI registries for `debian:bookworm-slim` pulls. Persisted to config.
 - `--log-level string`: log level for onboarding logs. Supported values: `debug`, `info`, `warn`, `error`. Default `info`.
 
 Behavior:
@@ -117,14 +116,13 @@ Behavior:
 - It is optional for normal first-time startup because `csgclaw serve` auto-runs the same bootstrap flow when state is missing.
 - It writes config, ensures bootstrap IM state, and ensures the bootstrap manager bot.
 - It does not prompt for model provider settings. Manager and worker LLM profiles are detected at startup and managed in the Web UI.
-- If `--debian-registries` is set, it updates `sandbox.debian_registries` in config.
+- It does not write `sandbox.debian_registries_override`; when that field is absent or empty, runtime uses the built-in `DefaultDebianRegistries`.
 - If profile auto-detection fails, `serve` still starts and the Web UI asks an admin to complete the Manager profile.
 
 Examples:
 
 ```bash
 csgclaw onboard
-csgclaw onboard --debian-registries "harbor.opencsg.com,docker.io"
 ```
 
 ### `csgclaw serve`

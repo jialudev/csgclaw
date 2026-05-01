@@ -89,40 +89,6 @@ func TestEnsureStateCreatesConfigAndBootstrapsManagerState(t *testing.T) {
 	}
 }
 
-func TestEnsureStatePersistsDebianRegistryOverridesBeforeBootstrap(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-
-	var gotCfg config.Config
-	restore := stubEnsureStateDeps(t)
-	defer restore()
-	EnsureIMBootstrapState = func(string) error { return nil }
-	CreateManagerBot = func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
-		gotCfg = cfg
-		return bot.Bot{}, nil
-	}
-
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	_, err := EnsureState(context.Background(), EnsureStateOptions{
-		ConfigPath:         configPath,
-		DebianRegistries:   []string{"registry.a", "docker.io"},
-		HasDebianOverrides: true,
-	})
-	if err != nil {
-		t.Fatalf("EnsureState() error = %v", err)
-	}
-
-	if got, want := strings.Join(gotCfg.Sandbox.DebianRegistries, ","), "registry.a,docker.io"; got != want {
-		t.Fatalf("cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
-	}
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-	if !strings.Contains(string(data), `debian_registries = ["registry.a", "docker.io"]`) {
-		t.Fatalf("saved config should persist debian registries:\n%s", string(data))
-	}
-}
-
 func TestEnsureStatePreservesExistingStaticLLMConfig(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

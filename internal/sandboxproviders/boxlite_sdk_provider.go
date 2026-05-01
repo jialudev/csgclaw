@@ -13,6 +13,6 @@ import (
 // embedded runtime payload. Other sandbox providers should remain always-on.
 func init() {
 	Register(config.BoxLiteSDKProvider, func(cfg config.SandboxConfig) (agent.ServiceOption, error) {
-		return agent.WithSandboxProvider(boxlitesdk.NewProvider(boxlitesdk.WithRegistries(cfg.DebianRegistries...))), nil
+		return agent.WithSandboxProvider(boxlitesdk.NewProvider(boxlitesdk.WithRegistries(cfg.EffectiveDebianRegistries()...))), nil
 	})
 }

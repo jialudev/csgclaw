@@ -34,7 +34,6 @@ func (cmd) Summary() string {
 
 func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
 	fs := run.NewFlagSet("onboard", run.Program+" onboard [flags]", c.Summary())
-	debianRegistries := fs.String("debian-registries", "", "comma-separated OCI registries used for debian:bookworm-slim pulls (persisted to config)")
 	logLevel := fs.String("log-level", "info", "log level: debug, info, warn, error")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -46,13 +45,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 	}
 	defer restore()
 
-	opts := internalonboard.EnsureStateOptions{ConfigPath: globals.Config}
-	if strings.TrimSpace(*debianRegistries) != "" {
-		opts.DebianRegistries = internalonboard.ParseRegistriesFlag(*debianRegistries)
-		opts.HasDebianOverrides = true
-	}
-
-	resultState, err := internalonboard.EnsureState(ctx, opts)
+	resultState, err := internalonboard.EnsureState(ctx, internalonboard.EnsureStateOptions{ConfigPath: globals.Config})
 	if err != nil {
 		return err
 	}

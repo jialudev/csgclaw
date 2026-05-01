@@ -22,9 +22,7 @@ var (
 )
 
 type EnsureStateOptions struct {
-	ConfigPath         string
-	DebianRegistries   []string
-	HasDebianOverrides bool
+	ConfigPath string
 }
 
 type EnsureStateResult struct {
@@ -38,7 +36,7 @@ func EnsureState(ctx context.Context, opts EnsureStateOptions) (EnsureStateResul
 		return EnsureStateResult{}, err
 	}
 
-	cfg, err := ensureConfigState(path, opts)
+	cfg, err := ensureConfigState(path)
 	if err != nil {
 		return EnsureStateResult{}, err
 	}
@@ -52,7 +50,7 @@ func EnsureState(ctx context.Context, opts EnsureStateOptions) (EnsureStateResul
 	}, nil
 }
 
-func ensureConfigState(path string, opts EnsureStateOptions) (config.Config, error) {
+func ensureConfigState(path string) (config.Config, error) {
 	cfg, hasExistingConfig, err := loadConfig(path)
 	if err != nil {
 		return config.Config{}, err
@@ -69,13 +67,6 @@ func ensureConfigState(path string, opts EnsureStateOptions) (config.Config, err
 		cfg = defaultConfig()
 	}
 	needsSave := !hasExistingConfig
-	if opts.HasDebianOverrides {
-		normalized := append([]string(nil), opts.DebianRegistries...)
-		if !equalStringSlices(cfg.Sandbox.DebianRegistries, normalized) {
-			cfg.Sandbox.DebianRegistries = normalized
-			needsSave = true
-		}
-	}
 	if hasExistingConfig && configNeedsCompletion(existingContent) {
 		needsSave = true
 	}
@@ -111,24 +102,6 @@ func bootstrapPaths() (agentsPath, imStatePath string, err error) {
 		return "", "", err
 	}
 	return agentsPath, imStatePath, nil
-}
-
-func ParseRegistriesFlag(raw string) []string {
-	values := strings.Split(raw, ",")
-	out := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
 }
 
 func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config) (bot.Bot, error) {
@@ -229,16 +202,4 @@ func configNeedsCompletion(content string) bool {
 		}
 	}
 	return false
-}
-
-func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

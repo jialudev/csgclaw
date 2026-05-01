@@ -60,10 +60,10 @@ func (c BootstrapConfig) EffectiveManagerImage() string {
 }
 
 type SandboxConfig struct {
-	Provider         string
-	HomeDirName      string
-	StoragePath      string
-	DebianRegistries []string
+	Provider                 string
+	HomeDirName              string
+	StoragePath              string
+	DebianRegistriesOverride []string
 }
 
 func (c SandboxConfig) Resolved() SandboxConfig {
@@ -74,11 +74,16 @@ func (c SandboxConfig) Resolved() SandboxConfig {
 		c.HomeDirName = DefaultSandboxHomeDirName
 	}
 	c.StoragePath = strings.TrimSpace(c.StoragePath)
-	c.DebianRegistries = normalizeStringList(c.DebianRegistries)
-	if len(c.DebianRegistries) == 0 {
-		c.DebianRegistries = append([]string(nil), DefaultDebianRegistries...)
-	}
+	c.DebianRegistriesOverride = normalizeStringList(c.DebianRegistriesOverride)
 	return c
+}
+
+func (c SandboxConfig) EffectiveDebianRegistries() []string {
+	c = c.Resolved()
+	if len(c.DebianRegistriesOverride) == 0 {
+		return append([]string(nil), DefaultDebianRegistries...)
+	}
+	return append([]string(nil), c.DebianRegistriesOverride...)
 }
 
 type ChannelsConfig struct {
@@ -132,7 +137,7 @@ const (
 )
 
 // DefaultDebianRegistries is the default BoxLite Debian registry lookup order when
-// [sandbox].debian_registries is unset or empty after normalization.
+// [sandbox].debian_registries_override is unset or empty after normalization.
 var DefaultDebianRegistries = []string{"harbor.opencsg.com", "docker.io"}
 
 func DefaultListenAddr() string {
@@ -306,12 +311,12 @@ func Load(path string) (Config, error) {
 			case "storage_path":
 				cfg.raw.sandbox.StoragePath = parseRawStringValue(rawValue)
 				cfg.Sandbox.StoragePath = value
-			case "debian_registries":
+			case "debian_registries_override":
 				registries, parseErr := parseStringArray(rawValue)
 				if parseErr != nil {
-					return Config{}, fmt.Errorf("parse sandbox.debian_registries: %w", parseErr)
+					return Config{}, fmt.Errorf("parse sandbox.debian_registries_override: %w", parseErr)
 				}
-				cfg.Sandbox.DebianRegistries = registries
+				cfg.Sandbox.DebianRegistriesOverride = registries
 			}
 		case section == "channels.feishu":
 			switch key {
@@ -420,8 +425,9 @@ home_dir_name = %q
 	if strings.TrimSpace(resolvedSandbox.StoragePath) != "" {
 		sandboxSection = strings.Replace(sandboxSection, "[sandbox]\n", fmt.Sprintf("[sandbox]\nstorage_path = %q\n", cfg.rawOrResolvedString(cfg.raw.sandbox.StoragePath, loadedRaw.sandbox.StoragePath, resolvedSandbox.StoragePath)), 1)
 	}
-	if len(resolvedSandbox.DebianRegistries) > 0 {
-		sandboxSection = strings.Replace(sandboxSection, "[sandbox]\n", fmt.Sprintf("[sandbox]\ndebian_registries = %s\n", formatStringArray(resolvedSandbox.DebianRegistries)), 1)
+	overrideRegistries := cfg.rawOrResolvedStringArray(cfg.raw.sandbox.DebianRegistriesOverride, loadedRaw.sandbox.DebianRegistriesOverride, resolvedSandbox.DebianRegistriesOverride)
+	if len(overrideRegistries) > 0 {
+		sandboxSection = strings.Replace(sandboxSection, "[sandbox]\n", fmt.Sprintf("[sandbox]\ndebian_registries_override = %s\n", formatStringArray(overrideRegistries)), 1)
 	}
 	b.WriteString(sandboxSection)
 	if writeModels {
@@ -752,6 +758,9 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	}
 	if c.raw.sandbox.StoragePath != "" {
 		out.sandbox.StoragePath = c.Sandbox.StoragePath
+	}
+	if len(c.raw.sandbox.DebianRegistriesOverride) > 0 {
+		out.sandbox.DebianRegistriesOverride = append([]string(nil), c.Sandbox.DebianRegistriesOverride...)
 	}
 	if c.raw.modelsDefault != "" {
 		out.modelsDefault = c.Models.Default
