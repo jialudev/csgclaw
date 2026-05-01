@@ -177,6 +177,119 @@ func TestServeForegroundContinuesWhenCSGHubLiteUnavailable(t *testing.T) {
 	}
 }
 
+func TestServeForegroundOpensIMURLWhenBrowserAllowed(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	openedCh := make(chan string, 1)
+	WaitForHealthy = func(string, time.Duration) error { return nil }
+	var opened string
+	OpenBrowser = func(rawURL string) error {
+		opened = rawURL
+		openedCh <- rawURL
+		return nil
+	}
+
+	run := testContext()
+	cfg := config.Config{
+		Server: config.ServerConfig{
+			AdvertiseBaseURL: "http://example.test/base",
+		},
+	}
+	if err := serveForeground(context.Background(), run, cfg, "table"); err != nil {
+		t.Fatalf("serveForeground() error = %v", err)
+	}
+	select {
+	case <-openedCh:
+	case <-time.After(time.Second):
+		t.Fatal("OpenBrowser was not called after server readiness")
+	}
+	if got, want := opened, "http://example.test/base/"; got != want {
+		t.Fatalf("OpenBrowser() URL = %q, want %q", got, want)
+	}
+	if got := run.Stdout.(*bytes.Buffer).String(); !strings.Contains(got, "Opened this URL in your browser.") {
+		t.Fatalf("stdout missing browser-open confirmation:\n%s", got)
+	}
+}
+
+func TestServeForegroundPrintsManualIMURLWhenBrowserNotAllowed(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	readyCh := make(chan struct{}, 1)
+	WaitForHealthy = func(string, time.Duration) error { return nil }
+	OpenBrowser = func(string) error {
+		readyCh <- struct{}{}
+		return fmt.Errorf("not allowed")
+	}
+
+	run := testContext()
+	cfg := config.Config{
+		Server: config.ServerConfig{
+			AdvertiseBaseURL: "http://example.test/base",
+		},
+	}
+	if err := serveForeground(context.Background(), run, cfg, "table"); err != nil {
+		t.Fatalf("serveForeground() error = %v", err)
+	}
+	select {
+	case <-readyCh:
+	case <-time.After(time.Second):
+		t.Fatal("OpenBrowser fallback path was not reached after server readiness")
+	}
+	got := run.Stdout.(*bytes.Buffer).String()
+	if !strings.Contains(got, "CSGClaw IM is available at: http://example.test/base/") {
+		t.Fatalf("stdout missing IM URL:\n%s", got)
+	}
+	if !strings.Contains(got, "Open this URL in your browser after startup.") {
+		t.Fatalf("stdout missing manual-open hint:\n%s", got)
+	}
+}
+
+func TestServeForegroundWaitsForHealthyBeforeOpeningBrowser(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	waitStarted := make(chan struct{}, 1)
+	releaseWait := make(chan struct{})
+	openedCh := make(chan struct{}, 1)
+	WaitForHealthy = func(string, time.Duration) error {
+		waitStarted <- struct{}{}
+		<-releaseWait
+		return nil
+	}
+	OpenBrowser = func(string) error {
+		openedCh <- struct{}{}
+		return nil
+	}
+
+	run := testContext()
+	cfg := config.Config{
+		Server: config.ServerConfig{
+			AdvertiseBaseURL: "http://example.test/base",
+		},
+	}
+	if err := serveForeground(context.Background(), run, cfg, "table"); err != nil {
+		t.Fatalf("serveForeground() error = %v", err)
+	}
+	select {
+	case <-waitStarted:
+	case <-time.After(time.Second):
+		t.Fatal("WaitForHealthy was not called")
+	}
+	select {
+	case <-openedCh:
+		t.Fatal("OpenBrowser called before health check completed")
+	default:
+	}
+	close(releaseWait)
+	select {
+	case <-openedCh:
+	case <-time.After(time.Second):
+		t.Fatal("OpenBrowser was not called after health check completed")
+	}
+}
+
 func TestServeRunRepeatedAutoBootstrapRemainsIdempotent(t *testing.T) {
 	restore := stubServeDependencies(t)
 	defer restore()
@@ -504,7 +617,12 @@ func TestServeForegroundPreservesManagerImageOverride(t *testing.T) {
 		NewAgentService = origNewAgentService
 		StartConfiguredAgents = origStartConfiguredAgents
 	})
-	RunServer = func(server.Options) error { return nil }
+	RunServer = func(opts server.Options) error {
+		if opts.OnReady != nil {
+			go opts.OnReady()
+		}
+		return nil
+	}
 	StartConfiguredAgents = func(context.Context, *agent.Service) error { return nil }
 
 	cfg := config.Config{
@@ -721,7 +839,14 @@ func stubServeDependencies(t *testing.T) func() {
 	origDetectBootstrapState := DetectBootstrapState
 	origEnsureBootstrapState := EnsureBootstrapState
 	origCheckModelProvider := CheckModelProvider
-	RunServer = func(server.Options) error { return nil }
+	origOpenBrowser := OpenBrowser
+	origWaitForHealthy := WaitForHealthy
+	RunServer = func(opts server.Options) error {
+		if opts.OnReady != nil {
+			go opts.OnReady()
+		}
+		return nil
+	}
 	NewAgentService = func(config.Config) (*agent.Service, error) { return &agent.Service{}, nil }
 	NewBotService = func() (*bot.Service, error) { return &bot.Service{}, nil }
 	NewIMService = func(*im.Bus) (*im.Service, error) { return nil, nil }
@@ -731,6 +856,8 @@ func stubServeDependencies(t *testing.T) func() {
 	EnsureCLIProxy = func(context.Context) error { return nil }
 	ShutdownCLIProxy = func(context.Context) error { return nil }
 	CheckModelProvider = checkModelProvider
+	OpenBrowser = func(string) error { return nil }
+	WaitForHealthy = func(string, time.Duration) error { return nil }
 	DetectBootstrapState = func(internalonboard.DetectStateOptions) (internalonboard.DetectStateResult, error) {
 		return internalonboard.DetectStateResult{
 			ConfigExists:         true,
@@ -754,6 +881,8 @@ func stubServeDependencies(t *testing.T) func() {
 		DetectBootstrapState = origDetectBootstrapState
 		EnsureBootstrapState = origEnsureBootstrapState
 		CheckModelProvider = origCheckModelProvider
+		OpenBrowser = origOpenBrowser
+		WaitForHealthy = origWaitForHealthy
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,6 +56,8 @@ var (
 		}
 		return svc.StartConfiguredAgents(ctx)
 	}
+	OpenBrowser    = openBrowser
+	WaitForHealthy = waitForHealthy
 )
 
 type serveCmd struct{}
@@ -239,7 +242,7 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	if err != nil {
 		return err
 	}
-	return startServer(ctx, cfg, svc, botSvc, imSvc, imBus, feishuSvc)
+	return startServer(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, globals.Output)
 }
 
 func serveForeground(ctx context.Context, run *command.Context, cfg config.Config, output string) error {
@@ -278,10 +281,9 @@ func serveForeground(ctx context.Context, run *command.Context, cfg config.Confi
 	} else {
 		printEffectiveConfig(run, cfg, output)
 		fmt.Fprintf(run.Stdout, "CSGClaw IM is available at: %s\n", imURL)
-		fmt.Fprintln(run.Stdout, "Open this URL in your browser after startup.")
 	}
 
-	return startServer(ctx, cfg, svc, botSvc, imSvc, imBus, feishuSvc)
+	return startServer(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, output)
 }
 
 func serveBackground(run *command.Context, cfg config.Config, globals command.GlobalOptions, logPath, pidPath, logLevel string) error {
@@ -388,7 +390,7 @@ func parseServeLogLevel(level string) (slog.Level, error) {
 	}
 }
 
-func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService) error {
+func startServer(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, output string) error {
 	_ = EnsureCLIProxy(ctx)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -402,6 +404,8 @@ func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, bot
 	if err != nil {
 		return err
 	}
+	apiURL := apiBaseURL(cfg.Server)
+	imURL := imOpenURL(apiURL)
 	return RunServer(server.Options{
 		ListenAddr:  cfg.Server.ListenAddr,
 		Service:     svc,
@@ -415,6 +419,19 @@ func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, bot
 		NoAuth:      cfg.Server.NoAuth,
 		Context:     ctx,
 		OnReady: func() {
+			if output != "json" && run != nil {
+				go func() {
+					if err := WaitForHealthy(apiURL, 5*time.Second); err != nil {
+						fmt.Fprintln(run.Stdout, "Open this URL in your browser after startup.")
+						return
+					}
+					if err := OpenBrowser(imURL); err != nil {
+						fmt.Fprintln(run.Stdout, "Open this URL in your browser after startup.")
+					} else {
+						fmt.Fprintln(run.Stdout, "Opened this URL in your browser.")
+					}
+				}()
+			}
 			if err := StartConfiguredAgents(ctx, svc); err != nil {
 				slog.Warn("some configured agents failed to start", "error", err)
 			}
@@ -533,6 +550,24 @@ func waitForHealthy(apiBaseURL string, timeout time.Duration) error {
 
 func imOpenURL(apiBaseURL string) string {
 	return strings.TrimRight(apiBaseURL, "/") + "/"
+}
+
+func openBrowser(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return fmt.Errorf("open browser: empty URL")
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", rawURL)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
+	default:
+		cmd = exec.Command("xdg-open", rawURL)
+	}
+	return cmd.Start()
 }
 
 func apiBaseURL(server config.ServerConfig) string {

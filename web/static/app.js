@@ -813,17 +813,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    function refreshVisibleAgents() {
-      if (document.visibilityState === "visible") {
-        refreshAgents({ silent: true });
-      }
-    }
-
-    const intervalID = window.setInterval(refreshVisibleAgents, AGENT_STATUS_REFRESH_INTERVAL_MS);
-    document.addEventListener("visibilitychange", refreshVisibleAgents);
+    // Temporarily disable background agent polling for debugging multi-tab pending requests.
+    // function refreshVisibleAgents() {
+    //   if (document.visibilityState === "visible") {
+    //     refreshAgents({ silent: true });
+    //   }
+    // }
+    //
+    // const intervalID = window.setInterval(refreshVisibleAgents, AGENT_STATUS_REFRESH_INTERVAL_MS);
+    // document.addEventListener("visibilitychange", refreshVisibleAgents);
     return () => {
-      window.clearInterval(intervalID);
-      document.removeEventListener("visibilitychange", refreshVisibleAgents);
+      // window.clearInterval(intervalID);
+      // document.removeEventListener("visibilitychange", refreshVisibleAgents);
     };
   }, []);
 
@@ -833,9 +834,10 @@ function App() {
     source.onmessage = (event) => {
       const payload = JSON.parse(event.data);
       setData((current) => applyIMEvent(current, payload));
-      if (isAgentRosterEvent(payload)) {
-        scheduleAgentsRefresh();
-      }
+      // Temporarily disable event-driven agent polling for debugging multi-tab pending requests.
+      // if (isAgentRosterEvent(payload)) {
+      //   scheduleAgentsRefresh();
+      // }
     };
 
     return () => {
