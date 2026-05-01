@@ -13,6 +13,8 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = "csgclaw.im.sidebarCollapsed";
 const WORKSPACE_GROUPS_COLLAPSED_STORAGE_KEY = "csgclaw.im.workspaceGroupsCollapsed";
 const MESSAGE_LIST_BOTTOM_THRESHOLD = 24;
 const AGENT_STATUS_REFRESH_INTERVAL_MS = 2000;
+const IM_EVENTS_ENDPOINT = "/api/v1/events";
+const IM_EVENTS_SHARED_WORKER_PATH = "/sse-shared-worker.js";
 const PROVIDERS = ["csghub_lite", "codex", "claude_code", "api"];
 const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
@@ -29,6 +31,55 @@ mermaid.initialize({
   securityLevel: "strict",
   theme: "neutral",
 });
+
+function safeParseEventData(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn("Failed to parse IM event payload", error);
+    return null;
+  }
+}
+
+function subscribeIMEvents(onEvent) {
+  if (typeof window.SharedWorker === "function") {
+    try {
+      const worker = new SharedWorker(IM_EVENTS_SHARED_WORKER_PATH);
+      const port = worker.port;
+      const handleMessage = ({ data }) => {
+        if (!data || data.type !== "message") {
+          return;
+        }
+        const payload = safeParseEventData(data.data);
+        if (payload) {
+          onEvent(payload);
+        }
+      };
+
+      port.addEventListener("message", handleMessage);
+      port.start();
+      port.postMessage({ type: "subscribe", endpoint: IM_EVENTS_ENDPOINT });
+
+      return () => {
+        port.postMessage({ type: "close" });
+        port.removeEventListener("message", handleMessage);
+        port.close();
+      };
+    } catch (error) {
+      console.warn("SharedWorker SSE unavailable, falling back to EventSource", error);
+    }
+  }
+
+  const source = new EventSource(IM_EVENTS_ENDPOINT);
+  source.onmessage = (event) => {
+    const payload = safeParseEventData(event.data);
+    if (payload) {
+      onEvent(payload);
+    }
+  };
+
+  return () => source.close();
+}
 
 const messages = {
   zh: {
@@ -829,19 +880,16 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const source = new EventSource("api/v1/events");
-
-    source.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
+    const unsubscribe = subscribeIMEvents((payload) => {
       setData((current) => applyIMEvent(current, payload));
       // Temporarily disable event-driven agent polling for debugging multi-tab pending requests.
       // if (isAgentRosterEvent(payload)) {
       //   scheduleAgentsRefresh();
       // }
-    };
+    });
 
     return () => {
-      source.close();
+      unsubscribe();
       if (agentRefreshTimerRef.current) {
         window.clearTimeout(agentRefreshTimerRef.current);
         agentRefreshTimerRef.current = null;
