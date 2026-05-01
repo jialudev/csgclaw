@@ -20,17 +20,13 @@ TARGET_OS ?= $(shell $(GO) env GOOS)
 TARGET_ARCH ?= $(shell $(GO) env GOARCH)
 CLI_BIN ?= $(BIN_DIR)/csgclaw-cli
 
-ONBOARD_BASE_URL ?= http://127.0.0.1:4000
-ONBOARD_API_KEY ?= sk-1234567890
-ONBOARD_MODEL_ID ?= minimax-m2.7
-
 IMAGE ?= opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw
 TAG ?= 2026.4.27.0
 LOCAL_IMAGE ?= picoclaw:local
 
 .DEFAULT_GOAL := build-all
 
-.PHONY: help fmt test test-with-boxlite-sdk build build-with-boxlite-sdk build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run run-with-boxlite-sdk onboard onboard-with-boxlite-sdk clean package package-all release tag push publish boxlite-setup sync-agent-runtimes
+.PHONY: help fmt test test-with-boxlite-sdk build build-with-boxlite-sdk build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run run-with-boxlite-sdk clean package package-all release tag push publish boxlite-setup sync-agent-runtimes
 
 help:
 	@printf '%s\n' \
@@ -46,8 +42,6 @@ help:
 		'make build-all - build bin/csgclaw and bin/csgclaw-cli' \
 		'make run       - run the server in foreground with the default boxlite-cli build shape' \
 		'make run-with-boxlite-sdk - run the server in foreground with the BoxLite SDK provider enabled' \
-		'make onboard   - explicitly initialize ~/.csgclaw/config.toml with the default boxlite-cli build shape' \
-		'make onboard-with-boxlite-sdk - explicitly initialize ~/.csgclaw/config.toml with the BoxLite SDK provider enabled' \
 		'make package   - package APP binary into dist/' \
 		'make package-all - package csgclaw and csgclaw-cli for current platform' \
 		'make release   - build csgclaw and csgclaw-cli release archives for macOS/Linux' \
@@ -100,18 +94,6 @@ run: build-csgclaw
 
 run-with-boxlite-sdk: build-with-boxlite-sdk
 	$(BIN) serve
-
-onboard: sync-agent-runtimes
-	env GOCACHE=$(GOCACHE) $(GO) run -ldflags "$(LDFLAGS)" ./cmd/csgclaw onboard \
-		--base-url $(ONBOARD_BASE_URL) \
-		--api-key $(ONBOARD_API_KEY) \
-		--models $(ONBOARD_MODEL_ID)
-
-onboard-with-boxlite-sdk: boxlite-setup sync-agent-runtimes
-	env GOCACHE=$(GOCACHE) $(GO) run -tags $(BOXLITE_SDK_TAG) -ldflags "$(LDFLAGS)" ./cmd/csgclaw onboard \
-		--base-url $(ONBOARD_BASE_URL) \
-		--api-key $(ONBOARD_API_KEY) \
-		--models $(ONBOARD_MODEL_ID)
 
 package: sync-agent-runtimes
 	mkdir -p $(DIST_DIR)

@@ -351,7 +351,7 @@ func ensureServeBootstrapState(ctx context.Context, configPath string) error {
 		return nil
 	}
 
-	slog.Info("bootstrap state incomplete; auto-running onboard", "config_path", state.ConfigPath)
+	slog.Info("bootstrap state incomplete; auto-initializing local state", "config_path", state.ConfigPath)
 	_, err = EnsureBootstrapState(ctx, internalonboard.EnsureStateOptions{ConfigPath: configPath})
 	return err
 }

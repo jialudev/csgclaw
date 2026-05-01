@@ -59,14 +59,6 @@ func FullSpec() CommandSpec {
 		Flags: fullGlobalFlags(),
 		Children: []CommandSpec{
 			{
-				Name:    "onboard",
-				Summary: "Explicitly initialize local config and bootstrap state.",
-				Flags: []FlagSpec{
-					{Name: "debian-registries", TakesValue: true},
-					{Name: "log-level", TakesValue: true, Values: logLevelValues()},
-				},
-			},
-			{
 				Name:    "serve",
 				Summary: "Start the local HTTP server.",
 				Flags: []FlagSpec{

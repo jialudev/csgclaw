@@ -9,7 +9,7 @@ import (
 func TestCompleteFullTopLevel(t *testing.T) {
 	got := Complete(FullSpec(), "csgclaw", []string{"csgclaw", ""})
 
-	assertContainsAll(t, got, "onboard", "serve", "agent", "model", "bot", "completion", "--endpoint", "--config", "-V")
+	assertContainsAll(t, got, "serve", "agent", "model", "bot", "completion", "--endpoint", "--config", "-V")
 	assertContainsNone(t, got, "_serve", "__complete")
 }
 
@@ -17,7 +17,7 @@ func TestCompleteLiteTopLevel(t *testing.T) {
 	got := Complete(LiteSpec(), "csgclaw-cli", []string{"csgclaw-cli", ""})
 
 	assertContainsAll(t, got, "bot", "room", "member", "message", "completion", "--endpoint", "-V")
-	assertContainsNone(t, got, "onboard", "serve", "agent", "model", "user", "_serve", "__complete")
+	assertContainsNone(t, got, "serve", "agent", "model", "user", "_serve", "__complete")
 }
 
 func TestCompleteSubcommandsAndFlags(t *testing.T) {

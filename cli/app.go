@@ -16,7 +16,6 @@ import (
 	"csgclaw/cli/member"
 	"csgclaw/cli/message"
 	modelcmd "csgclaw/cli/model"
-	onboardcmd "csgclaw/cli/onboard"
 	"csgclaw/cli/room"
 	servecmd "csgclaw/cli/serve"
 	usercmd "csgclaw/cli/user"
@@ -70,7 +69,6 @@ func (a *App) AddCommand(commands ...command.Command) {
 
 func (a *App) registerDefaultCommands() {
 	a.AddCommand(
-		onboardcmd.NewCmd(),
 		servecmd.NewServeCmd(),
 		servecmd.NewStopCmd(),
 		agentcmd.NewCmd(),

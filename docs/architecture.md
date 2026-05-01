@@ -151,13 +151,13 @@ The API layer should not directly duplicate bot orchestration logic.
 
 Both CLIs are thin HTTP clients. They should not call stores, BoxLite, or channel SDKs directly.
 
-`csgclaw` is the full local management CLI for human operators. It owns onboarding, server lifecycle, agent runtime commands, and the shared bot/room/member/user/message workflows.
+`csgclaw` is the full local management CLI for human operators. It owns server lifecycle, agent runtime commands, and the shared bot/room/member/user/message workflows.
 
-`csgclaw-cli` is the lightweight CLI primarily intended for agents and scripts. It exposes only the bot, room, member, and message workflows that agents need for collaboration, and does not manage onboarding, the local server lifecycle, or agent runtime directly.
+`csgclaw-cli` is the lightweight CLI primarily intended for agents and scripts. It exposes only the bot, room, member, and message workflows that agents need for collaboration, and does not manage the local server lifecycle or agent runtime directly.
 
 At a high level:
 
-- `csgclaw` includes local operator workflows such as `onboard`, `serve`, `stop`, and agent management, plus shared collaboration commands.
+- `csgclaw` includes local operator workflows such as `serve`, `stop`, and agent management, plus shared collaboration commands.
 - `csgclaw-cli` keeps only the collaboration-oriented command groups needed by bots, agents, and scripts.
 - Shared collaboration commands select the target channel through flags and call the same local HTTP API surface.
 
@@ -204,4 +204,4 @@ Do not store channel-specific details directly inside the agent record. The agen
 
 - Existing compatibility routes, such as PicoClaw-specific bot APIs or older IM aliases, can remain for compatibility, but new bot lifecycle work should use `/api/v1/bots`.
 - Feishu support should live behind `internal/channel`, while bot lifecycle decisions stay in `internal/bot`.
-- When changing config fields or defaults for bot/channel behavior, update loader, saver, onboard flow, tests, and docs together.
+- When changing config fields or defaults for bot/channel behavior, update loader, saver, bootstrap initialization flow, tests, and docs together.

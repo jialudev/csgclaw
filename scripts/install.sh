@@ -141,7 +141,6 @@ main() {
 Installed ${APP} ${version} to ${extracted_path}
 
 Next steps:
-  ${APP} onboard
   ${APP} serve
 EOF
   check_path_hint

@@ -4,9 +4,9 @@ This document supplements the CLI section in [architecture.md](./architecture.md
 
 ## CLI Positioning
 
-`csgclaw` is the full local operator CLI. It manages onboarding, local server lifecycle, agent runtime operations, and the shared collaboration workflows.
+`csgclaw` is the full local operator CLI. It manages local server lifecycle, agent runtime operations, and the shared collaboration workflows.
 
-`csgclaw-cli` is the lightweight HTTP client intended for bots, agents, and scripts. It exposes only collaboration-oriented workflows and does not manage onboarding, config files, or server lifecycle.
+`csgclaw-cli` is the lightweight HTTP client intended for bots, agents, and scripts. It exposes only collaboration-oriented workflows and does not manage config files or server lifecycle.
 
 Both CLIs are thin HTTP clients over the local API. They do not talk to BoxLite, stores, or channel SDKs directly.
 
@@ -73,7 +73,6 @@ Global flags:
 
 Top-level commands:
 
-- `onboard`
 - `serve`
 - `stop`
 - `agent`
@@ -97,34 +96,6 @@ csgclaw completion zsh
 csgclaw completion fish
 ```
 
-### `csgclaw onboard`
-
-Explicitly initializes local config and bootstrap state.
-
-Usage:
-
-```bash
-csgclaw onboard [flags]
-```
-
-Flags:
-
-- `--log-level string`: log level for onboarding logs. Supported values: `debug`, `info`, `warn`, `error`. Default `info`.
-
-Behavior:
-
-- It is optional for normal first-time startup because `csgclaw serve` auto-runs the same bootstrap flow when state is missing.
-- It writes config, ensures bootstrap IM state, and ensures the bootstrap manager bot.
-- It does not prompt for model provider settings. Manager and worker LLM profiles are detected at startup and managed in the Web UI.
-- It does not write `sandbox.debian_registries_override`; when that field is absent or empty, runtime uses the built-in `DefaultDebianRegistries`.
-- If profile auto-detection fails, `serve` still starts and the Web UI asks an admin to complete the Manager profile.
-
-Examples:
-
-```bash
-csgclaw onboard
-```
-
 ### `csgclaw serve`
 
 Starts the local HTTP server.
@@ -145,7 +116,7 @@ Flags:
 Behavior:
 
 - Loads config from `--config` or `~/.csgclaw/config.toml`.
-- If bootstrap state is incomplete, it auto-runs the onboarding flow before startup.
+- If local config or bootstrap state is incomplete, it auto-initializes local state before startup.
 - Validates effective model configuration before startup.
 - For `csghub-lite`, it performs a provider reachability preflight.
 - In foreground mode it prints the effective config and IM URL.

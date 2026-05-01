@@ -73,7 +73,6 @@ csgclaw [global-flags] <command> [args]
 
 顶层命令：
 
-- `onboard`
 - `serve`
 - `stop`
 - `agent`
@@ -97,34 +96,6 @@ csgclaw completion zsh
 csgclaw completion fish
 ```
 
-### `csgclaw onboard`
-
-显式初始化本地配置和引导状态。
-
-用法：
-
-```bash
-csgclaw onboard [flags]
-```
-
-参数：
-
-- `--log-level string`：初始化阶段日志级别，支持 `debug`、`info`、`warn`、`error`，默认 `info`。
-
-行为说明：
-
-- 普通首次启动不必先运行它；如果本地状态缺失，`csgclaw serve` 会自动执行同一套 bootstrap 流程。
-- 命令会写入配置、确保 IM 引导状态存在，并确保引导 Manager Bot 存在。
-- 命令不会提示你配置模型 provider。Manager 和 Worker 的 LLM profile 会在启动时自动检测，并在 Web UI 中管理。
-- 命令不会写入 `sandbox.debian_registries_override`；当该字段缺失或为空时，运行时会使用内置的 `DefaultDebianRegistries`。
-- 如果 profile 自动检测失败，`serve` 仍会启动，Web UI 会提示管理员补全 Manager profile。
-
-示例：
-
-```bash
-csgclaw onboard
-```
-
 ### `csgclaw serve`
 
 启动本地 HTTP 服务。
@@ -145,7 +116,7 @@ csgclaw serve [-d|--daemon] [flags]
 行为说明：
 
 - 从 `--config` 或 `~/.csgclaw/config.toml` 加载配置。
-- 如果 bootstrap 状态不完整，启动前会自动执行 onboarding 流程。
+- 如果本地配置或 bootstrap 状态不完整，启动前会自动初始化本地状态。
 - 启动前会校验最终模型配置是否完整。
 - 对 `csghub-lite` 会做连通性预检查。
 - 前台模式下会打印生效配置和 IM 访问地址。

@@ -102,7 +102,7 @@ func TestServeRunAutoBootstrapsWhenStateIncomplete(t *testing.T) {
 	if ensureCalls != 1 {
 		t.Fatalf("EnsureBootstrapState calls = %d, want 1", ensureCalls)
 	}
-	if got := run.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "auto-running onboard") {
+	if got := run.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "auto-initializing local state") {
 		t.Fatalf("stderr missing auto-bootstrap log:\n%s", got)
 	}
 }
@@ -158,7 +158,7 @@ func TestServeRunSkipsAutoBootstrapWhenStateComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if got := run.Stderr.(*bytes.Buffer).String(); strings.Contains(got, "auto-running onboard") {
+	if got := run.Stderr.(*bytes.Buffer).String(); strings.Contains(got, "auto-initializing local state") {
 		t.Fatalf("stderr should not contain auto-bootstrap log:\n%s", got)
 	}
 }
@@ -239,10 +239,10 @@ func TestServeRunRepeatedAutoBootstrapRemainsIdempotent(t *testing.T) {
 	if ensureCalls != 1 {
 		t.Fatalf("EnsureBootstrapState calls = %d, want 1 across repeated serve runs", ensureCalls)
 	}
-	if got := run1.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "auto-running onboard") {
+	if got := run1.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "auto-initializing local state") {
 		t.Fatalf("first stderr missing auto-bootstrap log:\n%s", got)
 	}
-	if got := run2.Stderr.(*bytes.Buffer).String(); strings.Contains(got, "auto-running onboard") {
+	if got := run2.Stderr.(*bytes.Buffer).String(); strings.Contains(got, "auto-initializing local state") {
 		t.Fatalf("second stderr should not contain auto-bootstrap log:\n%s", got)
 	}
 }

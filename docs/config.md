@@ -2,7 +2,7 @@
 
 English | [中文](config.zh.md)
 
-`csgclaw serve` uses the local config file for server access, bootstrap image selection, sandbox isolation, and optional channels, and it auto-creates missing bootstrap state on first run. `csgclaw onboard` remains available when you want to run that bootstrap step explicitly without starting the server. Agent LLM provider profiles are stored in agent state and managed from the Web UI.
+`csgclaw serve` uses the local config file for server access, bootstrap image selection, sandbox isolation, and optional channels, and it auto-creates missing local state on first run. Agent LLM provider profiles are stored in agent state and managed from the Web UI.
 
 ## Server Address
 
@@ -123,7 +123,7 @@ home_dir_name = "boxlite"
 
 For `provider = "boxlite-cli"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
 
-`debian_registries_override` controls where BoxLite pulls `debian:bookworm-slim` when you need to override the built-in default order. If omitted or empty, CSGClaw uses `harbor.opencsg.com` then `docker.io`. `onboard` now writes this field as an empty array so it is visible in `config.toml` and can be edited in place:
+`debian_registries_override` controls where BoxLite pulls `debian:bookworm-slim` when you need to override the built-in default order. If omitted or empty, CSGClaw uses `harbor.opencsg.com` then `docker.io`. When CSGClaw writes `config.toml`, it keeps this field visible as an empty array so it can be edited in place:
 
 ```toml
 [sandbox]
@@ -136,8 +136,8 @@ CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the
 
 The `boxlite-cli` provider does not need the vendored Go SDK at runtime. `boxlite-sdk` is the only sandbox provider that gets special build-time treatment because it pulls in CGO, the native SDK archive, and the larger embedded runtime payload. The repository now supports two build shapes:
 
-- `make build`, `make test`, `make run`, `make onboard`, and `make package` use the default `boxlite-cli` build shape. The resulting binary excludes only the SDK-backed `boxlite-sdk` provider, while `boxlite-cli` and other non-SDK providers remain compiled in.
-- `make build-with-boxlite-sdk`, `make test-with-boxlite-sdk`, `make run-with-boxlite-sdk`, and `make onboard-with-boxlite-sdk` add the `boxlite_sdk` build tag and keep the SDK-backed `boxlite-sdk` provider compiled in.
+- `make build`, `make test`, `make run`, and `make package` use the default `boxlite-cli` build shape. The resulting binary excludes only the SDK-backed `boxlite-sdk` provider, while `boxlite-cli` and other non-SDK providers remain compiled in.
+- `make build-with-boxlite-sdk`, `make test-with-boxlite-sdk`, and `make run-with-boxlite-sdk` add the `boxlite_sdk` build tag and keep the SDK-backed `boxlite-sdk` provider compiled in.
 
 ## Channel Configuration
 
