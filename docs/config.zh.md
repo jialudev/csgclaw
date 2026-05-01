@@ -2,7 +2,7 @@
 
 [English](config.md) | 中文
 
-`csgclaw onboard` 会写入 `csgclaw serve` 使用的本地配置文件。配置内容包括 server 访问方式、模型 provider、bootstrap 镜像、sandbox 隔离方式和可选通信通道。
+`csgclaw serve` 会使用本地配置文件中的 server 访问方式、bootstrap 镜像、sandbox 隔离方式和可选通信通道，并在首次运行时自动补齐缺失的 bootstrap 状态。`csgclaw onboard` 仍然保留，用于只执行这一步显式初始化而不启动服务。
 
 ## Server 地址
 

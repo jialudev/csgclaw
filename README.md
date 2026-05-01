@@ -33,17 +33,17 @@ For most users, the install script above is the simpler option.
 ## Quick Start
 
 ```bash
-csgclaw onboard
 csgclaw serve
 ```
 
 Open the printed URL (e.g. `http://127.0.0.1:18080/`) in your browser to enter the IM workspace.
+On a fresh local state, `serve` auto-creates the default config and bootstrap state before starting the server.
 On first start, CSGClaw auto-detects an agent profile for the Manager from CSGHub Lite, Codex, or Claude Code. If detection fails, the Web UI stays available and opens the Manager profile setup panel so you can choose a provider and model there.
 For Codex and Claude Code, CSGClaw reuses local CLI auth where possible: Codex from `~/.codex/auth.json`, Claude Code from macOS Keychain, or `csgclaw model auth login codex|claude-code` when manual OAuth is needed.
 
 ## Configuration
 
-`csgclaw onboard` writes a local config with server, bootstrap, sandbox, and channel settings. Agent model/provider profiles are stored in agent state and managed from the Web UI. See [docs/config.md](docs/config.md) for sandbox provider options, Worker override examples, and agent profile details.
+`csgclaw serve` uses a local config with server, bootstrap, sandbox, and channel settings, and auto-creates any missing bootstrap state on first run. Agent model/provider profiles are stored in agent state and managed from the Web UI. See [docs/config.md](docs/config.md) for sandbox provider options, Worker override examples, and agent profile details.
 For the official release bundles and the default source build, `boxlite-cli` resolves the bundled sibling `boxlite` binary first and falls back to `PATH` only when that bundled binary is missing.
 
 ## Features

@@ -33,17 +33,17 @@ make build
 ## 快速开始
 
 ```bash
-csgclaw onboard
 csgclaw serve
 ```
 
 执行后 CLI 会打印访问地址（例如 `http://127.0.0.1:18080/`），在浏览器中打开即可进入 IM 工作区。
+如果本地还是首次启动，`serve` 会在启动前自动补齐默认配置和 bootstrap 状态。
 首次启动时，CSGClaw 会从 CSGHub Lite、Codex 或 Claude Code 自动检测 Manager 的 agent profile。如果检测失败，Web UI 仍然可用，并会打开 Manager profile 设置面板，让你在那里选择 provider 和模型。
 对于 Codex 和 Claude Code，CSGClaw 会尽量复用本地 CLI 鉴权：Codex 来自 `~/.codex/auth.json`，Claude Code 来自 macOS Keychain；需要手动 OAuth 时可运行 `csgclaw auth login codex|claude-code`。
 
 ## 配置
 
-`csgclaw onboard` 会写入本地配置，包含 server、bootstrap、sandbox 和 channel 设置。Agent 模型/provider profile 存储在 agent 状态中，并通过 Web UI 管理。Sandbox provider 选项、Worker 覆盖示例和 agent profile 详情见 [docs/config.zh.md](docs/config.zh.md)。对于官方 release bundle 和默认源码构建，`boxlite-cli` 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
+`csgclaw serve` 会使用本地配置中的 server、bootstrap、sandbox 和 channel 设置，并在首次运行时自动补齐缺失的 bootstrap 状态。Agent 模型/provider profile 存储在 agent 状态中，并通过 Web UI 管理。Sandbox provider 选项、Worker 覆盖示例和 agent profile 详情见 [docs/config.zh.md](docs/config.zh.md)。对于官方 release bundle 和默认源码构建，`boxlite-cli` 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
 
 ## 功能特性
 

@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +18,7 @@ import (
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	internalonboard "csgclaw/internal/onboard"
 	"csgclaw/internal/server"
 )
 
@@ -27,35 +26,224 @@ func TestServeForegroundPreflightsCSGHubLiteProvider(t *testing.T) {
 	restore := stubServeDependencies(t)
 	defer restore()
 
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			t.Fatalf("path = %q, want /v1/models", r.URL.Path)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer local" {
-			t.Fatalf("Authorization = %q, want Bearer local", got)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"Qwen/Qwen3-0.6B-GGUF"}]}`))
-	}))
-	defer modelServer.Close()
+	var gotModelCfg config.ModelConfig
+	CheckModelProvider = func(_ context.Context, modelCfg config.ModelConfig) error {
+		gotModelCfg = modelCfg
+		return nil
+	}
 
-	cfg := csgHubLiteServeConfig(modelServer.URL + "/v1")
+	cfg := csgHubLiteServeConfig("http://127.0.0.1:11435/v1")
 	if err := serveForeground(context.Background(), testContext(), cfg, "json"); err != nil {
 		t.Fatalf("serveForeground() error = %v", err)
+	}
+	if got, want := gotModelCfg.BaseURL, "http://127.0.0.1:11435/v1"; got != want {
+		t.Fatalf("CheckModelProvider baseURL = %q, want %q", got, want)
+	}
+	if got, want := gotModelCfg.APIKey, "local"; got != want {
+		t.Fatalf("CheckModelProvider apiKey = %q, want %q", got, want)
+	}
+}
+
+func TestServeRunAutoBootstrapsWhenStateIncomplete(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	origDetectBootstrapState := DetectBootstrapState
+	origEnsureBootstrapState := EnsureBootstrapState
+	t.Cleanup(func() {
+		DetectBootstrapState = origDetectBootstrapState
+		EnsureBootstrapState = origEnsureBootstrapState
+	})
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := (config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:  "127.0.0.1:18080",
+			AccessToken: "pc-secret",
+		},
+		Sandbox: config.SandboxConfig{
+			Provider:    config.DefaultSandboxProvider,
+			HomeDirName: config.DefaultSandboxHomeDirName,
+		},
+	}).Save(configPath); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var ensureCalls int
+	DetectBootstrapState = func(opts internalonboard.DetectStateOptions) (internalonboard.DetectStateResult, error) {
+		if opts.ConfigPath != configPath {
+			t.Fatalf("DetectStateOptions.ConfigPath = %q, want %q", opts.ConfigPath, configPath)
+		}
+		return internalonboard.DetectStateResult{ConfigPath: configPath}, nil
+	}
+	EnsureBootstrapState = func(_ context.Context, opts internalonboard.EnsureStateOptions) (internalonboard.EnsureStateResult, error) {
+		ensureCalls++
+		if opts.ConfigPath != configPath {
+			t.Fatalf("EnsureStateOptions.ConfigPath = %q, want %q", opts.ConfigPath, configPath)
+		}
+		return internalonboard.EnsureStateResult{
+			ConfigPath: configPath,
+			Config: config.Config{
+				Bootstrap: config.BootstrapConfig{
+					ManagerImageOverride: "ghcr.io/example/manager:latest",
+				},
+			},
+		}, nil
+	}
+
+	run := testContext()
+	err := NewServeCmd().Run(context.Background(), run, nil, command.GlobalOptions{
+		Config: configPath,
+		Output: "json",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if ensureCalls != 1 {
+		t.Fatalf("EnsureBootstrapState calls = %d, want 1", ensureCalls)
+	}
+	if got := run.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "auto-running onboard") {
+		t.Fatalf("stderr missing auto-bootstrap log:\n%s", got)
+	}
+}
+
+func TestServeRunSkipsAutoBootstrapWhenStateComplete(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	origDetectBootstrapState := DetectBootstrapState
+	origEnsureBootstrapState := EnsureBootstrapState
+	t.Cleanup(func() {
+		DetectBootstrapState = origDetectBootstrapState
+		EnsureBootstrapState = origEnsureBootstrapState
+	})
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := (config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:  "127.0.0.1:18080",
+			AccessToken: "pc-secret",
+		},
+		Sandbox: config.SandboxConfig{
+			Provider:    config.DefaultSandboxProvider,
+			HomeDirName: config.DefaultSandboxHomeDirName,
+		},
+	}).Save(configPath); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	DetectBootstrapState = func(opts internalonboard.DetectStateOptions) (internalonboard.DetectStateResult, error) {
+		if opts.ConfigPath != configPath {
+			t.Fatalf("DetectStateOptions.ConfigPath = %q, want %q", opts.ConfigPath, configPath)
+		}
+		return internalonboard.DetectStateResult{
+			ConfigPath:           configPath,
+			ConfigExists:         true,
+			ConfigComplete:       true,
+			IMBootstrapComplete:  true,
+			ManagerAgentComplete: true,
+			ManagerBotComplete:   true,
+		}, nil
+	}
+	EnsureBootstrapState = func(context.Context, internalonboard.EnsureStateOptions) (internalonboard.EnsureStateResult, error) {
+		t.Fatal("EnsureBootstrapState should not be called when bootstrap is complete")
+		return internalonboard.EnsureStateResult{}, nil
+	}
+
+	run := testContext()
+	err := NewServeCmd().Run(context.Background(), run, nil, command.GlobalOptions{
+		Config: configPath,
+		Output: "json",
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got := run.Stderr.(*bytes.Buffer).String(); strings.Contains(got, "auto-running onboard") {
+		t.Fatalf("stderr should not contain auto-bootstrap log:\n%s", got)
 	}
 }
 
 func TestServeForegroundContinuesWhenCSGHubLiteUnavailable(t *testing.T) {
 	restore := stubServeDependencies(t)
 	defer restore()
-	modelServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "down", http.StatusBadGateway)
-	}))
-	defer modelServer.Close()
 
-	err := serveForeground(context.Background(), testContext(), csgHubLiteServeConfig(modelServer.URL+"/v1"), "json")
+	CheckModelProvider = func(context.Context, config.ModelConfig) error {
+		return fmt.Errorf("provider unavailable")
+	}
+
+	err := serveForeground(context.Background(), testContext(), csgHubLiteServeConfig("http://127.0.0.1:11435/v1"), "json")
 	if err != nil {
 		t.Fatalf("serveForeground() error = %v, want startup to continue with dynamic profile setup", err)
+	}
+}
+
+func TestServeRunRepeatedAutoBootstrapRemainsIdempotent(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	origDetectBootstrapState := DetectBootstrapState
+	origEnsureBootstrapState := EnsureBootstrapState
+	t.Cleanup(func() {
+		DetectBootstrapState = origDetectBootstrapState
+		EnsureBootstrapState = origEnsureBootstrapState
+	})
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	cfg := config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:  "127.0.0.1:18080",
+			AccessToken: "pc-secret",
+		},
+		Sandbox: config.SandboxConfig{
+			Provider:    config.DefaultSandboxProvider,
+			HomeDirName: config.DefaultSandboxHomeDirName,
+		},
+	}
+	if err := cfg.Save(configPath); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	complete := false
+	ensureCalls := 0
+	DetectBootstrapState = func(opts internalonboard.DetectStateOptions) (internalonboard.DetectStateResult, error) {
+		if opts.ConfigPath != configPath {
+			t.Fatalf("DetectStateOptions.ConfigPath = %q, want %q", opts.ConfigPath, configPath)
+		}
+		return internalonboard.DetectStateResult{
+			ConfigPath:           configPath,
+			ConfigExists:         true,
+			ConfigComplete:       complete,
+			IMBootstrapComplete:  complete,
+			ManagerAgentComplete: complete,
+			ManagerBotComplete:   complete,
+		}, nil
+	}
+	EnsureBootstrapState = func(_ context.Context, opts internalonboard.EnsureStateOptions) (internalonboard.EnsureStateResult, error) {
+		ensureCalls++
+		if opts.ConfigPath != configPath {
+			t.Fatalf("EnsureStateOptions.ConfigPath = %q, want %q", opts.ConfigPath, configPath)
+		}
+		complete = true
+		return internalonboard.EnsureStateResult{ConfigPath: configPath, Config: cfg}, nil
+	}
+
+	run1 := testContext()
+	if err := NewServeCmd().Run(context.Background(), run1, nil, command.GlobalOptions{Config: configPath}); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	run2 := testContext()
+	if err := NewServeCmd().Run(context.Background(), run2, nil, command.GlobalOptions{Config: configPath}); err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+
+	if ensureCalls != 1 {
+		t.Fatalf("EnsureBootstrapState calls = %d, want 1 across repeated serve runs", ensureCalls)
+	}
+	if got := run1.Stderr.(*bytes.Buffer).String(); !strings.Contains(got, "auto-running onboard") {
+		t.Fatalf("first stderr missing auto-bootstrap log:\n%s", got)
+	}
+	if got := run2.Stderr.(*bytes.Buffer).String(); strings.Contains(got, "auto-running onboard") {
+		t.Fatalf("second stderr should not contain auto-bootstrap log:\n%s", got)
 	}
 }
 
@@ -66,7 +254,6 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	origNewIMService := NewIMService
 	origNewFeishuService := NewFeishuService
 	origNewLLMService := NewLLMService
-	origEnsureBootstrapManager := EnsureBootstrapManager
 	origStartConfiguredAgents := StartConfiguredAgents
 	origEnsureCLIProxy := EnsureCLIProxy
 	origShutdownCLIProxy := ShutdownCLIProxy
@@ -77,7 +264,6 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		NewIMService = origNewIMService
 		NewFeishuService = origNewFeishuService
 		NewLLMService = origNewLLMService
-		EnsureBootstrapManager = origEnsureBootstrapManager
 		StartConfiguredAgents = origStartConfiguredAgents
 		EnsureCLIProxy = origEnsureCLIProxy
 		ShutdownCLIProxy = origShutdownCLIProxy
@@ -109,29 +295,12 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	ShutdownCLIProxy = func(context.Context) error { return nil }
 
 	called := false
-	bootstrapped := false
 	startCalled := make(chan struct{})
 	releaseStart := make(chan struct{})
 	startReturned := make(chan struct{})
 	startErrors := make(chan string, 4)
-	EnsureBootstrapManager = func(gotCtx context.Context, gotSvc *agent.Service, forceRecreate bool) error {
-		bootstrapped = true
-		if gotCtx != ctx {
-			return fmt.Errorf("EnsureBootstrapManager context = %v, want %v", gotCtx, ctx)
-		}
-		if gotSvc != svc {
-			return fmt.Errorf("EnsureBootstrapManager service = %p, want %p", gotSvc, svc)
-		}
-		if forceRecreate {
-			return fmt.Errorf("EnsureBootstrapManager forceRecreate = true, want false")
-		}
-		return nil
-	}
 	StartConfiguredAgents = func(gotCtx context.Context, gotSvc *agent.Service) error {
 		defer close(startReturned)
-		if !bootstrapped {
-			startErrors <- "StartConfiguredAgents called before EnsureBootstrapManager"
-		}
 		if gotCtx != ctx {
 			startErrors <- fmt.Sprintf("StartConfiguredAgents context = %v, want %v", gotCtx, ctx)
 		}
@@ -234,9 +403,6 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	if !called {
 		t.Fatal("RunServer was not called")
 	}
-	if !bootstrapped {
-		t.Fatal("EnsureBootstrapManager was not called")
-	}
 
 	got := run.Stdout.(*bytes.Buffer).String()
 	for _, want := range []string{
@@ -301,14 +467,11 @@ func TestConfigureServeLoggerSetsDebugLevel(t *testing.T) {
 	}
 }
 
-func TestServeForegroundStartsConfiguredAgentsWhenBootstrapFails(t *testing.T) {
+func TestServeForegroundStartsConfiguredAgentsOnReady(t *testing.T) {
 	restore := stubServeDependencies(t)
 	defer restore()
 
 	started := make(chan struct{})
-	EnsureBootstrapManager = func(context.Context, *agent.Service, bool) error {
-		return fmt.Errorf("runtime lock")
-	}
 	StartConfiguredAgents = func(context.Context, *agent.Service) error {
 		close(started)
 		return nil
@@ -327,23 +490,20 @@ func TestServeForegroundStartsConfiguredAgentsWhenBootstrapFails(t *testing.T) {
 	select {
 	case <-started:
 	default:
-		t.Fatal("StartConfiguredAgents was not called after bootstrap failure")
+		t.Fatal("StartConfiguredAgents was not called from OnReady")
 	}
 }
 
 func TestServeForegroundPreservesManagerImageOverride(t *testing.T) {
 	origRunServer := RunServer
 	origNewAgentService := NewAgentService
-	origEnsureBootstrapManager := EnsureBootstrapManager
 	origStartConfiguredAgents := StartConfiguredAgents
 	t.Cleanup(func() {
 		RunServer = origRunServer
 		NewAgentService = origNewAgentService
-		EnsureBootstrapManager = origEnsureBootstrapManager
 		StartConfiguredAgents = origStartConfiguredAgents
 	})
 	RunServer = func(server.Options) error { return nil }
-	EnsureBootstrapManager = func(context.Context, *agent.Service, bool) error { return nil }
 	StartConfiguredAgents = func(context.Context, *agent.Service) error { return nil }
 
 	cfg := config.Config{
@@ -554,20 +714,32 @@ func stubServeDependencies(t *testing.T) func() {
 	origNewIMService := NewIMService
 	origNewFeishuService := NewFeishuService
 	origNewLLMService := NewLLMService
-	origEnsureBootstrapManager := EnsureBootstrapManager
 	origStartConfiguredAgents := StartConfiguredAgents
 	origEnsureCLIProxy := EnsureCLIProxy
 	origShutdownCLIProxy := ShutdownCLIProxy
+	origDetectBootstrapState := DetectBootstrapState
+	origEnsureBootstrapState := EnsureBootstrapState
+	origCheckModelProvider := CheckModelProvider
 	RunServer = func(server.Options) error { return nil }
 	NewAgentService = func(config.Config) (*agent.Service, error) { return &agent.Service{}, nil }
 	NewBotService = func() (*bot.Service, error) { return &bot.Service{}, nil }
 	NewIMService = func(*im.Bus) (*im.Service, error) { return nil, nil }
 	NewFeishuService = func(config.Config) (*channel.FeishuService, error) { return nil, nil }
 	NewLLMService = func(config.Config, *agent.Service) (*llm.Service, error) { return nil, nil }
-	EnsureBootstrapManager = func(context.Context, *agent.Service, bool) error { return nil }
 	StartConfiguredAgents = func(context.Context, *agent.Service) error { return nil }
 	EnsureCLIProxy = func(context.Context) error { return nil }
 	ShutdownCLIProxy = func(context.Context) error { return nil }
+	CheckModelProvider = checkModelProvider
+	DetectBootstrapState = func(internalonboard.DetectStateOptions) (internalonboard.DetectStateResult, error) {
+		return internalonboard.DetectStateResult{
+			ConfigExists:         true,
+			ConfigComplete:       true,
+			IMBootstrapComplete:  true,
+			ManagerAgentComplete: true,
+			ManagerBotComplete:   true,
+		}, nil
+	}
+	EnsureBootstrapState = internalonboard.EnsureState
 	return func() {
 		RunServer = origRunServer
 		NewAgentService = origNewAgentService
@@ -575,10 +747,12 @@ func stubServeDependencies(t *testing.T) func() {
 		NewIMService = origNewIMService
 		NewFeishuService = origNewFeishuService
 		NewLLMService = origNewLLMService
-		EnsureBootstrapManager = origEnsureBootstrapManager
 		StartConfiguredAgents = origStartConfiguredAgents
 		EnsureCLIProxy = origEnsureCLIProxy
 		ShutdownCLIProxy = origShutdownCLIProxy
+		DetectBootstrapState = origDetectBootstrapState
+		EnsureBootstrapState = origEnsureBootstrapState
+		CheckModelProvider = origCheckModelProvider
 	}
 }
 

@@ -13,10 +13,11 @@ import (
 	"csgclaw/cli/command"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/config"
+	internalonboard "csgclaw/internal/onboard"
 )
 
 func TestRunInteractiveFreshSkipsModelProviderPrompt(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) error {
 		if !cfg.Models.IsZero() || !cfg.LLM.IsZero() {
 			t.Fatalf("cfg should not include static LLM models: models=%+v llm=%+v", cfg.Models, cfg.LLM)
 		}
@@ -26,7 +27,7 @@ func TestRunInteractiveFreshSkipsModelProviderPrompt(t *testing.T) {
 		if got, want := cfg.Sandbox.HomeDirName, config.DefaultSandboxHomeDirName; got != want {
 			t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
 		}
-		return bot.Bot{}, nil
+		return nil
 	})
 	defer restore()
 
@@ -71,12 +72,12 @@ func TestRunInteractiveFreshSkipsModelProviderPrompt(t *testing.T) {
 
 func TestRunFreshNonInteractiveAllowsMissingLLMConfig(t *testing.T) {
 	callCount := 0
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) error {
 		callCount++
 		if !cfg.Models.IsZero() || !cfg.LLM.IsZero() {
 			t.Fatalf("cfg should not include static LLM models: models=%+v llm=%+v", cfg.Models, cfg.LLM)
 		}
-		return bot.Bot{}, nil
+		return nil
 	})
 	defer restore()
 
@@ -91,11 +92,11 @@ func TestRunFreshNonInteractiveAllowsMissingLLMConfig(t *testing.T) {
 }
 
 func TestRunPreservesExistingStaticLLMConfigWithoutPrompting(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) error {
 		if got, want := cfg.Models.Default, "default.gpt-test"; got != want {
 			t.Fatalf("cfg.Models.Default = %q, want %q", got, want)
 		}
-		return bot.Bot{}, nil
+		return nil
 	})
 	defer restore()
 	configPath := filepath.Join(t.TempDir(), "config.toml")
@@ -134,6 +135,65 @@ models = ["gpt-test"]
 	}
 	if !strings.Contains(string(data), `[models.providers.default]`) {
 		t.Fatalf("existing static model config should be preserved:\n%s", string(data))
+	}
+}
+
+func TestRunRepeatedDoesNotRewriteExistingCompleteConfig(t *testing.T) {
+	callCount := 0
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) error {
+		callCount++
+		if got, want := cfg.Server.ListenAddr, "127.0.0.1:19090"; got != want {
+			t.Fatalf("cfg.Server.ListenAddr = %q, want %q", got, want)
+		}
+		return nil
+	})
+	defer restore()
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	original := `# custom config header
+
+[server]
+listen_addr = "127.0.0.1:19090"
+advertise_base_url = "http://example.test"
+access_token = "custom-token"
+no_auth = false
+
+[bootstrap]
+manager_image_override = ""
+
+[sandbox]
+provider = "boxlite-cli"
+home_dir_name = "boxlite"
+
+[models]
+default = "default.gpt-test"
+
+[models.providers.default]
+base_url = "http://llm.test/v1"
+api_key = "secret"
+models = ["gpt-test"]
+`
+	if err := writeConfig(configPath, original); err != nil {
+		t.Fatalf("writeConfig() error = %v", err)
+	}
+
+	run := testContext()
+	if err := NewCmd().Run(context.Background(), run, nil, command.GlobalOptions{Config: configPath}); err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+	if err := NewCmd().Run(context.Background(), run, nil, command.GlobalOptions{Config: configPath}); err != nil {
+		t.Fatalf("second Run() error = %v", err)
+	}
+
+	if callCount != 2 {
+		t.Fatalf("bootstrap call count = %d, want 2 across repeated onboard runs", callCount)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(data) != original {
+		t.Fatalf("onboard rewrote complete config.\nGot:\n%s\nWant:\n%s", string(data), original)
 	}
 }
 
@@ -190,26 +250,12 @@ func TestConfigureOnboardLoggerUsesCompactTerminalFormat(t *testing.T) {
 	}
 }
 
-func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
-	opts, err := sandboxServiceOptions(config.SandboxConfig{
-		Provider:         config.BoxLiteCLIProvider,
-		HomeDirName:      "sandbox-home",
-		DebianRegistries: []string{"registry.a"},
-	})
-	if err != nil {
-		t.Fatalf("sandboxServiceOptions() error = %v", err)
-	}
-	if len(opts) != 2 {
-		t.Fatalf("len(opts) = %d, want 2", len(opts))
-	}
-}
-
 func TestRunDebianRegistriesFlagPersistsToConfig(t *testing.T) {
-	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
+	restore := stubBootstrap(t, func(_ context.Context, _, _ string, cfg config.Config) error {
 		if got, want := strings.Join(cfg.Sandbox.DebianRegistries, ","), "registry.a,docker.io"; got != want {
 			t.Fatalf("bootstrap cfg.Sandbox.DebianRegistries = %q, want %q", got, want)
 		}
-		return bot.Bot{}, nil
+		return nil
 	})
 	defer restore()
 
@@ -267,15 +313,20 @@ func (*fakeTerminalBuffer) Fd() uintptr {
 	return 1
 }
 
-func stubBootstrap(t *testing.T, create func(context.Context, string, string, config.Config) (bot.Bot, error)) func() {
+func stubBootstrap(t *testing.T, verify func(context.Context, string, string, config.Config) error) func() {
 	t.Helper()
-	origCreateManager := CreateManagerBot
-	origEnsureIMBootstrapState := EnsureIMBootstrapState
-	CreateManagerBot = create
-	EnsureIMBootstrapState = func(string) error { return nil }
+	origCreateManager := internalonboard.CreateManagerBot
+	origEnsureIMBootstrapState := internalonboard.EnsureIMBootstrapState
+	internalonboard.CreateManagerBot = func(ctx context.Context, agentsPath, imStatePath string, cfg config.Config) (bot.Bot, error) {
+		if err := verify(ctx, agentsPath, imStatePath, cfg); err != nil {
+			return bot.Bot{}, err
+		}
+		return bot.Bot{}, nil
+	}
+	internalonboard.EnsureIMBootstrapState = func(string) error { return nil }
 	return func() {
-		CreateManagerBot = origCreateManager
-		EnsureIMBootstrapState = origEnsureIMBootstrapState
+		internalonboard.CreateManagerBot = origCreateManager
+		internalonboard.EnsureIMBootstrapState = origEnsureIMBootstrapState
 	}
 }
 

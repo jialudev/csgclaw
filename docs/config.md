@@ -2,7 +2,7 @@
 
 English | [中文](config.zh.md)
 
-`csgclaw onboard` writes the local config file used by `csgclaw serve`. The config covers server access, bootstrap image selection, sandbox isolation, and optional channels. Agent LLM provider profiles are stored in agent state and managed from the Web UI.
+`csgclaw serve` uses the local config file for server access, bootstrap image selection, sandbox isolation, and optional channels, and it auto-creates missing bootstrap state on first run. `csgclaw onboard` remains available when you want to run that bootstrap step explicitly without starting the server. Agent LLM provider profiles are stored in agent state and managed from the Web UI.
 
 ## Server Address
 

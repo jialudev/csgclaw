@@ -99,7 +99,7 @@ csgclaw completion fish
 
 ### `csgclaw onboard`
 
-Initializes local config and bootstrap state.
+Explicitly initializes local config and bootstrap state.
 
 Usage:
 
@@ -114,6 +114,7 @@ Flags:
 
 Behavior:
 
+- It is optional for normal first-time startup because `csgclaw serve` auto-runs the same bootstrap flow when state is missing.
 - It writes config, ensures bootstrap IM state, and ensures the bootstrap manager bot.
 - It does not prompt for model provider settings. Manager and worker LLM profiles are detected at startup and managed in the Web UI.
 - If `--debian-registries` is set, it updates `sandbox.debian_registries` in config.
@@ -146,6 +147,7 @@ Flags:
 Behavior:
 
 - Loads config from `--config` or `~/.csgclaw/config.toml`.
+- If bootstrap state is incomplete, it auto-runs the onboarding flow before startup.
 - Validates effective model configuration before startup.
 - For `csghub-lite`, it performs a provider reachability preflight.
 - In foreground mode it prints the effective config and IM URL.

@@ -28,6 +28,7 @@ import (
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/modelprovider"
+	internalonboard "csgclaw/internal/onboard"
 	"csgclaw/internal/sandboxproviders"
 	"csgclaw/internal/server"
 )
@@ -46,12 +47,8 @@ var (
 	ShutdownCLIProxy = func(ctx context.Context) error {
 		return cliproxy.Default().Shutdown(ctx)
 	}
-	EnsureBootstrapManager = func(ctx context.Context, svc *agent.Service, forceRecreate bool) error {
-		if svc == nil {
-			return nil
-		}
-		return svc.EnsureBootstrapManager(ctx, forceRecreate)
-	}
+	DetectBootstrapState  = internalonboard.DetectState
+	EnsureBootstrapState  = internalonboard.EnsureState
 	StartConfiguredAgents = func(ctx context.Context, svc *agent.Service) error {
 		if svc == nil {
 			return nil
@@ -104,6 +101,16 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 		return err
 	}
 
+	restore, err := configureServeLogger(run.Stderr, *logLevel)
+	if err != nil {
+		return err
+	}
+	defer restore()
+
+	if err := ensureServeBootstrapState(ctx, globals.Config); err != nil {
+		return err
+	}
+
 	cfg, err := loadConfig(globals.Config)
 	if err != nil {
 		return err
@@ -115,11 +122,6 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	if *daemon {
 		return serveBackground(run, cfg, globals, *logPath, *pidPath, *logLevel)
 	}
-	restore, err := configureServeLogger(run.Stderr, *logLevel)
-	if err != nil {
-		return err
-	}
-	defer restore()
 	return serveForeground(ctx, run, cfg, globals.Output)
 }
 
@@ -340,6 +342,20 @@ func serveBackground(run *command.Context, cfg config.Config, globals command.Gl
 	return nil
 }
 
+func ensureServeBootstrapState(ctx context.Context, configPath string) error {
+	state, err := DetectBootstrapState(internalonboard.DetectStateOptions{ConfigPath: configPath})
+	if err != nil {
+		return err
+	}
+	if state.Complete() {
+		return nil
+	}
+
+	slog.Info("bootstrap state incomplete; auto-running onboard", "config_path", state.ConfigPath)
+	_, err = EnsureBootstrapState(ctx, internalonboard.EnsureStateOptions{ConfigPath: configPath})
+	return err
+}
+
 func configureServeLogger(w io.Writer, level string) (func(), error) {
 	parsedLevel, err := parseServeLogLevel(level)
 	if err != nil {
@@ -399,9 +415,6 @@ func startServer(ctx context.Context, cfg config.Config, svc *agent.Service, bot
 		NoAuth:      cfg.Server.NoAuth,
 		Context:     ctx,
 		OnReady: func() {
-			if err := EnsureBootstrapManager(ctx, svc, false); err != nil {
-				slog.Warn("bootstrap manager failed to start", "error", err)
-			}
 			if err := StartConfiguredAgents(ctx, svc); err != nil {
 				slog.Warn("some configured agents failed to start", "error", err)
 			}

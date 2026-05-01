@@ -99,7 +99,7 @@ csgclaw completion fish
 
 ### `csgclaw onboard`
 
-初始化本地配置和引导状态。
+显式初始化本地配置和引导状态。
 
 用法：
 
@@ -109,29 +109,22 @@ csgclaw onboard [flags]
 
 参数：
 
-- `--provider string`：LLM 提供方预设，支持 `csghub-lite`、`custom`。
-- `--base-url string`：LLM 提供方 Base URL。
-- `--api-key string`：LLM 提供方 API Key。
-- `--models string`：逗号分隔的模型 ID 列表。
-- `--reasoning-effort string`：可选，上游 `reasoning_effort` 默认值。
 - `--debian-registries string`：用于拉取 `debian:bookworm-slim` 的 OCI registry 列表，逗号分隔，并持久化到配置文件。
 - `--log-level string`：初始化阶段日志级别，支持 `debug`、`info`、`warn`、`error`，默认 `info`。
 
 行为说明：
 
-- 如果本地还没有配置，且没有显式传入模型相关参数，`onboard` 可以进入交互式引导。
-- 非交互场景下，建议显式传入模型参数。
+- 普通首次启动不必先运行它；如果本地状态缺失，`csgclaw serve` 会自动执行同一套 bootstrap 流程。
 - 命令会写入配置、确保 IM 引导状态存在，并确保引导 Manager Bot 存在。
+- 命令不会提示你配置模型 provider。Manager 和 Worker 的 LLM profile 会在启动时自动检测，并在 Web UI 中管理。
 - 如果传入 `--debian-registries`，命令会同步更新配置中的 `sandbox.debian_registries`。
-- 如果模型配置不完整，后续 `serve` 会报错，并提示如何补齐配置。
+- 如果 profile 自动检测失败，`serve` 仍会启动，Web UI 会提示管理员补全 Manager profile。
 
 示例：
 
 ```bash
 csgclaw onboard
-csgclaw onboard --provider csghub-lite --models Qwen/Qwen3-0.6B-GGUF
-csgclaw onboard --base-url https://api.openai.com/v1 --api-key "$OPENAI_API_KEY" --models gpt-5.4-mini
-csgclaw agent create --replace --force --id manager --image ghcr.io/example/manager:latest
+csgclaw onboard --debian-registries "harbor.opencsg.com,docker.io"
 ```
 
 ### `csgclaw serve`
@@ -154,6 +147,7 @@ csgclaw serve [-d|--daemon] [flags]
 行为说明：
 
 - 从 `--config` 或 `~/.csgclaw/config.toml` 加载配置。
+- 如果 bootstrap 状态不完整，启动前会自动执行 onboarding 流程。
 - 启动前会校验最终模型配置是否完整。
 - 对 `csghub-lite` 会做连通性预检查。
 - 前台模式下会打印生效配置和 IM 访问地址。

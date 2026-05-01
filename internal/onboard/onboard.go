@@ -1,0 +1,244 @@
+package onboard
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"csgclaw/internal/agent"
+	"csgclaw/internal/bot"
+	"csgclaw/internal/config"
+	"csgclaw/internal/im"
+	"csgclaw/internal/sandboxproviders"
+)
+
+var (
+	CreateManagerBot       = createManagerBot
+	EnsureIMBootstrapState = im.EnsureBootstrapState
+	defaultAgentsPath      = config.DefaultAgentsPath
+	defaultIMStatePath     = config.DefaultIMStatePath
+)
+
+type EnsureStateOptions struct {
+	ConfigPath         string
+	DebianRegistries   []string
+	HasDebianOverrides bool
+}
+
+type EnsureStateResult struct {
+	ConfigPath string
+	Config     config.Config
+}
+
+func EnsureState(ctx context.Context, opts EnsureStateOptions) (EnsureStateResult, error) {
+	path, err := configPath(opts.ConfigPath)
+	if err != nil {
+		return EnsureStateResult{}, err
+	}
+
+	cfg, err := ensureConfigState(path, opts)
+	if err != nil {
+		return EnsureStateResult{}, err
+	}
+	if err := ensureBootstrapState(ctx, cfg); err != nil {
+		return EnsureStateResult{}, err
+	}
+
+	return EnsureStateResult{
+		ConfigPath: path,
+		Config:     cfg,
+	}, nil
+}
+
+func ensureConfigState(path string, opts EnsureStateOptions) (config.Config, error) {
+	cfg, hasExistingConfig, err := loadConfig(path)
+	if err != nil {
+		return config.Config{}, err
+	}
+	existingContent := ""
+	if hasExistingConfig {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return config.Config{}, fmt.Errorf("read config: %w", readErr)
+		}
+		existingContent = string(data)
+	}
+	if !hasExistingConfig {
+		cfg = defaultConfig()
+	}
+	needsSave := !hasExistingConfig
+	if opts.HasDebianOverrides {
+		normalized := append([]string(nil), opts.DebianRegistries...)
+		if !equalStringSlices(cfg.Sandbox.DebianRegistries, normalized) {
+			cfg.Sandbox.DebianRegistries = normalized
+			needsSave = true
+		}
+	}
+	if hasExistingConfig && configNeedsCompletion(existingContent) {
+		needsSave = true
+	}
+	if needsSave {
+		if err := cfg.Save(path); err != nil {
+			return config.Config{}, err
+		}
+	}
+	return cfg, nil
+}
+
+func ensureBootstrapState(ctx context.Context, cfg config.Config) error {
+	agentsPath, imStatePath, err := bootstrapPaths()
+	if err != nil {
+		return err
+	}
+	if err := EnsureIMBootstrapState(imStatePath); err != nil {
+		return err
+	}
+	if _, err := CreateManagerBot(ctx, agentsPath, imStatePath, cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+func bootstrapPaths() (agentsPath, imStatePath string, err error) {
+	agentsPath, err = defaultAgentsPath()
+	if err != nil {
+		return "", "", err
+	}
+	imStatePath, err = defaultIMStatePath()
+	if err != nil {
+		return "", "", err
+	}
+	return agentsPath, imStatePath, nil
+}
+
+func ParseRegistriesFlag(raw string) []string {
+	values := strings.Split(raw, ",")
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config) (bot.Bot, error) {
+	opts, err := sandboxproviders.ServiceOptions(cfg.Sandbox)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	defer func() {
+		_ = agentSvc.Close()
+	}()
+
+	imSvc, err := im.NewServiceFromPath(imStatePath)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	store, err := bot.NewStore(filepath.Join(filepath.Dir(imStatePath), "bots.json"))
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	return botSvc.CreateManager(ctx, bot.CreateRequest{
+		Name:    agent.ManagerName,
+		Role:    string(bot.RoleManager),
+		Channel: string(bot.ChannelCSGClaw),
+	}, false)
+}
+
+func defaultConfig() config.Config {
+	return config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:  config.DefaultListenAddr(),
+			AccessToken: config.DefaultAccessToken,
+			NoAuth:      false,
+		},
+		Bootstrap: config.BootstrapConfig{},
+		Sandbox: config.SandboxConfig{
+			Provider:    config.DefaultSandboxProvider,
+			HomeDirName: config.DefaultSandboxHomeDirName,
+		},
+	}
+}
+
+func loadConfig(path string) (config.Config, bool, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return config.Config{}, false, nil
+		}
+		return config.Config{}, false, fmt.Errorf("stat config: %w", err)
+	}
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		return config.Config{}, false, err
+	}
+	return cfg, true, nil
+}
+
+func configPath(path string) (string, error) {
+	if path != "" {
+		return path, nil
+	}
+	return config.DefaultPath()
+}
+
+func effectiveLLMConfig(cfg config.Config) config.LLMConfig {
+	if !cfg.Models.IsZero() {
+		return cfg.Models.Normalized()
+	}
+	if !cfg.LLM.IsZero() {
+		return cfg.LLM.Normalized()
+	}
+	return config.SingleProfileLLM(cfg.Model).Normalized()
+}
+
+func configNeedsCompletion(content string) bool {
+	requiredSnippets := []string{
+		"[server]",
+		`listen_addr = `,
+		`advertise_base_url = `,
+		`access_token = `,
+		`no_auth = `,
+		"[bootstrap]",
+		`manager_image_override = `,
+		"[sandbox]",
+		`provider = `,
+		`home_dir_name = `,
+	}
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(content, snippet) {
+			return true
+		}
+	}
+	return false
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

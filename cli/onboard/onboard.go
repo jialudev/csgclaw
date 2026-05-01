@@ -6,23 +6,16 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"csgclaw/cli/command"
-	"csgclaw/internal/agent"
-	"csgclaw/internal/bot"
-	"csgclaw/internal/config"
-	"csgclaw/internal/im"
-	"csgclaw/internal/sandboxproviders"
+	internalonboard "csgclaw/internal/onboard"
 
 	"golang.org/x/term"
 )
 
 var (
-	CreateManagerBot       = createManagerBot
-	EnsureIMBootstrapState = im.EnsureBootstrapState
-	isTerminalFD           = term.IsTerminal
+	isTerminalFD = term.IsTerminal
 )
 
 type cmd struct{}
@@ -36,7 +29,7 @@ func (cmd) Name() string {
 }
 
 func (cmd) Summary() string {
-	return "Initialize local config and bootstrap state."
+	return "Explicitly initialize local config and bootstrap state."
 }
 
 func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
@@ -53,50 +46,14 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 	}
 	defer restore()
 
-	path, err := configPath(globals.Config)
-	if err != nil {
-		return err
-	}
-
-	cfg, hasExistingConfig, err := loadOnboardConfig(path)
-	if err != nil {
-		return err
-	}
-	if !hasExistingConfig {
-		cfg = config.Config{
-			Server: config.ServerConfig{
-				ListenAddr:  config.DefaultListenAddr(),
-				AccessToken: config.DefaultAccessToken,
-				NoAuth:      false,
-			},
-			Bootstrap: config.BootstrapConfig{},
-			Sandbox: config.SandboxConfig{
-				Provider:    config.DefaultSandboxProvider,
-				HomeDirName: config.DefaultSandboxHomeDirName,
-			},
-		}
-	}
-
+	opts := internalonboard.EnsureStateOptions{ConfigPath: globals.Config}
 	if strings.TrimSpace(*debianRegistries) != "" {
-		cfg.Sandbox.DebianRegistries = parseRegistriesFlag(*debianRegistries)
+		opts.DebianRegistries = internalonboard.ParseRegistriesFlag(*debianRegistries)
+		opts.HasDebianOverrides = true
 	}
 
-	if err := cfg.Save(path); err != nil {
-		return err
-	}
-
-	agentsPath, err := config.DefaultAgentsPath()
+	resultState, err := internalonboard.EnsureState(ctx, opts)
 	if err != nil {
-		return err
-	}
-	imStatePath, err := config.DefaultIMStatePath()
-	if err != nil {
-		return err
-	}
-	if err := EnsureIMBootstrapState(imStatePath); err != nil {
-		return err
-	}
-	if _, err := CreateManagerBot(ctx, agentsPath, imStatePath, cfg); err != nil {
 		return err
 	}
 
@@ -104,55 +61,19 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 		Command:      "onboard",
 		Action:       "initialize",
 		Status:       "initialized",
-		ConfigPath:   path,
-		ManagerImage: cfg.Bootstrap.EffectiveManagerImage(),
+		ConfigPath:   resultState.ConfigPath,
+		ManagerImage: resultState.Config.Bootstrap.EffectiveManagerImage(),
 		Users:        []string{"admin", "manager"},
-		Message:      fmt.Sprintf("initialized config at %s", path),
+		Message:      fmt.Sprintf("initialized config at %s", resultState.ConfigPath),
 	}
 	if globals.Output == "json" {
 		return command.RenderAction(globals.Output, run.Stdout, result)
 	}
 	fmt.Fprintln(run.Stdout, result.Message)
-	fmt.Fprintf(run.Stdout, "ensured bootstrap agent %q with image %q\n", agent.ManagerName, cfg.Bootstrap.EffectiveManagerImage())
+	fmt.Fprintf(run.Stdout, "ensured bootstrap agent %q with image %q\n", "manager", resultState.Config.Bootstrap.EffectiveManagerImage())
 	fmt.Fprintf(run.Stdout, "ensured IM members %q and %q\n", "admin", "manager")
 	fmt.Fprintln(run.Stdout, "cleared IM invite draft data")
 	return nil
-}
-
-func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config) (bot.Bot, error) {
-	opts, err := sandboxServiceOptions(cfg.Sandbox)
-	if err != nil {
-		return bot.Bot{}, err
-	}
-	agentSvc, err := agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
-	if err != nil {
-		return bot.Bot{}, err
-	}
-	defer func() {
-		_ = agentSvc.Close()
-	}()
-
-	imSvc, err := im.NewServiceFromPath(imStatePath)
-	if err != nil {
-		return bot.Bot{}, err
-	}
-	store, err := bot.NewStore(filepath.Join(filepath.Dir(imStatePath), "bots.json"))
-	if err != nil {
-		return bot.Bot{}, err
-	}
-	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
-	if err != nil {
-		return bot.Bot{}, err
-	}
-	return botSvc.CreateManager(ctx, bot.CreateRequest{
-		Name:    agent.ManagerName,
-		Role:    string(bot.RoleManager),
-		Channel: string(bot.ChannelCSGClaw),
-	}, false)
-}
-
-func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, error) {
-	return sandboxproviders.ServiceOptions(cfg)
 }
 
 func configureOnboardLogger(w io.Writer, level string) (func(), error) {
@@ -266,54 +187,4 @@ func isTerminal(value any) bool {
 		return false
 	}
 	return isTerminalFD(int(file.Fd()))
-}
-
-func loadOnboardConfig(path string) (config.Config, bool, error) {
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return config.Config{}, false, nil
-		}
-		return config.Config{}, false, fmt.Errorf("stat config: %w", err)
-	}
-
-	cfg, err := config.Load(path)
-	if err != nil {
-		return config.Config{}, false, err
-	}
-	return cfg, true, nil
-}
-
-func configPath(path string) (string, error) {
-	if path != "" {
-		return path, nil
-	}
-	return config.DefaultPath()
-}
-
-func effectiveLLMConfig(cfg config.Config) config.LLMConfig {
-	if !cfg.Models.IsZero() {
-		return cfg.Models.Normalized()
-	}
-	if !cfg.LLM.IsZero() {
-		return cfg.LLM.Normalized()
-	}
-	return config.SingleProfileLLM(cfg.Model).Normalized()
-}
-
-func parseRegistriesFlag(raw string) []string {
-	values := strings.Split(raw, ",")
-	out := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
 }

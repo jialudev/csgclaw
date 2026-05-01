@@ -46,8 +46,8 @@ help:
 		'make build-all - build bin/csgclaw and bin/csgclaw-cli' \
 		'make run       - run the server in foreground with the default boxlite-cli build shape' \
 		'make run-with-boxlite-sdk - run the server in foreground with the BoxLite SDK provider enabled' \
-		'make onboard   - initialize ~/.csgclaw/config.toml with the default boxlite-cli build shape' \
-		'make onboard-with-boxlite-sdk - initialize ~/.csgclaw/config.toml with the BoxLite SDK provider enabled' \
+		'make onboard   - explicitly initialize ~/.csgclaw/config.toml with the default boxlite-cli build shape' \
+		'make onboard-with-boxlite-sdk - explicitly initialize ~/.csgclaw/config.toml with the BoxLite SDK provider enabled' \
 		'make package   - package APP binary into dist/' \
 		'make package-all - package csgclaw and csgclaw-cli for current platform' \
 		'make release   - build csgclaw and csgclaw-cli release archives for macOS/Linux' \

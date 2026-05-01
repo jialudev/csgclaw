@@ -60,7 +60,7 @@ func FullSpec() CommandSpec {
 		Children: []CommandSpec{
 			{
 				Name:    "onboard",
-				Summary: "Initialize local config and bootstrap state.",
+				Summary: "Explicitly initialize local config and bootstrap state.",
 				Flags: []FlagSpec{
 					{Name: "debian-registries", TakesValue: true},
 					{Name: "log-level", TakesValue: true, Values: logLevelValues()},
