@@ -123,11 +123,13 @@ home_dir_name = "boxlite"
 
 For `provider = "boxlite-cli"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
 
-`debian_registries_override` controls where BoxLite pulls `debian:bookworm-slim` when you need to override the built-in default order. If omitted or empty, CSGClaw uses `harbor.opencsg.com` then `docker.io`. Normal `onboard` runs do not write this field; advanced users can add it manually to `config.toml`:
+`debian_registries_override` controls where BoxLite pulls `debian:bookworm-slim` when you need to override the built-in default order. If omitted or empty, CSGClaw uses `harbor.opencsg.com` then `docker.io`. `onboard` now writes this field as an empty array so it is visible in `config.toml` and can be edited in place:
 
 ```toml
 [sandbox]
-debian_registries_override = ["harbor.opencsg.com", "docker.io"]
+provider = "boxlite-cli"
+home_dir_name = "boxlite"
+debian_registries_override = []
 ```
 
 CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the agent directory plus `home_dir_name` such as `~/.csgclaw/agents/<agent-id>/boxlite`. That explicit home takes precedence over `BOXLITE_HOME` for CSGClaw-managed sandboxes, while `BOXLITE_HOME` still applies when you run `boxlite` manually without `--home`.

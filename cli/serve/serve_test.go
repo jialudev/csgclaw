@@ -415,6 +415,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`[sandbox]`,
 		fmt.Sprintf(`provider = %q`, config.DefaultSandboxProvider),
 		fmt.Sprintf(`home_dir_name = %q`, config.DefaultSandboxHomeDirName),
+		`debian_registries_override = []`,
 		`[models]`,
 		`default = "default.model-test"`,
 		`[models.providers.default]`,
@@ -636,9 +637,10 @@ no_auth = true
 manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 
 [sandbox]
-# using default debian registries: ["harbor.opencsg.com", "docker.io"]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
+# using default debian registries: ["harbor.opencsg.com", "docker.io"]
+debian_registries_override = []
 
 [models]
 default = "default.local.minimax-m2.5"

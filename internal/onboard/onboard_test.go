@@ -82,6 +82,7 @@ func TestEnsureStateCreatesConfigAndBootstrapsManagerState(t *testing.T) {
 		`[sandbox]`,
 		`provider = "` + config.DefaultSandboxProvider + `"`,
 		`home_dir_name = "` + config.DefaultSandboxHomeDirName + `"`,
+		`debian_registries_override = []`,
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("saved config missing %q:\n%s", want, string(data))
@@ -106,6 +107,7 @@ manager_image_override = "img"
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
+debian_registries_override = []
 
 [models]
 default = "default.gpt-test"
@@ -164,6 +166,7 @@ manager_image_override = ""
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
+debian_registries_override = []
 
 [models]
 default = "default.gpt-test"
@@ -239,6 +242,7 @@ access_token = "your_access_token"
 		`[sandbox]`,
 		`provider = "` + config.DefaultSandboxProvider + `"`,
 		`home_dir_name = "` + config.DefaultSandboxHomeDirName + `"`,
+		`debian_registries_override = []`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("completed config missing %q:\n%s", want, content)

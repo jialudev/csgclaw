@@ -585,9 +585,9 @@ home_dir_name = %q
 		content = strings.Replace(content, "[bootstrap]\nmanager_image_override", fmt.Sprintf("[bootstrap]\n# using default image: %q\nmanager_image_override", config.DefaultManagerImage), 1)
 	}
 	if len(cfg.Sandbox.Resolved().DebianRegistriesOverride) > 0 {
-		content = strings.Replace(content, "[sandbox]\n", fmt.Sprintf("[sandbox]\ndebian_registries_override = %s\n", formatModelList(cfg.Sandbox.Resolved().DebianRegistriesOverride)), 1)
+		content += fmt.Sprintf("debian_registries_override = %s\n", formatModelList(cfg.Sandbox.Resolved().DebianRegistriesOverride))
 	} else {
-		content = strings.Replace(content, "[sandbox]\n", fmt.Sprintf("[sandbox]\n# using default debian registries: %s\n", formatModelList(config.DefaultDebianRegistries)), 1)
+		content += fmt.Sprintf("# using default debian registries: %s\ndebian_registries_override = []\n", formatModelList(config.DefaultDebianRegistries))
 	}
 	content += fmt.Sprintf(`
 [models]

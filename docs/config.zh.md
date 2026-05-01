@@ -123,11 +123,13 @@ home_dir_name = "boxlite"
 
 对于 `provider = "boxlite-cli"`，CSGClaw 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
 
-`debian_registries_override` 用于在你需要覆盖内置顺序时，控制 BoxLite 拉取 `debian:bookworm-slim` 的仓库顺序。若省略或为空，CSGClaw 会使用默认顺序 `harbor.opencsg.com`、`docker.io`。普通 `onboard` 不会写入这个字段；高级用户可手动在 `config.toml` 中添加：
+`debian_registries_override` 用于在你需要覆盖内置顺序时，控制 BoxLite 拉取 `debian:bookworm-slim` 的仓库顺序。若省略或为空，CSGClaw 会使用默认顺序 `harbor.opencsg.com`、`docker.io`。`onboard` 现在会把该字段以空数组写入 `config.toml`，让用户可以直接原地修改：
 
 ```toml
 [sandbox]
-debian_registries_override = ["harbor.opencsg.com", "docker.io"]
+provider = "boxlite-cli"
+home_dir_name = "boxlite"
+debian_registries_override = []
 ```
 
 CSGClaw 会为每个 agent 调用 BoxLite CLI 时显式传入 `--home`，目录由 agent 目录和 `home_dir_name` 组成，例如 `~/.csgclaw/agents/<agent-id>/boxlite`。这个显式 home 对 CSGClaw 管理的 sandbox 生效，优先于 `BOXLITE_HOME`；你手动运行 `boxlite` 且不传 `--home` 时，`BOXLITE_HOME` 仍按 BoxLite 自身规则生效。

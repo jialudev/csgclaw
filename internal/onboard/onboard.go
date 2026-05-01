@@ -195,6 +195,7 @@ func configNeedsCompletion(content string) bool {
 		"[sandbox]",
 		`provider = `,
 		`home_dir_name = `,
+		`debian_registries_override = `,
 	}
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(content, snippet) {

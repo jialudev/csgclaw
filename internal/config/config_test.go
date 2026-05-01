@@ -526,6 +526,7 @@ manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 [sandbox]
 provider = "boxlite-cli"
 home_dir_name = "boxlite"
+debian_registries_override = []
 
 [models]
 default = "default.local.minimax-m2.5"
@@ -537,6 +538,39 @@ models = ["local.minimax-m2.5"]
 `
 	if got := string(data); got != want {
 		t.Fatalf("saved config mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestSaveWritesEmptySandboxDebianRegistriesOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := Config{
+		Server: ServerConfig{
+			ListenAddr:       "127.0.0.1:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
+		Sandbox: SandboxConfig{
+			Provider:    BoxLiteCLIProvider,
+			HomeDirName: "sandbox-home",
+		},
+		Models: SingleProfileLLM(ModelConfig{
+			BaseURL: "http://127.0.0.1:4000",
+			APIKey:  "sk",
+			ModelID: "minimax-m2.7",
+		}),
+	}
+
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(data), `debian_registries_override = []`) {
+		t.Fatalf("saved config missing empty sandbox debian_registries_override:\n%s", string(data))
 	}
 }
 
