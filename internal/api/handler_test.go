@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/apitypes"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
@@ -100,6 +101,38 @@ func TestHandleFeishuUsersCreateAndList(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "fsu-alice" || got[0].Handle != "alice" {
 		t.Fatalf("users = %+v, want fsu-alice", got)
+	}
+}
+
+func TestHandleVersion(t *testing.T) {
+	srv := &Handler{}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/version", nil)
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got apitypes.VersionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Version == "" {
+		t.Fatal("version is empty")
+	}
+}
+
+func TestHandleVersionMethodNotAllowed(t *testing.T) {
+	srv := &Handler{}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/version", nil)
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusMethodNotAllowed, rec.Body.String())
 	}
 }
 

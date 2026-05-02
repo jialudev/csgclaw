@@ -15,6 +15,7 @@ import (
 	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	"csgclaw/internal/version"
 )
 
 type Handler struct {
@@ -126,6 +127,16 @@ func (h *Handler) validateServerAccessToken(authHeader string) bool {
 func (h *Handler) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func (h *Handler) handleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, apitypes.VersionResponse{
+		Version: version.Current(),
+	})
 }
 
 func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {

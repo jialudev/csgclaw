@@ -99,6 +99,10 @@ type AddRoomMembersRequest struct {
 	Locale    string   `json:"locale"`
 }
 
+type VersionResponse struct {
+	Version string `json:"version"`
+}
+
 // UnmarshalJSON keeps room payload decoding backward-compatible with legacy participants fields.
 func (r *Room) UnmarshalJSON(data []byte) error {
 	type roomAlias Room

@@ -15,6 +15,7 @@ const MESSAGE_LIST_BOTTOM_THRESHOLD = 24;
 const AGENT_STATUS_REFRESH_INTERVAL_MS = 2000;
 const IM_EVENTS_ENDPOINT = "/api/v1/events";
 const IM_EVENTS_SHARED_WORKER_PATH = "/sse-shared-worker.js";
+const VERSION_ENDPOINT = "/api/v1/version";
 const PROVIDERS = ["csghub_lite", "codex", "claude_code", "api"];
 const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
@@ -845,6 +846,7 @@ function App() {
   const [agentPageModelBusy, setAgentPageModelBusy] = useState(false);
   const [agentPageError, setAgentPageError] = useState("");
   const [profilePreview, setProfilePreview] = useState(null);
+  const [appVersion, setAppVersion] = useState("dev");
   const editorRef = useRef(null);
   const messageListRef = useRef(null);
   const memberMenuRef = useRef(null);
@@ -856,6 +858,10 @@ function App() {
 
   useEffect(() => {
     refreshBootstrap();
+  }, []);
+
+  useEffect(() => {
+    refreshVersion();
   }, []);
 
   useEffect(() => {
@@ -1291,6 +1297,21 @@ function App() {
     } catch (_) {
       setLoadingError(messages[locale].loadingFailed);
       return null;
+    }
+  }
+
+  async function refreshVersion() {
+    try {
+      const resp = await fetch(VERSION_ENDPOINT);
+      if (!resp.ok) {
+        throw new Error("version failed");
+      }
+      const payload = await resp.json();
+      if (payload && typeof payload.version === "string" && payload.version.trim()) {
+        setAppVersion(payload.version.trim());
+      }
+    } catch (_) {
+      setAppVersion("dev");
     }
   }
 
@@ -2399,6 +2420,9 @@ function App() {
                   `}
               ${agentsError ? html`<div className="form-error agent-error">${agentsError}</div>` : null}
             </nav>
+            <div className="sidebar-footer">
+              <span className="sidebar-version-label">${`csgclaw v${appVersion}`}</span>
+            </div>
           </aside>
 
           <div
