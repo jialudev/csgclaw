@@ -46,10 +46,10 @@ detect_arch() {
 
 ensure_supported_platform() {
   case "$1/$2" in
-    darwin/arm64|linux/amd64) ;;
+    darwin/arm64|linux/amd64|linux/arm64) ;;
     *)
       echo "unsupported platform: $1/$2" >&2
-      echo "prebuilt csgclaw binaries currently support macOS arm64 and Linux amd64 only" >&2
+      echo "prebuilt csgclaw binaries currently support macOS arm64, Linux amd64, and Linux arm64 only" >&2
       exit 1
       ;;
   esac

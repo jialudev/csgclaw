@@ -18,7 +18,7 @@ GOCACHE="${GOCACHE:-$(pwd)/.gocache}"
 GO_BUILD_TAGS="${GO_BUILD_TAGS:-}"
 PACKAGE_MODE="${PACKAGE_MODE:-bundled-boxlite-cli}"
 VERSION_PKG="${VERSION_PKG:-csgclaw/internal/version}"
-BOXLITE_CLI_VERSION="${BOXLITE_CLI_VERSION:-v0.8.2}"
+BOXLITE_CLI_VERSION="${BOXLITE_CLI_VERSION:-v0.9.0}"
 BOXLITE_CLI_BASE_URL="${BOXLITE_CLI_BASE_URL:-https://github.com/boxlite-ai/boxlite/releases/download}"
 LDFLAGS="-X ${VERSION_PKG}.Version=${VERSION} -X ${VERSION_PKG}.Commit=${COMMIT} -X ${VERSION_PKG}.BuildTime=${BUILD_TIME}"
 if [ "$APP" = "csgclaw-cli" ]; then

@@ -22,7 +22,7 @@ permissions:
   contents: write
 
 env:
-  BOXLITE_CLI_VERSION: v0.8.2
+  BOXLITE_CLI_VERSION: v0.9.0
 
 jobs:
   build-and-release:
@@ -33,10 +33,9 @@ jobs:
           - runner: ubuntu-latest
             goos: linux
             goarch: amd64
-          # Temporarily disable linux/arm64 release builds.
-          # - runner: ubuntu-24.04-arm
-          #   goos: linux
-          #   goarch: arm64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
           - runner: macos-14
             goos: darwin
             goarch: arm64

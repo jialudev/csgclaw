@@ -20,7 +20,7 @@ CSGClaw is a multi-agent collaboration platform built by OpenCSG — designed ar
 curl -fsSL https://csgclaw.opencsg.com/install.sh | bash
 ```
 
-The installer downloads a prebuilt release bundle, installs it into user-local directories, and links `csgclaw` into your `PATH`. Prebuilt bundles are currently available for macOS arm64 and Linux amd64.
+The installer downloads a prebuilt release bundle, installs it into user-local directories, and links `csgclaw` into your `PATH`. Prebuilt bundles are currently available for macOS arm64, Linux amd64, and Linux arm64.
 
 **Build from source:**
 
@@ -46,7 +46,7 @@ For the official release bundles and the default source build, `boxlite-cli` res
 ## Features
 
 - **Multi-agent coordination** — work with a team of specialized agents through a single coordination point, not a pile of chat windows
-- **One-click install** — prebuilt binaries for macOS arm64 and Linux amd64; up and running in minutes
+- **One-click install** — prebuilt binaries for macOS arm64, Linux amd64, and Linux arm64; up and running in minutes
 - **WebUI out of the box** — browser-based workspace available immediately after `csgclaw serve`
 - **Multi-channel support** — connect Feishu, WeChat, Matrix, or other channels when needed
 - **Isolated execution** — each Worker runs in a secure sandbox with security boundaries enabled by default

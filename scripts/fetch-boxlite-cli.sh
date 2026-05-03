@@ -9,7 +9,7 @@ fi
 GOOS_TARGET="$1"
 GOARCH_TARGET="$2"
 OUTPUT_DIR="$3"
-BOXLITE_CLI_VERSION="${BOXLITE_CLI_VERSION:-v0.8.2}"
+BOXLITE_CLI_VERSION="${BOXLITE_CLI_VERSION:-v0.9.0}"
 BOXLITE_CLI_BASE_URL="${BOXLITE_CLI_BASE_URL:-https://github.com/boxlite-ai/boxlite/releases/download}"
 
 resolve_target_suffix() {
