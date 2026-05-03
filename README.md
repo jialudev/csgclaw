@@ -36,10 +36,7 @@ For most users, the install script above is the simpler option.
 csgclaw serve
 ```
 
-Open the printed URL (e.g. `http://127.0.0.1:18080/`) in your browser to enter the IM workspace.
-On a fresh local state, `serve` auto-creates the default config and bootstrap state before starting the server.
-On first start, CSGClaw auto-detects an agent profile for the Manager from CSGHub Lite, Codex, or Claude Code. If detection fails, the Web UI stays available and opens the Manager profile setup panel so you can choose a provider and model there.
-For Codex and Claude Code, CSGClaw reuses local CLI auth where possible: Codex from `~/.codex/auth.json`, Claude Code from macOS Keychain, or `csgclaw model auth login codex|claude-code` when manual OAuth is needed.
+CSGClaw will open the IM workspace in your browser automatically when possible. If it does not, open the printed URL manually (for example `http://127.0.0.1:18080/`).
 
 ## Configuration
 

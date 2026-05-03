@@ -12,8 +12,8 @@ func TestSupportedProvidersAlwaysIncludeBoxLiteCLI(t *testing.T) {
 	if !slices.Contains(supported, config.BoxLiteCLIProvider) {
 		t.Fatalf("SupportedProviders() = %v, want %q to be compiled in", supported, config.BoxLiteCLIProvider)
 	}
-	if slices.Contains(supported, "boxlite-sdk") {
-		t.Fatalf("SupportedProviders() = %v, want legacy %q to stay removed", supported, "boxlite-sdk")
+	if len(supported) != 2 {
+		t.Fatalf("SupportedProviders() = %v, want exactly the compiled providers", supported)
 	}
 }
 

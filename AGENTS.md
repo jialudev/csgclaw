@@ -7,7 +7,7 @@
 
 ## Overview
 
-CSGClaw is a Go-based local multi-agent platform. The `csgclaw` CLI bootstraps config, starts the local HTTP server and Web UI, and manages agents, rooms, and users. BoxLite runtime integration lives in `third_party/boxlite-go`.
+CSGClaw is a Go-based local multi-agent platform. The `csgclaw` CLI bootstraps config, starts the local HTTP server and Web UI, and manages agents, rooms, and users. BoxLite runtime integration is provided through the `boxlite-cli` sandbox path.
 
 ## Structure
 
@@ -20,7 +20,6 @@ internal/api/           HTTP handlers and router
 internal/im/            IM service and PicoClaw bridge
 internal/server/        HTTP server and UI wiring
 web/static/             shipped frontend assets
-third_party/boxlite-go/ vendored BoxLite SDK
 ```
 
 ## Commands
@@ -43,7 +42,7 @@ make release
 - Prefer existing patterns and the standard library before adding dependencies.
 - Format with `make fmt`.
 - Add or update tests when changing CLI, config, API, or runtime behavior.
-- Do not edit `third_party/boxlite-go` unless the task is about SDK, CGO, or linker/runtime integration.
+- Do not change BoxLite sandbox integration or packaging paths unless the task is about sandbox/runtime integration.
 - When changing config fields or defaults, update loader, saver, onboard flow, tests, and docs together.
 - Never hardcode or print real secrets; startup and logs must keep tokens redacted.
 
