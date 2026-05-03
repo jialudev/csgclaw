@@ -98,6 +98,16 @@ func (c ModelConfig) Validate() error {
 	return nil
 }
 
+func (c SandboxConfig) Validate() error {
+	cfg := c.Resolved()
+	switch cfg.Provider {
+	case BoxLiteCLIProvider, CSGHubProvider:
+		return nil
+	default:
+		return fmt.Errorf("unsupported sandbox provider %q; supported values are %q or %q", cfg.Provider, BoxLiteCLIProvider, CSGHubProvider)
+	}
+}
+
 func (c ProviderConfig) Resolved() ProviderConfig {
 	out := c
 	out.BaseURL = strings.TrimRight(strings.TrimSpace(out.BaseURL), "/")

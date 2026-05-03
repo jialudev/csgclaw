@@ -111,7 +111,7 @@ Auth is also managed locally:
 
 ## Sandbox Providers
 
-CSGClaw runs Workers through the configured sandbox provider. The default build shape uses `boxlite-cli`, which runs BoxLite through the external CLI process. SDK-enabled builds still default to `boxlite-sdk`, which uses the vendored BoxLite Go SDK.
+CSGClaw runs Workers through the configured sandbox provider. BoxLite integration is provided through `boxlite-cli`, which runs BoxLite through the external CLI process.
 
 The default source build and official release bundles already align with the CLI-backed provider:
 
@@ -134,10 +134,10 @@ debian_registries_override = []
 
 CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the agent directory plus `home_dir_name` such as `~/.csgclaw/agents/<agent-id>/boxlite`. That explicit home takes precedence over `BOXLITE_HOME` for CSGClaw-managed sandboxes, while `BOXLITE_HOME` still applies when you run `boxlite` manually without `--home`.
 
-The `boxlite-cli` provider does not need the vendored Go SDK at runtime. `boxlite-sdk` is the only sandbox provider that gets special build-time treatment because it pulls in CGO, the native SDK archive, and the larger embedded runtime payload. The repository now supports two build shapes:
+The `boxlite-cli` provider does not need a vendored Go SDK at runtime. Current source builds and release packaging use the same BoxLite CLI-backed integration:
 
-- `make build`, `make test`, `make run`, and `make package` use the default `boxlite-cli` build shape. The resulting binary excludes only the SDK-backed `boxlite-sdk` provider, while `boxlite-cli` and other non-SDK providers remain compiled in.
-- `make build-with-boxlite-sdk`, `make test-with-boxlite-sdk`, and `make run-with-boxlite-sdk` add the `boxlite_sdk` build tag and keep the SDK-backed `boxlite-sdk` provider compiled in.
+- `make build`, `make test`, `make run`, and `make package` all use the standard `boxlite-cli` path.
+- `boxlite-cli` remains the built-in BoxLite sandbox provider, alongside other non-BoxLite providers such as `csghub`.
 
 ## Channel Configuration
 

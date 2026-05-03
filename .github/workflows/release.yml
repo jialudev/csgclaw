@@ -80,22 +80,10 @@ jobs:
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Fetch BoxLite native library
-        if: steps.package_mode.outputs.value == 'legacy-single-binary'
-        shell: bash
-        working-directory: third_party/boxlite-go
-        env:
-          BOXLITE_SDK_VERSION: v0.7.6
-        run: go run ./cmd/setup
-
       - name: Package release archive
         shell: bash
         run: |
           chmod +x scripts/package-release.sh
-          csgclaw_go_build_tags=""
-          if [ "${{ steps.package_mode.outputs.value }}" = "legacy-single-binary" ]; then
-            csgclaw_go_build_tags="boxlite_sdk"
-          fi
           VERSION="${{ steps.version.outputs.value }}" \
           COMMIT="${{ steps.build_meta.outputs.commit }}" \
           BUILD_TIME="${{ steps.build_meta.outputs.build_time }}" \
@@ -104,7 +92,6 @@ jobs:
           GOCACHE="${{ github.workspace }}/.gocache" \
           PACKAGE_MODE="${{ steps.package_mode.outputs.value }}" \
           BOXLITE_CLI_VERSION="${{ env.BOXLITE_CLI_VERSION }}" \
-          GO_BUILD_TAGS="${csgclaw_go_build_tags}" \
           CGO_ENABLED=1 \
           ./scripts/package-release.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
           VERSION="${{ steps.version.outputs.value }}" \

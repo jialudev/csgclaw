@@ -58,12 +58,12 @@ internal/api/           HTTP handlers and route registration
 internal/bot/           bot lifecycle and agent/user binding
 internal/agent/         agent runtime and storage
 internal/sandbox/       runtime-neutral sandbox interfaces
-internal/sandbox/boxlitesdk/ BoxLite sandbox adapter
+internal/sandbox/boxlitecli/ BoxLite CLI sandbox implementation
+internal/sandbox/csghub/ CSGHub sandbox implementation
 internal/im/            built-in csgclaw IM and PicoClaw bridge
 internal/channel/       external channel integrations, including Feishu
 internal/config/        config defaults, load/save
 web/static/             shipped frontend assets
-third_party/boxlite-go/ vendored BoxLite SDK
 ```
 
 `internal/bot` is the new business boundary for bot behavior. It should not be implemented as extra glue inside API handlers.

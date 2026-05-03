@@ -7,7 +7,7 @@ import (
 )
 
 // Non-SDK sandbox providers register unconditionally so they remain available
-// in every csgclaw build, including binaries compiled without boxlite_sdk.
+// in every csgclaw build.
 func init() {
 	Register(config.BoxLiteCLIProvider, func(cfg config.SandboxConfig) (agent.ServiceOption, error) {
 		opts := []boxlitecli.ProviderOption{boxlitecli.WithPath(boxlitecli.ResolvePath(""))}

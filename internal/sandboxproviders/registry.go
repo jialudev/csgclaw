@@ -16,8 +16,8 @@ type serviceOptionFactory func(config.SandboxConfig) (agent.ServiceOption, error
 var factories = map[string]serviceOptionFactory{}
 
 // Register adds a sandbox provider that is compiled into the current binary.
-// Only the BoxLite SDK-backed provider is gated by a build tag; other sandbox
-// implementations should register unconditionally so they ship in all builds.
+// Sandbox implementations should register unconditionally so they ship in all
+// builds unless a future provider introduces an explicit compile-time gate.
 func Register(name string, factory serviceOptionFactory) {
 	name = strings.TrimSpace(name)
 	if name == "" {

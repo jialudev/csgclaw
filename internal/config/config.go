@@ -130,7 +130,6 @@ const (
 	DefaultAccessToken        = "your_access_token"
 	DefaultManagerImage       = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
 	CSGHubProvider            = "csghub"
-	BoxLiteSDKProvider        = "boxlite-sdk"
 	BoxLiteCLIProvider        = "boxlite-cli"
 	DefaultSandboxHomeDirName = "boxlite"
 	RuntimeHomeDirName        = DefaultSandboxHomeDirName
@@ -382,6 +381,9 @@ func Load(path string) (Config, error) {
 		cfg.Server.AccessToken = DefaultAccessToken
 	}
 	cfg.Sandbox = cfg.Sandbox.Resolved()
+	if err := cfg.Sandbox.Validate(); err != nil {
+		return Config{}, err
+	}
 
 	if !modelsCfg.IsZero() {
 		cfg.Models = modelsCfg.Normalized()

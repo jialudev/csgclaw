@@ -143,6 +143,36 @@ models = ["minimax-m2.7"]
 	}
 }
 
+func TestLoadRejectsRemovedBoxLiteSDKProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[sandbox]
+provider = "boxlite-sdk"
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want unsupported sandbox provider")
+	}
+	if !strings.Contains(err.Error(), `unsupported sandbox provider "boxlite-sdk"`) {
+		t.Fatalf("Load() error = %q, want unsupported sandbox provider", err)
+	}
+}
+
 func TestLoadExpandsEnvironmentVariablesInConfigValues(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

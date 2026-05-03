@@ -111,7 +111,7 @@ Codex 和 Claude Code Profile 通过 Web UI 写入 agent state。CSGClaw 在 `se
 
 ## Sandbox Provider
 
-CSGClaw 通过配置的 sandbox provider 隔离 Worker 执行环境。默认构建形态使用 `boxlite-cli`，通过外部 CLI 进程运行 BoxLite；启用 SDK 的构建形态仍默认使用 `boxlite-sdk`，对应仓库内 vendored BoxLite Go SDK。
+CSGClaw 通过配置的 sandbox provider 隔离 Worker 执行环境。当前 BoxLite 集成统一通过 `boxlite-cli` 提供，也就是通过外部 CLI 进程运行 BoxLite。
 
 默认源码构建和官方 release bundle 已经统一到基于 CLI 的 provider：
 
@@ -134,10 +134,10 @@ debian_registries_override = []
 
 CSGClaw 会为每个 agent 调用 BoxLite CLI 时显式传入 `--home`，目录由 agent 目录和 `home_dir_name` 组成，例如 `~/.csgclaw/agents/<agent-id>/boxlite`。这个显式 home 对 CSGClaw 管理的 sandbox 生效，优先于 `BOXLITE_HOME`；你手动运行 `boxlite` 且不传 `--home` 时，`BOXLITE_HOME` 仍按 BoxLite 自身规则生效。
 
-`boxlite-cli` provider 运行时不需要 vendored Go SDK。`boxlite-sdk` 是唯一需要特殊编译处理的 sandbox provider，因为它会带入 CGO、native SDK archive，以及更大的 embed runtime。仓库现在支持两种构建形态：
+`boxlite-cli` provider 运行时不需要 vendored Go SDK。当前源码构建和 release 打包都走同一条 BoxLite CLI 路径：
 
-- `make build`、`make test`、`make run`、`make package` 使用默认的 `boxlite-cli` 构建形态。产出的二进制只排除 SDK 版 `boxlite-sdk` provider；`boxlite-cli` 和其他非 SDK provider 仍然会被编译进去。
-- `make build-with-boxlite-sdk`、`make test-with-boxlite-sdk`、`make run-with-boxlite-sdk` 会带上 `boxlite_sdk` build tag，继续编译 SDK 版 `boxlite-sdk` provider。
+- `make build`、`make test`、`make run`、`make package` 都使用标准的 `boxlite-cli` 路径。
+- `boxlite-cli` 是内置的 BoxLite sandbox provider，同时仓库也保留 `csghub` 等其他非 BoxLite provider。
 
 ## Channel 配置
 

@@ -9,13 +9,11 @@ sandboxes; csgclaw is configured with `[sandbox].provider = csghub`).
 
 - **`go build`** — default binary (BoxLite **CLI** backend plus CSGHub
   provider; pick the active backend in `config.toml` / deployment).
-- **`go build -tags boxlite_sdk`** — same surface area, but BoxLite is
-  linked via the **SDK** (CGO + native library) instead of the CLI.
 
 There is **no** separate `csghub` build tag. Variables in §2–§6 matter
 when the deployment uses the CSGHub sandbox provider and this PVC/API
-layout; pure local BoxLite (`provider = boxlite-cli` or `boxlite-sdk`)
-does not need them.
+layout; pure local BoxLite (`provider = boxlite-cli`) does not need
+them.
 
 It has two audiences:
 

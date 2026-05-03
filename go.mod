@@ -2,8 +2,6 @@ module csgclaw
 
 go 1.26.2
 
-require github.com/RussellLuo/boxlite/sdks/go v0.7.6
-
 require github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 
 require (
@@ -59,5 +57,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/RussellLuo/boxlite/sdks/go => ./third_party/boxlite-go
