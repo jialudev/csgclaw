@@ -24,7 +24,6 @@ CSGCLAW_ACCESS_TOKEN_ENV = "CSGCLAW_ACCESS_TOKEN"
 MANAGER_API_BASE_URL_ENV = "MANAGER_API_BASE_URL"
 MANAGER_API_TOKEN_ENV = "MANAGER_API_TOKEN"
 MANAGER_API_TIMEOUT_ENV = "MANAGER_API_TIMEOUT"
-PICOCLAW_CONFIG_PATH = os.path.expanduser("~/.picoclaw/config.json")
 TRACKING_STATE_ROOT = os.path.join(tempfile.gettempdir(), "manager-worker-dispatch")
 FEISHU_DISPATCH_DELAY_SECONDS = 5.0
 
@@ -44,36 +43,6 @@ def channel_resource_path(channel: str, resource: str) -> str:
     if normalized == "feishu":
         return f"/api/v1/channels/feishu/{resource.lstrip('/')}"
     raise SystemExit(f'Unsupported channel "{channel}"')
-
-
-def load_local_config() -> dict[str, Any]:
-    if not os.path.exists(PICOCLAW_CONFIG_PATH):
-        return {}
-    try:
-        with open(PICOCLAW_CONFIG_PATH, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def get_local_csgclaw_settings() -> dict[str, str]:
-    config = load_local_config()
-    channels = config.get("channels")
-    if not isinstance(channels, dict):
-        return {}
-    csgclaw = channels.get("csgclaw")
-    if not isinstance(csgclaw, dict):
-        return {}
-
-    settings: dict[str, str] = {}
-    base_url = csgclaw.get("base_url")
-    access_token = csgclaw.get("access_token")
-    if isinstance(base_url, str) and base_url.strip():
-        settings["base_url"] = base_url.strip()
-    if isinstance(access_token, str) and access_token.strip():
-        settings["access_token"] = access_token.strip()
-    return settings
 
 
 def ensure_tracking_state_root() -> Path:
@@ -689,19 +658,16 @@ def build_tracking_message(task: dict[str, Any], todo_path: str) -> str:
 
 
 def load_api(args: argparse.Namespace) -> CSGClawAPI:
-    local_settings = get_local_csgclaw_settings()
     base_url = (
         args.base_url
         or os.environ.get(CSGCLAW_BASE_URL_ENV)
         or os.environ.get(MANAGER_API_BASE_URL_ENV)
-        or local_settings.get("base_url")
         or DEFAULT_BASE_URL
     )
     token = (
         args.token
         or os.environ.get(CSGCLAW_ACCESS_TOKEN_ENV)
         or os.environ.get(MANAGER_API_TOKEN_ENV)
-        or local_settings.get("access_token")
     )
     timeout = float(os.environ.get(MANAGER_API_TIMEOUT_ENV, "30"))
     return CSGClawAPI(base_url=base_url, token=token, timeout=timeout, dry_run=args.dry_run)
