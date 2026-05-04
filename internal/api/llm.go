@@ -7,7 +7,7 @@ import (
 	"csgclaw/internal/llm"
 )
 
-func (h *Handler) handlePicoClawModels(w http.ResponseWriter, r *http.Request, botID string) {
+func (h *Handler) handleBotLLMModels(w http.ResponseWriter, r *http.Request, botID string) {
 	if h.llm == nil {
 		http.Error(w, "llm bridge is not configured", http.StatusServiceUnavailable)
 		return
@@ -22,7 +22,7 @@ func (h *Handler) handlePicoClawModels(w http.ResponseWriter, r *http.Request, b
 	_, _ = w.Write(body)
 }
 
-func (h *Handler) handlePicoClawChatCompletions(w http.ResponseWriter, r *http.Request, botID string) {
+func (h *Handler) handleBotLLMChatCompletions(w http.ResponseWriter, r *http.Request, botID string) {
 	if h.llm == nil {
 		http.Error(w, "llm bridge is not configured", http.StatusServiceUnavailable)
 		return

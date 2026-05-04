@@ -412,7 +412,7 @@ func startServer(ctx context.Context, run *command.Context, cfg config.Config, s
 		Bot:         botSvc,
 		IM:          imSvc,
 		IMBus:       imBus,
-		PicoClaw:    im.NewPicoClawBridge(cfg.Server.AccessToken),
+		BotBridge:   im.NewBotBridge(cfg.Server.AccessToken),
 		Feishu:      feishuSvc,
 		LLM:         llmSvc,
 		AccessToken: cfg.Server.AccessToken,

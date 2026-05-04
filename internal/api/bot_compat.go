@@ -15,16 +15,16 @@ import (
 )
 
 const (
-	picoClawReplayWindow      = 30 * time.Minute
-	picoClawHeartbeatInterval = 15 * time.Second
+	botReplayWindow      = 30 * time.Minute
+	botHeartbeatInterval = 15 * time.Second
 )
 
-func (h *Handler) registerPicoClawRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/api/bots/", h.handlePicoClawBotRoutes)
+func (h *Handler) registerBotCompatibilityRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/bots/", h.handleBotCompatibilityRoutes)
 }
 
-func (h *Handler) PublishPicoClawEvent(evt im.Event) {
-	if h.picoclaw == nil || h.im == nil {
+func (h *Handler) PublishBotEvent(evt im.Event) {
+	if h.botBridge == nil || h.im == nil {
 		return
 	}
 	if evt.Type != im.EventTypeMessageCreated || evt.Message == nil || evt.Sender == nil {
@@ -35,17 +35,17 @@ func (h *Handler) PublishPicoClawEvent(evt im.Event) {
 	if !ok {
 		return
 	}
-	missed := h.picoclaw.PublishMessageEvent(room, *evt.Sender, *evt.Message)
-	h.reconnectMissedPicoClawAgents(evt.Sender.ID, missed)
+	missed := h.botBridge.PublishMessageEvent(room, *evt.Sender, *evt.Message)
+	h.reconnectMissedBotAgents(evt.Sender.ID, missed)
 }
 
-func (h *Handler) handlePicoClawBotRoutes(w http.ResponseWriter, r *http.Request) {
-	botID, action, ok := parsePicoClawBotPath(r.URL.Path)
+func (h *Handler) handleBotCompatibilityRoutes(w http.ResponseWriter, r *http.Request) {
+	botID, action, ok := parseBotCompatibilityPath(r.URL.Path)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	if h.picoclaw == nil {
+	if h.botBridge == nil {
 		http.Error(w, "picoclaw integration is not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -56,19 +56,19 @@ func (h *Handler) handlePicoClawBotRoutes(w http.ResponseWriter, r *http.Request
 
 	switch {
 	case r.Method == http.MethodGet && action == "events":
-		h.handlePicoClawEvents(w, r, botID)
+		h.handleBotEvents(w, r, botID)
 	case r.Method == http.MethodPost && action == "messages/send":
-		h.handlePicoClawSendMessage(w, r, botID)
+		h.handleBotSendMessage(w, r, botID)
 	case r.Method == http.MethodGet && (action == "llm/models" || action == "llm/v1/models"):
-		h.handlePicoClawModels(w, r, botID)
+		h.handleBotLLMModels(w, r, botID)
 	case r.Method == http.MethodPost && (action == "llm/chat/completions" || action == "llm/v1/chat/completions"):
-		h.handlePicoClawChatCompletions(w, r, botID)
+		h.handleBotLLMChatCompletions(w, r, botID)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *Handler) handlePicoClawEvents(w http.ResponseWriter, r *http.Request, botID string) {
+func (h *Handler) handleBotEvents(w http.ResponseWriter, r *http.Request, botID string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming is not supported", http.StatusInternalServerError)
@@ -79,21 +79,21 @@ func (h *Handler) handlePicoClawEvents(w http.ResponseWriter, r *http.Request, b
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	events, cancel := h.picoclaw.Subscribe(botID)
+	events, cancel := h.botBridge.Subscribe(botID)
 	defer func() {
 		cancel()
-		h.requeuePicoClawBufferedEvents(botID, events)
+		h.requeueBufferedBotEvents(botID, events)
 	}()
 	controller := http.NewResponseController(w)
 
 	if _, err := io.WriteString(w, ": connected\n\n"); err != nil {
 		return
 	}
-	if err := flushPicoClawSSE(controller, flusher); err != nil {
+	if err := flushBotSSE(controller, flusher); err != nil {
 		return
 	}
-	h.replayRecentPicoClawMessages(botID, r.Header.Get("Last-Event-ID"))
-	heartbeat := time.NewTicker(picoClawHeartbeatInterval)
+	h.replayRecentBotMessages(botID, r.Header.Get("Last-Event-ID"))
+	heartbeat := time.NewTicker(botHeartbeatInterval)
 	defer heartbeat.Stop()
 
 	for {
@@ -101,28 +101,28 @@ func (h *Handler) handlePicoClawEvents(w http.ResponseWriter, r *http.Request, b
 		case <-r.Context().Done():
 			return
 		case <-heartbeat.C:
-			if err := writePicoClawSSEComment(w, controller, flusher, "heartbeat"); err != nil {
+			if err := writeBotSSEComment(w, controller, flusher, "heartbeat"); err != nil {
 				return
 			}
 		case evt, ok := <-events:
 			if !ok {
 				return
 			}
-			if err := writePicoClawSSEEvent(w, controller, flusher, evt); err != nil {
-				h.picoclaw.Requeue(botID, evt)
+			if err := writeBotSSEEvent(w, controller, flusher, evt); err != nil {
+				h.botBridge.Requeue(botID, evt)
 				return
 			}
-			h.picoclaw.Ack(botID, evt.MessageID)
+			h.botBridge.Ack(botID, evt.MessageID)
 		}
 	}
 }
 
-func writePicoClawSSEEvent(w http.ResponseWriter, controller *http.ResponseController, fallback http.Flusher, evt im.PicoClawEvent) error {
+func writeBotSSEEvent(w http.ResponseWriter, controller *http.ResponseController, fallback http.Flusher, evt im.BotEvent) error {
 	data, err := evt.MarshalJSONLine()
 	if err != nil {
 		return err
 	}
-	if id := picoClawSSEID(evt.MessageID); id != "" {
+	if id := botSSEID(evt.MessageID); id != "" {
 		if _, err := fmt.Fprintf(w, "id: %s\n", id); err != nil {
 			return err
 		}
@@ -130,17 +130,17 @@ func writePicoClawSSEEvent(w http.ResponseWriter, controller *http.ResponseContr
 	if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
 		return err
 	}
-	return flushPicoClawSSE(controller, fallback)
+	return flushBotSSE(controller, fallback)
 }
 
-func writePicoClawSSEComment(w http.ResponseWriter, controller *http.ResponseController, fallback http.Flusher, comment string) error {
+func writeBotSSEComment(w http.ResponseWriter, controller *http.ResponseController, fallback http.Flusher, comment string) error {
 	if _, err := fmt.Fprintf(w, ": %s\n\n", comment); err != nil {
 		return err
 	}
-	return flushPicoClawSSE(controller, fallback)
+	return flushBotSSE(controller, fallback)
 }
 
-func flushPicoClawSSE(controller *http.ResponseController, fallback http.Flusher) error {
+func flushBotSSE(controller *http.ResponseController, fallback http.Flusher) error {
 	if controller != nil {
 		if err := controller.Flush(); err == nil {
 			return nil
@@ -155,21 +155,21 @@ func flushPicoClawSSE(controller *http.ResponseController, fallback http.Flusher
 	return nil
 }
 
-func (h *Handler) requeuePicoClawBufferedEvents(botID string, events <-chan im.PicoClawEvent) {
-	if h == nil || h.picoclaw == nil {
+func (h *Handler) requeueBufferedBotEvents(botID string, events <-chan im.BotEvent) {
+	if h == nil || h.botBridge == nil {
 		return
 	}
 	for evt := range events {
-		h.picoclaw.Requeue(botID, evt)
+		h.botBridge.Requeue(botID, evt)
 	}
 }
 
-func (h *Handler) replayRecentPicoClawMessages(botID, lastEventID string) {
-	if h == nil || h.im == nil || h.picoclaw == nil {
+func (h *Handler) replayRecentBotMessages(botID, lastEventID string) {
+	if h == nil || h.im == nil || h.botBridge == nil {
 		return
 	}
 	rooms := h.im.ListRooms()
-	cutoff := time.Now().UTC().Add(-picoClawReplayWindow)
+	cutoff := time.Now().UTC().Add(-botReplayWindow)
 	replayAfter, hasReplayCursor := replayCursor(rooms, lastEventID)
 	for _, room := range rooms {
 		for idx, message := range room.Messages {
@@ -191,7 +191,7 @@ func (h *Handler) replayRecentPicoClawMessages(botID, lastEventID string) {
 			}
 			// Route replay through the bridge so the stable message ID remains the
 			// dedupe key for events already delivered live or drained from pending.
-			h.picoclaw.EnqueueMessageEvent(room, sender, message, botID)
+			h.botBridge.EnqueueMessageEvent(room, sender, message, botID)
 		}
 	}
 }
@@ -221,14 +221,14 @@ func isAtOrBeforeReplayCursor(message im.Message, lastEventID string, replayAfte
 	return !message.CreatedAt.After(replayAfter)
 }
 
-func picoClawSSEID(messageID string) string {
+func botSSEID(messageID string) string {
 	messageID = strings.TrimSpace(messageID)
 	messageID = strings.ReplaceAll(messageID, "\r", "")
 	messageID = strings.ReplaceAll(messageID, "\n", "")
 	return messageID
 }
 
-func (h *Handler) reconnectMissedPicoClawAgents(senderID string, botIDs []string) {
+func (h *Handler) reconnectMissedBotAgents(senderID string, botIDs []string) {
 	if h == nil || h.svc == nil || h.isAgentSender(senderID) || len(botIDs) == 0 {
 		return
 	}
@@ -276,12 +276,12 @@ func hasLaterMessageFrom(messages []im.Message, senderID string) bool {
 	return false
 }
 
-func (h *Handler) handlePicoClawSendMessage(w http.ResponseWriter, r *http.Request, botID string) {
+func (h *Handler) handleBotSendMessage(w http.ResponseWriter, r *http.Request, botID string) {
 	if h.im == nil {
 		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	var req im.PicoClawSendMessageRequest
+	var req im.BotSendMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
@@ -300,7 +300,7 @@ func (h *Handler) handlePicoClawSendMessage(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]string{"message_id": message.ID})
 }
 
-func parsePicoClawBotPath(path string) (botID, action string, ok bool) {
+func parseBotCompatibilityPath(path string) (botID, action string, ok bool) {
 	const prefix = "/api/bots/"
 	if !strings.HasPrefix(path, prefix) {
 		return "", "", false

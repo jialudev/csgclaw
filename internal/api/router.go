@@ -6,7 +6,7 @@ func (h *Handler) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	h.registerCoreRoutes(mux)
 	h.registerChannelRoutes(mux)
-	h.registerPicoClawRoutes(mux)
+	h.registerBotCompatibilityRoutes(mux)
 	return mux
 }
 

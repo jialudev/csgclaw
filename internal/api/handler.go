@@ -24,7 +24,7 @@ type Handler struct {
 	im                *im.Service
 	imBus             *im.Bus
 	imProvisioner     *im.Provisioner
-	picoclaw          *im.PicoClawBridge
+	botBridge         *im.BotBridge
 	feishu            *channel.FeishuService
 	llm               *llm.Service
 	serverAccessToken string
@@ -85,19 +85,19 @@ type addRoomMembersRequest struct {
 	Locale    string   `json:"locale"`
 }
 
-func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
-	return NewHandlerWithBotAndAccessToken(svc, nil, imSvc, imBus, picoclaw, feishu, llmSvc, "")
+func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
+	return NewHandlerWithBotAndAccessToken(svc, nil, imSvc, imBus, botBridge, feishu, llmSvc, "")
 }
 
-func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
-	return NewHandlerWithBotAndAccessToken(svc, botSvc, imSvc, imBus, picoclaw, feishu, llmSvc, "")
+func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
+	return NewHandlerWithBotAndAccessToken(svc, botSvc, imSvc, imBus, botBridge, feishu, llmSvc, "")
 }
 
-func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string) *Handler {
-	return NewHandlerWithBotAndAuth(svc, botSvc, imSvc, imBus, picoclaw, feishu, llmSvc, serverAccessToken, false)
+func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string) *Handler {
+	return NewHandlerWithBotAndAuth(svc, botSvc, imSvc, imBus, botBridge, feishu, llmSvc, serverAccessToken, false)
 }
 
-func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, picoclaw *im.PicoClawBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string, serverNoAuth bool) *Handler {
+func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string, serverNoAuth bool) *Handler {
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishu)
 		botSvc.SetIMBus(imBus)
@@ -108,7 +108,7 @@ func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im
 		im:                imSvc,
 		imBus:             imBus,
 		imProvisioner:     im.NewProvisioner(imSvc, imBus),
-		picoclaw:          picoclaw,
+		botBridge:         botBridge,
 		feishu:            feishu,
 		llm:               llmSvc,
 		serverAccessToken: serverAccessToken,

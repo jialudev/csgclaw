@@ -21,7 +21,7 @@ type Options struct {
 	Bot         *bot.Service
 	IM          *im.Service
 	IMBus       *im.Bus
-	PicoClaw    *im.PicoClawBridge
+	BotBridge   *im.BotBridge
 	Feishu      *channel.FeishuService
 	LLM         *llm.Service
 	AccessToken string
@@ -34,7 +34,7 @@ func Run(opts Options) error {
 	if opts.Context == nil {
 		opts.Context = context.Background()
 	}
-	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.PicoClaw, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
 	mux := handler.Routes()
 	mux.Handle("/", uiHandler())
 
@@ -44,7 +44,7 @@ func Run(opts Options) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	if opts.IMBus != nil && opts.PicoClaw != nil {
+	if opts.IMBus != nil && opts.BotBridge != nil {
 		events, cancel := opts.IMBus.Subscribe()
 		defer cancel()
 
@@ -57,7 +57,7 @@ func Run(opts Options) error {
 					if !ok {
 						return
 					}
-					handler.PublishPicoClawEvent(evt)
+					handler.PublishBotEvent(evt)
 				}
 			}
 		}()

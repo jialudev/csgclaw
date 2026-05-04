@@ -60,7 +60,7 @@ func TestShouldNotifyBotPushesForTwoMemberGroupWithoutMention(t *testing.T) {
 }
 
 func TestPublishMessageEventUsesGroupChatTypeForTwoMemberGroup(t *testing.T) {
-	bridge := NewPicoClawBridge("")
+	bridge := NewBotBridge("")
 	events, cancel := bridge.Subscribe("u-bot")
 	defer cancel()
 
@@ -90,7 +90,7 @@ func TestPublishMessageEventUsesGroupChatTypeForTwoMemberGroup(t *testing.T) {
 }
 
 func TestPublishMessageEventQueuesUntilBotSubscribes(t *testing.T) {
-	bridge := NewPicoClawBridge("")
+	bridge := NewBotBridge("")
 	room := Room{
 		ID:       "room-direct",
 		IsDirect: true,
@@ -122,8 +122,8 @@ func TestPublishMessageEventQueuesUntilBotSubscribes(t *testing.T) {
 	}
 }
 
-func TestPicoClawBridgeAckPreventsDuplicateReplay(t *testing.T) {
-	bridge := NewPicoClawBridge("")
+func TestBotBridgeAckPreventsDuplicateReplay(t *testing.T) {
+	bridge := NewBotBridge("")
 	events, cancel := bridge.Subscribe("u-bot")
 	defer cancel()
 
@@ -156,8 +156,8 @@ func TestPicoClawBridgeAckPreventsDuplicateReplay(t *testing.T) {
 	}
 }
 
-func TestPicoClawBridgeRequeueDeliversUnackedEventAgain(t *testing.T) {
-	bridge := NewPicoClawBridge("")
+func TestBotBridgeRequeueDeliversUnackedEventAgain(t *testing.T) {
+	bridge := NewBotBridge("")
 	events, cancel := bridge.Subscribe("u-bot")
 
 	room := Room{
@@ -174,7 +174,7 @@ func TestPicoClawBridgeRequeueDeliversUnackedEventAgain(t *testing.T) {
 	}
 
 	bridge.PublishMessageEvent(room, sender, message)
-	var got PicoClawEvent
+	var got BotEvent
 	select {
 	case got = <-events:
 	case <-time.After(time.Second):

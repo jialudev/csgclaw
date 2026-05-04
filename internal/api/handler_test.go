@@ -25,7 +25,7 @@ import (
 	"csgclaw/internal/sandbox/sandboxtest"
 )
 
-func TestParsePicoClawBotPath(t *testing.T) {
+func TestParseBotCompatibilityPath(t *testing.T) {
 	tests := []struct {
 		path       string
 		wantBotID  string
@@ -45,9 +45,9 @@ func TestParsePicoClawBotPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			gotBotID, gotAction, gotOK := parsePicoClawBotPath(tt.path)
+			gotBotID, gotAction, gotOK := parseBotCompatibilityPath(tt.path)
 			if gotBotID != tt.wantBotID || gotAction != tt.wantAction || gotOK != tt.wantOK {
-				t.Fatalf("parsePicoClawBotPath(%q) = (%q, %q, %v), want (%q, %q, %v)", tt.path, gotBotID, gotAction, gotOK, tt.wantBotID, tt.wantAction, tt.wantOK)
+				t.Fatalf("parseBotCompatibilityPath(%q) = (%q, %q, %v), want (%q, %q, %v)", tt.path, gotBotID, gotAction, gotOK, tt.wantBotID, tt.wantAction, tt.wantOK)
 			}
 		})
 	}
@@ -2366,10 +2366,10 @@ func TestHandleFeishuRoomsDeleteRemovesRoom(t *testing.T) {
 	}
 }
 
-func TestHandlePicoClawRoutesRequireAuthorization(t *testing.T) {
+func TestHandleBotCompatibilityRoutesRequireAuthorization(t *testing.T) {
 	srv := &Handler{
 		im:                im.NewService(),
-		picoclaw:          im.NewPicoClawBridge("secret"),
+		botBridge:         im.NewBotBridge("secret"),
 		serverAccessToken: "secret",
 	}
 
@@ -2382,9 +2382,9 @@ func TestHandlePicoClawRoutesRequireAuthorization(t *testing.T) {
 	}
 }
 
-func TestHandlePicoClawRoutesRequireAuthorizationWhenServerAccessTokenEmpty(t *testing.T) {
+func TestHandleBotCompatibilityRoutesRequireAuthorizationWhenServerAccessTokenEmpty(t *testing.T) {
 	srv := &Handler{
-		picoclaw: im.NewPicoClawBridge("secret"),
+		botBridge: im.NewBotBridge("secret"),
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/bots/u-manager/messages/send", strings.NewReader(`{"room_id":"room-1","text":"hello"}`))
@@ -2396,9 +2396,9 @@ func TestHandlePicoClawRoutesRequireAuthorizationWhenServerAccessTokenEmpty(t *t
 	}
 }
 
-func TestHandlePicoClawRoutesSkipAuthorizationWhenNoAuth(t *testing.T) {
+func TestHandleBotCompatibilityRoutesSkipAuthorizationWhenNoAuth(t *testing.T) {
 	srv := &Handler{
-		picoclaw:     im.NewPicoClawBridge("secret"),
+		botBridge:    im.NewBotBridge("secret"),
 		serverNoAuth: true,
 	}
 
@@ -2411,9 +2411,9 @@ func TestHandlePicoClawRoutesSkipAuthorizationWhenNoAuth(t *testing.T) {
 	}
 }
 
-func TestHandlePicoClawSendMessageRequiresIMService(t *testing.T) {
+func TestHandleBotSendMessageRequiresIMService(t *testing.T) {
 	srv := &Handler{
-		picoclaw:     im.NewPicoClawBridge(""),
+		botBridge:    im.NewBotBridge(""),
 		serverNoAuth: true,
 	}
 
@@ -2426,7 +2426,7 @@ func TestHandlePicoClawSendMessageRequiresIMService(t *testing.T) {
 	}
 }
 
-func TestPublishPicoClawEventQueuesUntilBotSubscribes(t *testing.T) {
+func TestPublishBotEventQueuesUntilBotSubscribes(t *testing.T) {
 	now := time.Now().UTC()
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
@@ -2450,8 +2450,8 @@ func TestPublishPicoClawEventQueuesUntilBotSubscribes(t *testing.T) {
 			},
 		},
 	})
-	bridge := im.NewPicoClawBridge("")
-	srv := &Handler{im: imSvc, picoclaw: bridge}
+	bridge := im.NewBotBridge("")
+	srv := &Handler{im: imSvc, botBridge: bridge}
 
 	sender, ok := imSvc.User("u-admin")
 	if !ok {
@@ -2462,7 +2462,7 @@ func TestPublishPicoClawEventQueuesUntilBotSubscribes(t *testing.T) {
 		t.Fatalf("room = %+v, want one message", room)
 	}
 
-	srv.PublishPicoClawEvent(im.Event{
+	srv.PublishBotEvent(im.Event{
 		Type:    im.EventTypeMessageCreated,
 		RoomID:  "room-1",
 		Sender:  &sender,
@@ -2478,11 +2478,11 @@ func TestPublishPicoClawEventQueuesUntilBotSubscribes(t *testing.T) {
 			t.Fatalf("queued event = %+v, want msg-pending queued while disconnected", evt)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("Subscribe() timed out waiting for queued PicoClaw event")
+		t.Fatal("Subscribe() timed out waiting for queued bot event")
 	}
 }
 
-func TestPublishPicoClawEventReconnectsMissedWorker(t *testing.T) {
+func TestPublishBotEventReconnectsMissedWorker(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	created := make(chan sandbox.CreateSpec, 1)
 	provider := &sandboxtest.Provider{
@@ -2556,8 +2556,8 @@ func TestPublishPicoClawEventReconnectsMissedWorker(t *testing.T) {
 		t.Fatalf("room = %+v, want one message", room)
 	}
 
-	srv := &Handler{svc: svc, im: imSvc, picoclaw: im.NewPicoClawBridge("")}
-	srv.PublishPicoClawEvent(im.Event{
+	srv := &Handler{svc: svc, im: imSvc, botBridge: im.NewBotBridge("")}
+	srv.PublishBotEvent(im.Event{
 		Type:    im.EventTypeMessageCreated,
 		RoomID:  "room-1",
 		Sender:  &sender,
@@ -2574,7 +2574,7 @@ func TestPublishPicoClawEventReconnectsMissedWorker(t *testing.T) {
 	}
 }
 
-func TestHandlePicoClawEventsRequeuesWhenSSEWriteFails(t *testing.T) {
+func TestHandleBotEventsRequeuesWhenSSEWriteFails(t *testing.T) {
 	now := time.Now().UTC()
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
@@ -2598,7 +2598,7 @@ func TestHandlePicoClawEventsRequeuesWhenSSEWriteFails(t *testing.T) {
 			},
 		},
 	})
-	bridge := im.NewPicoClawBridge("")
+	bridge := im.NewBotBridge("")
 	room, ok := imSvc.Room("room-1")
 	if !ok {
 		t.Fatal("Room(room-1) = false, want room")
@@ -2609,9 +2609,9 @@ func TestHandlePicoClawEventsRequeuesWhenSSEWriteFails(t *testing.T) {
 	}
 	bridge.PublishMessageEvent(room, sender, room.Messages[0])
 
-	srv := &Handler{im: imSvc, picoclaw: bridge}
+	srv := &Handler{im: imSvc, botBridge: bridge}
 	req := httptest.NewRequest(http.MethodGet, "/api/bots/u-manager/events", nil)
-	srv.handlePicoClawEvents(&failingPicoClawEventWriter{header: make(http.Header)}, req, "u-manager")
+	srv.handleBotEvents(&failingBotEventWriter{header: make(http.Header)}, req, "u-manager")
 
 	events, cancel := bridge.Subscribe("u-manager")
 	defer cancel()
@@ -2625,15 +2625,15 @@ func TestHandlePicoClawEventsRequeuesWhenSSEWriteFails(t *testing.T) {
 	}
 }
 
-type failingPicoClawEventWriter struct {
+type failingBotEventWriter struct {
 	header http.Header
 }
 
-func (w *failingPicoClawEventWriter) Header() http.Header {
+func (w *failingBotEventWriter) Header() http.Header {
 	return w.header
 }
 
-func (w *failingPicoClawEventWriter) Write(data []byte) (int, error) {
+func (w *failingBotEventWriter) Write(data []byte) (int, error) {
 	text := string(data)
 	if strings.HasPrefix(text, "id: ") || strings.HasPrefix(text, "event: message") {
 		return 0, errors.New("broken stream")
@@ -2641,11 +2641,11 @@ func (w *failingPicoClawEventWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (w *failingPicoClawEventWriter) WriteHeader(int) {}
+func (w *failingBotEventWriter) WriteHeader(int) {}
 
-func (w *failingPicoClawEventWriter) Flush() {}
+func (w *failingBotEventWriter) Flush() {}
 
-func TestReplayRecentPicoClawMessagesReplaysUnansweredHumanMessage(t *testing.T) {
+func TestReplayRecentBotMessagesReplaysUnansweredHumanMessage(t *testing.T) {
 	now := time.Now().UTC()
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
@@ -2669,12 +2669,12 @@ func TestReplayRecentPicoClawMessagesReplaysUnansweredHumanMessage(t *testing.T)
 			},
 		},
 	})
-	bridge := im.NewPicoClawBridge("")
+	bridge := im.NewBotBridge("")
 	events, cancel := bridge.Subscribe("u-manager")
 	defer cancel()
 
-	srv := &Handler{im: imSvc, picoclaw: bridge}
-	srv.replayRecentPicoClawMessages("u-manager", "")
+	srv := &Handler{im: imSvc, botBridge: bridge}
+	srv.replayRecentBotMessages("u-manager", "")
 
 	select {
 	case evt := <-events:
@@ -2682,11 +2682,11 @@ func TestReplayRecentPicoClawMessagesReplaysUnansweredHumanMessage(t *testing.T)
 			t.Fatalf("replayed event = %+v, want msg-missed please reply", evt)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("replayRecentPicoClawMessages() timed out waiting for event")
+		t.Fatal("replayRecentBotMessages() timed out waiting for event")
 	}
 }
 
-func TestReplayRecentPicoClawMessagesSkipsAnsweredMessage(t *testing.T) {
+func TestReplayRecentBotMessagesSkipsAnsweredMessage(t *testing.T) {
 	now := time.Now().UTC()
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
@@ -2716,12 +2716,12 @@ func TestReplayRecentPicoClawMessagesSkipsAnsweredMessage(t *testing.T) {
 			},
 		},
 	})
-	bridge := im.NewPicoClawBridge("")
+	bridge := im.NewBotBridge("")
 	events, cancel := bridge.Subscribe("u-manager")
 	defer cancel()
 
-	srv := &Handler{im: imSvc, picoclaw: bridge}
-	srv.replayRecentPicoClawMessages("u-manager", "")
+	srv := &Handler{im: imSvc, botBridge: bridge}
+	srv.replayRecentBotMessages("u-manager", "")
 
 	select {
 	case evt := <-events:
@@ -2730,7 +2730,7 @@ func TestReplayRecentPicoClawMessagesSkipsAnsweredMessage(t *testing.T) {
 	}
 }
 
-func TestReplayRecentPicoClawMessagesDoesNotDuplicateDeliveredMessage(t *testing.T) {
+func TestReplayRecentBotMessagesDoesNotDuplicateDeliveredMessage(t *testing.T) {
 	now := time.Now().UTC()
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
@@ -2754,7 +2754,7 @@ func TestReplayRecentPicoClawMessagesDoesNotDuplicateDeliveredMessage(t *testing
 			},
 		},
 	})
-	bridge := im.NewPicoClawBridge("")
+	bridge := im.NewBotBridge("")
 	events, cancel := bridge.Subscribe("u-manager")
 	defer cancel()
 
@@ -2778,8 +2778,8 @@ func TestReplayRecentPicoClawMessagesDoesNotDuplicateDeliveredMessage(t *testing
 		t.Fatal("PublishMessageEvent() timed out waiting for event")
 	}
 
-	srv := &Handler{im: imSvc, picoclaw: bridge}
-	srv.replayRecentPicoClawMessages("u-manager", "")
+	srv := &Handler{im: imSvc, botBridge: bridge}
+	srv.replayRecentBotMessages("u-manager", "")
 
 	select {
 	case evt := <-events:
@@ -2788,7 +2788,7 @@ func TestReplayRecentPicoClawMessagesDoesNotDuplicateDeliveredMessage(t *testing
 	}
 }
 
-func TestReplayRecentPicoClawMessagesHonorsLastEventID(t *testing.T) {
+func TestReplayRecentBotMessagesHonorsLastEventID(t *testing.T) {
 	now := time.Now().UTC()
 	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
 		CurrentUserID: "u-admin",
@@ -2818,12 +2818,12 @@ func TestReplayRecentPicoClawMessagesHonorsLastEventID(t *testing.T) {
 			},
 		},
 	})
-	bridge := im.NewPicoClawBridge("")
+	bridge := im.NewBotBridge("")
 	events, cancel := bridge.Subscribe("u-manager")
 	defer cancel()
 
-	srv := &Handler{im: imSvc, picoclaw: bridge}
-	srv.replayRecentPicoClawMessages("u-manager", "msg-seen")
+	srv := &Handler{im: imSvc, botBridge: bridge}
+	srv.replayRecentBotMessages("u-manager", "msg-seen")
 
 	select {
 	case evt := <-events:
@@ -2831,7 +2831,7 @@ func TestReplayRecentPicoClawMessagesHonorsLastEventID(t *testing.T) {
 			t.Fatalf("replayed event = %+v, want msg-new new after reconnect", evt)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("replayRecentPicoClawMessages() timed out waiting for event")
+		t.Fatal("replayRecentBotMessages() timed out waiting for event")
 	}
 
 	select {
@@ -2841,7 +2841,7 @@ func TestReplayRecentPicoClawMessagesHonorsLastEventID(t *testing.T) {
 	}
 }
 
-func TestHandlePicoClawModelsReturnsBridgeCatalog(t *testing.T) {
+func TestHandleBotLLMModelsReturnsBridgeCatalog(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
 	agents := []agent.Agent{
@@ -2876,7 +2876,7 @@ func TestHandlePicoClawModelsReturnsBridgeCatalog(t *testing.T) {
 
 	srv := &Handler{
 		svc:               svc,
-		picoclaw:          im.NewPicoClawBridge("secret"),
+		botBridge:         im.NewBotBridge("secret"),
 		llm:               bridge,
 		serverAccessToken: "secret",
 	}
@@ -2894,7 +2894,7 @@ func TestHandlePicoClawModelsReturnsBridgeCatalog(t *testing.T) {
 	}
 }
 
-func TestHandlePicoClawModelsLegacyRouteReturnsBridgeCatalog(t *testing.T) {
+func TestHandleBotLLMModelsLegacyRouteReturnsBridgeCatalog(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
 	agents := []agent.Agent{
@@ -2929,7 +2929,7 @@ func TestHandlePicoClawModelsLegacyRouteReturnsBridgeCatalog(t *testing.T) {
 
 	srv := &Handler{
 		svc:               svc,
-		picoclaw:          im.NewPicoClawBridge("secret"),
+		botBridge:         im.NewBotBridge("secret"),
 		llm:               bridge,
 		serverAccessToken: "secret",
 	}

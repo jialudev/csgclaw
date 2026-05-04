@@ -7,55 +7,55 @@ import (
 	"sync"
 )
 
-type PicoClawBridge struct {
+type BotBridge struct {
 	mu          sync.Mutex
-	subscribers map[string]map[chan PicoClawEvent]struct{}
-	pending     map[string][]PicoClawEvent
-	inflight    map[string]map[string]PicoClawEvent
+	subscribers map[string]map[chan BotEvent]struct{}
+	pending     map[string][]BotEvent
+	inflight    map[string]map[string]BotEvent
 	seen        map[string]map[string]struct{}
 }
 
-const maxPendingPicoClawEventsPerBot = 64
+const maxPendingBotEventsPerBot = 64
 
-type PicoClawEvent struct {
-	MessageID string         `json:"message_id"`
-	RoomID    string         `json:"room_id"`
-	ChatType  string         `json:"chat_type"`
-	Sender    PicoClawSender `json:"sender"`
-	Text      string         `json:"text"`
-	Timestamp string         `json:"timestamp"`
-	Mentions  []string       `json:"mentions,omitempty"`
+type BotEvent struct {
+	MessageID string    `json:"message_id"`
+	RoomID    string    `json:"room_id"`
+	ChatType  string    `json:"chat_type"`
+	Sender    BotSender `json:"sender"`
+	Text      string    `json:"text"`
+	Timestamp string    `json:"timestamp"`
+	Mentions  []string  `json:"mentions,omitempty"`
 }
 
-type PicoClawSender struct {
+type BotSender struct {
 	ID          string `json:"id"`
 	Username    string `json:"username,omitempty"`
 	DisplayName string `json:"display_name,omitempty"`
 }
 
-type PicoClawSendMessageRequest struct {
+type BotSendMessageRequest struct {
 	RoomID string `json:"room_id"`
 	Text   string `json:"text"`
 }
 
-func NewPicoClawBridge(string) *PicoClawBridge {
-	return &PicoClawBridge{
-		subscribers: make(map[string]map[chan PicoClawEvent]struct{}),
-		pending:     make(map[string][]PicoClawEvent),
-		inflight:    make(map[string]map[string]PicoClawEvent),
+func NewBotBridge(string) *BotBridge {
+	return &BotBridge{
+		subscribers: make(map[string]map[chan BotEvent]struct{}),
+		pending:     make(map[string][]BotEvent),
+		inflight:    make(map[string]map[string]BotEvent),
 		seen:        make(map[string]map[string]struct{}),
 	}
 }
 
-func (b *PicoClawBridge) Subscribe(botID string) (<-chan PicoClawEvent, func()) {
-	ch := make(chan PicoClawEvent, 16)
+func (b *BotBridge) Subscribe(botID string) (<-chan BotEvent, func()) {
+	ch := make(chan BotEvent, 16)
 
 	b.mu.Lock()
 	if b.subscribers[botID] == nil {
-		b.subscribers[botID] = make(map[chan PicoClawEvent]struct{})
+		b.subscribers[botID] = make(map[chan BotEvent]struct{})
 	}
 	b.subscribers[botID][ch] = struct{}{}
-	pending := append([]PicoClawEvent(nil), b.pending[botID]...)
+	pending := append([]BotEvent(nil), b.pending[botID]...)
 	delete(b.pending, botID)
 
 	for _, evt := range pending {
@@ -85,13 +85,13 @@ func (b *PicoClawBridge) Subscribe(botID string) (<-chan PicoClawEvent, func()) 
 	return ch, cancel
 }
 
-func (b *PicoClawBridge) SubscriberCount(botID string) int {
+func (b *BotBridge) SubscriberCount(botID string) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.subscribers[botID])
 }
 
-func (b *PicoClawBridge) PublishMessageEvent(room Room, sender User, message Message) []string {
+func (b *BotBridge) PublishMessageEvent(room Room, sender User, message Message) []string {
 	var missed []string
 	for _, botID := range room.Members {
 		if !shouldNotifyBot(room, message, botID) {
@@ -104,14 +104,14 @@ func (b *PicoClawBridge) PublishMessageEvent(room Room, sender User, message Mes
 	return missed
 }
 
-func (b *PicoClawBridge) EnqueueMessageEvent(room Room, sender User, message Message, botID string) bool {
+func (b *BotBridge) EnqueueMessageEvent(room Room, sender User, message Message, botID string) bool {
 	if !shouldNotifyBot(room, message, botID) {
 		return true
 	}
 	return b.enqueue(botID, messageEventForBot(room, sender, message, botID))
 }
 
-func (b *PicoClawBridge) enqueue(botID string, evt PicoClawEvent) bool {
+func (b *BotBridge) enqueue(botID string, evt BotEvent) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.hasSeenOrInflightLocked(botID, evt.MessageID) {
@@ -139,7 +139,7 @@ func (b *PicoClawBridge) enqueue(botID string, evt PicoClawEvent) bool {
 	return false
 }
 
-func (b *PicoClawBridge) Ack(botID, messageID string) {
+func (b *BotBridge) Ack(botID, messageID string) {
 	botID = strings.TrimSpace(botID)
 	messageID = strings.TrimSpace(messageID)
 	if botID == "" || messageID == "" {
@@ -157,7 +157,7 @@ func (b *PicoClawBridge) Ack(botID, messageID string) {
 	b.markSeenLocked(botID, messageID)
 }
 
-func (b *PicoClawBridge) Requeue(botID string, evt PicoClawEvent) {
+func (b *BotBridge) Requeue(botID string, evt BotEvent) {
 	botID = strings.TrimSpace(botID)
 	if botID == "" {
 		return
@@ -175,30 +175,30 @@ func (b *PicoClawBridge) Requeue(botID string, evt PicoClawEvent) {
 	b.addPendingLocked(botID, evt)
 }
 
-func (b *PicoClawBridge) addPendingLocked(botID string, evt PicoClawEvent) {
+func (b *BotBridge) addPendingLocked(botID string, evt BotEvent) {
 	if b.hasSeenOrInflightLocked(botID, evt.MessageID) || b.hasPendingLocked(botID, evt.MessageID) {
 		return
 	}
 	pending := append(b.pending[botID], evt)
-	if len(pending) > maxPendingPicoClawEventsPerBot {
-		pending = pending[len(pending)-maxPendingPicoClawEventsPerBot:]
+	if len(pending) > maxPendingBotEventsPerBot {
+		pending = pending[len(pending)-maxPendingBotEventsPerBot:]
 	}
 	b.pending[botID] = pending
 }
 
-func (b *PicoClawBridge) markInflightLocked(botID string, evt PicoClawEvent) {
+func (b *BotBridge) markInflightLocked(botID string, evt BotEvent) {
 	messageID := strings.TrimSpace(evt.MessageID)
 	if messageID == "" || b.hasSeenLocked(botID, messageID) {
 		return
 	}
 	if b.inflight[botID] == nil {
-		b.inflight[botID] = make(map[string]PicoClawEvent)
+		b.inflight[botID] = make(map[string]BotEvent)
 	}
 	b.inflight[botID][messageID] = evt
 	b.removePendingLocked(botID, messageID)
 }
 
-func (b *PicoClawBridge) hasSeenOrInflightLocked(botID, messageID string) bool {
+func (b *BotBridge) hasSeenOrInflightLocked(botID, messageID string) bool {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return false
@@ -210,7 +210,7 @@ func (b *PicoClawBridge) hasSeenOrInflightLocked(botID, messageID string) bool {
 	return ok
 }
 
-func (b *PicoClawBridge) hasPendingLocked(botID, messageID string) bool {
+func (b *BotBridge) hasPendingLocked(botID, messageID string) bool {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return false
@@ -223,7 +223,7 @@ func (b *PicoClawBridge) hasPendingLocked(botID, messageID string) bool {
 	return false
 }
 
-func (b *PicoClawBridge) removePendingLocked(botID, messageID string) {
+func (b *BotBridge) removePendingLocked(botID, messageID string) {
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {
 		return
@@ -243,7 +243,7 @@ func (b *PicoClawBridge) removePendingLocked(botID, messageID string) {
 	b.pending[botID] = pending
 }
 
-func (b *PicoClawBridge) hasSeenLocked(botID, messageID string) bool {
+func (b *BotBridge) hasSeenLocked(botID, messageID string) bool {
 	if messageID == "" {
 		return false
 	}
@@ -251,7 +251,7 @@ func (b *PicoClawBridge) hasSeenLocked(botID, messageID string) bool {
 	return ok
 }
 
-func (b *PicoClawBridge) markSeenLocked(botID, messageID string) {
+func (b *BotBridge) markSeenLocked(botID, messageID string) {
 	if messageID == "" {
 		return
 	}
@@ -261,12 +261,12 @@ func (b *PicoClawBridge) markSeenLocked(botID, messageID string) {
 	b.seen[botID][messageID] = struct{}{}
 }
 
-func messageEventForBot(room Room, sender User, message Message, botID string) PicoClawEvent {
-	return PicoClawEvent{
+func messageEventForBot(room Room, sender User, message Message, botID string) BotEvent {
+	return BotEvent{
 		MessageID: message.ID,
 		RoomID:    room.ID,
 		ChatType:  chatTypeForRoom(room),
-		Sender: PicoClawSender{
+		Sender: BotSender{
 			ID:          sender.ID,
 			Username:    sender.Handle,
 			DisplayName: sender.Name,
@@ -277,7 +277,7 @@ func messageEventForBot(room Room, sender User, message Message, botID string) P
 	}
 }
 
-func (e PicoClawEvent) MarshalJSONLine() ([]byte, error) {
+func (e BotEvent) MarshalJSONLine() ([]byte, error) {
 	data, err := json.Marshal(e)
 	if err != nil {
 		return nil, err
