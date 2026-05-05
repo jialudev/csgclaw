@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"csgclaw/internal/config"
+	"csgclaw/internal/runtime/picoclawsandbox"
 )
 
 const managerAgentsDirName = "agents"
@@ -37,12 +38,12 @@ func ensureAgentPicoClawConfig(agentName, botID string, server config.ServerConf
 	if err != nil {
 		return "", err
 	}
-	configPath := filepath.Join(hostRoot, hostPicoClawConfig)
+	configPath := filepath.Join(hostRoot, picoclawsandbox.HostPicoClawConfig)
 	if err := os.WriteFile(configPath, append(data, '\n'), 0o600); err != nil {
 		return "", fmt.Errorf("write manager picoclaw config: %w", err)
 	}
 	securityData := renderManagerSecurityConfig(server, model)
-	securityPath := filepath.Join(hostRoot, hostPicoClawSecurity)
+	securityPath := filepath.Join(hostRoot, picoclawsandbox.HostPicoClawSecurity)
 	if err := os.WriteFile(securityPath, []byte(securityData), 0o600); err != nil {
 		return "", fmt.Errorf("write manager security config: %w", err)
 	}
@@ -58,7 +59,7 @@ func agentWorkspacePicoClawConfigRoot(agentName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(workspaceRoot, filepath.FromSlash(hostPicoClawStateDir)), nil
+	return filepath.Join(workspaceRoot, filepath.FromSlash(picoclawsandbox.HostPicoClawStateDir)), nil
 }
 
 func agentPicoClawRoot(agentName string) (string, error) {
@@ -66,7 +67,7 @@ func agentPicoClawRoot(agentName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve host home dir: %w", err)
 	}
-	return filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, agentName, hostPicoClawDir), nil
+	return filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, agentName, picoclawsandbox.HostPicoClawDir), nil
 }
 
 func renderManagerPicoClawConfig(server config.ServerConfig, model config.ModelConfig) ([]byte, error) {

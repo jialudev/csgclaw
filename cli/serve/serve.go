@@ -22,6 +22,7 @@ import (
 
 	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
+	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/cliproxy"
@@ -715,6 +716,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, runtimewiring.WithPicoClawSandboxRuntime())
 	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
 }
 

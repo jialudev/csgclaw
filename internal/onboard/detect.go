@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
@@ -16,7 +17,14 @@ var (
 	loadIMBootstrap = im.LoadBootstrap
 	openBotStore    = bot.NewStore
 	openAgentState  = func(cfg config.Config, path string) (agentStateReader, error) {
-		return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), path)
+		return agent.NewServiceWithLLMAndChannels(
+			effectiveLLMConfig(cfg),
+			cfg.Server,
+			cfg.Channels,
+			cfg.Bootstrap.EffectiveManagerImage(),
+			path,
+			runtimewiring.WithPicoClawSandboxRuntime(),
+		)
 	}
 )
 

@@ -15,11 +15,12 @@ type persistedState struct {
 	ProfileDefaults  AgentProfile             `json:"profile_defaults,omitempty"`
 	DetectionResults []ProfileDetectionResult `json:"detection_results,omitempty"`
 	Agents           []persistedAgent         `json:"agents"`
+	Runtimes         []RuntimeRecord          `json:"runtimes,omitempty"`
 	Workers          []legacyWorker           `json:"workers,omitempty"`
 }
 
 func (s persistedState) isObject() bool {
-	return s.Agents != nil || s.Workers != nil || s.ProfileDefaults.Provider != "" || len(s.DetectionResults) > 0
+	return s.Agents != nil || s.Runtimes != nil || s.Workers != nil || s.ProfileDefaults.Provider != "" || len(s.DetectionResults) > 0
 }
 
 type legacyWorker struct {
@@ -35,6 +36,7 @@ type persistedAgent struct {
 	ID               string                   `json:"id"`
 	Name             string                   `json:"name"`
 	Description      string                   `json:"description,omitempty"`
+	RuntimeID        string                   `json:"runtime_id,omitempty"`
 	Image            string                   `json:"image,omitempty"`
 	BoxID            string                   `json:"box_id,omitempty"`
 	Role             string                   `json:"role"`
@@ -54,6 +56,7 @@ func newPersistedAgent(a Agent) persistedAgent {
 		ID:               a.ID,
 		Name:             a.Name,
 		Description:      a.Description,
+		RuntimeID:        a.RuntimeID,
 		Image:            a.Image,
 		BoxID:            a.BoxID,
 		Role:             a.Role,
@@ -74,6 +77,7 @@ func (a persistedAgent) toAgent() Agent {
 		ID:               a.ID,
 		Name:             a.Name,
 		Description:      a.Description,
+		RuntimeID:        a.RuntimeID,
 		Image:            a.Image,
 		BoxID:            a.BoxID,
 		Role:             a.Role,
@@ -94,6 +98,7 @@ func (w legacyWorker) toAgent() Agent {
 		ID:          w.ID,
 		Name:        w.Name,
 		Description: w.Description,
+		RuntimeID:   runtimeIDForAgentID(w.ID),
 		Image:       "",
 		Role:        RoleWorker,
 		Status:      w.Status,
@@ -145,14 +150,29 @@ func (s *Service) readState() (map[string]Agent, error) {
 			s.profileDefaults = normalizeProfile(state.ProfileDefaults, "", "")
 		}
 		s.detectionResults = append([]ProfileDetectionResult(nil), state.DetectionResults...)
+		runtimes := make(map[string]RuntimeRecord, len(state.Runtimes))
+		for _, rt := range state.Runtimes {
+			normalized := normalizeRuntimeRecord(rt)
+			if normalized.ID == "" {
+				continue
+			}
+			runtimes[normalized.ID] = normalized
+		}
 		for _, a := range state.Agents {
 			normalized := s.normalizeLoadedAgent(a.toAgent())
 			agents[normalized.ID] = normalized
+			if _, ok := runtimes[normalized.RuntimeID]; !ok {
+				runtimes[normalized.RuntimeID] = runtimeRecordForAgent(normalized)
+			}
 		}
 		for _, w := range state.Workers {
 			normalized := s.normalizeLoadedAgent(w.toAgent())
 			agents[normalized.ID] = normalized
+			if _, ok := runtimes[normalized.RuntimeID]; !ok {
+				runtimes[normalized.RuntimeID] = runtimeRecordForAgent(normalized)
+			}
 		}
+		s.runtimeRecords = runtimes
 		return agents, nil
 	}
 
@@ -164,6 +184,11 @@ func (s *Service) readState() (map[string]Agent, error) {
 		normalized := s.normalizeLoadedAgent(a)
 		agents[normalized.ID] = normalized
 	}
+	runtimes := make(map[string]RuntimeRecord, len(agents))
+	for _, a := range agents {
+		runtimes[a.RuntimeID] = runtimeRecordForAgent(a)
+	}
+	s.runtimeRecords = runtimes
 	return agents, nil
 }
 
@@ -176,6 +201,7 @@ func (s *Service) saveLocked() error {
 		ProfileDefaults:  cloneProfile(s.profileDefaults),
 		DetectionResults: append([]ProfileDetectionResult(nil), s.detectionResults...),
 		Agents:           persistedAgentsFromMap(s.agents),
+		Runtimes:         sortedRuntimeRecordsFromMap(s.runtimeRecords),
 	}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode agent state: %w", err)
@@ -192,6 +218,7 @@ func (s *Service) saveLocked() error {
 func (s *Service) normalizeLoadedAgent(a Agent) Agent {
 	a = *cloneAgent(&a)
 	a.Role = normalizeRole(a.Role)
+	a.RuntimeID = normalizeRuntimeID(a.RuntimeID, a.ID)
 	a.AgentProfile = normalizeProfile(a.AgentProfile, a.Name, a.Description)
 	if !a.AgentProfile.ProfileComplete && (strings.TrimSpace(a.Provider) != "" || strings.TrimSpace(a.ModelID) != "") {
 		legacyProfile := profileFromLegacy(a.Name, a.Description, a.Provider, a.ModelID, a.ReasoningEffort)

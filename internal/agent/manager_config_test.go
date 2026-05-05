@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"csgclaw/internal/config"
+	"csgclaw/internal/runtime/picoclawsandbox"
 )
 
 func TestRenderManagerSecurityConfig(t *testing.T) {
@@ -90,7 +91,7 @@ func TestEnsureAgentPicoClawConfigUsesWorkspaceStateDir(t *testing.T) {
 		t.Fatalf("ensureAgentPicoClawConfig() error = %v", err)
 	}
 
-	wantRoot := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "ux", hostWorkspaceDir, filepath.FromSlash(hostPicoClawStateDir))
+	wantRoot := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "ux", hostWorkspaceDir, filepath.FromSlash(picoclawsandbox.HostPicoClawStateDir))
 	if root != wantRoot {
 		t.Fatalf("ensureAgentPicoClawConfig() = %q, want %q", root, wantRoot)
 	}
@@ -100,8 +101,8 @@ func TestEnsureAgentPicoClawConfigUsesWorkspaceStateDir(t *testing.T) {
 		t.Fatalf("config root %q is not a directory", root)
 	}
 	for _, path := range []string{
-		filepath.Join(root, hostPicoClawConfig),
-		filepath.Join(root, hostPicoClawSecurity),
+		filepath.Join(root, picoclawsandbox.HostPicoClawConfig),
+		filepath.Join(root, picoclawsandbox.HostPicoClawSecurity),
 	} {
 		if info, err := os.Stat(path); err != nil {
 			t.Fatalf("os.Stat(%q) error = %v", path, err)

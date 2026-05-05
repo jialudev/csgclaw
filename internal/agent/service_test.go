@@ -13,9 +13,15 @@ import (
 	"time"
 
 	"csgclaw/internal/config"
+	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/runtime/picoclawsandbox"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/boxlitecli"
 )
+
+func init() {
+	testDefaultServiceOption = withTestPicoClawSandboxRuntime()
+}
 
 type fakeRuntime struct{}
 
@@ -55,6 +61,38 @@ func (f *fakeInstance) Run(context.Context, sandbox.CommandSpec) (sandbox.Comman
 
 func (f *fakeInstance) Close() error {
 	return nil
+}
+
+type fakeAgentRuntime struct {
+	kind string
+}
+
+func (f fakeAgentRuntime) Kind() string {
+	return f.kind
+}
+
+func (f fakeAgentRuntime) Create(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
+	return agentruntime.Handle{}, nil
+}
+
+func (f fakeAgentRuntime) Start(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeAgentRuntime) Stop(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateStopped, nil
+}
+
+func (f fakeAgentRuntime) Delete(context.Context, agentruntime.Handle) error {
+	return nil
+}
+
+func (f fakeAgentRuntime) State(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeAgentRuntime) Info(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+	return agentruntime.Info{}, nil
 }
 
 type fakeInfoInstance struct {
@@ -397,10 +435,10 @@ func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
 	if got, want := countBoxliteCLICommand(runner.requests, "start"), 0; got != want {
 		t.Fatalf("start command count = %d, want %d", got, want)
 	}
-	if !hasBoxliteCLICommandArgs(runner.requests, "run", "/bin/sh", "-c", gatewayRunCommand()) {
+	if !hasBoxliteCLICommandArgs(runner.requests, "run", "/bin/sh", "-c", picoclawsandbox.GatewayRunCommand()) {
 		t.Fatalf("boxlite-cli gateway run command not found in requests: %#v", requestArgs(runner.requests))
 	}
-	if hasBoxliteCLIExec(runner.requests, "tail", "-n", "1", "-f", boxGatewayLogPath) {
+	if hasBoxliteCLIExec(runner.requests, "tail", "-n", "1", "-f", picoclawsandbox.BoxGatewayLogPath) {
 		t.Fatalf("boxlite-cli tail exec should not be used for mounted gateway logs: %#v", requestArgs(runner.requests))
 	}
 	if !hasBoxliteCLICommandArgs(runner.requests, "rm", "-f", "box-alice") {
@@ -990,6 +1028,74 @@ func TestLoadLegacyAgentWithBoxIDInfersRunningUntilHydrated(t *testing.T) {
 	}
 }
 
+func TestLoadLegacyAgentSynthesizesRuntimeRecord(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(persistedState{
+		Agents: []persistedAgent{
+			{
+				ID:        "u-alice",
+				Name:      "alice",
+				Role:      RoleWorker,
+				BoxID:     "box-alice",
+				Status:    string(sandbox.StateRunning),
+				CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, ok := svc.agentSnapshot("u-alice")
+	if !ok {
+		t.Fatal("agentSnapshot() ok = false, want true")
+	}
+	if got.RuntimeID != "rt-u-alice" {
+		t.Fatalf("agentSnapshot().RuntimeID = %q, want %q", got.RuntimeID, "rt-u-alice")
+	}
+	rt, ok := svc.runtimeRecords[got.RuntimeID]
+	if !ok {
+		t.Fatalf("runtimeRecords[%q] missing", got.RuntimeID)
+	}
+	if rt.Kind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("runtime kind = %q, want %q", rt.Kind, RuntimeKindPicoClawSandbox)
+	}
+	if rt.SandboxID != "box-alice" {
+		t.Fatalf("runtime sandbox id = %q, want %q", rt.SandboxID, "box-alice")
+	}
+
+	svc.mu.Lock()
+	if err := svc.saveLocked(); err != nil {
+		svc.mu.Unlock()
+		t.Fatalf("saveLocked() error = %v", err)
+	}
+	svc.mu.Unlock()
+
+	saved, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	var persisted persistedState
+	if err := json.Unmarshal(saved, &persisted); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(persisted.Runtimes) != 1 {
+		t.Fatalf("saved runtimes len = %d, want 1", len(persisted.Runtimes))
+	}
+	if persisted.Agents[0].RuntimeID != "rt-u-alice" {
+		t.Fatalf("saved agent runtime_id = %q, want %q", persisted.Agents[0].RuntimeID, "rt-u-alice")
+	}
+}
+
 func TestDeleteRemovesAgentHomeDirectory(t *testing.T) {
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
@@ -1473,7 +1579,7 @@ func TestStreamLogsFallsBackToSandboxTailWhenHostLogIsMissing(t *testing.T) {
 	if gotName != "tail" {
 		t.Fatalf("runBoxCommand() name = %q, want %q", gotName, "tail")
 	}
-	if strings.Join(gotArgs, " ") != "-n 50 "+boxGatewayLogPath {
+	if strings.Join(gotArgs, " ") != "-n 50 "+picoclawsandbox.BoxGatewayLogPath {
 		t.Fatalf("runBoxCommand() args = %q", gotArgs)
 	}
 	if out.String() != "line-1\n" {
@@ -1706,7 +1812,7 @@ func TestStartRefreshesCompleteWorkerGatewayConfig(t *testing.T) {
 	if _, err := svc.Start(context.Background(), "u-alice"); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	configPath := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice", hostWorkspaceDir, filepath.FromSlash(hostPicoClawStateDir), hostPicoClawConfig)
+	configPath := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice", hostWorkspaceDir, filepath.FromSlash(picoclawsandbox.HostPicoClawStateDir), picoclawsandbox.HostPicoClawConfig)
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("ReadFile(worker config) error = %v", err)
@@ -2663,7 +2769,7 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 	if spec.AutoRemove {
 		t.Fatal("gatewayCreateSpec() auto_remove = true, want false")
 	}
-	wantCmd := "/bin/sh -c " + gatewayRunCommand()
+	wantCmd := "/bin/sh -c " + picoclawsandbox.GatewayRunCommand()
 	if strings.Join(spec.Cmd, " ") != wantCmd {
 		t.Fatalf("gatewayCreateSpec() cmd = %q, want %q", spec.Cmd, wantCmd)
 	}
@@ -2682,24 +2788,24 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 
 	wantAgentHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice")
 	wantWorkspaceRoot := filepath.Join(wantAgentHome, hostWorkspaceDir)
-	wantConfigRoot := filepath.Join(wantWorkspaceRoot, filepath.FromSlash(hostPicoClawStateDir))
+	wantConfigRoot := filepath.Join(wantWorkspaceRoot, filepath.FromSlash(picoclawsandbox.HostPicoClawStateDir))
 	wantProjectsRoot := filepath.Join(homeDir, config.AppDirName, hostProjectsDir)
 	if len(spec.Mounts) != 2 {
 		t.Fatalf("gatewayCreateSpec() mounts = %+v, want 2 mounts", spec.Mounts)
 	}
-	if spec.Mounts[0].HostPath != wantWorkspaceRoot || spec.Mounts[0].GuestPath != boxWorkspaceDir {
-		t.Fatalf("workspace mount = %+v, want host %q guest %q", spec.Mounts[0], wantWorkspaceRoot, boxWorkspaceDir)
+	if spec.Mounts[0].HostPath != wantWorkspaceRoot || spec.Mounts[0].GuestPath != picoclawsandbox.BoxWorkspaceDir {
+		t.Fatalf("workspace mount = %+v, want host %q guest %q", spec.Mounts[0], wantWorkspaceRoot, picoclawsandbox.BoxWorkspaceDir)
 	}
-	if spec.Mounts[1].HostPath != wantProjectsRoot || spec.Mounts[1].GuestPath != boxProjectsDir {
-		t.Fatalf("projects mount = %+v, want host %q guest %q", spec.Mounts[1], wantProjectsRoot, boxProjectsDir)
+	if spec.Mounts[1].HostPath != wantProjectsRoot || spec.Mounts[1].GuestPath != picoclawsandbox.BoxProjectsDir {
+		t.Fatalf("projects mount = %+v, want host %q guest %q", spec.Mounts[1], wantProjectsRoot, picoclawsandbox.BoxProjectsDir)
 	}
-	if _, err := os.Stat(filepath.Join(wantConfigRoot, hostPicoClawConfig)); err != nil {
+	if _, err := os.Stat(filepath.Join(wantConfigRoot, picoclawsandbox.HostPicoClawConfig)); err != nil {
 		t.Fatalf("worker PicoClaw config was not written: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(wantWorkspaceRoot, "AGENT.md")); err != nil {
 		t.Fatalf("worker workspace was not written: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(wantAgentHome, hostPicoClawDir)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(wantAgentHome, picoclawsandbox.HostPicoClawDir)); !os.IsNotExist(err) {
 		t.Fatalf("picoclaw host dir stat error = %v, want not exist", err)
 	}
 }
@@ -2723,6 +2829,24 @@ func TestGatewayStartCommandKeepsDebugSleepMode(t *testing.T) {
 	}
 	if strings.Join(cmd, " ") != "infinity" {
 		t.Fatalf("gatewayStartCommand(true) cmd = %q, want %q", cmd, []string{"infinity"})
+	}
+}
+
+func TestPicoclawSandboxRuntimeKind(t *testing.T) {
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := WithRuntime(fakeAgentRuntime{kind: RuntimeKindPicoClawSandbox})(svc); err != nil {
+		t.Fatalf("WithRuntime() error = %v", err)
+	}
+	rt, err := svc.runtimeForKind(RuntimeKindPicoClawSandbox)
+	if err != nil {
+		t.Fatalf("runtimeForKind() error = %v", err)
+	}
+	if got, want := rt.Kind(), RuntimeKindPicoClawSandbox; got != want {
+		t.Fatalf("runtime kind = %q, want %q", got, want)
 	}
 }
 
@@ -2812,6 +2936,92 @@ func TestAddFeishuBoxEnvVarsRequiresExactBotIDMatch(t *testing.T) {
 	}
 	if _, ok := envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"]; ok {
 		t.Fatalf("PICOCLAW_CHANNELS_FEISHU_APP_SECRET was set for non-matching bot id")
+	}
+}
+
+func picoclawBoxEnvVars(baseURL, accessToken, botID, llmBaseURL, modelID string) map[string]string {
+	env := bridgeLLMEnvVars(llmBaseURL, accessToken, modelID)
+	picoclawModelID := picoclawBridgeModelID(modelID)
+	env["CSGCLAW_BASE_URL"] = baseURL
+	env["CSGCLAW_ACCESS_TOKEN"] = accessToken
+	env["PICOCLAW_CHANNELS_CSGCLAW_BASE_URL"] = baseURL
+	env["PICOCLAW_CHANNELS_CSGCLAW_ACCESS_TOKEN"] = accessToken
+	env["PICOCLAW_CHANNELS_CSGCLAW_BOT_ID"] = botID
+	env["PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"] = modelID
+	env["PICOCLAW_CUSTOM_MODEL_NAME"] = modelID
+	env["PICOCLAW_CUSTOM_MODEL_ID"] = picoclawModelID
+	env["PICOCLAW_CUSTOM_MODEL_API_KEY"] = accessToken
+	env["PICOCLAW_CUSTOM_MODEL_BASE_URL"] = llmBaseURL
+	return env
+}
+
+func addFeishuBoxEnvVars(envVars map[string]string, botID string, channels config.ChannelsConfig) {
+	if envVars == nil {
+		return
+	}
+	botID = strings.TrimSpace(botID)
+	if botID == "" || len(channels.Feishu) == 0 {
+		return
+	}
+	feishu, ok := channels.Feishu[botID]
+	if !ok {
+		return
+	}
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"] = feishu.AppID
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"] = feishu.AppSecret
+}
+
+func withTestPicoClawSandboxRuntime() ServiceOption {
+	return func(s *Service) error {
+		host := s.PicoClawRuntimeHost()
+		return WithRuntime(picoclawsandbox.New(picoclawsandbox.Dependencies{
+			ModelFallback:  host.ModelFallback,
+			Server:         host.Server,
+			Channels:       host.Channels,
+			ResolveBaseURL: resolveManagerBaseURL,
+			EnsureRuntime:  host.EnsureRuntime,
+			RuntimeHome:    host.RuntimeHome,
+			CloseRuntime:   host.CloseRuntime,
+			ResolveBox: func(ctx context.Context, rt sandbox.Runtime, got picoclawsandbox.AgentRef) (sandbox.Instance, string, error) {
+				return host.ResolveBox(ctx, rt, Agent{
+					ID:        got.ID,
+					Name:      got.Name,
+					RuntimeID: got.RuntimeID,
+					BoxID:     got.BoxID,
+				})
+			},
+			CreateBox:      host.CreateBox,
+			StartBox:       host.StartBox,
+			StopBox:        host.StopBox,
+			BoxInfo:        host.BoxInfo,
+			ForceRemoveBox: host.ForceRemoveBox,
+			CloseBox:       host.CloseBox,
+			RunBoxCommand:  host.RunBoxCommand,
+			ResolveAgent: func(h agentruntime.Handle) (picoclawsandbox.AgentRef, error) {
+				got, err := host.ResolveAgent(h)
+				if err != nil {
+					return picoclawsandbox.AgentRef{}, err
+				}
+				return picoclawsandbox.AgentRef{
+					ID:        got.ID,
+					Name:      got.Name,
+					RuntimeID: got.RuntimeID,
+					BoxID:     got.BoxID,
+				}, nil
+			},
+			SyncHandle:          host.SyncHandle,
+			EnsureGatewayConfig: host.EnsureGatewayConfig,
+			EnsureWorkspace:     host.EnsureWorkspace,
+			WorkspaceTemplate:   host.WorkspaceTemplate,
+			EnsureProjectsRoot:  host.EnsureProjectsRoot,
+			BuildRuntimeEnv: func(baseURL, accessToken, botID, llmBaseURL, modelID string, channels config.ChannelsConfig) map[string]string {
+				env := picoclawBoxEnvVars(baseURL, accessToken, botID, llmBaseURL, modelID)
+				addFeishuBoxEnvVars(env, botID, channels)
+				return env
+			},
+			AddProfileEnv: addProfileEnvVars,
+			StreamLogs:    host.StreamLogs,
+		}))(s)
 	}
 }
 

@@ -6,6 +6,7 @@ type Agent struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`
 	Description     string    `json:"description,omitempty"`
+	RuntimeID       string    `json:"runtime_id,omitempty"`
 	Image           string    `json:"image,omitempty"`
 	BoxID           string    `json:"box_id,omitempty"`
 	Role            string    `json:"role"`

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
 )
 
@@ -186,51 +187,85 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 		return Agent{}, fmt.Errorf("agent %q profile is incomplete", id)
 	}
 
-	rt, err := s.ensureRuntime(got.Name)
+	runtimeImpl, err := s.runtimeForAgent(got)
 	if err != nil {
 		return Agent{}, err
 	}
-	runtimeHome, err := s.sandboxRuntimeHome(got.Name)
-	if err != nil {
-		return Agent{}, err
-	}
-	defer func() {
-		_ = s.closeRuntime(runtimeHome, rt)
-	}()
-
-	if strings.TrimSpace(got.BoxID) != "" {
-		if err := s.forceRemoveBox(ctx, rt, got.BoxID); err != nil && !sandbox.IsNotFound(err) {
-			return Agent{}, fmt.Errorf("remove existing agent box: %w", err)
-		}
-	}
-
 	image := strings.TrimSpace(got.Image)
 	if image == "" {
 		image = s.managerImage
 	}
-	box, info, err := s.createGatewayBox(ctx, rt, image, got.Name, got.ID, profile)
+	if testCreateGatewayBoxHook != nil {
+		rt, err := s.ensureRuntime(got.Name)
+		if err != nil {
+			return Agent{}, err
+		}
+		runtimeHome, err := s.sandboxRuntimeHome(got.Name)
+		if err != nil {
+			return Agent{}, err
+		}
+		defer func() {
+			_ = s.closeRuntime(runtimeHome, rt)
+		}()
+		if strings.TrimSpace(got.BoxID) != "" {
+			if err := s.forceRemoveBox(ctx, rt, got.BoxID); err != nil && !sandbox.IsNotFound(err) {
+				return Agent{}, fmt.Errorf("remove existing agent box: %w", err)
+			}
+		}
+		box, sandboxInfo, err := s.createGatewayBox(ctx, rt, image, got.Name, got.ID, profile)
+		if err != nil {
+			return Agent{}, fmt.Errorf("create agent box: %w", err)
+		}
+		defer func() {
+			_ = s.closeBox(box)
+		}()
+		info := agentruntime.Info{
+			HandleID:  strings.TrimSpace(sandboxInfo.ID),
+			State:     agentruntime.State(sandboxInfo.State),
+			CreatedAt: sandboxInfo.CreatedAt.UTC(),
+		}
+		return s.persistRecreatedAgent(id, info)
+	}
+	if err := runtimeImpl.Delete(ctx, runtimeHandleForAgent(got)); err != nil && !sandbox.IsNotFound(err) {
+		return Agent{}, fmt.Errorf("remove existing agent box: %w", err)
+	}
+	handle, err := runtimeImpl.Create(ctx, agentruntime.Spec{
+		RuntimeID: normalizeRuntimeID(got.RuntimeID, got.ID),
+		AgentID:   got.ID,
+		AgentName: got.Name,
+		Image:     image,
+		Profile:   runtimeProfileFromAgent(profile),
+	})
 	if err != nil {
 		return Agent{}, fmt.Errorf("create agent box: %w", err)
 	}
-	defer func() {
-		_ = s.closeBox(box)
-	}()
+	info, err := s.runtimeInfo(ctx, runtimeImpl, handle)
+	if err != nil {
+		return Agent{}, fmt.Errorf("read agent runtime info: %w", err)
+	}
+	return s.persistRecreatedAgent(id, info)
+}
 
+func (s *Service) persistRecreatedAgent(id string, info agentruntime.Info) (Agent, error) {
 	s.mu.Lock()
 	current, ok := s.agents[id]
 	if !ok {
 		s.mu.Unlock()
 		return Agent{}, fmt.Errorf("agent %q not found", id)
 	}
-	current.BoxID = info.ID
+	current.RuntimeID = normalizeRuntimeID(current.RuntimeID, current.ID)
+	current.BoxID = info.HandleID
 	current.Status = string(info.State)
-	if current.CreatedAt.IsZero() {
+	if !info.CreatedAt.IsZero() {
+		current.CreatedAt = info.CreatedAt.UTC()
+	} else if current.CreatedAt.IsZero() {
 		current.CreatedAt = time.Now().UTC()
 	}
 	current.AgentProfile.EnvRestartRequired = false
 	current.ProfileComplete = true
 	s.agents[id] = current
-	err = s.saveLocked()
+	s.syncRuntimeRecordLocked(current)
+	err := s.saveLocked()
 	s.mu.Unlock()
 	if err != nil {
 		return Agent{}, err
