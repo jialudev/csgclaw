@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,14 +15,79 @@ import (
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/apitypes"
+	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/sandboxtest"
 )
+
+type fakeCompatRuntime struct {
+	create func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
+	start  func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	stop   func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	del    func(context.Context, agentruntime.Handle) error
+	info   func(context.Context, agentruntime.Handle) (agentruntime.Info, error)
+}
+
+func init() {
+	_ = agent.TestOnlySetDefaultServiceOption(runtimewiring.WithPicoClawSandboxRuntime())
+}
+
+func (f fakeCompatRuntime) Kind() string {
+	return agent.RuntimeKindPicoClawSandbox
+}
+
+func (f fakeCompatRuntime) Create(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+	if f.create != nil {
+		return f.create(ctx, spec)
+	}
+	return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "box-" + spec.AgentName}, nil
+}
+
+func (f fakeCompatRuntime) Start(ctx context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+	if f.start != nil {
+		return f.start(ctx, h)
+	}
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeCompatRuntime) Stop(ctx context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+	if f.stop != nil {
+		return f.stop(ctx, h)
+	}
+	return agentruntime.StateStopped, nil
+}
+
+func (f fakeCompatRuntime) Delete(ctx context.Context, h agentruntime.Handle) error {
+	if f.del != nil {
+		return f.del(ctx, h)
+	}
+	return nil
+}
+
+func (f fakeCompatRuntime) State(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeCompatRuntime) Info(ctx context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+	if f.info != nil {
+		return f.info(ctx, h)
+	}
+	return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+}
+
+func (f fakeCompatRuntime) EnsureGatewayConfig(string, string, string) error {
+	return nil
+}
+
+func (f fakeCompatRuntime) ProjectsGuestPath() string {
+	return ""
+}
 
 func TestParseBotCompatibilityPath(t *testing.T) {
 	tests := []struct {
@@ -2482,32 +2546,26 @@ func TestPublishBotEventQueuesUntilBotSubscribes(t *testing.T) {
 	}
 }
 
-func TestPublishBotEventReconnectsMissedWorker(t *testing.T) {
+func TestPublishBotEventLeavesRunningWorkerUntouched(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	created := make(chan sandbox.CreateSpec, 1)
-	provider := &sandboxtest.Provider{
-		NameValue: "fake",
-		OpenFunc: func(context.Context, string) (sandbox.Runtime, error) {
-			return &sandboxtest.Runtime{
-				GetFunc: func(context.Context, string) (sandbox.Instance, error) {
-					return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
-				},
-				RemoveFunc: func(context.Context, string, sandbox.RemoveOptions) error {
-					return fmt.Errorf("%w: missing", sandbox.ErrNotFound)
-				},
-				CreateFunc: func(_ context.Context, spec sandbox.CreateSpec) (sandbox.Instance, error) {
-					created <- spec
-					return sandboxtest.NewInstance(sandbox.Info{
-						ID:        "box-" + spec.Name,
-						Name:      spec.Name,
-						State:     sandbox.StateRunning,
-						CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
-					}), nil
-				},
-			}, nil
-		},
-	}
-	t.Cleanup(agent.TestOnlySetSandboxProvider(provider))
+	started := make(chan string, 1)
+	recreated := make(chan string, 1)
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		return agent.WithRuntime(fakeCompatRuntime{
+			info: func(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: "box-stale", State: agentruntime.StateRunning}, nil
+			},
+			start: func(_ context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+				started <- h.HandleID
+				return agentruntime.StateRunning, nil
+			},
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				recreated <- spec.AgentName
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "box-" + spec.AgentName}, nil
+			},
+		})(s)
+	})
+	t.Cleanup(restoreDefault)
 
 	statePath := filepath.Join(t.TempDir(), "agents.json")
 	if err := writeSeededAgents(statePath, []agent.Agent{
@@ -2515,8 +2573,9 @@ func TestPublishBotEventReconnectsMissedWorker(t *testing.T) {
 			ID:              "u-worker",
 			Name:            "worker",
 			Role:            agent.RoleWorker,
+			RuntimeID:       "rt-u-worker",
 			BoxID:           "box-stale",
-			Status:          string(sandbox.StateRunning),
+			Status:          string(agentruntime.StateRunning),
 			AgentProfile:    agent.AgentProfile{Name: "worker", Provider: agent.ProviderCodex, ModelID: "gpt-5.5", ProfileComplete: true},
 			ProfileComplete: true,
 			CreatedAt:       time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
@@ -2565,12 +2624,93 @@ func TestPublishBotEventReconnectsMissedWorker(t *testing.T) {
 	})
 
 	select {
-	case spec := <-created:
-		if spec.Name != "worker" {
-			t.Fatalf("recreated spec.Name = %q, want worker", spec.Name)
+	case handleID := <-started:
+		t.Fatalf("started running worker handle %q, want no lifecycle action", handleID)
+	case name := <-recreated:
+		t.Fatalf("recreated running worker %q, want no lifecycle action", name)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func TestPublishBotEventStartsStoppedWorker(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	started := make(chan string, 1)
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		return agent.WithRuntime(fakeCompatRuntime{
+			info: func(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: "box-stale", State: agentruntime.StateStopped}, nil
+			},
+			start: func(_ context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+				started <- h.HandleID
+				return agentruntime.StateRunning, nil
+			},
+		})(s)
+	})
+	t.Cleanup(restoreDefault)
+
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{
+			ID:              "u-worker",
+			Name:            "worker",
+			Role:            agent.RoleWorker,
+			RuntimeID:       "rt-u-worker",
+			BoxID:           "box-stale",
+			Status:          string(agentruntime.StateStopped),
+			AgentProfile:    agent.AgentProfile{Name: "worker", Provider: agent.ProviderCodex, ModelID: "gpt-5.5", ProfileComplete: true},
+			ProfileComplete: true,
+			CreatedAt:       time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+	svc, err := agent.NewService(
+		config.ModelConfig{ModelID: "gpt-5.5"},
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "token"},
+		"",
+		statePath,
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin"},
+			{ID: "u-worker", Name: "worker", Handle: "worker"},
+		},
+		Rooms: []im.Room{
+			{
+				ID:       "room-1",
+				Members:  []string{"u-admin", "u-worker"},
+				Messages: []im.Message{{ID: "msg-1", SenderID: "u-admin", Content: "please handle this", CreatedAt: time.Now().UTC()}},
+			},
+		},
+	})
+	sender, ok := imSvc.User("u-admin")
+	if !ok {
+		t.Fatal("missing sender")
+	}
+	room, ok := imSvc.Room("room-1")
+	if !ok || len(room.Messages) != 1 {
+		t.Fatalf("room = %+v, want one message", room)
+	}
+
+	srv := &Handler{svc: svc, im: imSvc, botBridge: im.NewBotBridge("")}
+	srv.PublishBotEvent(im.Event{
+		Type:    im.EventTypeMessageCreated,
+		RoomID:  "room-1",
+		Sender:  &sender,
+		Message: &room.Messages[0],
+	})
+
+	select {
+	case handleID := <-started:
+		if handleID != "box-stale" {
+			t.Fatalf("started handle = %q, want %q", handleID, "box-stale")
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for missed worker reconnect")
+		t.Fatal("timed out waiting for missed worker start")
 	}
 }
 

@@ -13,6 +13,16 @@ import (
 	"csgclaw/internal/sandbox"
 )
 
+type RuntimeView struct {
+	AgentID       string
+	AgentName     string
+	RuntimeID     string
+	RuntimeKind   string
+	HandleID      string
+	State         agentruntime.State
+	LogsSupported bool
+}
+
 type gatewayConfigurer interface {
 	EnsureGatewayConfig(agentName, botID, modelID string) error
 	ProjectsGuestPath() string
@@ -170,6 +180,48 @@ func (s *Service) runtimeInfo(ctx context.Context, rt agentruntime.Runtime, h ag
 	return rt.Info(ctx, h)
 }
 
+func (s *Service) RuntimeView(ctx context.Context, id string) (RuntimeView, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return RuntimeView{}, fmt.Errorf("agent id is required")
+	}
+
+	got, ok := s.agentSnapshot(id)
+	if !ok {
+		return RuntimeView{}, fmt.Errorf("agent %q not found", id)
+	}
+	runtimeImpl, err := s.runtimeForAgent(got)
+	if err != nil {
+		return RuntimeView{}, err
+	}
+
+	view := RuntimeView{
+		AgentID:       got.ID,
+		AgentName:     got.Name,
+		RuntimeID:     normalizeRuntimeID(got.RuntimeID, got.ID),
+		RuntimeKind:   runtimeImpl.Kind(),
+		HandleID:      strings.TrimSpace(got.BoxID),
+		State:         agentruntime.State(strings.TrimSpace(got.Status)),
+		LogsSupported: supportsRuntimeLogs(runtimeImpl),
+	}
+
+	info, err := s.runtimeInfo(ctx, runtimeImpl, runtimeHandleForAgent(got))
+	if err != nil {
+		if sandbox.IsNotFound(err) {
+			view.State = agentruntime.StateUnknown
+			return view, nil
+		}
+		return RuntimeView{}, err
+	}
+	if handleID := strings.TrimSpace(info.HandleID); handleID != "" {
+		view.HandleID = handleID
+	}
+	if info.State != "" {
+		view.State = info.State
+	}
+	return view, nil
+}
+
 func (s *Service) streamRuntimeHostLogs(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error {
 	got, ok := s.agentSnapshot(agentID)
 	if !ok {
@@ -202,6 +254,14 @@ func (s *Service) updateAgentRuntimeState(id string, info agentruntime.Info) (Ag
 		return Agent{}, err
 	}
 	return *cloneAgent(&current), nil
+}
+
+func supportsRuntimeLogs(rt agentruntime.Runtime) bool {
+	if rt == nil {
+		return false
+	}
+	_, ok := rt.(agentruntime.LogStreamer)
+	return ok
 }
 
 func (s *Service) createGatewayBox(ctx context.Context, rt sandbox.Runtime, image, name, botID string, profile AgentProfile) (sandbox.Instance, sandbox.Info, error) {

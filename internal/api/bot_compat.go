@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"csgclaw/internal/agent"
 	"csgclaw/internal/im"
+	agentruntime "csgclaw/internal/runtime"
 )
 
 const (
@@ -245,13 +247,42 @@ func (h *Handler) reconnectMissedBotAgents(senderID string, botIDs []string) {
 		if _, ok := h.svc.Agent(botID); !ok {
 			continue
 		}
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer cancel()
-			if _, err := h.svc.Recreate(ctx, botID); err != nil {
-				slog.Warn("picoclaw agent reconnect failed", "agent_id", botID, "error", err)
-			}
-		}()
+		go h.recoverMissedBotDelivery(botID)
+	}
+}
+
+func (h *Handler) recoverMissedBotDelivery(botID string) {
+	if h == nil || h.svc == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	view, err := h.svc.RuntimeView(ctx, botID)
+	if err != nil {
+		slog.Warn("bot delivery recovery failed", "agent_id", botID, "error", err)
+		return
+	}
+	if err := h.applyBotDeliveryRecoveryPolicy(ctx, view); err != nil {
+		slog.Warn("bot delivery recovery failed", "agent_id", botID, "runtime_kind", view.RuntimeKind, "state", view.State, "error", err)
+	}
+}
+
+func (h *Handler) applyBotDeliveryRecoveryPolicy(ctx context.Context, view agent.RuntimeView) error {
+	if h == nil || h.svc == nil {
+		return nil
+	}
+	switch view.State {
+	case agentruntime.StateCreated, agentruntime.StateStopped, agentruntime.StateExited, agentruntime.StateFailed:
+		_, err := h.svc.Start(ctx, view.AgentID)
+		return err
+	case agentruntime.StateRunning:
+		return nil
+	case "", agentruntime.StateUnknown:
+		fallthrough
+	default:
+		_, err := h.svc.Recreate(ctx, view.AgentID)
+		return err
 	}
 }
 

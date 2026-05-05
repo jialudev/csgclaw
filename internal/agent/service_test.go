@@ -64,7 +64,13 @@ func (f *fakeInstance) Close() error {
 }
 
 type fakeAgentRuntime struct {
-	kind string
+	kind       string
+	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	stop       func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	del        func(context.Context, agentruntime.Handle) error
+	state      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	info       func(context.Context, agentruntime.Handle) (agentruntime.Info, error)
+	streamLogs func(context.Context, agentruntime.Handle, agentruntime.LogOptions) error
 }
 
 func (f fakeAgentRuntime) Kind() string {
@@ -75,23 +81,81 @@ func (f fakeAgentRuntime) Create(context.Context, agentruntime.Spec) (agentrunti
 	return agentruntime.Handle{}, nil
 }
 
-func (f fakeAgentRuntime) Start(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+func (f fakeAgentRuntime) Start(ctx context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+	if f.start != nil {
+		return f.start(ctx, h)
+	}
 	return agentruntime.StateRunning, nil
 }
 
-func (f fakeAgentRuntime) Stop(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+func (f fakeAgentRuntime) Stop(ctx context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+	if f.stop != nil {
+		return f.stop(ctx, h)
+	}
 	return agentruntime.StateStopped, nil
 }
 
-func (f fakeAgentRuntime) Delete(context.Context, agentruntime.Handle) error {
+func (f fakeAgentRuntime) Delete(ctx context.Context, h agentruntime.Handle) error {
+	if f.del != nil {
+		return f.del(ctx, h)
+	}
 	return nil
 }
 
-func (f fakeAgentRuntime) State(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+func (f fakeAgentRuntime) State(ctx context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+	if f.state != nil {
+		return f.state(ctx, h)
+	}
 	return agentruntime.StateRunning, nil
 }
 
-func (f fakeAgentRuntime) Info(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+func (f fakeAgentRuntime) Info(ctx context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+	if f.info != nil {
+		return f.info(ctx, h)
+	}
+	return agentruntime.Info{}, nil
+}
+
+func (f fakeAgentRuntime) StreamLogs(ctx context.Context, h agentruntime.Handle, opts agentruntime.LogOptions) error {
+	if f.streamLogs != nil {
+		return f.streamLogs(ctx, h, opts)
+	}
+	return nil
+}
+
+type fakeAgentRuntimeNoLogs struct {
+	kind string
+	info func(context.Context, agentruntime.Handle) (agentruntime.Info, error)
+}
+
+func (f fakeAgentRuntimeNoLogs) Kind() string {
+	return f.kind
+}
+
+func (f fakeAgentRuntimeNoLogs) Create(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
+	return agentruntime.Handle{}, nil
+}
+
+func (f fakeAgentRuntimeNoLogs) Start(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeAgentRuntimeNoLogs) Stop(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateStopped, nil
+}
+
+func (f fakeAgentRuntimeNoLogs) Delete(context.Context, agentruntime.Handle) error {
+	return nil
+}
+
+func (f fakeAgentRuntimeNoLogs) State(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeAgentRuntimeNoLogs) Info(ctx context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+	if f.info != nil {
+		return f.info(ctx, h)
+	}
 	return agentruntime.Info{}, nil
 }
 
@@ -126,6 +190,18 @@ type agentBoxliteCLIBox struct {
 	ID     string
 	Name   string
 	Status string
+}
+
+func writeSeededAgents(path string, agents []Agent) error {
+	persisted := make([]persistedAgent, 0, len(agents))
+	for _, a := range agents {
+		persisted = append(persisted, newPersistedAgent(a))
+	}
+	data, err := json.Marshal(persistedState{Agents: persisted})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o600)
 }
 
 func newAgentBoxliteCLIRunner() *agentBoxliteCLIRunner {
@@ -1929,7 +2005,7 @@ func TestStartConfiguredAgentsRecreatesMissingCompleteWorkerBoxes(t *testing.T) 
 	}
 }
 
-func TestStartConfiguredAgentsStartsStoppedAndRecreatesRunningCompleteWorkers(t *testing.T) {
+func TestStartConfiguredAgentsStartsStoppedCompleteWorkersAndLeavesRunningWorkersUntouched(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	rt := &fakeRuntime{}
 	infos := map[string]sandbox.Info{
@@ -1946,27 +2022,9 @@ func TestStartConfiguredAgentsStartsStoppedAndRecreatesRunningCompleteWorkers(t 
 			CreatedAt: time.Date(2026, 4, 1, 13, 0, 0, 0, time.UTC),
 		},
 	}
-	var recreated []string
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return rt, nil },
-		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, botID string, profile AgentProfile) (sandbox.Instance, sandbox.Info, error) {
-			recreated = append(recreated, name)
-			if name != "carol" || botID != "u-carol" {
-				t.Fatalf("createGatewayBox() got name=%q botID=%q, want carol/u-carol", name, botID)
-			}
-			if !profile.ProfileComplete || profile.Provider != ProviderCodex || profile.ModelID != "gpt-5.5" {
-				t.Fatalf("createGatewayBox() profile = %+v, want complete codex gpt-5.5", profile)
-			}
-			info := sandbox.Info{
-				ID:        "box-carol-new",
-				Name:      name,
-				State:     sandbox.StateRunning,
-				CreatedAt: time.Date(2026, 4, 1, 14, 0, 0, 0, time.UTC),
-			}
-			infos[info.ID] = info
-			infos[name] = info
-			return &fakeInfoInstance{info: info}, info, nil
-		},
+		nil,
 	)
 	defer ResetTestHooks()
 	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
@@ -1998,17 +2056,6 @@ func TestStartConfiguredAgentsStartsStoppedAndRecreatesRunningCompleteWorkers(t 
 		}
 		return info, nil
 	}
-	var removed []string
-	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, idOrName string) error {
-		removed = append(removed, idOrName)
-		if info, ok := infos[idOrName]; ok {
-			delete(infos, info.ID)
-			delete(infos, info.Name)
-			return nil
-		}
-		return fmt.Errorf("%w: missing", sandbox.ErrNotFound)
-	}
-
 	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -2061,12 +2108,6 @@ func TestStartConfiguredAgentsStartsStoppedAndRecreatesRunningCompleteWorkers(t 
 	if strings.Join(started, ",") != "box-alice" {
 		t.Fatalf("started boxes = %q, want only box-alice", started)
 	}
-	if strings.Join(recreated, ",") != "carol" {
-		t.Fatalf("recreated boxes = %q, want carol", recreated)
-	}
-	if strings.Join(removed, ",") != "box-carol" {
-		t.Fatalf("removed boxes = %q, want box-carol", removed)
-	}
 	got, ok := svc.Agent("u-alice")
 	if !ok {
 		t.Fatal("Agent() missing u-alice")
@@ -2078,8 +2119,8 @@ func TestStartConfiguredAgentsStartsStoppedAndRecreatesRunningCompleteWorkers(t 
 	if !ok {
 		t.Fatal("Agent() missing u-carol")
 	}
-	if carol.BoxID != "box-carol-new" {
-		t.Fatalf("Agent(u-carol).BoxID = %q, want box-carol-new", carol.BoxID)
+	if carol.BoxID != "box-carol" {
+		t.Fatalf("Agent(u-carol).BoxID = %q, want box-carol", carol.BoxID)
 	}
 	if carol.Status != string(sandbox.StateRunning) {
 		t.Fatalf("Agent(u-carol).Status = %q, want running", carol.Status)
@@ -2847,6 +2888,102 @@ func TestPicoclawSandboxRuntimeKind(t *testing.T) {
 	}
 	if got, want := rt.Kind(), RuntimeKindPicoClawSandbox; got != want {
 		t.Fatalf("runtime kind = %q, want %q", got, want)
+	}
+}
+
+func TestRuntimeViewUsesRuntimeInfoAndReportsLogSupport(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	if err := writeSeededAgents(statePath, []Agent{
+		{
+			ID:        "u-alice",
+			Name:      "alice",
+			RuntimeID: "rt-u-alice",
+			BoxID:     "box-old",
+			Role:      RoleWorker,
+			Status:    string(agentruntime.StateStopped),
+			CreatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := WithRuntime(fakeAgentRuntime{
+		kind: RuntimeKindPicoClawSandbox,
+		info: func(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+			return agentruntime.Info{
+				HandleID: "box-new",
+				State:    agentruntime.StateRunning,
+			}, nil
+		},
+		streamLogs: func(context.Context, agentruntime.Handle, agentruntime.LogOptions) error {
+			return nil
+		},
+	})(svc); err != nil {
+		t.Fatalf("WithRuntime() error = %v", err)
+	}
+
+	view, err := svc.RuntimeView(context.Background(), "u-alice")
+	if err != nil {
+		t.Fatalf("RuntimeView() error = %v", err)
+	}
+	if view.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("RuntimeView().RuntimeKind = %q, want %q", view.RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
+	if view.HandleID != "box-new" {
+		t.Fatalf("RuntimeView().HandleID = %q, want %q", view.HandleID, "box-new")
+	}
+	if view.State != agentruntime.StateRunning {
+		t.Fatalf("RuntimeView().State = %q, want %q", view.State, agentruntime.StateRunning)
+	}
+	if !view.LogsSupported {
+		t.Fatal("RuntimeView().LogsSupported = false, want true")
+	}
+}
+
+func TestRuntimeViewMapsRuntimeNotFoundToUnknown(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	if err := writeSeededAgents(statePath, []Agent{
+		{
+			ID:        "u-alice",
+			Name:      "alice",
+			RuntimeID: "rt-u-alice",
+			BoxID:     "box-old",
+			Role:      RoleWorker,
+			Status:    string(agentruntime.StateRunning),
+			CreatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := WithRuntime(fakeAgentRuntimeNoLogs{
+		kind: RuntimeKindPicoClawSandbox,
+		info: func(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+			return agentruntime.Info{}, fmt.Errorf("%w: missing box", sandbox.ErrNotFound)
+		},
+	})(svc); err != nil {
+		t.Fatalf("WithRuntime() error = %v", err)
+	}
+
+	view, err := svc.RuntimeView(context.Background(), "u-alice")
+	if err != nil {
+		t.Fatalf("RuntimeView() error = %v", err)
+	}
+	if view.State != agentruntime.StateUnknown {
+		t.Fatalf("RuntimeView().State = %q, want %q", view.State, agentruntime.StateUnknown)
+	}
+	if view.LogsSupported {
+		t.Fatal("RuntimeView().LogsSupported = true, want false")
 	}
 }
 
