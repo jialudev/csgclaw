@@ -16,6 +16,8 @@ const AGENT_STATUS_REFRESH_INTERVAL_MS = 2000;
 const IM_EVENTS_ENDPOINT = "/api/v1/events";
 const IM_EVENTS_SHARED_WORKER_PATH = "/sse-shared-worker.js";
 const VERSION_ENDPOINT = "/api/v1/version";
+const UPGRADE_STATUS_ENDPOINT = "/api/v1/upgrade/status";
+const UPGRADE_APPLY_ENDPOINT = "/api/v1/upgrade/apply";
 const PROVIDERS = ["csghub_lite", "codex", "claude_code", "api"];
 const AGENT_RUNTIME_OPTIONS = [
   { value: "picoclaw-sandbox", label: "picoclaw_sandbox" },
@@ -226,6 +228,9 @@ const messages = {
     offline: "离线",
     justNow: "刚刚",
     minutesAgo: "{count} 分钟前",
+    upgradeAction: "更新并重启",
+    upgradeActionBusy: "更新中...",
+    upgradeApplyFailed: "启动升级失败，请重试。",
     roles: {
       admin: "管理员",
       manager: "经理",
@@ -384,6 +389,9 @@ const messages = {
     offline: "offline",
     justNow: "just now",
     minutesAgo: "{count} min ago",
+    upgradeAction: "Update & Restart",
+    upgradeActionBusy: "Updating...",
+    upgradeApplyFailed: "Failed to start the upgrade. Please retry.",
     roles: {
       admin: "admin",
       manager: "manager",
@@ -794,6 +802,21 @@ function readCollapsedWorkspaceGroups() {
   }
 }
 
+function normalizeUpgradeStatus(status) {
+  if (!status || typeof status !== "object") {
+    return null;
+  }
+  return {
+    current_version: typeof status.current_version === "string" ? status.current_version : "",
+    latest_version: typeof status.latest_version === "string" ? status.latest_version : "",
+    update_available: Boolean(status.update_available),
+    checking: Boolean(status.checking),
+    upgrading: Boolean(status.upgrading),
+    last_checked_at: status.last_checked_at || "",
+    last_error: typeof status.last_error === "string" ? status.last_error : "",
+  };
+}
+
 function App() {
   const initialPane = useMemo(() => paneFromLocation(), []);
   const [locale, setLocale] = useState(() => detectInitialLocale());
@@ -853,6 +876,9 @@ function App() {
   const [agentPageError, setAgentPageError] = useState("");
   const [profilePreview, setProfilePreview] = useState(null);
   const [appVersion, setAppVersion] = useState("dev");
+  const [upgradeStatus, setUpgradeStatus] = useState(null);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [upgradeError, setUpgradeError] = useState("");
   const editorRef = useRef(null);
   const messageListRef = useRef(null);
   const memberMenuRef = useRef(null);
@@ -868,6 +894,10 @@ function App() {
 
   useEffect(() => {
     refreshVersion();
+  }, []);
+
+  useEffect(() => {
+    refreshUpgradeStatus();
   }, []);
 
   useEffect(() => {
@@ -894,6 +924,15 @@ function App() {
   useEffect(() => {
     const unsubscribe = subscribeIMEvents((payload) => {
       setData((current) => applyIMEvent(current, payload));
+      if (payload?.type === "upgrade.status_changed" && payload.upgrade) {
+        const next = normalizeUpgradeStatus(payload.upgrade);
+        setUpgradeStatus(next);
+        if (next?.upgrading) {
+          setUpgradeBusy(true);
+        } else if (!next?.update_available) {
+          setUpgradeBusy(false);
+        }
+      }
       // Temporarily disable event-driven agent polling for debugging multi-tab pending requests.
       // if (isAgentRosterEvent(payload)) {
       //   scheduleAgentsRefresh();
@@ -1318,6 +1357,43 @@ function App() {
       }
     } catch (_) {
       setAppVersion("dev");
+    }
+  }
+
+  async function refreshUpgradeStatus() {
+    try {
+      const resp = await fetch(UPGRADE_STATUS_ENDPOINT);
+      if (!resp.ok) {
+        throw new Error("upgrade status failed");
+      }
+      const payload = normalizeUpgradeStatus(await resp.json());
+      setUpgradeStatus(payload);
+      if (payload?.upgrading) {
+        setUpgradeBusy(true);
+      } else if (!payload?.update_available) {
+        setUpgradeBusy(false);
+      }
+    } catch (_) {
+      setUpgradeStatus(null);
+      setUpgradeBusy(false);
+    }
+  }
+
+  async function applyUpgrade() {
+    if (upgradeBusy || upgradeStatus?.upgrading) {
+      return;
+    }
+
+    setUpgradeBusy(true);
+    setUpgradeError("");
+    try {
+      const resp = await fetch(UPGRADE_APPLY_ENDPOINT, { method: "POST" });
+      if (!resp.ok) {
+        throw new Error("upgrade apply failed");
+      }
+    } catch (_) {
+      setUpgradeBusy(false);
+      setUpgradeError(t("upgradeApplyFailed"));
     }
   }
 
@@ -2435,7 +2511,23 @@ function App() {
               ${agentsError ? html`<div className="form-error agent-error">${agentsError}</div>` : null}
             </nav>
             <div className="sidebar-footer">
-              <span className="sidebar-version-label">${`csgclaw v${appVersion}`}</span>
+              <div className="sidebar-footer-row">
+                <span className="sidebar-version-label">${`csgclaw v${appVersion}`}</span>
+                ${upgradeStatus?.update_available
+                  ? html`
+                      <button
+                        type="button"
+                        className="sidebar-upgrade-button"
+                        disabled=${upgradeBusy || upgradeStatus?.upgrading}
+                        onClick=${applyUpgrade}
+                      >
+                        <span className="sidebar-upgrade-dot" aria-hidden="true"></span>
+                        <span>${upgradeBusy || upgradeStatus?.upgrading ? t("upgradeActionBusy") : t("upgradeAction")}</span>
+                      </button>
+                    `
+                  : null}
+              </div>
+              ${upgradeError ? html`<div className="sidebar-footer-error">${upgradeError}</div>` : null}
             </div>
           </aside>
 

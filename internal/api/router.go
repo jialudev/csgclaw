@@ -13,6 +13,8 @@ func (h *Handler) Routes() *http.ServeMux {
 func (h *Handler) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/healthz", h.handleHealthz)
 	mux.HandleFunc("/api/v1/version", h.handleVersion)
+	mux.HandleFunc("/api/v1/upgrade/status", h.handleUpgradeStatus)
+	mux.HandleFunc("/api/v1/upgrade/apply", h.handleUpgradeApply)
 	mux.HandleFunc("/api/v1/bots", h.handleBots)
 	mux.HandleFunc("/api/v1/bots/", h.handleBotByID)
 	mux.HandleFunc("/api/v1/agents", h.handleAgents)

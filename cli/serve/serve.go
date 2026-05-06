@@ -22,6 +22,7 @@ import (
 
 	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
+	"csgclaw/internal/apitypes"
 	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
@@ -36,6 +37,8 @@ import (
 	runtimecodex "csgclaw/internal/runtime/codex"
 	"csgclaw/internal/sandboxproviders"
 	"csgclaw/internal/server"
+	"csgclaw/internal/upgrade"
+	appversion "csgclaw/internal/version"
 )
 
 var (
@@ -130,7 +133,7 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	if *daemon {
 		return serveBackground(run, cfg, globals, *logPath, *pidPath, *logLevel)
 	}
-	return serveForeground(ctx, run, cfg, globals.Output)
+	return serveForegroundWithConfigPath(ctx, run, cfg, globals.Config, globals.Output)
 }
 
 func (stopCmd) Name() string {
@@ -247,10 +250,14 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	if err != nil {
 		return err
 	}
-	return startServer(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, globals.Output)
+	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, *configPathFlag, globals.Output)
 }
 
 func serveForeground(ctx context.Context, run *command.Context, cfg config.Config, output string) error {
+	return serveForegroundWithConfigPath(ctx, run, cfg, "", output)
+}
+
+func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, configPath, output string) error {
 	_ = preflightDefaultModelProvider(ctx, cfg)
 	imBus := im.NewBus()
 	svc, err := NewAgentService(cfg)
@@ -288,7 +295,7 @@ func serveForeground(ctx context.Context, run *command.Context, cfg config.Confi
 		fmt.Fprintf(run.Stdout, "CSGClaw IM is available at: %s\n", imURL)
 	}
 
-	return startServer(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, output)
+	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, configPath, output)
 }
 
 func serveBackground(run *command.Context, cfg config.Config, globals command.GlobalOptions, logPath, pidPath, logLevel string) error {
@@ -396,6 +403,10 @@ func parseServeLogLevel(level string) (slog.Level, error) {
 }
 
 func startServer(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, output string) error {
+	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, "", output)
+}
+
+func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, configPath, output string) error {
 	_ = EnsureCLIProxy(ctx)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -418,6 +429,26 @@ func startServer(ctx context.Context, run *command.Context, cfg config.Config, s
 	}
 	apiURL := apiBaseURL(cfg.Server)
 	imURL := imOpenURL(apiURL)
+	upgradeManager := upgrade.NewManager(upgrade.Client{
+		HTTPClient: http.DefaultClient,
+		GOOS:       runtime.GOOS,
+		GOARCH:     runtime.GOARCH,
+	}, appversion.Current(), upgrade.ManagerOptions{
+		OnStatusChange: func(status apitypes.UpgradeStatus) {
+			if imBus == nil {
+				return
+			}
+			snapshot := status
+			if snapshot.LastCheckedAt != nil {
+				t := *snapshot.LastCheckedAt
+				snapshot.LastCheckedAt = &t
+			}
+			imBus.Publish(im.Event{
+				Type:    im.EventTypeUpgradeStatusChanged,
+				Upgrade: &snapshot,
+			})
+		},
+	})
 	return RunServer(server.Options{
 		ListenAddr:  cfg.Server.ListenAddr,
 		Service:     svc,
@@ -428,6 +459,8 @@ func startServer(ctx context.Context, run *command.Context, cfg config.Config, s
 		CodexBridge: codexBridgeMgr,
 		Feishu:      feishuSvc,
 		LLM:         llmSvc,
+		Upgrade:     upgradeManager,
+		ConfigPath:  configPath,
 		AccessToken: cfg.Server.AccessToken,
 		NoAuth:      cfg.Server.NoAuth,
 		Context:     ctx,

@@ -16,6 +16,7 @@ import (
 	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	"csgclaw/internal/upgrade"
 	"csgclaw/internal/version"
 )
 
@@ -31,6 +32,9 @@ type Handler struct {
 	llm               *llm.Service
 	serverAccessToken string
 	serverNoAuth      bool
+	upgradeManager    *upgrade.Manager
+	upgradeConfigPath string
+	upgradeApply      func(upgrade.ApplyHelperOptions) error
 }
 
 type CodexBridgeController interface {
@@ -46,12 +50,13 @@ type imBootstrapResponse struct {
 }
 
 type imEventResponse struct {
-	Type    string      `json:"type"`
-	RoomID  string      `json:"room_id,omitempty"`
-	Room    *im.Room    `json:"room,omitempty"`
-	User    *im.User    `json:"user,omitempty"`
-	Message *im.Message `json:"message,omitempty"`
-	Sender  *im.User    `json:"sender,omitempty"`
+	Type    string                  `json:"type"`
+	RoomID  string                  `json:"room_id,omitempty"`
+	Room    *im.Room                `json:"room,omitempty"`
+	User    *im.User                `json:"user,omitempty"`
+	Message *im.Message             `json:"message,omitempty"`
+	Sender  *im.User                `json:"sender,omitempty"`
+	Upgrade *apitypes.UpgradeStatus `json:"upgrade,omitempty"`
 }
 
 type imAgentJoinResponse struct {
@@ -123,7 +128,24 @@ func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im
 		llm:               llmSvc,
 		serverAccessToken: serverAccessToken,
 		serverNoAuth:      serverNoAuth,
+		upgradeApply:      upgrade.StartApplyHelper,
 	}
+}
+
+func (h *Handler) SetUpgradeManager(manager *upgrade.Manager) {
+	h.upgradeManager = manager
+}
+
+func (h *Handler) SetUpgradeConfigPath(configPath string) {
+	h.upgradeConfigPath = strings.TrimSpace(configPath)
+}
+
+func (h *Handler) SetUpgradeApplyFunc(apply func(upgrade.ApplyHelperOptions) error) {
+	if apply == nil {
+		h.upgradeApply = upgrade.StartApplyHelper
+		return
+	}
+	h.upgradeApply = apply
 }
 
 func (h *Handler) validateServerAccessToken(authHeader string) bool {
@@ -146,6 +168,43 @@ func (h *Handler) handleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, apitypes.VersionResponse{
 		Version: version.Current(),
+	})
+}
+
+func (h *Handler) handleUpgradeStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.upgradeManager == nil {
+		http.Error(w, "upgrade manager is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.upgradeManager.Status())
+}
+
+func (h *Handler) handleUpgradeApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.upgradeManager == nil {
+		http.Error(w, "upgrade manager is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	apply := h.upgradeApply
+	if apply == nil {
+		apply = upgrade.StartApplyHelper
+	}
+	if err := apply(upgrade.ApplyHelperOptions{ConfigPath: h.upgradeConfigPath}); err != nil {
+		http.Error(w, fmt.Sprintf("start upgrade helper: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, apitypes.UpgradeActionResponse{
+		Status:  "accepted",
+		Message: "upgrade helper started",
 	})
 }
 
@@ -1189,6 +1248,7 @@ func presentEvent(evt im.Event) imEventResponse {
 		User:    evt.User,
 		Message: evt.Message,
 		Sender:  evt.Sender,
+		Upgrade: evt.Upgrade,
 	}
 }
 

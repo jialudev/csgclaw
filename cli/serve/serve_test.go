@@ -438,6 +438,9 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		if !opts.NoAuth {
 			return fmt.Errorf("NoAuth = false, want true")
 		}
+		if opts.Upgrade == nil {
+			return fmt.Errorf("Upgrade = nil, want configured manager")
+		}
 		if opts.OnReady == nil {
 			return fmt.Errorf("OnReady is nil")
 		}
@@ -608,6 +611,27 @@ func TestServeForegroundStartsConfiguredAgentsOnReady(t *testing.T) {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("StartConfiguredAgents was not called from OnReady")
+	}
+}
+
+func TestServeForegroundPassesConfigPathToServer(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	var gotConfigPath string
+	RunServer = func(opts server.Options) error {
+		gotConfigPath = opts.ConfigPath
+		return nil
+	}
+
+	if err := serveForegroundWithConfigPath(context.Background(), testContext(), config.Config{
+		Server: config.ServerConfig{ListenAddr: "127.0.0.1:18080"},
+	}, "/tmp/csgclaw.toml", "json"); err != nil {
+		t.Fatalf("serveForegroundWithConfigPath() error = %v", err)
+	}
+
+	if gotConfigPath != "/tmp/csgclaw.toml" {
+		t.Fatalf("RunServer config path = %q, want %q", gotConfigPath, "/tmp/csgclaw.toml")
 	}
 }
 

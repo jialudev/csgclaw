@@ -1,6 +1,10 @@
 package im
 
-import "sync"
+import (
+	"sync"
+
+	"csgclaw/internal/apitypes"
+)
 
 const (
 	EventTypeMessageCreated           = "message.created"
@@ -10,15 +14,17 @@ const (
 	EventTypeConversationMembersAdded = "conversation.members_added"
 	EventTypeUserCreated              = "user.created"
 	EventTypeUserDeleted              = "user.deleted"
+	EventTypeUpgradeStatusChanged     = "upgrade.status_changed"
 )
 
 type Event struct {
-	Type    string   `json:"type"`
-	RoomID  string   `json:"room_id,omitempty"`
-	Room    *Room    `json:"room,omitempty"`
-	User    *User    `json:"user,omitempty"`
-	Message *Message `json:"message,omitempty"`
-	Sender  *User    `json:"sender,omitempty"`
+	Type    string                  `json:"type"`
+	RoomID  string                  `json:"room_id,omitempty"`
+	Room    *Room                   `json:"room,omitempty"`
+	User    *User                   `json:"user,omitempty"`
+	Message *Message                `json:"message,omitempty"`
+	Sender  *User                   `json:"sender,omitempty"`
+	Upgrade *apitypes.UpgradeStatus `json:"upgrade,omitempty"`
 }
 
 type Bus struct {

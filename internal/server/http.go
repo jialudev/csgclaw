@@ -13,6 +13,7 @@ import (
 	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	"csgclaw/internal/upgrade"
 )
 
 type Options struct {
@@ -25,6 +26,8 @@ type Options struct {
 	CodexBridge api.CodexBridgeController
 	Feishu      *channel.FeishuService
 	LLM         *llm.Service
+	Upgrade     *upgrade.Manager
+	ConfigPath  string
 	AccessToken string
 	NoAuth      bool
 	Context     context.Context
@@ -36,6 +39,8 @@ func Run(opts Options) error {
 		opts.Context = context.Background()
 	}
 	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.CodexBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	handler.SetUpgradeManager(opts.Upgrade)
+	handler.SetUpgradeConfigPath(opts.ConfigPath)
 	mux := handler.Routes()
 	mux.Handle("/", uiHandler())
 
@@ -62,6 +67,10 @@ func Run(opts Options) error {
 				}
 			}
 		}()
+	}
+
+	if opts.Upgrade != nil {
+		go opts.Upgrade.Start(opts.Context)
 	}
 
 	errCh := make(chan error, 1)

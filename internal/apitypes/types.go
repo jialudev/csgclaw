@@ -105,6 +105,21 @@ type VersionResponse struct {
 	Version string `json:"version"`
 }
 
+type UpgradeStatus struct {
+	CurrentVersion  string     `json:"current_version"`
+	LatestVersion   string     `json:"latest_version,omitempty"`
+	UpdateAvailable bool       `json:"update_available"`
+	Checking        bool       `json:"checking"`
+	Upgrading       bool       `json:"upgrading"`
+	LastCheckedAt   *time.Time `json:"last_checked_at,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+}
+
+type UpgradeActionResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
 // UnmarshalJSON keeps room payload decoding backward-compatible with legacy participants fields.
 func (r *Room) UnmarshalJSON(data []byte) error {
 	type roomAlias Room

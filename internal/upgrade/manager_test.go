@@ -1,0 +1,198 @@
+package upgrade
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"csgclaw/internal/apitypes"
+)
+
+type fakeChecker struct {
+	check func(context.Context, string) (CheckResult, error)
+}
+
+func (f fakeChecker) Check(ctx context.Context, currentVersion string) (CheckResult, error) {
+	return f.check(ctx, currentVersion)
+}
+
+func TestManagerRefreshUpdatesStatus(t *testing.T) {
+	now := time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC)
+	manager := NewManager(fakeChecker{
+		check: func(_ context.Context, currentVersion string) (CheckResult, error) {
+			if got, want := currentVersion, "v0.2.5"; got != want {
+				t.Fatalf("currentVersion = %q, want %q", got, want)
+			}
+			return CheckResult{
+				CurrentVersion:  "v0.2.5",
+				LatestVersion:   "v0.2.7",
+				UpdateAvailable: true,
+			}, nil
+		},
+	}, "v0.2.5", ManagerOptions{
+		Now: func() time.Time { return now },
+	})
+
+	manager.Refresh(context.Background())
+
+	status := manager.Status()
+	if !status.UpdateAvailable {
+		t.Fatal("UpdateAvailable = false, want true")
+	}
+	if got, want := status.LatestVersion, "v0.2.7"; got != want {
+		t.Fatalf("LatestVersion = %q, want %q", got, want)
+	}
+	if status.Checking {
+		t.Fatal("Checking = true, want false")
+	}
+	if status.LastCheckedAt == nil || !status.LastCheckedAt.Equal(now) {
+		t.Fatalf("LastCheckedAt = %v, want %v", status.LastCheckedAt, now)
+	}
+	if status.LastError != "" {
+		t.Fatalf("LastError = %q, want empty", status.LastError)
+	}
+}
+
+func TestManagerRefreshKeepsLastKnownVersionOnError(t *testing.T) {
+	now := time.Date(2026, 5, 6, 13, 0, 0, 0, time.UTC)
+	call := 0
+	manager := NewManager(fakeChecker{
+		check: func(_ context.Context, _ string) (CheckResult, error) {
+			call++
+			if call == 1 {
+				return CheckResult{
+					CurrentVersion:  "v0.2.5",
+					LatestVersion:   "v0.2.7",
+					UpdateAvailable: true,
+				}, nil
+			}
+			return CheckResult{}, errors.New("network unavailable")
+		},
+	}, "v0.2.5", ManagerOptions{
+		Now: func() time.Time { return now },
+	})
+
+	manager.Refresh(context.Background())
+	manager.Refresh(context.Background())
+
+	status := manager.Status()
+	if got, want := status.LatestVersion, "v0.2.7"; got != want {
+		t.Fatalf("LatestVersion = %q, want %q", got, want)
+	}
+	if !status.UpdateAvailable {
+		t.Fatal("UpdateAvailable = false, want true")
+	}
+	if got, want := status.LastError, "network unavailable"; got != want {
+		t.Fatalf("LastError = %q, want %q", got, want)
+	}
+}
+
+func TestManagerStartChecksImmediatelyAndPeriodically(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	calls := make(chan int, 2)
+	manager := NewManager(fakeChecker{
+		check: func(_ context.Context, _ string) (CheckResult, error) {
+			select {
+			case calls <- 1:
+			default:
+			}
+			return CheckResult{LatestVersion: "v0.2.5"}, nil
+		},
+	}, "v0.2.5", ManagerOptions{
+		CheckInterval: 10 * time.Millisecond,
+	})
+
+	done := make(chan struct{})
+	go func() {
+		manager.Start(ctx)
+		close(done)
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-calls:
+		case <-time.After(time.Second):
+			t.Fatalf("check call %d was not observed", i+1)
+		}
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Start did not exit after context cancellation")
+	}
+}
+
+func TestManagerRefreshNotifiesOnStatusChange(t *testing.T) {
+	now := time.Date(2026, 5, 6, 15, 0, 0, 0, time.UTC)
+	notifications := make(chan apitypes.UpgradeStatus, 1)
+	manager := NewManager(fakeChecker{
+		check: func(_ context.Context, _ string) (CheckResult, error) {
+			return CheckResult{
+				CurrentVersion:  "v0.2.5",
+				LatestVersion:   "v0.2.7",
+				UpdateAvailable: true,
+			}, nil
+		},
+	}, "v0.2.5", ManagerOptions{
+		Now: func() time.Time { return now },
+		OnStatusChange: func(status apitypes.UpgradeStatus) {
+			notifications <- status
+		},
+	})
+
+	manager.Refresh(context.Background())
+
+	select {
+	case status := <-notifications:
+		if !status.UpdateAvailable {
+			t.Fatal("UpdateAvailable = false, want true")
+		}
+		if got, want := status.LatestVersion, "v0.2.7"; got != want {
+			t.Fatalf("LatestVersion = %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected upgrade status notification")
+	}
+}
+
+func TestManagerRefreshSkipsNotificationWhenOnlyCheckedAtChanges(t *testing.T) {
+	call := 0
+	notifications := make(chan apitypes.UpgradeStatus, 2)
+	manager := NewManager(fakeChecker{
+		check: func(_ context.Context, _ string) (CheckResult, error) {
+			call++
+			return CheckResult{
+				CurrentVersion:  "v0.2.5",
+				LatestVersion:   "v0.2.7",
+				UpdateAvailable: true,
+			}, nil
+		},
+	}, "v0.2.5", ManagerOptions{
+		Now: func() time.Time {
+			return time.Date(2026, 5, 6, 15, call, 0, 0, time.UTC)
+		},
+		OnStatusChange: func(status apitypes.UpgradeStatus) {
+			notifications <- status
+		},
+	})
+
+	manager.Refresh(context.Background())
+	manager.Refresh(context.Background())
+
+	select {
+	case <-notifications:
+	case <-time.After(time.Second):
+		t.Fatal("expected first upgrade status notification")
+	}
+
+	select {
+	case status := <-notifications:
+		t.Fatalf("unexpected second notification: %+v", status)
+	default:
+	}
+}
