@@ -251,14 +251,14 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	if err != nil {
 		return err
 	}
-	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, *configPathFlag, globals.Output)
+	return startServer(ctx, run, cfg, *configPathFlag, svc, botSvc, imSvc, imBus, feishuSvc, globals.Output)
 }
 
 func serveForeground(ctx context.Context, run *command.Context, cfg config.Config, output string) error {
 	return serveForegroundWithConfigPath(ctx, run, cfg, "", output)
 }
 
-func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, configPath, output string) error {
+func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, configPath string, output string) error {
 	_ = preflightDefaultModelProvider(ctx, cfg)
 	imBus := im.NewBus()
 	svc, err := NewAgentService(cfg)
@@ -296,7 +296,7 @@ func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cf
 		fmt.Fprintf(run.Stdout, "CSGClaw IM is available at: %s\n", imURL)
 	}
 
-	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, configPath, output)
+	return startServer(ctx, run, cfg, configPath, svc, botSvc, imSvc, imBus, feishuSvc, output)
 }
 
 func serveBackground(run *command.Context, cfg config.Config, globals command.GlobalOptions, logPath, pidPath, logLevel string) error {
@@ -403,11 +403,7 @@ func parseServeLogLevel(level string) (slog.Level, error) {
 	}
 }
 
-func startServer(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, output string) error {
-	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, "", output)
-}
-
-func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, configPath, output string) error {
+func startServer(ctx context.Context, run *command.Context, cfg config.Config, configPath string, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, output string) error {
 	_ = EnsureCLIProxy(ctx)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -667,13 +663,14 @@ no_auth = %t
 
 [bootstrap]
 manager_image_override = %q
+agent_runtime = %q
 
 [sandbox]
 provider = %q
 home_dir_name = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImageOverride, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImageOverride, cfg.Bootstrap.ResolvedGatewayRuntime(), cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName)
 	if strings.TrimSpace(cfg.Bootstrap.ManagerImageOverride) == "" {
-		content = strings.Replace(content, "[bootstrap]\nmanager_image_override", fmt.Sprintf("[bootstrap]\n# using default image: %q\nmanager_image_override", config.DefaultManagerImage), 1)
+		content = strings.Replace(content, "[bootstrap]\nmanager_image_override", fmt.Sprintf("[bootstrap]\n# using default image: %q\nmanager_image_override", cfg.Bootstrap.EffectiveManagerImage()), 1)
 	}
 	if len(cfg.Sandbox.Resolved().DebianRegistriesOverride) > 0 {
 		content += fmt.Sprintf("debian_registries_override = %s\n", formatModelList(cfg.Sandbox.Resolved().DebianRegistriesOverride))
@@ -729,6 +726,9 @@ func loadConfig(path string) (config.Config, error) {
 }
 
 func validateModelConfig(cfg config.Config) error {
+	if err := cfg.Bootstrap.Validate(); err != nil {
+		return err
+	}
 	if effectiveLLMConfig(cfg).IsZero() {
 		return nil
 	}
@@ -771,8 +771,12 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, runtimewiring.WithPicoClawSandboxRuntime())
-	opts = append(opts, runtimewiring.WithCodexRuntime())
+	opts = append(opts,
+		runtimewiring.WithPicoClawSandboxRuntime(),
+		runtimewiring.WithOpenClawSandboxRuntime(),
+		runtimewiring.WithCodexRuntime(),
+		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntime()),
+	)
 	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
 }
 

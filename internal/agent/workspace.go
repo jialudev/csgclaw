@@ -9,15 +9,32 @@ import (
 )
 
 const (
-	workspaceTemplateManager = "embed/runtimes/picoclaw/manager/workspace"
-	workspaceTemplateWorker  = "embed/runtimes/picoclaw/worker/workspace"
+	workspaceTemplateManagerPicoclaw = "embed/runtimes/picoclaw/manager/workspace"
+	workspaceTemplateWorkerPicoclaw  = "embed/runtimes/picoclaw/worker/workspace"
+	workspaceTemplateManagerOpenClaw = "embed/runtimes/openclaw/manager/workspace"
+	workspaceTemplateWorkerOpenClaw  = "embed/runtimes/openclaw/worker/workspace"
+	// openclawCsgSkillsEmbedPath is the CSG-owned skill pack; see ensureOpenClawCsgSkills in openclaw_config.go.
+	openclawCsgSkillsEmbedPath = "embed/runtimes/openclaw/csg-skills"
 )
 
-func workspaceTemplateForAgent(name, botID string) string {
-	if strings.EqualFold(strings.TrimSpace(name), ManagerName) || strings.TrimSpace(botID) == ManagerUserID {
-		return workspaceTemplateManager
+// managerGatewayMatch reports whether a gateway run should use manager templates (PicoClaw or OpenClaw),
+// by agent name and bot id (the same test as the workspace template chooser).
+func managerGatewayMatch(name, botID string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), ManagerName) || strings.TrimSpace(botID) == ManagerUserID
+}
+
+func workspaceTemplateForAgent(name, botID string, openClaw bool) string {
+	isManager := managerGatewayMatch(name, botID)
+	if openClaw {
+		if isManager {
+			return workspaceTemplateManagerOpenClaw
+		}
+		return workspaceTemplateWorkerOpenClaw
 	}
-	return workspaceTemplateWorker
+	if isManager {
+		return workspaceTemplateManagerPicoclaw
+	}
+	return workspaceTemplateWorkerPicoclaw
 }
 
 func ensureAgentWorkspace(agentName, template string) (string, error) {
@@ -25,13 +42,25 @@ func ensureAgentWorkspace(agentName, template string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return ensureWorkspaceAtRoot(hostRoot, template)
+}
+
+func ensureAgentOpenClawWorkspace(agentName, template string) (string, error) {
+	hostRoot, err := agentOpenClawWorkspaceRoot(agentName)
+	if err != nil {
+		return "", err
+	}
+	return ensureWorkspaceAtRoot(hostRoot, template)
+}
+
+func ensureWorkspaceAtRoot(hostRoot, template string) (string, error) {
 	if strings.TrimSpace(template) == "" {
 		return "", fmt.Errorf("workspace template is required")
 	}
 	if err := os.MkdirAll(hostRoot, 0o755); err != nil {
 		return "", fmt.Errorf("create agent workspace dir: %w", err)
 	}
-	if err := copyEmbeddedWorkspace(template, hostRoot); err != nil {
+	if err := copyEmbeddedTree(template, hostRoot); err != nil {
 		return "", err
 	}
 	return hostRoot, nil
@@ -45,7 +74,19 @@ func agentWorkspaceRoot(agentName string) (string, error) {
 	return filepath.Join(agentHome, hostWorkspaceDir), nil
 }
 
-func copyEmbeddedWorkspace(template, dstRoot string) error {
+func agentOpenClawWorkspaceRoot(agentName string) (string, error) {
+	hostRoot, err := agentOpenClawRoot(agentName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(hostRoot, hostWorkspaceDir), nil
+}
+
+func copyOpenClawCsgSkillsPack(dstRoot string) error {
+	return copyEmbeddedTree(openclawCsgSkillsEmbedPath, dstRoot)
+}
+
+func copyEmbeddedTree(template, dstRoot string) error {
 	template = strings.Trim(strings.TrimSpace(template), "/")
 	return fs.WalkDir(workspaceTemplateFS, template, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

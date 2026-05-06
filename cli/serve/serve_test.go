@@ -915,6 +915,7 @@ no_auth = true
 
 [bootstrap]
 manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
+agent_runtime = "picoclaw"
 
 [sandbox]
 provider = "boxlite-cli"

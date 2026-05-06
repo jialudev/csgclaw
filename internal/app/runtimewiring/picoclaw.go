@@ -9,7 +9,9 @@ import (
 	"csgclaw/internal/agent"
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/runtime/openclawsandbox"
 	"csgclaw/internal/runtime/picoclawsandbox"
+	"csgclaw/internal/runtime/sandboxgateway"
 	"csgclaw/internal/sandbox"
 )
 
@@ -19,7 +21,27 @@ func WithPicoClawSandboxRuntime() agent.ServiceOption {
 			return fmt.Errorf("agent service is required")
 		}
 		host := s.PicoClawRuntimeHost()
-		return agent.WithRuntime(picoclawsandbox.New(picoclawsandbox.Dependencies{
+		return withSandboxRuntimeHost(host, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
+			return picoclawsandbox.New(deps)
+		})(s)
+	}
+}
+
+func WithOpenClawSandboxRuntime() agent.ServiceOption {
+	return func(s *agent.Service) error {
+		if s == nil {
+			return fmt.Errorf("agent service is required")
+		}
+		host := s.OpenClawRuntimeHost()
+		return withSandboxRuntimeHost(host, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
+			return openclawsandbox.New(deps)
+		})(s)
+	}
+}
+
+func withSandboxRuntimeHost(host agent.PicoClawRuntimeHost, newRuntime func(sandboxgateway.Dependencies) agentruntime.Runtime) agent.ServiceOption {
+	return func(s *agent.Service) error {
+		return agent.WithRuntime(newRuntime(sandboxgateway.Dependencies{
 			ModelFallback:  host.ModelFallback,
 			Server:         host.Server,
 			Channels:       host.Channels,
@@ -27,7 +49,7 @@ func WithPicoClawSandboxRuntime() agent.ServiceOption {
 			EnsureRuntime:  host.EnsureRuntime,
 			RuntimeHome:    host.RuntimeHome,
 			CloseRuntime:   host.CloseRuntime,
-			ResolveBox: func(ctx context.Context, rt sandbox.Runtime, got picoclawsandbox.AgentRef) (sandbox.Instance, string, error) {
+			ResolveBox: func(ctx context.Context, rt sandbox.Runtime, got sandboxgateway.AgentRef) (sandbox.Instance, string, error) {
 				return host.ResolveBox(ctx, rt, agent.Agent{
 					ID:        got.ID,
 					Name:      got.Name,
@@ -42,12 +64,12 @@ func WithPicoClawSandboxRuntime() agent.ServiceOption {
 			ForceRemoveBox: host.ForceRemoveBox,
 			CloseBox:       host.CloseBox,
 			RunBoxCommand:  host.RunBoxCommand,
-			ResolveAgent: func(h agentruntime.Handle) (picoclawsandbox.AgentRef, error) {
+			ResolveAgent: func(h agentruntime.Handle) (sandboxgateway.AgentRef, error) {
 				got, err := host.ResolveAgent(h)
 				if err != nil {
-					return picoclawsandbox.AgentRef{}, err
+					return sandboxgateway.AgentRef{}, err
 				}
-				return picoclawsandbox.AgentRef{
+				return sandboxgateway.AgentRef{
 					ID:        got.ID,
 					Name:      got.Name,
 					RuntimeID: strings.TrimSpace(got.RuntimeID),
@@ -64,8 +86,13 @@ func WithPicoClawSandboxRuntime() agent.ServiceOption {
 				addFeishuBoxEnvVars(env, botID, channels)
 				return env
 			},
-			AddProfileEnv: agentAddProfileEnv,
-			StreamLogs:    host.StreamLogs,
+			AddProfileEnv:      agentAddProfileEnv,
+			HomeEnv:            host.HomeEnv,
+			WorkspaceGuestPath: host.WorkspaceGuestPath,
+			ProjectsGuestPath:  host.ProjectsGuestPath,
+			GatewayLogPath:     host.GatewayLogPath,
+			GatewayCommand:     host.GatewayCommand,
+			StreamLogs:         host.StreamLogs,
 		}))(s)
 	}
 }

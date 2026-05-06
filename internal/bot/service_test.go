@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
@@ -129,6 +130,24 @@ func testRuntimeIDForAgentName(agentName string) string {
 		return ""
 	}
 	return "rt-u-" + agentName
+}
+
+func init() {
+	agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		if err := runtimewiring.WithPicoClawSandboxRuntime()(s); err != nil {
+			return err
+		}
+		return runtimewiring.WithOpenClawSandboxRuntime()(s)
+	})
+}
+
+func testAgentModelConfig() config.ModelConfig {
+	return config.ModelConfig{
+		Provider: config.ProviderLLMAPI,
+		BaseURL:  "http://127.0.0.1:4000",
+		APIKey:   "sk-test",
+		ModelID:  "default-model",
+	}
 }
 
 func TestServiceListReturnsAllWhenChannelEmpty(t *testing.T) {
@@ -638,14 +657,17 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	resetFakeBotRuntimeStates()
 	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
-		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+		if err := runtimewiring.WithPicoClawSandboxRuntime()(s); err != nil {
+			return err
+		}
+		if err := runtimewiring.WithOpenClawSandboxRuntime()(s); err != nil {
 			return err
 		}
 		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
 	})
 	t.Cleanup(restoreDefault)
 
-	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -727,14 +749,17 @@ func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	resetFakeBotRuntimeStates()
 	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
-		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+		if err := runtimewiring.WithPicoClawSandboxRuntime()(s); err != nil {
+			return err
+		}
+		if err := runtimewiring.WithOpenClawSandboxRuntime()(s); err != nil {
 			return err
 		}
 		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
 	})
 	t.Cleanup(restoreDefault)
 
-	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -785,14 +810,17 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	resetFakeBotRuntimeStates()
 	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
-		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+		if err := runtimewiring.WithPicoClawSandboxRuntime()(s); err != nil {
+			return err
+		}
+		if err := runtimewiring.WithOpenClawSandboxRuntime()(s); err != nil {
 			return err
 		}
 		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
 	})
 	t.Cleanup(restoreDefault)
 
-	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -1199,7 +1227,10 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 	resetFakeBotRuntimeStates()
 	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
-		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+		if err := runtimewiring.WithPicoClawSandboxRuntime()(s); err != nil {
+			return err
+		}
+		if err := runtimewiring.WithOpenClawSandboxRuntime()(s); err != nil {
 			return err
 		}
 		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
@@ -1218,7 +1249,7 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
 		t.Fatalf("write agents: %v", err)
 	}
-	svc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", statePath)
+	svc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", statePath)
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}

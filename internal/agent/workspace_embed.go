@@ -6,4 +6,6 @@ import "embed"
 //
 //go:generate ../../scripts/sync-agent-runtimes.sh
 //go:embed embed/runtimes/picoclaw/manager/workspace embed/runtimes/picoclaw/worker/workspace
+//go:embed embed/runtimes/openclaw/manager/workspace embed/runtimes/openclaw/worker/workspace
+//go:embed embed/runtimes/openclaw/csg-skills
 var workspaceTemplateFS embed.FS
