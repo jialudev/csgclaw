@@ -75,6 +75,7 @@ csgclaw [global-flags] <command> [args]
 
 - `serve`
 - `stop`
+- `upgrade`
 - `agent`
 - `model`
 - `user`
@@ -149,6 +150,44 @@ csgclaw stop [flags]
 
 - 从 PID 文件读取进程号并发送 `SIGTERM`。
 - 如果进程已经不存在，会删除失效的 PID 文件并返回对应状态。
+
+### `csgclaw upgrade`
+
+检查最新版本，并在需要时安装升级。
+
+用法：
+
+```bash
+csgclaw upgrade [flags]
+```
+
+参数：
+
+- `--check`：只检查更新，不下载也不安装。
+- `--no-restart`：安装新 bundle，但不重启本地服务。
+
+行为说明：
+
+- `csgclaw upgrade --check` 会输出当前版本、最新版本、是否可升级，以及匹配到的 asset 名称。
+- `csgclaw upgrade` 会下载当前平台对应的 release archive，完成校验，安装完整官方 bundle，并在检测到 daemon 运行时自动重启。
+- `csgclaw upgrade --no-restart` 会安装新 bundle，但不会影响当前正在运行的 daemon 进程。
+- 自动安装只支持官方 bundle 布局，也就是当前可执行文件能够解析回 `<install-root>/bin/csgclaw`。
+- 自动重启只支持默认 PID 路径 `~/.csgclaw/server.pid`。如果 daemon 是用自定义 PID 或其他启动参数拉起的，请改用 `--no-restart` 后手动重启。
+
+常见失败场景：
+
+- 源码构建或手工复制单个二进制的安装方式可以使用 `--check`，但自动安装会被拒绝，因为没有可原子替换的官方 bundle 根目录。
+- 如果下载后的 archive 没通过 size 或 SHA256 校验，CLI 会在安装前中止，并提示稍后重试或反馈 release 异常。
+- 如果 release archive 结构不合法，或者缺少 `bin/csgclaw` / `bin/boxlite`，CLI 会在安装前中止。
+- 如果自动重启阶段无法使用默认 PID 路径，请重新执行 `csgclaw upgrade --no-restart`，然后手动运行 `csgclaw stop` 和 `csgclaw serve --daemon`。
+
+示例：
+
+```bash
+csgclaw upgrade --check
+csgclaw upgrade
+csgclaw upgrade --no-restart
+```
 
 ### `csgclaw model auth`
 

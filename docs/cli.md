@@ -75,6 +75,7 @@ Top-level commands:
 
 - `serve`
 - `stop`
+- `upgrade`
 - `agent`
 - `model`
 - `user`
@@ -149,6 +150,44 @@ Behavior:
 
 - Sends `SIGTERM` to the PID stored in the PID file.
 - If the process is already gone, it removes the stale PID file and reports that state.
+
+### `csgclaw upgrade`
+
+Checks the latest release and optionally installs it.
+
+Usage:
+
+```bash
+csgclaw upgrade [flags]
+```
+
+Flags:
+
+- `--check`: check for updates without downloading or installing.
+- `--no-restart`: install the new bundle without restarting the local service.
+
+Behavior:
+
+- `csgclaw upgrade --check` prints the current version, latest version, update availability, and matched asset name.
+- `csgclaw upgrade` downloads the matching release archive, validates it, installs the full official bundle, and restarts the daemon if one is running.
+- `csgclaw upgrade --no-restart` installs the new bundle but leaves the current daemon process unchanged.
+- Automatic install supports only the official bundle layout, where the executable resolves to `<install-root>/bin/csgclaw`.
+- Automatic restart supports only the default PID path `~/.csgclaw/server.pid`. If the daemon was started with custom PID or startup flags, use `--no-restart` and restart manually.
+
+Common failure cases:
+
+- Source builds or manually copied single binaries can use `--check`, but automatic install is rejected because there is no official bundle root to replace.
+- If the downloaded archive fails size or SHA256 validation, the CLI aborts before installation and asks you to retry later or report a broken release.
+- If the release archive is malformed or missing `bin/csgclaw` or `bin/boxlite`, the CLI aborts before installation.
+- If restart cannot use the default PID path, rerun `csgclaw upgrade --no-restart`, then run `csgclaw stop` and `csgclaw serve --daemon` manually.
+
+Examples:
+
+```bash
+csgclaw upgrade --check
+csgclaw upgrade
+csgclaw upgrade --no-restart
+```
 
 ### `csgclaw model auth`
 

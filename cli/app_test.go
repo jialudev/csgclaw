@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1797,7 +1799,7 @@ func TestExecuteHiddenCompleteUsesFullCommandSet(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	got := stdout.String()
-	for _, want := range []string{"agent\n", "model\n", "completion\n"} {
+	for _, want := range []string{"agent\n", "model\n", "upgrade\n", "completion\n"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stdout = %q, want substring %q", got, want)
 		}
@@ -1867,6 +1869,112 @@ func TestExecuteVersionFlagSupportsJSONOutput(t *testing.T) {
 	for _, want := range []string{`"program": "csgclaw"`, `"version": "1.2.3-test"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %s", stdout.String(), want)
+		}
+	}
+}
+
+func TestExecuteUpgradeCheckPrintsTable(t *testing.T) {
+	originalVersion := appversion.Version
+	appversion.Version = "v0.2.5"
+	t.Cleanup(func() { appversion.Version = originalVersion })
+
+	assetName := "csgclaw_v0.2.7_" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want GET", req.Method)
+			}
+			if req.URL.String() != "https://csgclaw.opencsg.com/releases/latest" {
+				t.Fatalf("url = %q, want latest release endpoint", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, fmt.Sprintf(`{
+				"version":"v0.2.7",
+				"download_base_url":"https://downloads.example.test/csgclaw/v0.2.7",
+				"assets":[
+					{"name":"%s"}
+				]
+			}`, assetName)), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--output", "table", "upgrade", "--check"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, want := range []string{
+		"Current version: v0.2.5",
+		"Latest version:  v0.2.7",
+		"Update available: yes",
+		"Asset: " + assetName,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
+		}
+	}
+}
+
+func TestExecuteUpgradeDefaultsToCheckResult(t *testing.T) {
+	originalVersion := appversion.Version
+	appversion.Version = "v0.2.7"
+	t.Cleanup(func() { appversion.Version = originalVersion })
+
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, `{"version":"v0.2.7","assets":[]}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"upgrade"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, want := range []string{
+		"Current version: v0.2.7",
+		"Latest version:  v0.2.7",
+		"Update available: no",
+		"Asset: -",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
+		}
+	}
+}
+
+func TestExecuteUpgradeSupportsJSONOutput(t *testing.T) {
+	originalVersion := appversion.Version
+	appversion.Version = "v0.2.5"
+	t.Cleanup(func() { appversion.Version = originalVersion })
+
+	assetName := "csgclaw_v0.2.7_" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, fmt.Sprintf(`{
+				"version":"v0.2.7",
+				"assets":[
+					{"name":"%s"}
+				]
+			}`, assetName)), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--output", "json", "upgrade", "--check"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, want := range []string{
+		`"current_version": "v0.2.5"`,
+		`"latest_version": "v0.2.7"`,
+		`"update_available": true`,
+		`"name": "` + assetName + `"`,
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
 		}
 	}
 }

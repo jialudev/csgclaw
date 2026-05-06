@@ -1,0 +1,191 @@
+package upgrade
+
+import (
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+var (
+	evalSymlinks = filepath.EvalSymlinks
+	renamePath   = os.Rename
+	removeAll    = os.RemoveAll
+	mkdirAll     = os.MkdirAll
+	readDir      = os.ReadDir
+	openFile     = os.OpenFile
+	nowUTC       = func() time.Time { return time.Now().UTC() }
+)
+
+type InstalledBundle struct {
+	InstallRoot string `json:"install_root,omitempty"`
+}
+
+func (c Client) InstallPrepared(prepared PreparedBundle) (InstalledBundle, error) {
+	if strings.TrimSpace(prepared.BundleDir) == "" {
+		return InstalledBundle{}, fmt.Errorf("prepared bundle dir is required")
+	}
+	if err := validateBundleDir(prepared.BundleDir); err != nil {
+		return InstalledBundle{}, err
+	}
+
+	installRoot, err := c.officialInstallRoot()
+	if err != nil {
+		return InstalledBundle{}, err
+	}
+	if err := installBundle(prepared.BundleDir, installRoot); err != nil {
+		return InstalledBundle{}, err
+	}
+	return InstalledBundle{InstallRoot: installRoot}, nil
+}
+
+func (c Client) officialInstallRoot() (string, error) {
+	exe, err := c.resolvedExecutablePath()
+	if err != nil {
+		return "", fmt.Errorf("resolve executable: %w", err)
+	}
+
+	for _, candidate := range executablePathCandidates(exe) {
+		root, ok := bundleInstallRoot(candidate)
+		if !ok {
+			continue
+		}
+		if err := validateBundleDir(root); err == nil {
+			return root, nil
+		}
+	}
+	return "", fmt.Errorf("current executable is not installed from an official csgclaw bundle")
+}
+
+func (c Client) resolvedExecutablePath() (string, error) {
+	if c.ExecutablePath != nil {
+		return c.ExecutablePath()
+	}
+	return os.Executable()
+}
+
+func executablePathCandidates(exe string) []string {
+	exe = strings.TrimSpace(exe)
+	if exe == "" {
+		return nil
+	}
+
+	candidates := []string{exe}
+	if resolved, err := evalSymlinks(exe); err == nil && resolved != "" && resolved != exe {
+		candidates = append(candidates, resolved)
+	}
+	return candidates
+}
+
+func bundleInstallRoot(exePath string) (string, bool) {
+	exePath = filepath.Clean(strings.TrimSpace(exePath))
+	if exePath == "" {
+		return "", false
+	}
+	if filepath.Base(exePath) != "csgclaw" {
+		return "", false
+	}
+	binDir := filepath.Dir(exePath)
+	if filepath.Base(binDir) != "bin" {
+		return "", false
+	}
+	return filepath.Dir(binDir), true
+}
+
+func installBundle(bundleDir, installRoot string) error {
+	parentDir := filepath.Dir(installRoot)
+	baseName := filepath.Base(installRoot)
+
+	stagingParent, err := os.MkdirTemp(parentDir, baseName+".upgrade-*")
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
+	}
+	stagingRoot := filepath.Join(stagingParent, baseName)
+	cleanupStaging := true
+	defer func() {
+		if cleanupStaging {
+			_ = removeAll(stagingParent)
+		}
+	}()
+
+	if err := copyDir(bundleDir, stagingRoot); err != nil {
+		return err
+	}
+
+	backupRoot := filepath.Join(parentDir, baseName+".backup."+nowUTC().Format("20060102150405"))
+	if err := renamePath(installRoot, backupRoot); err != nil {
+		return fmt.Errorf("backup current bundle: %w", err)
+	}
+
+	if err := renamePath(stagingRoot, installRoot); err != nil {
+		if rollbackErr := renamePath(backupRoot, installRoot); rollbackErr != nil {
+			return fmt.Errorf("install new bundle: %v; rollback failed: %w", err, rollbackErr)
+		}
+		return fmt.Errorf("install new bundle: %w", err)
+	}
+
+	cleanupStaging = false
+	_ = removeAll(stagingParent)
+	_ = removeAll(backupRoot)
+	return nil
+}
+
+func copyDir(srcDir, dstDir string) error {
+	entries, err := readDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", srcDir, err)
+	}
+	if err := mkdirAll(dstDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dstDir, err)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", srcPath, err)
+		}
+		switch {
+		case info.IsDir():
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		case info.Mode().IsRegular():
+			if err := copyFile(srcPath, dstPath, info.Mode()); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("bundle entry %s has unsupported mode %s", srcPath, info.Mode())
+		}
+	}
+	return nil
+}
+
+func copyFile(srcPath, dstPath string, mode fs.FileMode) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", srcPath, err)
+	}
+	defer src.Close()
+
+	if err := mkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dstPath), err)
+	}
+	dst, err := openFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode.Perm())
+	if err != nil {
+		return fmt.Errorf("open %s: %w", dstPath, err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("write %s: %w", dstPath, err)
+	}
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", dstPath, err)
+	}
+	return nil
+}

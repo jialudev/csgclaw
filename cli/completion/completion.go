@@ -73,6 +73,14 @@ func FullSpec() CommandSpec {
 				Summary: "Stop the local HTTP server.",
 				Flags:   []FlagSpec{{Name: "pid", TakesValue: true}},
 			},
+			{
+				Name:    "upgrade",
+				Summary: "Check for a newer CSGClaw release.",
+				Flags: []FlagSpec{
+					{Name: "check"},
+					{Name: "no-restart"},
+				},
+			},
 			agentSpec(),
 			modelSpec(),
 			userSpec(),
