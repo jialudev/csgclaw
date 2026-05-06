@@ -35,6 +35,15 @@ type Handler struct {
 	upgradeApply      func(upgrade.ApplyHelperOptions) error
 }
 
+const createOperationTimeout = 10 * time.Minute
+
+func detachedCreateContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), createOperationTimeout)
+}
+
 type imBootstrapResponse struct {
 	CurrentUserID      string    `json:"current_user_id"`
 	Users              []im.User `json:"users"`
@@ -223,7 +232,9 @@ func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 			return
 		}
-		created, err := h.botSvc.Create(r.Context(), req)
+		createCtx, cancel := detachedCreateContext(r.Context())
+		defer cancel()
+		created, err := h.botSvc.Create(createCtx, req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -596,7 +607,9 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
 	}
-	created, err := h.svc.Create(r.Context(), agentCreateRequestFromAPI(req))
+	createCtx, cancel := detachedCreateContext(r.Context())
+	defer cancel()
+	created, err := h.svc.Create(createCtx, agentCreateRequestFromAPI(req))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1079,10 +1092,18 @@ func (h *Handler) handleIMEvents(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, ": connected\n\n")
 	flusher.Flush()
 
+	ticker := time.NewTicker(sseHeartbeatInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-ticker.C:
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
 		case evt, ok := <-events:
 			if !ok {
 				return
