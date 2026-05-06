@@ -277,11 +277,14 @@ func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
 			if payload.Description != "test lead" || payload.ModelID != "gpt-test" {
 				t.Fatalf("payload = %+v, want description/model_id", payload)
 			}
+			if payload.RuntimeKind != "codex" {
+				t.Fatalf("payload.RuntimeKind = %q, want codex", payload.RuntimeKind)
+			}
 			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","description":"test-lead","role":"worker","channel":"csgclaw","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}`), nil
 		}),
 	}
 
-	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "create", "--name", "alice", "--description", "test lead", "--role", "worker", "--model-id", "gpt-test"})
+	err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "create", "--name", "alice", "--description", "test lead", "--role", "worker", "--model-id", "gpt-test", "--runtime", "codex"})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -614,8 +617,11 @@ func TestExecuteAgentCreateUsesHTTPClient(t *testing.T) {
 			if payload["profile"] != "cliproxy-codex" {
 				t.Fatalf("payload[profile] = %#v, want %q", payload["profile"], "cliproxy-codex")
 			}
+			if payload["runtime_kind"] != "codex" {
+				t.Fatalf("payload[runtime_kind] = %#v, want %q", payload["runtime_kind"], "codex")
+			}
 
-			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","role":"worker","status":"running","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","role":"worker","status":"running","runtime_kind":"codex","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
 		}),
 	}
 
@@ -627,6 +633,7 @@ func TestExecuteAgentCreateUsesHTTPClient(t *testing.T) {
 		"--description", "worker",
 		"--image", "ghcr.io/opencsg/csgclaw-agent:2026.4.28",
 		"--profile", "cliproxy-codex",
+		"--runtime", "codex",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -721,9 +728,12 @@ func TestExecuteAgentCreateReplaceOverridesExplicitFields(t *testing.T) {
 			if payload["profile"] != "codex-fast" {
 				t.Fatalf("payload[profile] = %#v, want %q", payload["profile"], "codex-fast")
 			}
-			assertStringSliceValue(t, payload["field_mask"], []string{"id", "name", "description", "image", "profile"})
+			if payload["runtime_kind"] != "codex" {
+				t.Fatalf("payload[runtime_kind] = %#v, want %q", payload["runtime_kind"], "codex")
+			}
+			assertStringSliceValue(t, payload["field_mask"], []string{"id", "name", "description", "image", "profile", "runtime_kind"})
 
-			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice-v2","role":"worker","status":"running","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-fast"}`), nil
+			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice-v2","role":"worker","status":"running","runtime_kind":"codex","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-fast"}`), nil
 		}),
 	}
 
@@ -736,6 +746,7 @@ func TestExecuteAgentCreateReplaceOverridesExplicitFields(t *testing.T) {
 		"--description", "",
 		"--image", "ghcr.io/opencsg/csgclaw-agent:2026.4.28",
 		"--profile", "codex-fast",
+		"--runtime", "codex",
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -1992,6 +2003,7 @@ func TestAgentCreateSubcommandHelpShowsReplaceAndForceFlags(t *testing.T) {
 		"--description string    agent description",
 		"--image string          agent image",
 		"--profile string        agent llm profile",
+		"--runtime string        agent runtime kind (for example: picoclaw-sandbox, codex)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("help = %q, want substring %q", got, want)

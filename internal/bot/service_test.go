@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +14,45 @@ import (
 	"csgclaw/internal/channel"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
+	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/sandboxtest"
 )
+
+type fakeBotAgentRuntime struct {
+	kind string
+}
+
+func (f fakeBotAgentRuntime) Kind() string {
+	return f.kind
+}
+
+func (f fakeBotAgentRuntime) Create(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+	return agentruntime.Handle{
+		RuntimeID: spec.RuntimeID,
+		HandleID:  fmt.Sprintf("%s-%s", f.kind, spec.AgentName),
+	}, nil
+}
+
+func (f fakeBotAgentRuntime) Start(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeBotAgentRuntime) Stop(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateStopped, nil
+}
+
+func (f fakeBotAgentRuntime) Delete(context.Context, agentruntime.Handle) error {
+	return nil
+}
+
+func (f fakeBotAgentRuntime) State(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeBotAgentRuntime) Info(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+	return agentruntime.Info{State: agentruntime.StateRunning}, nil
+}
 
 func TestServiceListReturnsAllWhenChannelEmpty(t *testing.T) {
 	svc := mustNewBotService(t, []Bot{
@@ -521,6 +558,13 @@ func TestNewServiceRequiresStore(t *testing.T) {
 func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+			return err
+		}
+		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
+	})
+	t.Cleanup(restoreDefault)
 
 	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
 	if err != nil {
@@ -545,6 +589,7 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 		Description: "test lead",
 		Role:        string(RoleWorker),
 		Channel:     string(ChannelCSGClaw),
+		RuntimeKind: agent.RuntimeKindCodex,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -558,8 +603,12 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	if got.Description != "test lead" {
 		t.Fatalf("Create().Description = %q, want test lead", got.Description)
 	}
-	if _, ok := agentSvc.Agent("u-alice"); !ok {
+	createdAgent, ok := agentSvc.Agent("u-alice")
+	if !ok {
 		t.Fatal("agent u-alice not created")
+	}
+	if createdAgent.RuntimeKind != agent.RuntimeKindCodex {
+		t.Fatalf("agent.RuntimeKind = %q, want %q", createdAgent.RuntimeKind, agent.RuntimeKindCodex)
 	}
 	users := imSvc.ListUsers()
 	if !containsUser(users, "u-alice") {
@@ -596,6 +645,13 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+			return err
+		}
+		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
+	})
+	t.Cleanup(restoreDefault)
 
 	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
 	if err != nil {
@@ -645,6 +701,13 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	provider := sandboxtest.NewProvider()
 	t.Cleanup(agent.TestOnlySetSandboxProvider(provider))
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+			return err
+		}
+		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
+	})
+	t.Cleanup(restoreDefault)
 
 	agentSvc, err := agent.NewService(config.ModelConfig{ModelID: "default-model"}, config.ServerConfig{}, "", "")
 	if err != nil {
@@ -1050,6 +1113,13 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+			return err
+		}
+		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
+	})
+	t.Cleanup(restoreDefault)
 
 	if agents == nil {
 		agents = []agent.Agent{}

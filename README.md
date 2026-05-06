@@ -41,7 +41,6 @@ CSGClaw will open the IM workspace in your browser automatically when possible. 
 ## Configuration
 
 `csgclaw serve` uses a local config with server, bootstrap, sandbox, and channel settings, and auto-creates any missing bootstrap state on first run. Agent model/provider profiles are stored in agent state and managed from the Web UI. See [docs/config.md](docs/config.md) for sandbox provider options, Worker override examples, and agent profile details.
-For the official release bundles and the default source build, `boxlite-cli` resolves the bundled sibling `boxlite` binary first and falls back to `PATH` only when that bundled binary is missing.
 
 ## Features
 

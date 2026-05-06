@@ -40,7 +40,7 @@ csgclaw serve
 
 ## 配置
 
-`csgclaw serve` 会使用本地配置中的 server、bootstrap、sandbox 和 channel 设置，并在首次运行时自动补齐缺失的 bootstrap 状态。Agent 模型/provider profile 存储在 agent 状态中，并通过 Web UI 管理。Sandbox provider 选项、Worker 覆盖示例和 agent profile 详情见 [docs/config.zh.md](docs/config.zh.md)。对于官方 release bundle 和默认源码构建，`boxlite-cli` 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
+`csgclaw serve` 会使用本地配置中的 server、bootstrap、sandbox 和 channel 设置，并在首次运行时自动补齐缺失的 bootstrap 状态。Agent 模型/provider profile 存储在 agent 状态中，并通过 Web UI 管理。Sandbox provider 选项、Worker 覆盖示例和 agent profile 详情见 [docs/config.zh.md](docs/config.zh.md)。
 
 ## 功能特性
 

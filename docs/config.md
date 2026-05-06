@@ -97,6 +97,8 @@ home_dir_name = "boxlite"
 
 Codex and Claude Code profiles are configured in agent state through the Web UI. CSGClaw starts an embedded CLIProxyAPI on a private localhost port at serve time, so static CLIProxy base URLs are not required.
 
+Workers can also select an explicit runtime kind when they are created. The default runtime kind is `picoclaw-sandbox`. To create a Codex worker, use `csgclaw agent create --runtime codex ...` or send `runtime_kind: "codex"` to `POST /api/v1/agents`.
+
 Leave `[bootstrap].manager_image_override` empty to use the built-in default manager image. Set it only when you need to override that default.
 
 Auth is also managed locally:
@@ -108,6 +110,14 @@ Auth is also managed locally:
 - `CSGCLAW_CLIPROXY_AUTO_LOGIN=0` disables automatic import/probing.
 - `CSGCLAW_CLIPROXY_NO_BROWSER=1` prints OAuth URLs instead of opening a browser.
 - `CSGCLAW_CLIPROXY_DISABLE_KEYCHAIN=1` disables Claude Keychain probing.
+
+When a worker uses the Codex runtime, its local state is stored under `~/.csgclaw/agents/<agent-name>/.codex/`. The workspace lives at `~/.csgclaw/agents/<agent-name>/.codex/workspace`, shell home lives at `~/.csgclaw/agents/<agent-name>/.codex/home`, and Codex-managed files such as `auth.json` are stored directly under `~/.csgclaw/agents/<agent-name>/.codex`. This path is intentionally separate from the sandbox provider home such as `~/.csgclaw/agents/<agent-name>/boxlite`.
+
+When a worker uses the Codex runtime, CSGClaw resolves `codex-acp` automatically before startup. You can override that behavior with:
+
+- `CSGCLAW_CODEX_ACP_PATH` to point at a preinstalled `codex-acp` binary
+- `CSGCLAW_CODEX_ACP_VERSION` to pin the download version
+- `CSGCLAW_CODEX_ACP_BASE_URL` to change the download source
 
 ## Sandbox Providers
 

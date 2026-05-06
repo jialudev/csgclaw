@@ -19,6 +19,7 @@ import (
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	internalonboard "csgclaw/internal/onboard"
+	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/server"
 )
 
@@ -368,6 +369,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	origNewFeishuService := NewFeishuService
 	origNewLLMService := NewLLMService
 	origStartConfiguredAgents := StartConfiguredAgents
+	origNewCodexBridgeManager := NewCodexBridgeManager
 	origEnsureCLIProxy := EnsureCLIProxy
 	origShutdownCLIProxy := ShutdownCLIProxy
 	t.Cleanup(func() {
@@ -378,6 +380,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		NewFeishuService = origNewFeishuService
 		NewLLMService = origNewLLMService
 		StartConfiguredAgents = origStartConfiguredAgents
+		NewCodexBridgeManager = origNewCodexBridgeManager
 		EnsureCLIProxy = origEnsureCLIProxy
 		ShutdownCLIProxy = origShutdownCLIProxy
 	})
@@ -603,8 +606,135 @@ func TestServeForegroundStartsConfiguredAgentsOnReady(t *testing.T) {
 	}
 	select {
 	case <-started:
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("StartConfiguredAgents was not called from OnReady")
+	}
+}
+
+func TestServeForegroundStartsCodexBridgesAfterConfiguredAgents(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	origNewCodexBridgeManager := NewCodexBridgeManager
+	t.Cleanup(func() {
+		NewCodexBridgeManager = origNewCodexBridgeManager
+	})
+
+	startedAgents := make(chan struct{})
+	releaseAgents := make(chan struct{})
+	bridgeStarted := make(chan struct{})
+	bridgeClosed := make(chan struct{})
+
+	StartConfiguredAgents = func(context.Context, *agent.Service) error {
+		close(startedAgents)
+		<-releaseAgents
+		return nil
+	}
+	NewCodexBridgeManager = func(config.Config, *agent.Service) (codexBridgeManager, error) {
+		return &fakeCodexBridgeManager{
+			start: func(context.Context) error {
+				select {
+				case <-startedAgents:
+				default:
+					t.Fatal("codex bridge started before configured agents")
+				}
+				close(bridgeStarted)
+				return nil
+			},
+			close: func() {
+				close(bridgeClosed)
+			},
+		}, nil
+	}
+	RunServer = func(opts server.Options) error {
+		if opts.OnReady == nil {
+			return fmt.Errorf("OnReady is nil")
+		}
+		opts.OnReady()
+		close(releaseAgents)
+		if opts.Context == nil {
+			return fmt.Errorf("Context is nil")
+		}
+		return nil
+	}
+
+	if err := serveForeground(context.Background(), testContext(), config.Config{Server: config.ServerConfig{ListenAddr: "127.0.0.1:18080"}}, "json"); err != nil {
+		t.Fatalf("serveForeground() error = %v", err)
+	}
+	select {
+	case <-bridgeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("codex bridge manager did not start")
+	}
+	select {
+	case <-bridgeClosed:
+	case <-time.After(time.Second):
+		t.Fatal("codex bridge manager did not close")
+	}
+}
+
+func TestShouldStartCodexBridge(t *testing.T) {
+	cases := []struct {
+		name  string
+		agent agent.Agent
+		want  bool
+	}{
+		{
+			name: "running codex worker with complete profile",
+			agent: agent.Agent{
+				ID:              "u-alice",
+				Role:            agent.RoleWorker,
+				RuntimeKind:     agent.RuntimeKindCodex,
+				Status:          string(agentruntime.StateRunning),
+				ProfileComplete: true,
+			},
+			want: true,
+		},
+		{
+			name: "stopped worker",
+			agent: agent.Agent{
+				ID:              "u-alice",
+				Role:            agent.RoleWorker,
+				RuntimeKind:     agent.RuntimeKindCodex,
+				Status:          string(agentruntime.StateStopped),
+				ProfileComplete: true,
+			},
+		},
+		{
+			name: "manager is excluded",
+			agent: agent.Agent{
+				ID:              agent.ManagerUserID,
+				Role:            agent.RoleManager,
+				RuntimeKind:     agent.RuntimeKindCodex,
+				Status:          string(agentruntime.StateRunning),
+				ProfileComplete: true,
+			},
+		},
+		{
+			name: "non-codex worker is excluded",
+			agent: agent.Agent{
+				ID:              "u-alice",
+				Role:            agent.RoleWorker,
+				RuntimeKind:     agent.RuntimeKindPicoClawSandbox,
+				Status:          string(agentruntime.StateRunning),
+				ProfileComplete: true,
+			},
+		},
+		{
+			name: "incomplete profile is excluded",
+			agent: agent.Agent{
+				ID:          "u-alice",
+				Role:        agent.RoleWorker,
+				RuntimeKind: agent.RuntimeKindCodex,
+				Status:      string(agentruntime.StateRunning),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		if got := shouldStartCodexBridge(tc.agent); got != tc.want {
+			t.Fatalf("%s: shouldStartCodexBridge() = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -802,6 +932,21 @@ func TestNewAgentServiceRejectsUnsupportedSandboxProvider(t *testing.T) {
 	}
 }
 
+func TestNewAgentServiceRegistersCodexRuntime(t *testing.T) {
+	svc, err := newAgentService(config.Config{
+		Sandbox: config.SandboxConfig{
+			Provider:    config.DefaultSandboxProvider,
+			HomeDirName: config.DefaultSandboxHomeDirName,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newAgentService() error = %v", err)
+	}
+	if _, err := svc.Runtime(agentruntime.KindCodex); err != nil {
+		t.Fatalf("svc.Runtime(codex) error = %v", err)
+	}
+}
+
 func csgHubLiteServeConfig(baseURL string) config.Config {
 	return config.Config{
 		Server: config.ServerConfig{
@@ -834,6 +979,7 @@ func stubServeDependencies(t *testing.T) func() {
 	origNewFeishuService := NewFeishuService
 	origNewLLMService := NewLLMService
 	origStartConfiguredAgents := StartConfiguredAgents
+	origNewCodexBridgeManager := NewCodexBridgeManager
 	origEnsureCLIProxy := EnsureCLIProxy
 	origShutdownCLIProxy := ShutdownCLIProxy
 	origDetectBootstrapState := DetectBootstrapState
@@ -853,6 +999,7 @@ func stubServeDependencies(t *testing.T) func() {
 	NewFeishuService = func(config.Config) (*channel.FeishuService, error) { return nil, nil }
 	NewLLMService = func(config.Config, *agent.Service) (*llm.Service, error) { return nil, nil }
 	StartConfiguredAgents = func(context.Context, *agent.Service) error { return nil }
+	NewCodexBridgeManager = func(config.Config, *agent.Service) (codexBridgeManager, error) { return nil, nil }
 	EnsureCLIProxy = func(context.Context) error { return nil }
 	ShutdownCLIProxy = func(context.Context) error { return nil }
 	CheckModelProvider = checkModelProvider
@@ -876,6 +1023,7 @@ func stubServeDependencies(t *testing.T) func() {
 		NewFeishuService = origNewFeishuService
 		NewLLMService = origNewLLMService
 		StartConfiguredAgents = origStartConfiguredAgents
+		NewCodexBridgeManager = origNewCodexBridgeManager
 		EnsureCLIProxy = origEnsureCLIProxy
 		ShutdownCLIProxy = origShutdownCLIProxy
 		DetectBootstrapState = origDetectBootstrapState
@@ -962,5 +1110,38 @@ func testContext() *command.Context {
 		Program: "csgclaw",
 		Stdout:  &bytes.Buffer{},
 		Stderr:  &bytes.Buffer{},
+	}
+}
+
+type fakeCodexBridgeManager struct {
+	start  func(context.Context) error
+	ensure func(context.Context, agent.Agent) error
+	stop   func(string)
+	close  func()
+}
+
+func (m *fakeCodexBridgeManager) Start(ctx context.Context) error {
+	if m != nil && m.start != nil {
+		return m.start(ctx)
+	}
+	return nil
+}
+
+func (m *fakeCodexBridgeManager) EnsureAgent(ctx context.Context, a agent.Agent) error {
+	if m != nil && m.ensure != nil {
+		return m.ensure(ctx, a)
+	}
+	return nil
+}
+
+func (m *fakeCodexBridgeManager) StopAgent(agentID string) {
+	if m != nil && m.stop != nil {
+		m.stop(agentID)
+	}
+}
+
+func (m *fakeCodexBridgeManager) Close() {
+	if m != nil && m.close != nil {
+		m.close()
 	}
 }

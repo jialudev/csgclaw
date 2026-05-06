@@ -103,6 +103,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	description := fs.String("description", "", "agent description")
 	image := fs.String("image", "", "agent image")
 	profile := fs.String("profile", "", "agent llm profile")
+	runtimeKind := fs.String("runtime", "", "agent runtime kind (for example: picoclaw-sandbox, codex)")
 	fs.Usage = func() {
 		fmt.Fprintln(run.Stderr, "Create an agent.")
 		fmt.Fprintln(run.Stderr)
@@ -118,6 +119,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		fmt.Fprintln(run.Stderr, "  --description string    agent description")
 		fmt.Fprintln(run.Stderr, "  --image string          agent image")
 		fmt.Fprintln(run.Stderr, "  --profile string        agent llm profile")
+		fmt.Fprintln(run.Stderr, "  --runtime string        agent runtime kind (for example: picoclaw-sandbox, codex)")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -131,6 +133,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		Name:        *name,
 		Description: *description,
 		Image:       *image,
+		RuntimeKind: *runtimeKind,
 		Replace:     *replace,
 		Profile:     *profile,
 	}
@@ -404,12 +407,15 @@ func visitedFlags(fs interface{ Visit(func(*flag.Flag)) }) map[string]bool {
 }
 
 func createAgentFieldMask(visited map[string]bool) []string {
-	fields := []string{"id", "name", "description", "image", "profile"}
+	fields := []string{"id", "name", "description", "image", "profile", "runtime_kind"}
 	mask := make([]string, 0, len(fields))
 	for _, field := range fields {
 		if visited[field] {
 			mask = append(mask, field)
 		}
+	}
+	if visited["runtime"] && !visited["runtime_kind"] {
+		mask = append(mask, "runtime_kind")
 	}
 	return mask
 }

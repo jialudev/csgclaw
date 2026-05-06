@@ -375,13 +375,14 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		manager := s.agents[ManagerUserID]
 		if manager.ID == "" || forceRecreate {
 			manager = Agent{
-				ID:        ManagerUserID,
-				Name:      ManagerName,
-				RuntimeID: runtimeIDForAgentID(ManagerUserID),
-				Image:     managerImage,
-				Status:    "profile_incomplete",
-				CreatedAt: now,
-				Role:      RoleManager,
+				ID:          ManagerUserID,
+				Name:        ManagerName,
+				RuntimeID:   runtimeIDForAgentID(ManagerUserID),
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Image:       managerImage,
+				Status:      "profile_incomplete",
+				CreatedAt:   now,
+				Role:        RoleManager,
 			}
 		}
 		manager.AgentProfile = startProfile
@@ -445,6 +446,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		ID:               ManagerUserID,
 		Name:             ManagerName,
 		RuntimeID:        runtimeIDForAgentID(ManagerUserID),
+		RuntimeKind:      RuntimeKindPicoClawSandbox,
 		Image:            managerImage,
 		BoxID:            info.ID,
 		Status:           string(info.State),
@@ -636,6 +638,7 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 		Name:            name,
 		Description:     description,
 		RuntimeID:       runtimeIDForAgentID(id),
+		RuntimeKind:     runtimeKindForAgent(Agent{Role: role, RuntimeKind: spec.RuntimeKind}),
 		Image:           image,
 		Role:            role,
 		Status:          status,
@@ -689,6 +692,9 @@ func (s *Service) replace(ctx context.Context, req CreateRequest) (Agent, error)
 		}
 	} else {
 		spec.ID = existing.ID
+		if strings.TrimSpace(spec.RuntimeKind) == "" {
+			spec.RuntimeKind = existing.RuntimeKind
+		}
 		if strings.TrimSpace(spec.Role) == "" {
 			spec.Role = existing.Role
 		}
@@ -729,6 +735,7 @@ func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) 
 		Name:         existing.Name,
 		Description:  existing.Description,
 		Image:        existing.Image,
+		RuntimeKind:  existing.RuntimeKind,
 		Role:         existing.Role,
 		Status:       existing.Status,
 		CreatedAt:    existing.CreatedAt,
@@ -749,6 +756,8 @@ func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) 
 			merged.Description = next.Description
 		case "image":
 			merged.Image = next.Image
+		case "runtime_kind":
+			merged.RuntimeKind = next.RuntimeKind
 		case "role":
 			merged.Role = next.Role
 		case "status":
@@ -1157,7 +1166,11 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
 	}
 
-	runtimeImpl, err := s.runtimeForKind(RuntimeKindPicoClawSandbox)
+	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
+	if runtimeKind == "" {
+		runtimeKind = RuntimeKindPicoClawSandbox
+	}
+	runtimeImpl, err := s.runtimeForKind(runtimeKind)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -1165,7 +1178,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	if err != nil {
 		return Agent{}, err
 	}
-	if testCreateGatewayBoxHook != nil {
+	if testCreateGatewayBoxHook != nil && runtimeKind == RuntimeKindPicoClawSandbox {
 		rt, err := s.ensureRuntime(name)
 		if err != nil {
 			return Agent{}, err
@@ -1184,7 +1197,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		defer func() {
 			_ = s.closeBox(box)
 		}()
-		return s.persistCreatedWorker(id, name, description, image, resolvedProfile, agentruntime.Info{
+		return s.persistCreatedWorker(id, name, description, image, runtimeKind, resolvedProfile, agentruntime.Info{
 			HandleID:  strings.TrimSpace(info.ID),
 			State:     agentruntime.State(info.State),
 			CreatedAt: info.CreatedAt.UTC(),
@@ -1206,10 +1219,10 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		CreatedAt: time.Now().UTC(),
 	}
 
-	return s.persistCreatedWorker(id, name, description, image, resolvedProfile, info)
+	return s.persistCreatedWorker(id, name, description, image, runtimeKind, resolvedProfile, info)
 }
 
-func (s *Service) persistCreatedWorker(id, name, description, image string, profile AgentProfile, info agentruntime.Info) (Agent, error) {
+func (s *Service) persistCreatedWorker(id, name, description, image, runtimeKind string, profile AgentProfile, info agentruntime.Info) (Agent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1232,6 +1245,7 @@ func (s *Service) persistCreatedWorker(id, name, description, image string, prof
 		ID:              id,
 		Name:            name,
 		RuntimeID:       runtimeIDForAgentID(id),
+		RuntimeKind:     runtimeKind,
 		Image:           image,
 		BoxID:           strings.TrimSpace(info.HandleID),
 		Description:     description,

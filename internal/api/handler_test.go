@@ -27,6 +27,7 @@ import (
 )
 
 type fakeCompatRuntime struct {
+	kind   string
 	create func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start  func(context.Context, agentruntime.Handle) (agentruntime.State, error)
 	stop   func(context.Context, agentruntime.Handle) (agentruntime.State, error)
@@ -39,6 +40,9 @@ func init() {
 }
 
 func (f fakeCompatRuntime) Kind() string {
+	if strings.TrimSpace(f.kind) != "" {
+		return strings.TrimSpace(f.kind)
+	}
 	return agent.RuntimeKindPicoClawSandbox
 }
 
@@ -87,6 +91,21 @@ func (f fakeCompatRuntime) EnsureGatewayConfig(string, string, string) error {
 
 func (f fakeCompatRuntime) ProjectsGuestPath() string {
 	return ""
+}
+
+type fakeCodexBridgeController struct {
+	ensureCalls []agent.Agent
+	stopCalls   []string
+	ensureErr   error
+}
+
+func (f *fakeCodexBridgeController) EnsureAgent(_ context.Context, a agent.Agent) error {
+	f.ensureCalls = append(f.ensureCalls, a)
+	return f.ensureErr
+}
+
+func (f *fakeCodexBridgeController) StopAgent(agentID string) {
+	f.stopCalls = append(f.stopCalls, agentID)
 }
 
 func TestParseBotCompatibilityPath(t *testing.T) {
@@ -1193,6 +1212,73 @@ func TestHandleAgentStartStartsExistingBox(t *testing.T) {
 	}
 }
 
+func TestHandleAgentStartEnsuresCodexBridge(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+
+	agentSvc, err := agent.NewService(
+		config.ModelConfig{
+			Provider: config.ProviderLLMAPI,
+			BaseURL:  "http://127.0.0.1:4000",
+			APIKey:   "sk-test",
+			ModelID:  "model-1",
+		},
+		config.ServerConfig{},
+		"",
+		statePath,
+		agent.WithRuntime(fakeCompatRuntime{
+			kind: agent.RuntimeKindCodex,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
+			},
+			start: func(_ context.Context, _ agentruntime.Handle) (agentruntime.State, error) {
+				return agentruntime.StateRunning, nil
+			},
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	created, err := agentSvc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			Name:        "alice",
+			Role:        agent.RoleWorker,
+			RuntimeKind: agent.RuntimeKindCodex,
+			AgentProfile: agent.AgentProfile{
+				ProfileComplete: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := agentSvc.Stop(context.Background(), created.ID); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+
+	bridge := &fakeCodexBridgeController{}
+	srv := &Handler{svc: agentSvc, codexBridge: bridge}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+created.ID+"/start", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(bridge.ensureCalls) != 1 {
+		t.Fatalf("EnsureAgent() calls = %d, want 1", len(bridge.ensureCalls))
+	}
+	if bridge.ensureCalls[0].ID != created.ID || bridge.ensureCalls[0].RuntimeKind != agent.RuntimeKindCodex {
+		t.Fatalf("EnsureAgent() got %+v, want codex worker %q", bridge.ensureCalls[0], created.ID)
+	}
+}
+
 func TestHandleAgentStopStopsExistingBox(t *testing.T) {
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
@@ -1248,6 +1334,48 @@ func TestHandleAgentStopStopsExistingBox(t *testing.T) {
 	}
 	if got.Status != "stopped" || got.BoxID != "box-new" {
 		t.Fatalf("agent = %+v, want stopped box-new", got)
+	}
+}
+
+func TestHandleAgentStopStopsCodexBridge(t *testing.T) {
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	agentSvc, statePath := mustNewSeededServiceWithPath(t, []agent.Agent{
+		{ID: "u-alice", Name: "alice", BoxID: "box-old", Role: agent.RoleWorker, Status: "running", CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	})
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{ID: "u-alice", Name: "alice", BoxID: "box-new", Role: agent.RoleWorker, Status: "running", CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+
+	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
+		return sandboxtest.NewInstance(sandbox.Info{ID: idOrName, Name: "alice", State: sandbox.StateRunning}), nil
+	})
+	agent.TestOnlySetStopBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance, _ sandbox.StopOptions) error {
+		return nil
+	})
+	agent.TestOnlySetBoxInfoHook(func(_ *agent.Service, _ context.Context, _ sandbox.Instance) (sandbox.Info, error) {
+		return sandbox.Info{ID: "box-new", Name: "alice", State: sandbox.StateStopped}, nil
+	})
+	defer func() {
+		agent.TestOnlySetGetBoxHook(nil)
+		agent.TestOnlySetStopBoxHook(nil)
+		agent.TestOnlySetBoxInfoHook(nil)
+	}()
+
+	bridge := &fakeCodexBridgeController{}
+	srv := &Handler{svc: agentSvc, codexBridge: bridge}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/u-alice/stop", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(bridge.stopCalls) != 1 || bridge.stopCalls[0] != "u-alice" {
+		t.Fatalf("StopAgent() calls = %v, want [u-alice]", bridge.stopCalls)
 	}
 }
 
@@ -1339,6 +1467,102 @@ func TestHandleAgentsCreateProvisionsIMDirectMessage(t *testing.T) {
 	}
 }
 
+func TestHandleAgentsCreateWorkerUsesRequestedRuntimeKind(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	svc, err := agent.NewService(
+		config.ModelConfig{
+			Provider: config.ProviderLLMAPI,
+			BaseURL:  "http://127.0.0.1:4000",
+			APIKey:   "sk-test",
+			ModelID:  "model-1",
+		},
+		config.ServerConfig{},
+		"",
+		"",
+		agent.WithRuntime(fakeCompatRuntime{
+			kind: agent.RuntimeKindCodex,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	srv := &Handler{
+		svc: svc,
+		im:  im.NewService(),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"name":"alice","role":"worker","runtime_kind":"codex"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.RuntimeKind != agent.RuntimeKindCodex {
+		t.Fatalf("agent runtime kind = %q, want %q", got.RuntimeKind, agent.RuntimeKindCodex)
+	}
+	if got.BoxID != "codex-alice" {
+		t.Fatalf("agent BoxID = %q, want %q", got.BoxID, "codex-alice")
+	}
+}
+
+func TestHandleAgentsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	svc, err := agent.NewService(
+		config.ModelConfig{
+			Provider: config.ProviderLLMAPI,
+			BaseURL:  "http://127.0.0.1:4000",
+			APIKey:   "sk-test",
+			ModelID:  "model-1",
+		},
+		config.ServerConfig{},
+		"",
+		"",
+		agent.WithRuntime(fakeCompatRuntime{
+			kind: agent.RuntimeKindCodex,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	bridge := &fakeCodexBridgeController{}
+	srv := &Handler{
+		svc:         svc,
+		im:          im.NewService(),
+		codexBridge: bridge,
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"name":"alice","role":"worker","runtime_kind":"codex","agent_profile":{"profile_complete":true}}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if len(bridge.ensureCalls) != 1 {
+		t.Fatalf("EnsureAgent() calls = %d, want 1", len(bridge.ensureCalls))
+	}
+	if bridge.ensureCalls[0].ID != "u-alice" || bridge.ensureCalls[0].RuntimeKind != agent.RuntimeKindCodex {
+		t.Fatalf("EnsureAgent() got %+v, want codex worker u-alice", bridge.ensureCalls[0])
+	}
+}
+
 func roomHasMember(room im.Room, userID string) bool {
 	for _, memberID := range room.Members {
 		if memberID == userID {
@@ -1412,6 +1636,9 @@ func TestHandleAgentsCreateReplaceUsesUnifiedServiceEntry(t *testing.T) {
 	}
 	if got.ID != "u-alice" || got.Name != "alice-v2" || got.Role != agent.RoleWorker {
 		t.Fatalf("agent = %+v, want replaced worker", got)
+	}
+	if got.RuntimeKind != agent.RuntimeKindPicoClawSandbox {
+		t.Fatalf("agent runtime kind = %q, want %q", got.RuntimeKind, agent.RuntimeKindPicoClawSandbox)
 	}
 }
 

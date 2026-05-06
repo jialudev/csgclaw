@@ -232,6 +232,7 @@ Flags:
 - `--description string`: agent description.
 - `--image string`: agent image.
 - `--profile string`: agent LLM profile.
+- `--runtime string`: agent runtime kind, for example `picoclaw-sandbox` or `codex`.
 
 Behavior:
 
@@ -241,6 +242,7 @@ Behavior:
 - The API/service loads the existing agent, preserves unmasked fields, applies masked fields, then recreates the agent.
 - Replacing an agent prompts for confirmation unless `--force` is set.
 - `image` follows the same field-mask behavior: omitted keeps the old image, explicit `--image` overrides it.
+- `runtime` follows the same field-mask behavior during replace: omitted keeps the old runtime kind, explicit `--runtime` overrides it.
 
 #### `csgclaw agent delete`
 
@@ -303,7 +305,9 @@ Examples:
 csgclaw agent list
 csgclaw agent list --filter running
 csgclaw agent create --name alice --description "frontend worker" --profile openai.gpt-5.4-mini
+csgclaw agent create --name alice --runtime codex --profile codex.gpt-5.4
 csgclaw agent create -r --id agent-alice
+csgclaw agent create --replace --id agent-alice --runtime codex --force
 csgclaw agent create --replace --id agent-alice --name alice-v2 --profile openai.gpt-5.4-mini --force
 csgclaw agent start agent-alice
 csgclaw agent stop agent-alice

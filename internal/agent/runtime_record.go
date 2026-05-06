@@ -40,11 +40,27 @@ func runtimeIDForAgentID(agentID string) string {
 }
 
 func runtimeKindForAgent(a Agent) string {
+	if kind := normalizeRuntimeKind(a.RuntimeKind); kind != "" {
+		return kind
+	}
 	switch normalizeRole(a.Role) {
 	case RoleManager, RoleWorker:
 		return RuntimeKindPicoClawSandbox
 	default:
 		return RuntimeKindOpenClawSandbox
+	}
+}
+
+func normalizeRuntimeKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case RuntimeKindPicoClawSandbox:
+		return RuntimeKindPicoClawSandbox
+	case RuntimeKindOpenClawSandbox:
+		return RuntimeKindOpenClawSandbox
+	case RuntimeKindCodex:
+		return RuntimeKindCodex
+	default:
+		return strings.TrimSpace(kind)
 	}
 }
 

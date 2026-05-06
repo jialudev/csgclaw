@@ -97,6 +97,8 @@ home_dir_name = "boxlite"
 
 Codex 和 Claude Code Profile 通过 Web UI 写入 agent state。CSGClaw 在 `serve` 时会嵌入启动 CLIProxyAPI，并绑定到私有 localhost 端口，因此不再需要配置固定的 CLIProxy base URL。
 
+Worker 在创建时也可以显式选择 runtime kind。默认值是 `picoclaw-sandbox`。如果要创建 Codex worker，可以使用 `csgclaw agent create --runtime codex ...`，或者在 `POST /api/v1/agents` 里传 `runtime_kind: "codex"`。
+
 `[bootstrap].manager_image_override` 留空时会使用代码内置的默认 manager image；只有在需要覆盖默认值时才设置它。
 
 本地鉴权由 CSGClaw 统一管理：
@@ -108,6 +110,14 @@ Codex 和 Claude Code Profile 通过 Web UI 写入 agent state。CSGClaw 在 `se
 - `CSGCLAW_CLIPROXY_AUTO_LOGIN=0` 可关闭自动导入和探测。
 - `CSGCLAW_CLIPROXY_NO_BROWSER=1` 会打印 OAuth URL，而不是自动打开浏览器。
 - `CSGCLAW_CLIPROXY_DISABLE_KEYCHAIN=1` 可关闭 Claude Keychain 探测。
+
+当 worker 使用 Codex runtime 时，它的本地状态会统一放在 `~/.csgclaw/agents/<agent-name>/.codex/` 下。workspace 路径是 `~/.csgclaw/agents/<agent-name>/.codex/workspace`，shell home 路径是 `~/.csgclaw/agents/<agent-name>/.codex/home`，而 `auth.json` 这类 Codex 自己管理的文件会直接放在 `~/.csgclaw/agents/<agent-name>/.codex` 下。这个路径会和 sandbox provider 的 home（例如 `~/.csgclaw/agents/<agent-name>/boxlite`）分开。
+
+当 worker 使用 Codex runtime 时，CSGClaw 会在启动前自动解析 `codex-acp`；如果本地不存在，则会按需下载。你可以通过下面的环境变量覆盖默认行为：
+
+- `CSGCLAW_CODEX_ACP_PATH`：指定本地 `codex-acp` 可执行文件路径
+- `CSGCLAW_CODEX_ACP_VERSION`：固定下载版本
+- `CSGCLAW_CODEX_ACP_BASE_URL`：指定下载源
 
 ## Sandbox Provider
 

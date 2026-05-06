@@ -17,6 +17,7 @@ type Agent struct {
 	Name             string                   `json:"name"`
 	Description      string                   `json:"description,omitempty"`
 	RuntimeID        string                   `json:"runtime_id,omitempty"`
+	RuntimeKind      string                   `json:"runtime_kind,omitempty"`
 	Image            string                   `json:"image,omitempty"`
 	BoxID            string                   `json:"box_id,omitempty"`
 	Role             string                   `json:"role"`
@@ -36,6 +37,7 @@ type CreateAgentSpec struct {
 	Name         string       `json:"name"`
 	Description  string       `json:"description,omitempty"`
 	Image        string       `json:"image,omitempty"`
+	RuntimeKind  string       `json:"runtime_kind,omitempty"`
 	Role         string       `json:"role,omitempty"`
 	Status       string       `json:"status,omitempty"`
 	CreatedAt    time.Time    `json:"created_at,omitempty"`

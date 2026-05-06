@@ -232,6 +232,7 @@ csgclaw agent create [-r|--replace] --id <id> [flags]
 - `--description string`：Agent 描述。
 - `--image string`：Agent 镜像。
 - `--profile string`：Agent 使用的 LLM profile。
+- `--runtime string`：Agent runtime kind，例如 `picoclaw-sandbox` 或 `codex`。
 
 行为说明：
 
@@ -241,6 +242,7 @@ csgclaw agent create [-r|--replace] --id <id> [flags]
 - API/service 会读取现有 Agent，保留未被 mask 选中的字段，应用 mask 中的字段，然后执行重建。
 - 原地替换默认会要求确认，除非传入 `--force`。
 - `image` 字段也遵循同样的 field-mask 行为：未显式传入时保留原值，显式传入 `--image` 时覆盖原值。
+- `runtime` 字段在 replace 时也遵循同样的 field-mask 行为：未显式传入时保留原 runtime kind，显式传入 `--runtime` 时覆盖原值。
 
 #### `csgclaw agent delete`
 
@@ -303,7 +305,9 @@ csgclaw agent logs <id> [-f|--follow] [-n lines]
 csgclaw agent list
 csgclaw agent list --filter running
 csgclaw agent create --name alice --description "frontend worker" --profile openai.gpt-5.4-mini
+csgclaw agent create --name alice --runtime codex --profile codex.gpt-5.4
 csgclaw agent create -r --id agent-alice
+csgclaw agent create --replace --id agent-alice --runtime codex --force
 csgclaw agent create --replace --id agent-alice --name alice-v2 --profile openai.gpt-5.4-mini --force
 csgclaw agent start agent-alice
 csgclaw agent stop agent-alice

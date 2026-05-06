@@ -25,12 +25,15 @@ import (
 	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel"
+	"csgclaw/internal/channel/codexbridge"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/modelprovider"
 	internalonboard "csgclaw/internal/onboard"
+	agentruntime "csgclaw/internal/runtime"
+	runtimecodex "csgclaw/internal/runtime/codex"
 	"csgclaw/internal/sandboxproviders"
 	"csgclaw/internal/server"
 )
@@ -57,8 +60,9 @@ var (
 		}
 		return svc.StartConfiguredAgents(ctx)
 	}
-	OpenBrowser    = openBrowser
-	WaitForHealthy = waitForHealthy
+	NewCodexBridgeManager = newCodexBridgeManager
+	OpenBrowser           = openBrowser
+	WaitForHealthy        = waitForHealthy
 )
 
 type serveCmd struct{}
@@ -398,6 +402,13 @@ func startServer(ctx context.Context, run *command.Context, cfg config.Config, s
 		defer cancel()
 		_ = ShutdownCLIProxy(shutdownCtx)
 	}()
+	codexBridgeMgr, err := NewCodexBridgeManager(cfg, svc)
+	if err != nil {
+		return err
+	}
+	if codexBridgeMgr != nil {
+		defer codexBridgeMgr.Close()
+	}
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishuSvc)
 	}
@@ -414,6 +425,7 @@ func startServer(ctx context.Context, run *command.Context, cfg config.Config, s
 		IM:          imSvc,
 		IMBus:       imBus,
 		BotBridge:   im.NewBotBridge(cfg.Server.AccessToken),
+		CodexBridge: codexBridgeMgr,
 		Feishu:      feishuSvc,
 		LLM:         llmSvc,
 		AccessToken: cfg.Server.AccessToken,
@@ -433,9 +445,16 @@ func startServer(ctx context.Context, run *command.Context, cfg config.Config, s
 					}
 				}()
 			}
-			if err := StartConfiguredAgents(ctx, svc); err != nil {
-				slog.Warn("some configured agents failed to start", "error", err)
-			}
+			go func() {
+				if err := StartConfiguredAgents(ctx, svc); err != nil {
+					slog.Warn("some configured agents failed to start", "error", err)
+				}
+				if codexBridgeMgr != nil {
+					if err := codexBridgeMgr.Start(ctx); err != nil {
+						slog.Warn("some codex bridges failed to start", "error", err)
+					}
+				}
+			}()
 		},
 	})
 }
@@ -717,7 +736,142 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 		return nil, err
 	}
 	opts = append(opts, runtimewiring.WithPicoClawSandboxRuntime())
+	opts = append(opts, runtimewiring.WithCodexRuntime())
 	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
+}
+
+type codexBridgeManager interface {
+	Start(context.Context) error
+	EnsureAgent(context.Context, agent.Agent) error
+	StopAgent(string)
+	Close()
+}
+
+type serveCodexBridgeManager struct {
+	svc     *agent.Service
+	runtime *runtimecodex.Runtime
+	bridge  *codexbridge.Service
+}
+
+func newCodexBridgeManager(cfg config.Config, svc *agent.Service) (codexBridgeManager, error) {
+	if svc == nil {
+		return nil, nil
+	}
+	rt, err := svc.Runtime(agentruntime.KindCodex)
+	if err != nil {
+		return nil, nil
+	}
+	codexRuntime, ok := rt.(*runtimecodex.Runtime)
+	if !ok {
+		return nil, fmt.Errorf("runtime %q has unexpected type %T", agentruntime.KindCodex, rt)
+	}
+	events, ok := codexRuntime.EventSink().(*codexbridge.EventSink)
+	if !ok || events == nil {
+		return nil, fmt.Errorf("runtime %q is missing codex event sink", agentruntime.KindCodex)
+	}
+	return &serveCodexBridgeManager{
+		svc:     svc,
+		runtime: codexRuntime,
+		bridge: codexbridge.NewService(&codexbridge.HTTPClient{
+			BaseURL: apiBaseURL(cfg.Server),
+			Token:   cfg.Server.AccessToken,
+		}, codexRuntime.SessionManager(), events),
+	}, nil
+}
+
+func (m *serveCodexBridgeManager) Start(ctx context.Context) error {
+	if m == nil || m.svc == nil || m.runtime == nil || m.bridge == nil {
+		return nil
+	}
+	agents := m.svc.List()
+	var startErr error
+	for _, a := range agents {
+		if !shouldStartCodexBridge(a) {
+			continue
+		}
+		session, err := m.ensureSession(ctx, a)
+		if err != nil {
+			startErr = errors.Join(startErr, fmt.Errorf("%s: %w", a.Name, err))
+			continue
+		}
+		if err := m.bridge.StartBot(ctx, codexbridge.Binding{
+			BotID:     a.ID,
+			RuntimeID: strings.TrimSpace(a.RuntimeID),
+			SessionID: session.SessionID,
+		}); err != nil {
+			startErr = errors.Join(startErr, fmt.Errorf("%s: %w", a.Name, err))
+		}
+	}
+	return startErr
+}
+
+func (m *serveCodexBridgeManager) EnsureAgent(ctx context.Context, a agent.Agent) error {
+	if m == nil || m.svc == nil || m.runtime == nil || m.bridge == nil {
+		return nil
+	}
+	if !shouldStartCodexBridge(a) {
+		return nil
+	}
+	session, err := m.ensureSession(ctx, a)
+	if err != nil {
+		return err
+	}
+	return m.bridge.StartBot(ctx, codexbridge.Binding{
+		BotID:     a.ID,
+		RuntimeID: strings.TrimSpace(a.RuntimeID),
+		SessionID: session.SessionID,
+	})
+}
+
+func (m *serveCodexBridgeManager) StopAgent(agentID string) {
+	if m == nil || m.bridge == nil {
+		return
+	}
+	m.bridge.StopBot(agentID)
+}
+
+func (m *serveCodexBridgeManager) Close() {
+	if m == nil || m.bridge == nil {
+		return
+	}
+	m.bridge.Close()
+}
+
+func (m *serveCodexBridgeManager) ensureSession(ctx context.Context, a agent.Agent) (*runtimecodex.Session, error) {
+	handle := runtimecodex.SessionHandle{RuntimeID: strings.TrimSpace(a.RuntimeID)}
+	session, err := m.runtime.SessionManager().Session(handle)
+	if err == nil {
+		return session, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+
+	if _, stopErr := m.svc.Stop(ctx, a.ID); stopErr != nil && !strings.Contains(stopErr.Error(), "not found") {
+		return nil, stopErr
+	}
+	updated, startErr := m.svc.Start(ctx, a.ID)
+	if startErr != nil {
+		return nil, startErr
+	}
+	session, err = m.runtime.SessionManager().Session(runtimecodex.SessionHandle{RuntimeID: strings.TrimSpace(updated.RuntimeID)})
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func shouldStartCodexBridge(a agent.Agent) bool {
+	if !strings.EqualFold(strings.TrimSpace(a.Role), agent.RoleWorker) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(a.RuntimeKind), agent.RuntimeKindCodex) {
+		return false
+	}
+	if !(a.ProfileComplete || a.AgentProfile.ProfileComplete) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(a.Status), string(agentruntime.StateRunning))
 }
 
 func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, error) {

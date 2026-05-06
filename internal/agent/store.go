@@ -37,6 +37,7 @@ type persistedAgent struct {
 	Name             string                   `json:"name"`
 	Description      string                   `json:"description,omitempty"`
 	RuntimeID        string                   `json:"runtime_id,omitempty"`
+	RuntimeKind      string                   `json:"runtime_kind,omitempty"`
 	Image            string                   `json:"image,omitempty"`
 	BoxID            string                   `json:"box_id,omitempty"`
 	Role             string                   `json:"role"`
@@ -57,6 +58,7 @@ func newPersistedAgent(a Agent) persistedAgent {
 		Name:             a.Name,
 		Description:      a.Description,
 		RuntimeID:        a.RuntimeID,
+		RuntimeKind:      a.RuntimeKind,
 		Image:            a.Image,
 		BoxID:            a.BoxID,
 		Role:             a.Role,
@@ -78,6 +80,7 @@ func (a persistedAgent) toAgent() Agent {
 		Name:             a.Name,
 		Description:      a.Description,
 		RuntimeID:        a.RuntimeID,
+		RuntimeKind:      a.RuntimeKind,
 		Image:            a.Image,
 		BoxID:            a.BoxID,
 		Role:             a.Role,
@@ -99,6 +102,7 @@ func (w legacyWorker) toAgent() Agent {
 		Name:        w.Name,
 		Description: w.Description,
 		RuntimeID:   runtimeIDForAgentID(w.ID),
+		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "",
 		Role:        RoleWorker,
 		Status:      w.Status,
@@ -219,6 +223,7 @@ func (s *Service) normalizeLoadedAgent(a Agent) Agent {
 	a = *cloneAgent(&a)
 	a.Role = normalizeRole(a.Role)
 	a.RuntimeID = normalizeRuntimeID(a.RuntimeID, a.ID)
+	a.RuntimeKind = runtimeKindForAgent(a)
 	a.AgentProfile = normalizeProfile(a.AgentProfile, a.Name, a.Description)
 	if !a.AgentProfile.ProfileComplete && (strings.TrimSpace(a.Provider) != "" || strings.TrimSpace(a.ModelID) != "") {
 		legacyProfile := profileFromLegacy(a.Name, a.Description, a.Provider, a.ModelID, a.ReasoningEffort)
@@ -242,6 +247,7 @@ func (s *Service) normalizeLoadedAgent(a Agent) Agent {
 		a.ID = ManagerUserID
 		a.Name = ManagerName
 		a.Role = RoleManager
+		a.RuntimeKind = RuntimeKindPicoClawSandbox
 		if strings.TrimSpace(a.Image) == "" {
 			a.Image = s.managerImage
 		}

@@ -310,6 +310,7 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 			Description: normalized.Description,
 			Role:        agent.RoleWorker,
 			ModelID:     normalized.ModelID,
+			RuntimeKind: normalized.RuntimeKind,
 		})
 		if err != nil {
 			return Bot{}, err

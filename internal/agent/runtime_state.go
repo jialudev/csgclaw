@@ -38,6 +38,7 @@ type PicoClawRuntimeHost struct {
 	Server              config.ServerConfig
 	Channels            config.ChannelsConfig
 	EnsureRuntime       func(agentName string) (sandbox.Runtime, error)
+	AgentHome           func(agentName string) (string, error)
 	RuntimeHome         func(agentName string) (string, error)
 	CloseRuntime        func(homeDir string, rt sandbox.Runtime) error
 	ResolveBox          func(ctx context.Context, rt sandbox.Runtime, got Agent) (sandbox.Instance, string, error)
@@ -63,6 +64,7 @@ func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
 		Server:        s.server,
 		Channels:      s.channels,
 		EnsureRuntime: s.ensureRuntime,
+		AgentHome:     agentHomeDir,
 		RuntimeHome:   s.sandboxRuntimeHome,
 		CloseRuntime:  s.closeRuntime,
 		ResolveBox: func(ctx context.Context, rt sandbox.Runtime, got Agent) (sandbox.Instance, string, error) {
@@ -105,6 +107,10 @@ func (s *Service) runtimeForKind(kind string) (agentruntime.Runtime, error) {
 
 func (s *Service) runtimeForAgent(a Agent) (agentruntime.Runtime, error) {
 	return s.runtimeForKind(runtimeKindForAgent(a))
+}
+
+func (s *Service) Runtime(kind string) (agentruntime.Runtime, error) {
+	return s.runtimeForKind(kind)
 }
 
 func runtimeHandleForAgent(a Agent) agentruntime.Handle {

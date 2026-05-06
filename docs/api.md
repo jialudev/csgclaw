@@ -78,6 +78,7 @@ Codex 和 Claude Code Provider 由 CSGClaw 内嵌 CLIProxyAPI 转发。鉴权状
   "id": "u-alice",
   "name": "alice",
   "description": "frontend dev",
+  "runtime_kind": "picoclaw-sandbox",
   "role": "worker",
   "status": "running",
   "created_at": "2026-03-28T12:00:03Z",
@@ -111,6 +112,7 @@ Codex 和 Claude Code Provider 由 CSGClaw 内嵌 CLIProxyAPI 转发。鉴权状
   "name": "alice",
   "description": "frontend dev",
   "profile": "codex.gpt-5.4",
+  "runtime_kind": "codex",
   "role": "worker"
 }
 ```
@@ -136,6 +138,7 @@ Codex 和 Claude Code Provider 由 CSGClaw 内嵌 CLIProxyAPI 转发。鉴权状
   "id": "u-alice",
   "name": "alice",
   "description": "frontend dev",
+  "runtime_kind": "codex",
   "role": "worker",
   "status": "running",
   "created_at": "2026-03-28T12:00:03Z",
@@ -153,11 +156,18 @@ Codex 和 Claude Code Provider 由 CSGClaw 内嵌 CLIProxyAPI 转发。鉴权状
 - `name` 不能是 `manager`
 - `id` 可选；未传时服务端会自动生成
 - `profile` 可选；它引用配置中的 `models.default` 或显式 selector（例如 `codex.gpt-5.4`）
+- `runtime_kind` 可选；留空时默认 `picoclaw-sandbox`，可显式传 `codex`
 - `provider`、`model_id`、`reasoning_effort` 是服务端解析后的快照字段，便于调试
 - `status`、`created_at` 以实际 box 启动结果为准
 - `manager` 嵌套字段已不再支持
 - 若 IM 服务可用，会自动创建对应 IM 用户，并创建 `Admin & <Worker>` 私聊
 - 校验失败通常返回 `400 Bad Request`
+
+使用 Codex runtime 时，服务会在启动 worker 前自动解析或下载 `codex-acp`。如需手动指定或固定版本，可使用：
+
+- `CSGCLAW_CODEX_ACP_PATH`：指定本地 `codex-acp` 可执行文件路径
+- `CSGCLAW_CODEX_ACP_VERSION`：指定下载版本
+- `CSGCLAW_CODEX_ACP_BASE_URL`：指定下载源，默认指向 GitHub Releases
 
 ## 4. IM 接口
 

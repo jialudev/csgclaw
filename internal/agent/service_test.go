@@ -65,6 +65,7 @@ func (f *fakeInstance) Close() error {
 
 type fakeAgentRuntime struct {
 	kind       string
+	create     func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
 	stop       func(context.Context, agentruntime.Handle) (agentruntime.State, error)
 	del        func(context.Context, agentruntime.Handle) error
@@ -77,7 +78,10 @@ func (f fakeAgentRuntime) Kind() string {
 	return f.kind
 }
 
-func (f fakeAgentRuntime) Create(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
+func (f fakeAgentRuntime) Create(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+	if f.create != nil {
+		return f.create(ctx, spec)
+	}
 	return agentruntime.Handle{}, nil
 }
 
@@ -443,6 +447,103 @@ func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
 	}
 }
 
+func TestCreateWorkerUsesCodexRuntimeWhenRequested(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (sandbox.Runtime, error) {
+			t.Fatal("ensureRuntime() should not be used for codex worker creation")
+			return nil, nil
+		},
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, _ string, _ string, _ AgentProfile) (sandbox.Instance, sandbox.Info, error) {
+			t.Fatal("createGatewayBox() should not be used for codex worker creation")
+			return nil, sandbox.Info{}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				if spec.AgentID != "u-alice" {
+					t.Fatalf("Create() agent id = %q, want %q", spec.AgentID, "u-alice")
+				}
+				if spec.AgentName != "alice" {
+					t.Fatalf("Create() agent name = %q, want %q", spec.AgentName, "alice")
+				}
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-alice"}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		ID:          "u-alice",
+		Name:        "alice",
+		RuntimeKind: RuntimeKindCodex,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.RuntimeKind != RuntimeKindCodex {
+		t.Fatalf("CreateWorker().RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindCodex)
+	}
+	if got.BoxID != "codex-session-alice" {
+		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "codex-session-alice")
+	}
+	if rt := svc.runtimeRecords[got.RuntimeID]; rt.Kind != RuntimeKindCodex {
+		t.Fatalf("runtime record kind = %q, want %q", rt.Kind, RuntimeKindCodex)
+	}
+}
+
+func TestCreateWorkerUsesPicoClawByDefaultWhenRuntimeKindUnset(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ AgentProfile) (sandbox.Instance, sandbox.Info, error) {
+			return nil, sandbox.Info{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     sandbox.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			create: func(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
+				t.Fatal("codex runtime should not be used when runtime kind is unset")
+				return agentruntime.Handle{}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("CreateWorker().RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
+	if got.BoxID != "box-alice" {
+		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "box-alice")
+	}
+}
+
 func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
@@ -481,6 +582,9 @@ func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
 	}
 	if worker.BoxID != "box-alice" || worker.Status != string(sandbox.StateRunning) {
 		t.Fatalf("CreateWorker() = %+v, want running box-alice", worker)
+	}
+	if worker.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("CreateWorker().RuntimeKind = %q, want %q", worker.RuntimeKind, RuntimeKindPicoClawSandbox)
 	}
 
 	logPath, err := agentGatewayLogPath("alice")
@@ -1138,6 +1242,9 @@ func TestLoadLegacyAgentSynthesizesRuntimeRecord(t *testing.T) {
 	if got.RuntimeID != "rt-u-alice" {
 		t.Fatalf("agentSnapshot().RuntimeID = %q, want %q", got.RuntimeID, "rt-u-alice")
 	}
+	if got.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("agentSnapshot().RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
 	rt, ok := svc.runtimeRecords[got.RuntimeID]
 	if !ok {
 		t.Fatalf("runtimeRecords[%q] missing", got.RuntimeID)
@@ -1169,6 +1276,48 @@ func TestLoadLegacyAgentSynthesizesRuntimeRecord(t *testing.T) {
 	}
 	if persisted.Agents[0].RuntimeID != "rt-u-alice" {
 		t.Fatalf("saved agent runtime_id = %q, want %q", persisted.Agents[0].RuntimeID, "rt-u-alice")
+	}
+	if persisted.Agents[0].RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("saved agent runtime_kind = %q, want %q", persisted.Agents[0].RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
+}
+
+func TestLoadAgentPreservesExplicitRuntimeKind(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(persistedState{
+		Agents: []persistedAgent{
+			{
+				ID:          "u-alice",
+				Name:        "alice",
+				RuntimeID:   "rt-u-alice",
+				RuntimeKind: RuntimeKindCodex,
+				Role:        RoleWorker,
+				Status:      string(sandbox.StateRunning),
+				CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	got, ok := svc.agentSnapshot("u-alice")
+	if !ok {
+		t.Fatal("agentSnapshot() ok = false, want true")
+	}
+	if got.RuntimeKind != RuntimeKindCodex {
+		t.Fatalf("agentSnapshot().RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindCodex)
+	}
+	if rt := svc.runtimeRecords[got.RuntimeID]; rt.Kind != RuntimeKindCodex {
+		t.Fatalf("runtime record kind = %q, want %q", rt.Kind, RuntimeKindCodex)
 	}
 }
 
