@@ -558,19 +558,6 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	if provisioner := h.workerIMProvisioner(); provisioner != nil {
-		if _, err := provisioner.EnsureAgentUser(r.Context(), im.AgentIdentity{
-			ID:          created.ID,
-			Name:        created.Name,
-			Description: created.Description,
-			Handle:      deriveAgentHandle(created),
-			Role:        displayRole(created.Role),
-		}); err != nil {
-			http.Error(w, fmt.Sprintf("ensure agent im user: %v", err), http.StatusBadGateway)
-			return
-		}
-	}
 	if err := h.ensureCodexBridgeAgent(r.Context(), created); err != nil {
 		http.Error(w, fmt.Sprintf("ensure codex bridge: %v", err), http.StatusBadGateway)
 		return

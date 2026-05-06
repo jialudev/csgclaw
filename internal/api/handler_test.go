@@ -1412,19 +1412,14 @@ func TestHandleAgentsDeleteNotFound(t *testing.T) {
 	}
 }
 
-func TestHandleAgentsCreateProvisionsIMDirectMessage(t *testing.T) {
+func TestHandleAgentsCreateDoesNotProvisionIMUser(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
 	svc := mustNewService(t)
-	bus := im.NewBus()
-	events, cancel := bus.Subscribe()
-	defer cancel()
-
 	srv := &Handler{
-		svc:   svc,
-		im:    im.NewService(),
-		imBus: bus,
+		svc: svc,
+		im:  im.NewService(),
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"name":"alice","role":"worker"}`))
 	rec := httptest.NewRecorder()
@@ -1441,29 +1436,11 @@ func TestHandleAgentsCreateProvisionsIMDirectMessage(t *testing.T) {
 	if got.ID != "u-alice" || got.Role != agent.RoleWorker {
 		t.Fatalf("agent = %+v, want worker alias result", got)
 	}
-	user, ok := srv.im.User("u-alice")
-	if !ok {
-		t.Fatal("User(u-alice) ok = false, want provisioned IM user after agent create")
+	if _, ok := srv.im.User("u-alice"); ok {
+		t.Fatal("User(u-alice) ok = true, want false after agent create")
 	}
-	if user.Handle != "alice" || user.Role != "worker" {
-		t.Fatalf("User(u-alice) = %+v, want worker handle alice", user)
-	}
-	rooms := srv.im.ListRooms()
-	if len(rooms) != 1 {
-		t.Fatalf("rooms = %+v, want one direct room after agent create", rooms)
-	}
-	room := rooms[0]
-	if !room.IsDirect || !roomHasMember(room, "u-admin") || !roomHasMember(room, "u-alice") {
-		t.Fatalf("room = %+v, want admin/agent direct room", room)
-	}
-
-	first := mustReceiveAPIEvent(t, events)
-	if first.Type != im.EventTypeUserCreated || first.User == nil || first.User.ID != "u-alice" {
-		t.Fatalf("first event = %+v, want user-created for u-alice", first)
-	}
-	second := mustReceiveAPIEvent(t, events)
-	if second.Type != im.EventTypeRoomCreated || second.Room == nil || second.Room.ID != room.ID {
-		t.Fatalf("second event = %+v, want room-created for %s", second, room.ID)
+	if rooms := srv.im.ListRooms(); len(rooms) != 0 {
+		t.Fatalf("rooms = %+v, want no IM rooms after agent create", rooms)
 	}
 }
 
@@ -1560,26 +1537,6 @@ func TestHandleAgentsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
 	}
 	if bridge.ensureCalls[0].ID != "u-alice" || bridge.ensureCalls[0].RuntimeKind != agent.RuntimeKindCodex {
 		t.Fatalf("EnsureAgent() got %+v, want codex worker u-alice", bridge.ensureCalls[0])
-	}
-}
-
-func roomHasMember(room im.Room, userID string) bool {
-	for _, memberID := range room.Members {
-		if memberID == userID {
-			return true
-		}
-	}
-	return false
-}
-
-func mustReceiveAPIEvent(t *testing.T, events <-chan im.Event) im.Event {
-	t.Helper()
-	select {
-	case evt := <-events:
-		return evt
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for IM event")
-		return im.Event{}
 	}
 }
 

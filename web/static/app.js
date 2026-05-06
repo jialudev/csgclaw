@@ -2001,17 +2001,24 @@ function App() {
       });
       const payload = {
         name: agentDraft.name,
+        role: agentDraft.role,
         description: agentDraft.description,
         image: agentDraft.image,
         runtime_kind: agentDraft.runtime_kind,
         agent_profile: profile,
       };
       const isCreate = agentModalMode === "create";
-      const url = isCreate ? "api/v1/agents" : `api/v1/agents/${encodeURIComponent(editingAgent.id)}`;
+      const url = isCreate ? "api/v1/bots" : `api/v1/agents/${encodeURIComponent(editingAgent.id)}`;
       const resp = await fetch(url, {
         method: isCreate ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(isCreate ? payload : {
+          name: payload.name,
+          description: payload.description,
+          image: payload.image,
+          runtime_kind: payload.runtime_kind,
+          agent_profile: payload.agent_profile,
+        }),
       });
       if (!resp.ok) {
         throw new Error((await resp.text()).trim());
@@ -2044,7 +2051,7 @@ function App() {
     setAgentsError("");
     try {
       const url = action === "delete"
-        ? `api/v1/agents/${encodeURIComponent(item.id)}`
+        ? `api/v1/bots/${encodeURIComponent(item.id)}`
         : `api/v1/agents/${encodeURIComponent(item.id)}/${action}`;
       const resp = await fetch(url, { method: action === "delete" ? "DELETE" : "POST" });
       if (!resp.ok) {
@@ -2919,13 +2926,32 @@ function App() {
                           placeholder=${t("agentNamePlaceholder")}
                         />
                       </label>
+                      ${agentModalMode === "create"
+                        ? html`
+                            <label className="field">
+                              <span>${t("roleLabel")}</span>
+                              <input value=${agentDraft.role || "worker"} readOnly disabled />
+                            </label>
+                          `
+                        : null}
                       <label className="field">
                         <span>${t("profileRuntimeKind")}</span>
                         ${agentModalMode === "create"
                           ? html`
                               <select
                                 value=${agentDraft.runtime_kind || "picoclaw-sandbox"}
-                                onChange=${(event) => setAgentDraft({ ...agentDraft, runtime_kind: event.target.value })}
+                                onChange=${(event) => {
+                                  const runtimeKind = event.target.value;
+                                  setAgentDraft({
+                                    ...agentDraft,
+                                    runtime_kind: runtimeKind,
+                                    image: runtimeKind === "codex"
+                                      ? ""
+                                      : runtimeKind === "picoclaw-sandbox"
+                                        ? (agentDraft.default_image || "")
+                                        : agentDraft.image,
+                                  });
+                                }}
                               >
                                 ${AGENT_RUNTIME_OPTIONS.map((option) => html`
                                   <option key=${option.value} value=${option.value}>${option.label}</option>
@@ -4214,7 +4240,9 @@ function agentToDraft(agent) {
   const profile = agent?.agent_profile || agent || {};
   return {
     name: agent?.name || "",
+    role: agent?.role || "worker",
     description: agent?.description || profile.description || "",
+    default_image: agent?.image || "",
     image: agent?.image || "",
     runtime_kind: agent?.runtime_kind || "",
     ...profileToDraft(profile),

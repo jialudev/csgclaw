@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,11 @@ import (
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/sandboxtest"
+)
+
+var (
+	fakeBotRuntimeStateMu sync.RWMutex
+	fakeBotRuntimeStates  = make(map[string]agentruntime.Info)
 )
 
 type fakeBotAgentRuntime struct {
@@ -46,12 +52,83 @@ func (f fakeBotAgentRuntime) Delete(context.Context, agentruntime.Handle) error 
 	return nil
 }
 
-func (f fakeBotAgentRuntime) State(context.Context, agentruntime.Handle) (agentruntime.State, error) {
-	return agentruntime.StateRunning, nil
+func (f fakeBotAgentRuntime) State(_ context.Context, h agentruntime.Handle) (agentruntime.State, error) {
+	return fakeBotRuntimeInfoForHandle(h).State, nil
 }
 
-func (f fakeBotAgentRuntime) Info(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
-	return agentruntime.Info{State: agentruntime.StateRunning}, nil
+func (f fakeBotAgentRuntime) Info(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+	return fakeBotRuntimeInfoForHandle(h), nil
+}
+
+func (f fakeBotAgentRuntime) EnsureGatewayConfig(agentName, botID, modelID string) error {
+	return nil
+}
+
+func (f fakeBotAgentRuntime) ProjectsGuestPath() string {
+	return "/projects"
+}
+
+func (f fakeBotAgentRuntime) CreateGatewayBox(_ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ agentruntime.Profile) (sandbox.Instance, sandbox.Info, error) {
+	info := sandbox.Info{
+		ID:        "box-" + name,
+		Name:      name,
+		State:     sandbox.StateRunning,
+		CreatedAt: time.Now().UTC(),
+	}
+	return sandboxtest.NewInstance(info), info, nil
+}
+
+func (f fakeBotAgentRuntime) GatewayCreateSpec(image, name, _ string, _ agentruntime.Profile) (sandbox.CreateSpec, error) {
+	return sandbox.CreateSpec{Image: image, Name: name}, nil
+}
+
+func fakeBotRuntimeInfoForHandle(h agentruntime.Handle) agentruntime.Info {
+	fakeBotRuntimeStateMu.RLock()
+	defer fakeBotRuntimeStateMu.RUnlock()
+	if info, ok := fakeBotRuntimeStates[strings.TrimSpace(h.HandleID)]; ok {
+		return info
+	}
+	if info, ok := fakeBotRuntimeStates[strings.TrimSpace(h.RuntimeID)]; ok {
+		return info
+	}
+	return agentruntime.Info{
+		HandleID:  strings.TrimSpace(h.HandleID),
+		State:     agentruntime.StateRunning,
+		CreatedAt: time.Now().UTC(),
+	}
+}
+
+func resetFakeBotRuntimeStates() {
+	fakeBotRuntimeStateMu.Lock()
+	defer fakeBotRuntimeStateMu.Unlock()
+	clear(fakeBotRuntimeStates)
+}
+
+func setFakeBotRuntimeState(runtimeID, handleID string, state sandbox.State) {
+	info := agentruntime.Info{
+		HandleID:  strings.TrimSpace(handleID),
+		State:     agentruntime.State(state),
+		CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+	}
+	fakeBotRuntimeStateMu.Lock()
+	defer fakeBotRuntimeStateMu.Unlock()
+	if runtimeID = strings.TrimSpace(runtimeID); runtimeID != "" {
+		fakeBotRuntimeStates[runtimeID] = info
+	}
+	if handleID = strings.TrimSpace(handleID); handleID != "" {
+		fakeBotRuntimeStates[handleID] = info
+	}
+}
+
+func testRuntimeIDForAgentName(agentName string) string {
+	agentName = strings.TrimSpace(agentName)
+	if strings.EqualFold(agentName, agent.ManagerName) {
+		return "rt-" + agent.ManagerUserID
+	}
+	if agentName == "" {
+		return ""
+	}
+	return "rt-u-" + agentName
 }
 
 func TestServiceListReturnsAllWhenChannelEmpty(t *testing.T) {
@@ -558,6 +635,8 @@ func TestNewServiceRequiresStore(t *testing.T) {
 func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+	resetFakeBotRuntimeStates()
+	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
 		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
 			return err
@@ -645,6 +724,8 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+	resetFakeBotRuntimeStates()
+	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
 		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
 			return err
@@ -701,6 +782,8 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	provider := sandboxtest.NewProvider()
 	t.Cleanup(agent.TestOnlySetSandboxProvider(provider))
+	resetFakeBotRuntimeStates()
+	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
 		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
 			return err
@@ -741,9 +824,6 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(feishu worker) error = %v", err)
 	}
-	if createCalls := sandboxCreateCalls(provider); createCalls != 1 {
-		t.Fatalf("create gateway calls = %d, want 1", createCalls)
-	}
 	if csgclawBot.ID != "u-alice" || feishuBot.ID != "u-alice" || csgclawBot.AgentID != feishuBot.AgentID {
 		t.Fatalf("created bots = %+v / %+v, want shared u-alice agent", csgclawBot, feishuBot)
 	}
@@ -762,6 +842,9 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	}
 	if len(all) != 2 {
 		t.Fatalf("List() = %+v, want two channel bindings", all)
+	}
+	if _, ok := agentSvc.Agent("u-alice"); !ok {
+		t.Fatal("Agent(u-alice) ok = false, want shared backing agent")
 	}
 }
 
@@ -1113,6 +1196,8 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+	resetFakeBotRuntimeStates()
+	t.Cleanup(resetFakeBotRuntimeStates)
 	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
 		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
 			return err
@@ -1142,31 +1227,5 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 
 func mustSetAgentRuntimeState(t *testing.T, agentName, boxID string, state sandbox.State) {
 	t.Helper()
-
-	agent.ResetTestHooks()
-	t.Cleanup(agent.ResetTestHooks)
-
-	inst := sandboxtest.NewInstance(sandbox.Info{
-		ID:        boxID,
-		Name:      agentName,
-		State:     state,
-		CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
-	})
-	agent.TestOnlySetGetBoxHook(func(_ *agent.Service, _ context.Context, _ sandbox.Runtime, idOrName string) (sandbox.Instance, error) {
-		if idOrName == agentName || idOrName == boxID {
-			return inst, nil
-		}
-		return nil, sandbox.ErrNotFound
-	})
-}
-
-func sandboxCreateCalls(provider *sandboxtest.Provider) int {
-	if provider == nil {
-		return 0
-	}
-	total := 0
-	for _, rt := range provider.Runtimes {
-		total += len(rt.CreateCalls)
-	}
-	return total
+	setFakeBotRuntimeState(testRuntimeIDForAgentName(agentName), boxID, state)
 }
