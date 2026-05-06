@@ -17,6 +17,10 @@ const IM_EVENTS_ENDPOINT = "/api/v1/events";
 const IM_EVENTS_SHARED_WORKER_PATH = "/sse-shared-worker.js";
 const VERSION_ENDPOINT = "/api/v1/version";
 const PROVIDERS = ["csghub_lite", "codex", "claude_code", "api"];
+const AGENT_RUNTIME_OPTIONS = [
+  { value: "picoclaw-sandbox", label: "picoclaw_sandbox" },
+  { value: "codex", label: "codex" },
+];
 const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
 const WORKSPACE_TAB_MESSAGES = "messages";
@@ -136,7 +140,8 @@ const messages = {
     profileReasoning: "Reasoning",
     profileFastMode: "Fast mode",
     profileBasics: "基础信息",
-    profileRuntime: "运行时",
+    profileRuntimeKind: "运行时",
+    profileModelSection: "模型",
     profileAPIProvider: "API Provider",
     profileAdvanced: "高级选项",
     profilePreview: "Profile 预览",
@@ -293,7 +298,8 @@ const messages = {
     profileReasoning: "Reasoning",
     profileFastMode: "Fast mode",
     profileBasics: "Basics",
-    profileRuntime: "Runtime",
+    profileRuntimeKind: "Runtime",
+    profileModelSection: "Model",
     profileAPIProvider: "API Provider",
     profileAdvanced: "Advanced",
     profilePreview: "Profile preview",
@@ -1821,12 +1827,12 @@ function App() {
     try {
       const resp = await fetch("api/v1/agent-profile-defaults");
       const defaults = resp.ok ? await resp.json() : managerProfile;
-      const draft = agentToDraft({ image: managerAgent?.image || "", agent_profile: defaults });
+      const draft = agentToDraft({ image: managerAgent?.image || "", runtime_kind: managerAgent?.runtime_kind || "", agent_profile: defaults });
       setAgentDraft(draft);
       setShowAgentModal(true);
       loadAgentModels(draft, { silent: true });
     } catch (_) {
-      const draft = agentToDraft({ image: managerAgent?.image || "", agent_profile: managerProfile });
+      const draft = agentToDraft({ image: managerAgent?.image || "", runtime_kind: managerAgent?.runtime_kind || "", agent_profile: managerProfile });
       setAgentDraft(draft);
       setShowAgentModal(true);
       loadAgentModels(draft, { silent: true });
@@ -1997,6 +2003,7 @@ function App() {
         name: agentDraft.name,
         description: agentDraft.description,
         image: agentDraft.image,
+        runtime_kind: agentDraft.runtime_kind,
         agent_profile: profile,
       };
       const isCreate = agentModalMode === "create";
@@ -2913,6 +2920,21 @@ function App() {
                         />
                       </label>
                       <label className="field">
+                        <span>${t("profileRuntimeKind")}</span>
+                        ${agentModalMode === "create"
+                          ? html`
+                              <select
+                                value=${agentDraft.runtime_kind || "picoclaw-sandbox"}
+                                onChange=${(event) => setAgentDraft({ ...agentDraft, runtime_kind: event.target.value })}
+                              >
+                                ${AGENT_RUNTIME_OPTIONS.map((option) => html`
+                                  <option key=${option.value} value=${option.value}>${option.label}</option>
+                                `)}
+                              </select>
+                            `
+                          : html`<input value=${agentDraft.runtime_kind || editingAgent?.runtime_kind || ""} readOnly disabled />`}
+                      </label>
+                      <label className="field">
                         <span>${t("agentImage")}</span>
                         <input value=${agentDraft.image} onInput=${(event) => setAgentDraft({ ...agentDraft, image: event.target.value })} placeholder=${t("agentImagePlaceholder")} />
                       </label>
@@ -2923,7 +2945,7 @@ function App() {
                     </div>
                   </section>
                   <section className="profile-section">
-                    <div className="profile-section-title">${t("profileRuntime")}</div>
+                    <div className="profile-section-title">${t("profileModelSection")}</div>
                     <div className="profile-runtime-grid">
                       <label className="field">
                         <span>${t("profileProvider")}</span>
@@ -3059,7 +3081,7 @@ function App() {
                   : null}
                 <div className="profile-editor-shell">
                   <section className="profile-section">
-                    <div className="profile-section-title">${t("profileRuntime")}</div>
+                    <div className="profile-section-title">${t("profileModelSection")}</div>
                     <div className="profile-runtime-grid">
                       <label className="field">
                         <span>${t("profileProvider")}</span>
@@ -3526,6 +3548,10 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
                     />
                   </label>
                   <label className="field">
+                    <span>${t("profileRuntimeKind")}</span>
+                    <input value=${draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
+                  </label>
+                  <label className="field">
                     <span>${t("agentImage")}</span>
                     <input value=${draft.image} onInput=${(event) => updateDraft({ image: event.target.value })} placeholder=${t("agentImagePlaceholder")} />
                   </label>
@@ -3537,7 +3563,7 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
               </section>
 
               <section className="profile-section">
-                <div className="profile-section-title">${t("profileRuntime")}</div>
+                <div className="profile-section-title">${t("profileModelSection")}</div>
                 <div className="profile-runtime-grid">
                   <label className="field">
                     <span>${t("profileProvider")}</span>
@@ -4190,6 +4216,7 @@ function agentToDraft(agent) {
     name: agent?.name || "",
     description: agent?.description || profile.description || "",
     image: agent?.image || "",
+    runtime_kind: agent?.runtime_kind || "",
     ...profileToDraft(profile),
   };
 }

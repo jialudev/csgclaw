@@ -14,6 +14,7 @@ type Bot struct {
 	AgentID     string    `json:"agent_id"`
 	UserID      string    `json:"user_id"`
 	Available   bool      `json:"available"`
+	RuntimeKind string    `json:"runtime_kind,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

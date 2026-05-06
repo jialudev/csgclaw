@@ -133,14 +133,14 @@ func TestExecuteAgentListUsesHTTPClient(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/agents" {
 				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
 			}
-			return jsonResponse(http.StatusOK, `[{"id":"u-alice","name":"alice","role":"worker","status":"running","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}]`), nil
+			return jsonResponse(http.StatusOK, `[{"id":"u-alice","name":"alice","role":"worker","status":"running","runtime_kind":"codex","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}]`), nil
 		}),
 	}
 
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "list"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
 }
 
 func TestExecuteAgentStartUsesHTTPClient(t *testing.T) {
@@ -155,14 +155,14 @@ func TestExecuteAgentStartUsesHTTPClient(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/agents/u-alice/start" {
 				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice/start")
 			}
-			return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","role":"worker","status":"running","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","role":"worker","status":"running","runtime_kind":"codex","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
 		}),
 	}
 
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "start", "u-alice"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
 }
 
 func TestExecuteAgentStopUsesHTTPClient(t *testing.T) {
@@ -177,14 +177,14 @@ func TestExecuteAgentStopUsesHTTPClient(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/agents/u-alice/stop" {
 				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents/u-alice/stop")
 			}
-			return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","role":"worker","status":"stopped","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
+			return jsonResponse(http.StatusOK, `{"id":"u-alice","name":"alice","role":"worker","status":"stopped","runtime_kind":"codex","image":"ghcr.io/opencsg/csgclaw-agent:2026.4.28","created_at":"2026-04-01T12:00:00Z","profile":"codex-main"}`), nil
 		}),
 	}
 
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "stop", "u-alice"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "stopped", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "stopped", "codex", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
 }
 
 func TestExecuteBotListUsesDefaultChannel(t *testing.T) {
@@ -199,14 +199,14 @@ func TestExecuteBotListUsesDefaultChannel(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/bots?channel=csgclaw" {
 				t.Fatalf("url = %q, want csgclaw bot list route", req.URL.String())
 			}
-			return jsonResponse(http.StatusOK, `[{"id":"bot-alice","name":"alice","role":"worker","channel":"csgclaw","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}]`), nil
+			return jsonResponse(http.StatusOK, `[{"id":"bot-alice","name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"codex","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}]`), nil
 		}),
 	}
 
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "list"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "bot-alice", "alice", "-", "worker", "csgclaw", "u-alice", "u-alice", "true")
+	assertTableHasRow(t, stdout.String(), "bot-alice", "alice", "-", "worker", "csgclaw", "codex", "u-alice", "u-alice", "true")
 }
 
 func TestExecuteBotListFeishuUsesChannelQuery(t *testing.T) {
@@ -245,14 +245,14 @@ func TestExecuteBotListUsesRoleQuery(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/bots?channel=csgclaw&role=worker" {
 				t.Fatalf("url = %q, want role-filtered bot list route", req.URL.String())
 			}
-			return jsonResponse(http.StatusOK, `[{"id":"bot-alice","name":"alice","description":"abcdefghijklmnopqrstuvwxyz1234567890ABCDE","role":"worker","channel":"csgclaw","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}]`), nil
+			return jsonResponse(http.StatusOK, `[{"id":"bot-alice","name":"alice","description":"abcdefghijklmnopqrstuvwxyz1234567890ABCDE","role":"worker","channel":"csgclaw","runtime_kind":"codex","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}]`), nil
 		}),
 	}
 
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "list", "--role", "worker"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "bot-alice", "alice", "abcdefghijklmnopqrstuvwxyz1234567890ABCD...", "worker", "csgclaw", "u-alice", "u-alice", "true")
+	assertTableHasRow(t, stdout.String(), "bot-alice", "alice", "abcdefghijklmnopqrstuvwxyz1234567890ABCD...", "worker", "csgclaw", "codex", "u-alice", "u-alice", "true")
 }
 
 func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
@@ -280,7 +280,7 @@ func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
 			if payload.RuntimeKind != "codex" {
 				t.Fatalf("payload.RuntimeKind = %q, want codex", payload.RuntimeKind)
 			}
-			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","description":"test-lead","role":"worker","channel":"csgclaw","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}`), nil
+			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","description":"test-lead","role":"worker","channel":"csgclaw","runtime_kind":"codex","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}`), nil
 		}),
 	}
 
@@ -288,7 +288,7 @@ func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "test-lead", "worker", "csgclaw", "u-alice", "u-alice", "true")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "test-lead", "worker", "csgclaw", "codex", "u-alice", "u-alice", "true")
 }
 
 func TestExecuteBotCreateFeishuSendsChannelPayload(t *testing.T) {
@@ -546,8 +546,8 @@ func TestExecuteMessageListReadsFromFeishuChannel(t *testing.T) {
 func TestRenderAgentsTableAlignsLongColumns(t *testing.T) {
 	var buf bytes.Buffer
 	agents := []apitypes.Agent{
-		{ID: "u-manager", Name: "manager", Role: "manager", Status: "running", Profile: "codex-main"},
-		{ID: "u-dev", Name: "dev", Role: "worker", Status: "running", Profile: "claude-main"},
+		{ID: "u-manager", Name: "manager", Role: "manager", Status: "running", RuntimeKind: "codex", Profile: "codex-main"},
+		{ID: "u-dev", Name: "dev", Role: "worker", Status: "running", RuntimeKind: "picoclaw-sandbox", Profile: "claude-main"},
 		{ID: "u-alex", Name: "alex", Role: "worker", Status: "running"},
 	}
 
@@ -560,7 +560,7 @@ func TestRenderAgentsTableAlignsLongColumns(t *testing.T) {
 		t.Fatalf("line count = %d, want 4; output=%q", len(lines), buf.String())
 	}
 
-	re := regexp.MustCompile(`^(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)$`)
+	re := regexp.MustCompile(`^(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)(\s{2,})(\S+)$`)
 	if re.FindStringSubmatchIndex(lines[0]) == nil {
 		t.Fatalf("header not aligned: %q", lines[0])
 	}
@@ -582,7 +582,7 @@ func TestRenderAgentsTableUsesDashForMissingProfile(t *testing.T) {
 		t.Fatalf("renderAgentsTable() error = %v", err)
 	}
 
-	assertTableHasRow(t, buf.String(), "u-alice", "alice", "worker", "running", "-", "-")
+	assertTableHasRow(t, buf.String(), "u-alice", "alice", "worker", "running", "-", "-", "-")
 }
 
 func TestExecuteAgentCreateUsesHTTPClient(t *testing.T) {
@@ -638,7 +638,7 @@ func TestExecuteAgentCreateUsesHTTPClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
 }
 
 func TestExecuteAgentCreateReplaceKeepsExistingFieldsWhenNoOverrides(t *testing.T) {
@@ -689,7 +689,7 @@ func TestExecuteAgentCreateReplaceKeepsExistingFieldsWhenNoOverrides(t *testing.
 	if requests != 1 {
 		t.Fatalf("requests = %d, want 1", requests)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.20")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "-", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.20")
 }
 
 func TestExecuteAgentCreateReplaceOverridesExplicitFields(t *testing.T) {
@@ -751,7 +751,7 @@ func TestExecuteAgentCreateReplaceOverridesExplicitFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice-v2", "worker", "running", "codex-fast", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice-v2", "worker", "running", "codex", "codex-fast", "ghcr.io/opencsg/csgclaw-agent:2026.4.28")
 }
 
 func TestExecuteAgentCreateReplaceCancelledWithoutForce(t *testing.T) {
@@ -817,7 +817,7 @@ func TestExecuteAgentCreateReplaceForceSkipsConfirmation(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("requests = %d, want 1", requests)
 	}
-	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.20")
+	assertTableHasRow(t, stdout.String(), "u-alice", "alice", "worker", "running", "-", "codex-main", "ghcr.io/opencsg/csgclaw-agent:2026.4.20")
 }
 
 func TestExecuteAgentCreateReplaceRequiresExistingAgent(t *testing.T) {

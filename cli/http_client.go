@@ -108,9 +108,9 @@ func writeJSON(w io.Writer, v any) error {
 
 func renderAgentsTable(w io.Writer, agents []apitypes.Agent) error {
 	tw := newTableWriter(w)
-	fmt.Fprintln(tw, "ID\tNAME\tROLE\tSTATUS\tPROFILE\tIMAGE")
+	fmt.Fprintln(tw, "ID\tNAME\tROLE\tSTATUS\tRUNTIME\tPROFILE\tIMAGE")
 	for _, a := range agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.Role, a.Status, displayAgentProfile(a.Profile), displayAgentField(a.Image))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.Role, a.Status, displayAgentField(a.RuntimeKind), displayAgentProfile(a.Profile), displayAgentField(a.Image))
 	}
 	return tw.Flush()
 }
