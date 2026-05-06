@@ -19,10 +19,12 @@ const VERSION_ENDPOINT = "/api/v1/version";
 const UPGRADE_STATUS_ENDPOINT = "/api/v1/upgrade/status";
 const UPGRADE_APPLY_ENDPOINT = "/api/v1/upgrade/apply";
 const PROVIDERS = ["csghub_lite", "codex", "claude_code", "api"];
-const AGENT_RUNTIME_OPTIONS = [
-  { value: "picoclaw-sandbox", label: "picoclaw_sandbox" },
+const RUNTIME_KIND_OPTIONS = [
+  { value: "picoclaw_sandbox", label: "picoclaw_sandbox" },
+  { value: "openclaw_sandbox", label: "openclaw_sandbox" },
   { value: "codex", label: "codex" },
 ];
+const GATEWAY_RUNTIME_KIND_OPTIONS = RUNTIME_KIND_OPTIONS.filter((option) => option.value !== "codex");
 const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
 const WORKSPACE_TAB_MESSAGES = "messages";
@@ -141,6 +143,9 @@ const messages = {
     profileEnvRemove: "移除变量",
     profileReasoning: "Reasoning",
     profileFastMode: "Fast mode",
+    agentRuntime: "Agent Runtime",
+    runtimePicoclaw: "PicoClaw",
+    runtimeOpenclaw: "OpenClaw",
     profileBasics: "基础信息",
     profileRuntimeKind: "运行时",
     profileModelSection: "模型",
@@ -322,6 +327,9 @@ const messages = {
     profileEnvRemove: "Remove variable",
     profileReasoning: "Reasoning",
     profileFastMode: "Fast mode",
+    agentRuntime: "Agent Runtime",
+    runtimePicoclaw: "PicoClaw",
+    runtimeOpenclaw: "OpenClaw",
     profileBasics: "Basics",
     profileRuntimeKind: "Runtime",
     profileModelSection: "Model",
@@ -764,6 +772,7 @@ function App() {
   const [submitError, setSubmitError] = useState("");
   const [composerError, setComposerError] = useState("");
   const [loadingError, setLoadingError] = useState("");
+  const [bootstrapConfig, setBootstrapConfig] = useState(null);
   const [managerProfile, setManagerProfile] = useState(null);
   const [profileDraft, setProfileDraft] = useState(null);
   const [profileModels, setProfileModels] = useState([]);
@@ -833,7 +842,17 @@ function App() {
   useEffect(() => {
     refreshManagerProfile();
     refreshAgents();
+    refreshBootstrapConfig();
   }, []);
+
+  useEffect(() => {
+    if (!bootstrapConfig?.runtime_kind) {
+      return;
+    }
+    setProfileDraft((current) => current && !current.runtime_kind
+      ? { ...current, runtime_kind: normalizeRuntimeKind(bootstrapConfig.runtime_kind) }
+      : current);
+  }, [bootstrapConfig?.runtime_kind]);
 
   useEffect(() => {
     // Temporarily disable background agent polling for debugging multi-tab pending requests.
@@ -1420,6 +1439,42 @@ function App() {
     }
   }
 
+  async function refreshBootstrapConfig() {
+    try {
+      const resp = await fetch("api/v1/config/bootstrap");
+      if (!resp.ok) {
+        return null;
+      }
+      const payload = await resp.json();
+      const normalized = {
+        ...payload,
+        runtime_kind: normalizeRuntimeKind(payload.runtime_kind),
+      };
+      setBootstrapConfig(normalized);
+      return normalized;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function saveBootstrapRuntimeKind(runtimeKind) {
+    const resp = await fetch("api/v1/config/bootstrap", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runtime_kind: normalizeRuntimeKind(runtimeKind) }),
+    });
+    if (!resp.ok) {
+      throw new Error((await resp.text()).trim());
+    }
+    const saved = await resp.json();
+    const normalized = {
+      ...saved,
+      runtime_kind: normalizeRuntimeKind(saved.runtime_kind),
+    };
+    setBootstrapConfig(normalized);
+    return normalized;
+  }
+
   async function sendMessage() {
     if (managerProfileIncomplete) {
       setComposerError(t("profileIncomplete"));
@@ -1751,7 +1806,10 @@ function App() {
       }
       const profile = await resp.json();
       setManagerProfile(profile);
-      setProfileDraft(profileToDraft(profile));
+      setProfileDraft({
+        ...profileToDraft(profile),
+        runtime_kind: normalizeRuntimeKind(bootstrapConfig?.runtime_kind || profile.runtime_kind),
+      });
     } catch (_) {
       // The manager may not exist during the first bootstrap milliseconds.
     }
@@ -1878,6 +1936,7 @@ function App() {
     setProfileBusy(true);
     setProfileError("");
     try {
+      await saveBootstrapRuntimeKind(profileDraft.runtime_kind || bootstrapConfig?.runtime_kind || "picoclaw_sandbox");
       const payload = draftToProfile(profileDraft);
       const resp = await fetch("api/v1/agents/u-manager/profile", {
         method: "PUT",
@@ -1933,16 +1992,15 @@ function App() {
     setEditingAgent(null);
     setAgentError("");
     setAgentModels([]);
-    const managerAgent = agents.find((item) => item.role === "manager" || item.id === "u-manager");
     try {
       const resp = await fetch("api/v1/agent-profile-defaults");
       const defaults = resp.ok ? await resp.json() : managerProfile;
-      const draft = agentToDraft({ image: managerAgent?.image || "", runtime_kind: managerAgent?.runtime_kind || "", agent_profile: defaults });
+      const draft = agentToDraft({ image: managerAgent?.image || "", runtime_kind: bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "", agent_profile: defaults });
       setAgentDraft(draft);
       setShowAgentModal(true);
       loadAgentModels(draft, { silent: true });
     } catch (_) {
-      const draft = agentToDraft({ image: managerAgent?.image || "", runtime_kind: managerAgent?.runtime_kind || "", agent_profile: managerProfile });
+      const draft = agentToDraft({ image: managerAgent?.image || "", runtime_kind: bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "", agent_profile: managerProfile });
       setAgentDraft(draft);
       setShowAgentModal(true);
       loadAgentModels(draft, { silent: true });
@@ -2136,7 +2194,7 @@ function App() {
         role: agentDraft.role,
         description: agentDraft.description,
         image: agentDraft.image,
-        runtime_kind: agentDraft.runtime_kind,
+        runtime_kind: normalizeRuntimeKind(agentDraft.runtime_kind),
         agent_profile: profile,
       };
       const isCreate = agentModalMode === "create";
@@ -3163,21 +3221,21 @@ function App() {
                         ${agentModalMode === "create"
                           ? html`
                               <select
-                                value=${agentDraft.runtime_kind || "picoclaw-sandbox"}
+                                value=${normalizeRuntimeKind(agentDraft.runtime_kind)}
                                 onChange=${(event) => {
-                                  const runtimeKind = event.target.value;
+                                  const runtimeKind = normalizeRuntimeKind(event.target.value);
                                   setAgentDraft({
                                     ...agentDraft,
                                     runtime_kind: runtimeKind,
                                     image: runtimeKind === "codex"
                                       ? ""
-                                      : runtimeKind === "picoclaw-sandbox"
+                                      : runtimeKind === "picoclaw_sandbox"
                                         ? (agentDraft.default_image || "")
                                         : agentDraft.image,
                                   });
                                 }}
                               >
-                                ${AGENT_RUNTIME_OPTIONS.map((option) => html`
+                                ${RUNTIME_KIND_OPTIONS.map((option) => html`
                                   <option key=${option.value} value=${option.value}>${option.label}</option>
                                 `)}
                               </select>
@@ -3333,6 +3391,15 @@ function App() {
                   <section className="profile-section">
                     <div className="profile-section-title">${t("profileModelSection")}</div>
                     <div className="profile-runtime-grid">
+                      <label className="field">
+                        <span>${t("profileRuntimeKind")}</span>
+                        <select
+                          value=${normalizeRuntimeKind(profileDraft.runtime_kind || bootstrapConfig?.runtime_kind)}
+                          onChange=${(event) => setProfileDraft({ ...profileDraft, runtime_kind: event.target.value })}
+                        >
+                          ${GATEWAY_RUNTIME_KIND_OPTIONS.map((option) => html`<option key=${option.value} value=${option.value}>${formatRuntimeKindLabel(option.value, t)}</option>`)}
+                        </select>
+                      </label>
                       <label className="field">
                         <span>${t("profileProvider")}</span>
                         <select
@@ -3758,6 +3825,10 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
       ${!draft
         ? html`
             <div className="entity-grid">
+              <div className="entity-field">
+                <span>${t("profileRuntimeKind")}</span>
+                <strong>${formatRuntimeKindLabel(item.runtime_kind, t)}</strong>
+              </div>
               <div className="entity-field">
                 <span>${t("profileProvider")}</span>
                 <strong>${formatProviderLabel(provider)}</strong>
@@ -4448,6 +4519,7 @@ function normalizeIMData(payload) {
 
 function profileToDraft(profile) {
   return {
+    runtime_kind: normalizeRuntimeKind(profile?.runtime_kind),
     provider: profile?.provider || "csghub_lite",
     base_url: profile?.base_url || "",
     api_key: "",
@@ -4480,8 +4552,8 @@ function agentToDraft(agent) {
     description: agent?.description || profile.description || "",
     default_image: agent?.image || "",
     image: agent?.image || "",
-    runtime_kind: agent?.runtime_kind || "",
     ...profileToDraft(profile),
+    runtime_kind: normalizeRuntimeKind(agent?.runtime_kind || profile.runtime_kind),
   };
 }
 
@@ -4614,6 +4686,35 @@ function formatProviderLabel(provider) {
       return "OpenAI API";
     default:
       return provider || "";
+  }
+}
+
+function normalizeRuntimeKind(kind) {
+  const value = String(kind ?? "").trim().toLowerCase();
+  switch (value) {
+    case "openclaw":
+    case "openclaw-sandbox":
+    case "openclaw_sandbox":
+      return "openclaw_sandbox";
+    case "codex":
+      return "codex";
+    case "picoclaw":
+    case "picoclaw-sandbox":
+    case "picoclaw_sandbox":
+    default:
+      return "picoclaw_sandbox";
+  }
+}
+
+function formatRuntimeKindLabel(kind, t) {
+  switch (normalizeRuntimeKind(kind)) {
+    case "openclaw_sandbox":
+      return t("runtimeOpenclaw");
+    case "codex":
+      return "Codex";
+    case "picoclaw_sandbox":
+    default:
+      return t("runtimePicoclaw");
   }
 }
 
