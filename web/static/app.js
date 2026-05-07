@@ -1067,6 +1067,22 @@ function App() {
       .filter((user) => user.handle.toLowerCase().includes(composerMentionState.query.toLowerCase()) || user.name.toLowerCase().includes(composerMentionState.query.toLowerCase()))
       .slice(0, 5);
   }, [data, activeConversation, composerMentionState]);
+  const mentionableUsersByHandle = useMemo(() => {
+    const result = new Map();
+    if (!data) {
+      return result;
+    }
+    const allowed = new Set(activeConversation?.members ?? []);
+    data.users
+      .filter((user) => allowed.has(user.id))
+      .forEach((user) => {
+        const handle = String(user.handle ?? "").trim().toLowerCase();
+        if (handle && !result.has(handle)) {
+          result.set(handle, user);
+        }
+      });
+    return result;
+  }, [data, activeConversation]);
 
   const draftSegments = useMemo(
     () => draftsByConversationId[activeConversationId] ?? [],
@@ -2856,7 +2872,13 @@ function App() {
                         onKeyUp=${syncComposerFromEditor}
                         onPaste=${(event) => {
                           event.preventDefault();
-                          insertPlainTextAtSelection(event.clipboardData?.getData("text/plain") ?? "");
+                          const pasted = event.clipboardData?.getData("text/plain") ?? "";
+                          const segments = normalizeTextMentions([{ type: "text", text: pasted }], mentionableUsersByHandle);
+                          if (segments.some((segment) => segment.type === "mention")) {
+                            insertComposerSegmentsAtSelection(segments);
+                          } else {
+                            insertPlainTextAtSelection(pasted);
+                          }
                           syncComposerFromEditor();
                         }}
                       />
@@ -4555,17 +4577,16 @@ function createMentionTokenElement(user) {
   return token;
 }
 
-function renderComposerSegments(root, segments) {
-  if (!root) {
+function appendComposerSegments(parent, segments) {
+  if (!parent) {
     return;
   }
-  root.replaceChildren();
   for (const segment of segments ?? []) {
     if (!segment) {
       continue;
     }
     if (segment.type === "mention") {
-      root.append(createMentionTokenElement({
+      parent.append(createMentionTokenElement({
         id: segment.userId,
         name: segment.userName,
         handle: segment.userName,
@@ -4575,13 +4596,21 @@ function renderComposerSegments(root, segments) {
     const parts = String(segment.text ?? "").split("\n");
     parts.forEach((part, index) => {
       if (part) {
-        root.append(document.createTextNode(part));
+        parent.append(document.createTextNode(part));
       }
       if (index < parts.length - 1) {
-        root.append(document.createElement("br"));
+        parent.append(document.createElement("br"));
       }
     });
   }
+}
+
+function renderComposerSegments(root, segments) {
+  if (!root) {
+    return;
+  }
+  root.replaceChildren();
+  appendComposerSegments(root, segments);
 }
 
 function parseComposerSegments(root) {
@@ -4707,6 +4736,54 @@ function serializeComposerSegments(segments) {
   }).join("");
 }
 
+function splitTextSegmentByMentions(text, mentionableUsersByHandle) {
+  const content = String(text ?? "");
+  if (!content || !mentionableUsersByHandle || mentionableUsersByHandle.size === 0) {
+    return content ? [{ type: "text", text: content }] : [];
+  }
+  const mentionPattern = /(^|[^\w])@([a-zA-Z0-9._-]+)/g;
+  const segments = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = mentionPattern.exec(content)) !== null) {
+    const prefix = match[1] ?? "";
+    const handle = match[2] ?? "";
+    const user = mentionableUsersByHandle.get(handle.toLowerCase());
+    if (!user) {
+      continue;
+    }
+    const mentionStart = match.index + prefix.length;
+    if (mentionStart > lastIndex) {
+      segments.push({ type: "text", text: content.slice(lastIndex, mentionStart) });
+    }
+    segments.push({
+      type: "mention",
+      userId: user.id,
+      userName: user.name || user.handle || user.id,
+    });
+    lastIndex = mentionStart + handle.length + 1;
+  }
+  if (lastIndex < content.length) {
+    segments.push({ type: "text", text: content.slice(lastIndex) });
+  }
+  return segments;
+}
+
+function normalizeTextMentions(segments, mentionableUsersByHandle) {
+  const normalized = [];
+  for (const segment of segments ?? []) {
+    if (!segment) {
+      continue;
+    }
+    if (segment.type === "mention") {
+      normalized.push(segment);
+      continue;
+    }
+    normalized.push(...splitTextSegmentByMentions(segment.text ?? "", mentionableUsersByHandle));
+  }
+  return normalizeComposerSegments(normalized);
+}
+
 function getComposerMentionState(root) {
   if (!root) {
     return null;
@@ -4817,6 +4894,25 @@ function insertPlainTextAtSelection(text) {
   range.insertNode(node);
   const nextRange = document.createRange();
   nextRange.setStart(node, node.textContent.length);
+  nextRange.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(nextRange);
+}
+
+function insertComposerSegmentsAtSelection(segments) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return;
+  }
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const marker = document.createTextNode("");
+  const fragment = document.createDocumentFragment();
+  appendComposerSegments(fragment, segments);
+  fragment.append(marker);
+  range.insertNode(fragment);
+  const nextRange = document.createRange();
+  nextRange.setStart(marker, 0);
   nextRange.collapse(true);
   selection.removeAllRanges();
   selection.addRange(nextRange);
