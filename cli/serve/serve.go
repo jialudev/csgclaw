@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -417,6 +418,9 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	if err != nil {
 		return err
 	}
+	if svc != nil {
+		svc.SetLifecycleObserver(codexBridgeMgr)
+	}
 	if codexBridgeMgr != nil {
 		defer codexBridgeMgr.Close()
 	}
@@ -456,7 +460,6 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		IM:          imSvc,
 		IMBus:       imBus,
 		BotBridge:   im.NewBotBridge(cfg.Server.AccessToken),
-		CodexBridge: codexBridgeMgr,
 		Feishu:      feishuSvc,
 		LLM:         llmSvc,
 		Upgrade:     upgradeManager,
@@ -784,6 +787,8 @@ type serveCodexBridgeManager struct {
 	svc     *agent.Service
 	runtime *runtimecodex.Runtime
 	bridge  *codexbridge.Service
+	mu      sync.Mutex
+	active  map[string]bool
 }
 
 func newCodexBridgeManager(cfg config.Config, svc *agent.Service) (codexBridgeManager, error) {
@@ -809,6 +814,7 @@ func newCodexBridgeManager(cfg config.Config, svc *agent.Service) (codexBridgeMa
 			BaseURL: apiBaseURL(cfg.Server),
 			Token:   cfg.Server.AccessToken,
 		}, codexRuntime.SessionManager(), events),
+		active: make(map[string]bool),
 	}, nil
 }
 
@@ -843,17 +849,50 @@ func (m *serveCodexBridgeManager) EnsureAgent(ctx context.Context, a agent.Agent
 		return nil
 	}
 	if !shouldStartCodexBridge(a) {
+		m.StopAgent(a.ID)
 		return nil
 	}
+	if !m.beginEnsure(a.ID) {
+		return nil
+	}
+	defer m.finishEnsure(a.ID)
 	session, err := m.ensureSession(ctx, a)
 	if err != nil {
 		return err
 	}
+	// Force a fresh bot-event subscription even when the binding is unchanged.
+	// This repairs cases where the bridge worker exists but missed its initial
+	// subscription window and would otherwise be treated as a no-op restart.
+	m.bridge.StopBot(a.ID)
 	return m.bridge.StartBot(ctx, codexbridge.Binding{
 		BotID:     a.ID,
 		RuntimeID: strings.TrimSpace(a.RuntimeID),
 		SessionID: session.SessionID,
 	})
+}
+
+func (m *serveCodexBridgeManager) beginEnsure(agentID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return false
+	}
+	if m.active[agentID] {
+		return false
+	}
+	m.active[agentID] = true
+	return true
+}
+
+func (m *serveCodexBridgeManager) finishEnsure(agentID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return
+	}
+	delete(m.active, agentID)
 }
 
 func (m *serveCodexBridgeManager) StopAgent(agentID string) {

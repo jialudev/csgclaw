@@ -339,7 +339,10 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 		}
 		spec.BinaryPath = binaryPath
 	}
-	session, err := r.sessionManager().Start(ctx, spec)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	session, err := r.sessionManager().Start(context.WithoutCancel(ctx), spec)
 	if err != nil {
 		return nil, err
 	}

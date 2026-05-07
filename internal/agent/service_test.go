@@ -172,6 +172,21 @@ func (f *fakeInfoInstance) Info(context.Context) (sandbox.Info, error) {
 	return f.info, nil
 }
 
+type fakeLifecycleObserver struct {
+	ensureCalls []Agent
+	stopCalls   []string
+	ensureErr   error
+}
+
+func (f *fakeLifecycleObserver) EnsureAgent(_ context.Context, a Agent) error {
+	f.ensureCalls = append(f.ensureCalls, a)
+	return f.ensureErr
+}
+
+func (f *fakeLifecycleObserver) StopAgent(agentID string) {
+	f.stopCalls = append(f.stopCalls, agentID)
+}
+
 type cancelOnWrite struct {
 	writer io.Writer
 	cancel context.CancelFunc
@@ -498,6 +513,130 @@ func TestCreateWorkerUsesCodexRuntimeWhenRequested(t *testing.T) {
 	}
 	if rt := svc.runtimeRecords[got.RuntimeID]; rt.Kind != RuntimeKindCodex {
 		t.Fatalf("runtime record kind = %q, want %q", rt.Kind, RuntimeKindCodex)
+	}
+}
+
+func TestCreateWorkerTriggersLifecycleObserver(t *testing.T) {
+	observer := &fakeLifecycleObserver{}
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"",
+		"",
+		WithLifecycleObserver(observer),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-" + spec.AgentName}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		Name:        "alice",
+		RuntimeKind: RuntimeKindCodex,
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderCodex,
+			ModelID:         "gpt-5.4",
+			ProfileComplete: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if len(observer.ensureCalls) != 1 {
+		t.Fatalf("EnsureAgent() calls = %d, want 1", len(observer.ensureCalls))
+	}
+	if observer.ensureCalls[0].ID != got.ID {
+		t.Fatalf("EnsureAgent() agent id = %q, want %q", observer.ensureCalls[0].ID, got.ID)
+	}
+}
+
+func TestRecreateTriggersLifecycleObserver(t *testing.T) {
+	observer := &fakeLifecycleObserver{}
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"",
+		"",
+		WithLifecycleObserver(observer),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			del:  func(context.Context, agentruntime.Handle) error { return nil },
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-" + spec.AgentName + "-new"}, nil
+			},
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:              "u-alice",
+		Name:            "alice",
+		Role:            RoleWorker,
+		RuntimeID:       "rt-u-alice",
+		RuntimeKind:     RuntimeKindCodex,
+		BoxID:           "codex-session-alice-old",
+		Status:          string(agentruntime.StateRunning),
+		AgentProfile:    AgentProfile{Name: "alice", Provider: ProviderCodex, ModelID: "gpt-5.4", ProfileComplete: true},
+		ProfileComplete: true,
+	}
+
+	got, err := svc.Recreate(context.Background(), "u-alice")
+	if err != nil {
+		t.Fatalf("Recreate() error = %v", err)
+	}
+	if got.BoxID != "codex-session-alice-new" {
+		t.Fatalf("Recreate().BoxID = %q, want %q", got.BoxID, "codex-session-alice-new")
+	}
+	if len(observer.ensureCalls) != 1 || observer.ensureCalls[0].ID != "u-alice" {
+		t.Fatalf("EnsureAgent() calls = %+v, want one call for u-alice", observer.ensureCalls)
+	}
+}
+
+func TestDeleteTriggersLifecycleObserver(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	observer := &fakeLifecycleObserver{}
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"",
+		"",
+		WithLifecycleObserver(observer),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			del:  func(context.Context, agentruntime.Handle) error { return nil },
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:              "u-alice",
+		Name:            "alice",
+		Role:            RoleWorker,
+		RuntimeID:       "rt-u-alice",
+		RuntimeKind:     RuntimeKindCodex,
+		BoxID:           "box-alice",
+		Status:          string(agentruntime.StateRunning),
+		AgentProfile:    AgentProfile{Name: "alice", Provider: ProviderCodex, ModelID: "gpt-5.4", ProfileComplete: true},
+		ProfileComplete: true,
+	}
+	svc.syncRuntimeRecordLocked(svc.agents["u-alice"])
+
+	if err := svc.Delete(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if len(observer.stopCalls) != 1 || observer.stopCalls[0] != "u-alice" {
+		t.Fatalf("StopAgent() calls = %v, want [u-alice]", observer.stopCalls)
 	}
 }
 
@@ -1985,6 +2124,47 @@ func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 	}
 }
 
+func TestStartTriggersLifecycleObserver(t *testing.T) {
+	observer := &fakeLifecycleObserver{}
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"",
+		"",
+		WithLifecycleObserver(observer),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			start: func(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+				return agentruntime.StateRunning, nil
+			},
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:              "u-alice",
+		Name:            "alice",
+		Role:            RoleWorker,
+		RuntimeID:       "rt-u-alice",
+		RuntimeKind:     RuntimeKindCodex,
+		BoxID:           "box-alice",
+		Status:          string(agentruntime.StateStopped),
+		AgentProfile:    AgentProfile{Name: "alice", Provider: ProviderCodex, ModelID: "gpt-5.4", ProfileComplete: true},
+		ProfileComplete: true,
+	}
+
+	if _, err := svc.Start(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if len(observer.ensureCalls) != 1 || observer.ensureCalls[0].ID != "u-alice" {
+		t.Fatalf("EnsureAgent() calls = %+v, want one call for u-alice", observer.ensureCalls)
+	}
+}
+
 func TestStartRefreshesCompleteWorkerGatewayConfig(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
@@ -2348,6 +2528,47 @@ func TestStopFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 	}
 	if persisted.BoxID != "box-new" || persisted.Status != "stopped" {
 		t.Fatalf("reloaded Agent() = %+v, want refreshed box id/status", persisted)
+	}
+}
+
+func TestStopTriggersLifecycleObserver(t *testing.T) {
+	observer := &fakeLifecycleObserver{}
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"",
+		"",
+		WithLifecycleObserver(observer),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			stop: func(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+				return agentruntime.StateStopped, nil
+			},
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateStopped}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:              "u-alice",
+		Name:            "alice",
+		Role:            RoleWorker,
+		RuntimeID:       "rt-u-alice",
+		RuntimeKind:     RuntimeKindCodex,
+		BoxID:           "box-alice",
+		Status:          string(agentruntime.StateRunning),
+		AgentProfile:    AgentProfile{Name: "alice", Provider: ProviderCodex, ModelID: "gpt-5.4", ProfileComplete: true},
+		ProfileComplete: true,
+	}
+
+	if _, err := svc.Stop(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if len(observer.stopCalls) != 1 || observer.stopCalls[0] != "u-alice" {
+		t.Fatalf("StopAgent() calls = %v, want [u-alice]", observer.stopCalls)
 	}
 }
 

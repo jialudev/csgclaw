@@ -158,6 +158,7 @@ type Service struct {
 	agents           map[string]Agent
 	runtimeRecords   map[string]RuntimeRecord
 	runtimeRegistry  map[string]agentruntime.Runtime
+	lifecycle        LifecycleObserver
 	profileDefaults  AgentProfile
 	detectionResults []ProfileDetectionResult
 }
@@ -198,6 +199,16 @@ func WithSandboxHomeDirName(name string) ServiceOption {
 			return fmt.Errorf("sandbox home dir name is required")
 		}
 		s.sandboxHome = name
+		return nil
+	}
+}
+
+func WithLifecycleObserver(observer LifecycleObserver) ServiceOption {
+	return func(s *Service) error {
+		if s == nil {
+			return fmt.Errorf("agent service is required")
+		}
+		s.lifecycle = observer
 		return nil
 	}
 }
@@ -298,6 +309,15 @@ func (svc *Service) EnsureBootstrapManager(ctx context.Context, forceRecreate bo
 	}
 	_, err := svc.EnsureManager(ctx, forceRecreate)
 	return err
+}
+
+func (s *Service) SetLifecycleObserver(observer LifecycleObserver) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.lifecycle = observer
+	s.mu.Unlock()
 }
 
 func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent, error) {
@@ -922,7 +942,14 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 	if info.State == "" {
 		info.State = state
 	}
-	return s.updateAgentRuntimeState(id, info)
+	updated, err := s.updateAgentRuntimeState(id, info)
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := s.syncLifecycleForAgent(ctx, updated); err != nil {
+		return Agent{}, err
+	}
+	return updated, nil
 }
 
 func (s *Service) ensureWorkerGatewayConfig(got Agent) error {
@@ -979,7 +1006,12 @@ func (s *Service) Stop(ctx context.Context, id string) (Agent, error) {
 	if info.State == "" {
 		info.State = state
 	}
-	return s.updateAgentRuntimeState(id, info)
+	updated, err := s.updateAgentRuntimeState(id, info)
+	if err != nil {
+		return Agent{}, err
+	}
+	s.stopLifecycleAgent(updated.ID)
+	return updated, nil
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
@@ -1032,22 +1064,29 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	current, ok := s.agents[id]
 	if !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("agent %q not found", id)
 	}
 	delete(s.agents, id)
 	s.deleteRuntimeRecordLocked(current.RuntimeID)
 	runtimeHome, err := s.sandboxRuntimeHome(current.Name)
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
 	if rt := s.runtimes[runtimeHome]; rt != nil {
 		delete(s.runtimes, runtimeHome)
 	}
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.mu.Unlock()
+	s.stopLifecycleAgent(id)
+	return nil
 }
 
 func removeAllWithRetry(path string) error {
@@ -1197,7 +1236,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		defer func() {
 			_ = s.closeBox(box)
 		}()
-		return s.persistCreatedWorker(id, name, description, image, runtimeKind, resolvedProfile, agentruntime.Info{
+		return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, agentruntime.Info{
 			HandleID:  strings.TrimSpace(info.ID),
 			State:     agentruntime.State(info.State),
 			CreatedAt: info.CreatedAt.UTC(),
@@ -1219,17 +1258,18 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		CreatedAt: time.Now().UTC(),
 	}
 
-	return s.persistCreatedWorker(id, name, description, image, runtimeKind, resolvedProfile, info)
+	return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, info)
 }
 
-func (s *Service) persistCreatedWorker(id, name, description, image, runtimeKind string, profile AgentProfile, info agentruntime.Info) (Agent, error) {
+func (s *Service) persistCreatedWorker(ctx context.Context, id, name, description, image, runtimeKind string, profile AgentProfile, info agentruntime.Info) (Agent, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if _, ok := s.agents[id]; ok {
+		s.mu.Unlock()
 		return Agent{}, fmt.Errorf("agent id %q already exists", id)
 	}
 	if s.hasNameLocked(name) {
+		s.mu.Unlock()
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
 	}
 
@@ -1267,9 +1307,15 @@ func (s *Service) persistCreatedWorker(id, name, description, image, runtimeKind
 	if err := s.saveLocked(); err != nil {
 		delete(s.agents, worker.ID)
 		s.deleteRuntimeRecordLocked(worker.RuntimeID)
+		s.mu.Unlock()
 		return Agent{}, err
 	}
-	return *cloneAgent(&worker), nil
+	created := *cloneAgent(&worker)
+	s.mu.Unlock()
+	if err := s.syncLifecycleForAgent(ctx, created); err != nil {
+		return Agent{}, err
+	}
+	return created, nil
 }
 
 func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {

@@ -86,7 +86,10 @@ func (s *Service) StartBot(ctx context.Context, binding Binding) error {
 		existing.cancel()
 	}
 
-	workerCtx, cancel := context.WithCancel(ctx)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	workerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	w := &worker{
 		service: s,
 		binding: binding,

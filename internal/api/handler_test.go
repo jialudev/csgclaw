@@ -584,6 +584,66 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 	}
 }
 
+func TestHandleBotsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	agentSvc, err := agent.NewService(
+		config.ModelConfig{
+			Provider: config.ProviderLLMAPI,
+			BaseURL:  "http://127.0.0.1:4000",
+			APIKey:   "sk-test",
+			ModelID:  "model-1",
+		},
+		config.ServerConfig{},
+		"",
+		"",
+		agent.WithRuntime(fakeCompatRuntime{
+			kind: agent.RuntimeKindCodex,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	imSvc := im.NewService()
+	bus := im.NewBus()
+	store, err := bot.NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("bot.NewMemoryStore() error = %v", err)
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("bot.NewServiceWithDependencies() error = %v", err)
+	}
+	bridge := &fakeCodexBridgeController{}
+	agentSvc.SetLifecycleObserver(bridge)
+	srv := &Handler{
+		svc:    agentSvc,
+		botSvc: botSvc,
+		im:     imSvc,
+		imBus:  bus,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"codex"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if len(bridge.ensureCalls) != 1 {
+		t.Fatalf("EnsureAgent() calls = %d, want 1", len(bridge.ensureCalls))
+	}
+	if bridge.ensureCalls[0].ID != "u-alice" || bridge.ensureCalls[0].RuntimeKind != agent.RuntimeKindCodex {
+		t.Fatalf("EnsureAgent() got %+v, want codex worker u-alice", bridge.ensureCalls[0])
+	}
+}
+
 func TestHandleBotsCreateFeishuWorker(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
@@ -1262,7 +1322,8 @@ func TestHandleAgentStartEnsuresCodexBridge(t *testing.T) {
 	}
 
 	bridge := &fakeCodexBridgeController{}
-	srv := &Handler{svc: agentSvc, codexBridge: bridge}
+	agentSvc.SetLifecycleObserver(bridge)
+	srv := &Handler{svc: agentSvc}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+created.ID+"/start", nil)
 	rec := httptest.NewRecorder()
 
@@ -1365,7 +1426,8 @@ func TestHandleAgentStopStopsCodexBridge(t *testing.T) {
 	}()
 
 	bridge := &fakeCodexBridgeController{}
-	srv := &Handler{svc: agentSvc, codexBridge: bridge}
+	agentSvc.SetLifecycleObserver(bridge)
+	srv := &Handler{svc: agentSvc}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/u-alice/stop", nil)
 	rec := httptest.NewRecorder()
 
@@ -1519,10 +1581,10 @@ func TestHandleAgentsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
 	}
 
 	bridge := &fakeCodexBridgeController{}
+	svc.SetLifecycleObserver(bridge)
 	srv := &Handler{
-		svc:         svc,
-		im:          im.NewService(),
-		codexBridge: bridge,
+		svc: svc,
+		im:  im.NewService(),
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{"name":"alice","role":"worker","runtime_kind":"codex","agent_profile":{"profile_complete":true}}`))
 	rec := httptest.NewRecorder()
@@ -2730,7 +2792,7 @@ func TestPublishBotEventQueuesUntilBotSubscribes(t *testing.T) {
 	}
 }
 
-func TestPublishBotEventLeavesRunningWorkerUntouched(t *testing.T) {
+func TestPublishBotEventReensuresRunningWorkerLifecycle(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	started := make(chan string, 1)
 	recreated := make(chan string, 1)
@@ -2809,10 +2871,13 @@ func TestPublishBotEventLeavesRunningWorkerUntouched(t *testing.T) {
 
 	select {
 	case handleID := <-started:
-		t.Fatalf("started running worker handle %q, want no lifecycle action", handleID)
+		if handleID != "box-stale" {
+			t.Fatalf("started running worker handle %q, want %q", handleID, "box-stale")
+		}
 	case name := <-recreated:
-		t.Fatalf("recreated running worker %q, want no lifecycle action", name)
-	case <-time.After(150 * time.Millisecond):
+		t.Fatalf("recreated running worker %q, want start-based lifecycle recovery", name)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for running worker lifecycle recovery")
 	}
 }
 

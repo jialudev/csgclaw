@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,7 +26,6 @@ type Handler struct {
 	imBus             *im.Bus
 	imProvisioner     *im.Provisioner
 	botBridge         *im.BotBridge
-	codexBridge       CodexBridgeController
 	feishu            *channel.FeishuService
 	llm               *llm.Service
 	serverAccessToken string
@@ -35,11 +33,6 @@ type Handler struct {
 	upgradeManager    *upgrade.Manager
 	upgradeConfigPath string
 	upgradeApply      func(upgrade.ApplyHelperOptions) error
-}
-
-type CodexBridgeController interface {
-	EnsureAgent(context.Context, agent.Agent) error
-	StopAgent(string)
 }
 
 type imBootstrapResponse struct {
@@ -99,19 +92,19 @@ type addRoomMembersRequest struct {
 	Locale    string   `json:"locale"`
 }
 
-func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, codexBridge CodexBridgeController, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
-	return NewHandlerWithBotAndAccessToken(svc, nil, imSvc, imBus, botBridge, codexBridge, feishu, llmSvc, "")
+func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
+	return NewHandlerWithBotAndAccessToken(svc, nil, imSvc, imBus, botBridge, feishu, llmSvc, "")
 }
 
-func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, codexBridge CodexBridgeController, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
-	return NewHandlerWithBotAndAccessToken(svc, botSvc, imSvc, imBus, botBridge, codexBridge, feishu, llmSvc, "")
+func NewHandlerWithBot(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service) *Handler {
+	return NewHandlerWithBotAndAccessToken(svc, botSvc, imSvc, imBus, botBridge, feishu, llmSvc, "")
 }
 
-func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, codexBridge CodexBridgeController, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string) *Handler {
-	return NewHandlerWithBotAndAuth(svc, botSvc, imSvc, imBus, botBridge, codexBridge, feishu, llmSvc, serverAccessToken, false)
+func NewHandlerWithBotAndAccessToken(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string) *Handler {
+	return NewHandlerWithBotAndAuth(svc, botSvc, imSvc, imBus, botBridge, feishu, llmSvc, serverAccessToken, false)
 }
 
-func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, codexBridge CodexBridgeController, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string, serverNoAuth bool) *Handler {
+func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, botBridge *im.BotBridge, feishu *channel.FeishuService, llmSvc *llm.Service, serverAccessToken string, serverNoAuth bool) *Handler {
 	if botSvc != nil {
 		botSvc.SetDependencies(svc, imSvc, feishu)
 		botSvc.SetIMBus(imBus)
@@ -123,7 +116,6 @@ func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im
 		imBus:             imBus,
 		imProvisioner:     im.NewProvisioner(imSvc, imBus),
 		botBridge:         botBridge,
-		codexBridge:       codexBridge,
 		feishu:            feishu,
 		llm:               llmSvc,
 		serverAccessToken: serverAccessToken,
@@ -383,7 +375,6 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		h.stopCodexBridgeAgent(id)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -446,10 +437,6 @@ func (h *Handler) handleAgentRecreate(w http.ResponseWriter, r *http.Request, id
 		http.Error(w, err.Error(), status)
 		return
 	}
-	if err := h.ensureCodexBridgeAgent(r.Context(), recreated); err != nil {
-		http.Error(w, fmt.Sprintf("ensure codex bridge: %v", err), http.StatusBadGateway)
-		return
-	}
 	writeJSON(w, http.StatusOK, presentAgent(recreated))
 }
 
@@ -508,10 +495,6 @@ func (h *Handler) handleAgentStart(w http.ResponseWriter, r *http.Request, id st
 		http.Error(w, err.Error(), status)
 		return
 	}
-	if err := h.ensureCodexBridgeAgent(r.Context(), started); err != nil {
-		http.Error(w, fmt.Sprintf("ensure codex bridge: %v", err), http.StatusBadGateway)
-		return
-	}
 	writeJSON(w, http.StatusOK, presentAgent(started))
 }
 
@@ -533,7 +516,6 @@ func (h *Handler) handleAgentStop(w http.ResponseWriter, r *http.Request, id str
 		http.Error(w, err.Error(), status)
 		return
 	}
-	h.stopCodexBridgeAgent(id)
 	writeJSON(w, http.StatusOK, presentAgent(stopped))
 }
 
@@ -617,11 +599,6 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.ensureCodexBridgeAgent(r.Context(), created); err != nil {
-		http.Error(w, fmt.Sprintf("ensure codex bridge: %v", err), http.StatusBadGateway)
-		return
-	}
-
 	writeJSON(w, http.StatusCreated, presentAgent(created))
 }
 
@@ -670,20 +647,6 @@ func (h *Handler) workerIMProvisioner() *im.Provisioner {
 		h.imProvisioner = im.NewProvisioner(h.im, h.imBus)
 	}
 	return h.imProvisioner
-}
-
-func (h *Handler) ensureCodexBridgeAgent(ctx context.Context, a agent.Agent) error {
-	if h == nil || h.codexBridge == nil {
-		return nil
-	}
-	return h.codexBridge.EnsureAgent(ctx, a)
-}
-
-func (h *Handler) stopCodexBridgeAgent(agentID string) {
-	if h == nil || h.codexBridge == nil {
-		return
-	}
-	h.codexBridge.StopAgent(agentID)
 }
 
 func (h *Handler) handleIMAgentJoin(w http.ResponseWriter, r *http.Request) {

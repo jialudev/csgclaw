@@ -277,7 +277,8 @@ func (h *Handler) applyBotDeliveryRecoveryPolicy(ctx context.Context, view agent
 		_, err := h.svc.Start(ctx, view.AgentID)
 		return err
 	case agentruntime.StateRunning:
-		return nil
+		_, err := h.svc.Start(ctx, view.AgentID)
+		return err
 	case "", agentruntime.StateUnknown:
 		fallthrough
 	default:

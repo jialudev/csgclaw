@@ -224,7 +224,7 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 			State:     agentruntime.State(sandboxInfo.State),
 			CreatedAt: sandboxInfo.CreatedAt.UTC(),
 		}
-		return s.persistRecreatedAgent(id, info)
+		return s.persistRecreatedAgent(ctx, id, info)
 	}
 	if err := runtimeImpl.Delete(ctx, runtimeHandleForAgent(got)); err != nil && !sandbox.IsNotFound(err) {
 		return Agent{}, fmt.Errorf("remove existing agent box: %w", err)
@@ -243,10 +243,10 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 	if err != nil {
 		return Agent{}, fmt.Errorf("read agent runtime info: %w", err)
 	}
-	return s.persistRecreatedAgent(id, info)
+	return s.persistRecreatedAgent(ctx, id, info)
 }
 
-func (s *Service) persistRecreatedAgent(id string, info agentruntime.Info) (Agent, error) {
+func (s *Service) persistRecreatedAgent(ctx context.Context, id string, info agentruntime.Info) (Agent, error) {
 	s.mu.Lock()
 	current, ok := s.agents[id]
 	if !ok {
@@ -273,6 +273,9 @@ func (s *Service) persistRecreatedAgent(id string, info agentruntime.Info) (Agen
 	recreated, ok := s.Agent(id)
 	if !ok {
 		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+	if err := s.syncLifecycleForAgent(ctx, recreated); err != nil {
+		return Agent{}, err
 	}
 	return recreated, nil
 }

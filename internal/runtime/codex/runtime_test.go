@@ -368,6 +368,73 @@ func TestRuntimeStartKeepsExistingRunningSession(t *testing.T) {
 	}
 }
 
+func TestRuntimeCreateDetachesManagerStartContext(t *testing.T) {
+	root := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	if err := os.MkdirAll(filepath.Join(hostHome, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostHome, ".codex", "auth.json"), []byte(`{"tokens":{"access_token":"access","refresh_token":"refresh"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var startCtx context.Context
+	rt := New(Dependencies{
+		BinaryProvider: fakeBinaryProvider{path: "/tmp/codex-acp"},
+		AgentHome: func(agentName string) (string, error) {
+			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
+			return AgentRef{
+				ID:        "u-alice",
+				Name:      "alice",
+				RuntimeID: h.RuntimeID,
+				Profile:   agentruntime.Profile{ModelID: "gpt-5.5"},
+			}, nil
+		},
+		Manager: fakeManager{
+			start: func(ctx context.Context, spec SessionSpec) (*Session, error) {
+				startCtx = ctx
+				return &Session{
+					RuntimeID:    spec.RuntimeID,
+					AgentID:      spec.AgentID,
+					AgentName:    spec.AgentName,
+					SessionID:    "sess-ctx",
+					BinaryPath:   spec.BinaryPath,
+					WorkspaceDir: spec.WorkspaceDir,
+					HomeDir:      spec.HomeDir,
+					CodexHomeDir: spec.CodexHomeDir,
+					StderrPath:   spec.StderrPath,
+					ProcessID:    os.Getpid(),
+					CreatedAt:    time.Now().UTC(),
+					StartedAt:    time.Now().UTC(),
+				}, nil
+			},
+		},
+	})
+
+	parentCtx, cancel := context.WithCancel(context.Background())
+	if _, err := rt.Create(parentCtx, agentruntime.Spec{
+		RuntimeID: "rt-u-alice",
+		AgentID:   "u-alice",
+		AgentName: "alice",
+		Profile:   agentruntime.Profile{ModelID: "gpt-5.5"},
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	cancel()
+
+	if startCtx == nil {
+		t.Fatal("manager start context was not captured")
+	}
+	select {
+	case <-startCtx.Done():
+		t.Fatal("manager start context was canceled with parent request context")
+	default:
+	}
+}
+
 func TestRuntimeInfoMarksExitedAndFailedWhenProcessIsGone(t *testing.T) {
 	t.Parallel()
 

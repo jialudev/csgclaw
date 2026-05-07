@@ -23,7 +23,6 @@ type Options struct {
 	IM          *im.Service
 	IMBus       *im.Bus
 	BotBridge   *im.BotBridge
-	CodexBridge api.CodexBridgeController
 	Feishu      *channel.FeishuService
 	LLM         *llm.Service
 	Upgrade     *upgrade.Manager
@@ -38,7 +37,7 @@ func Run(opts Options) error {
 	if opts.Context == nil {
 		opts.Context = context.Background()
 	}
-	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.CodexBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
 	handler.SetUpgradeManager(opts.Upgrade)
 	handler.SetUpgradeConfigPath(opts.ConfigPath)
 	mux := handler.Routes()

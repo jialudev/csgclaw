@@ -22,12 +22,14 @@ type streamResult struct {
 type fakeBotClient struct {
 	mu          sync.Mutex
 	streams     map[string][]streamResult
+	streamCtxs  []context.Context
 	sendRecords []SendMessageRequest
 }
 
-func (c *fakeBotClient) StreamEvents(_ context.Context, botID, _ string) (<-chan BotEvent, <-chan error) {
+func (c *fakeBotClient) StreamEvents(ctx context.Context, botID, _ string) (<-chan BotEvent, <-chan error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.streamCtxs = append(c.streamCtxs, ctx)
 	results := c.streams[botID]
 	if len(results) == 0 {
 		events := make(chan BotEvent)
@@ -39,6 +41,14 @@ func (c *fakeBotClient) StreamEvents(_ context.Context, botID, _ string) (<-chan
 	next := results[0]
 	c.streams[botID] = results[1:]
 	return next.events, next.errs
+}
+
+func (c *fakeBotClient) streamContexts() []context.Context {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]context.Context, len(c.streamCtxs))
+	copy(out, c.streamCtxs)
+	return out
 }
 
 func (c *fakeBotClient) SendMessage(_ context.Context, _ string, req SendMessageRequest) error {
@@ -192,6 +202,59 @@ func TestServiceDedupesReplayAcrossReconnect(t *testing.T) {
 	waitFor(t, func() bool {
 		return slices.Equal(prompter.texts(), []string{"hello"}) && slices.Equal(client.sentTexts(), []string{"once"})
 	})
+}
+
+func TestServiceWorkerOutlivesStartContext(t *testing.T) {
+	t.Parallel()
+
+	stream := make(chan BotEvent, 1)
+	errs := make(chan error)
+	close(errs)
+
+	sink := NewEventSink()
+	client := &fakeBotClient{
+		streams: map[string][]streamResult{
+			"u-codex": {{events: stream, errs: errs}},
+		},
+	}
+	prompter := &fakePrompter{
+		prompt: func(_ context.Context, handle runtimecodex.SessionHandle, req acp.PromptRequest) error {
+			sink.Publish(runtimecodex.SessionEvent{
+				RuntimeID: handle.RuntimeID,
+				SessionID: string(req.SessionId),
+				Kind:      runtimecodex.SessionEventTextDelta,
+				Text:      "still alive",
+			})
+			sink.Publish(runtimecodex.SessionEvent{
+				RuntimeID: handle.RuntimeID,
+				SessionID: string(req.SessionId),
+				Kind:      runtimecodex.SessionEventPromptCompleted,
+			})
+			return nil
+		},
+	}
+
+	svc := NewService(client, prompter, sink)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := svc.StartBot(ctx, Binding{BotID: "u-codex", RuntimeID: "rt-1", SessionID: "sess-1"}); err != nil {
+		t.Fatalf("StartBot() error = %v", err)
+	}
+	defer svc.Close()
+	cancel()
+
+	stream <- BotEvent{MessageID: "m-1", RoomID: "room-1", Text: "hello after request"}
+
+	waitFor(t, func() bool {
+		return slices.Equal(prompter.texts(), []string{"hello after request"}) &&
+			slices.Equal(client.sentTexts(), []string{"still alive"})
+	})
+	for _, streamCtx := range client.streamContexts() {
+		select {
+		case <-streamCtx.Done():
+			t.Fatal("stream context was canceled with StartBot caller context")
+		default:
+		}
+	}
 }
 
 func TestServiceQueuesWhileBusy(t *testing.T) {
