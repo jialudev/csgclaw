@@ -3,6 +3,8 @@ package codexbridge
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -427,10 +429,10 @@ func TestHTTPClientDecodeSSE(t *testing.T) {
 
 	payload := ": connected\n\n" +
 		"event: message\n" +
-		"data: {\"message_id\":\"m-1\",\"room_id\":\"room-1\",\"text\":\"hello\"}\n\n"
+		"data: {\"message_id\":\"m-1\",\"room_id\":\"room-1\",\"chat_type\":\"direct\",\"text\":\"hello\"}\n\n"
 
 	events := make(chan BotEvent, 1)
-	if err := decodeSSE(context.Background(), strings.NewReader(payload), events); err != nil {
+	if err := decodeSSE(context.Background(), strings.NewReader(payload), events, nil); err != nil {
 		t.Fatalf("decodeSSE() error = %v", err)
 	}
 	close(events)
@@ -439,8 +441,89 @@ func TestHTTPClientDecodeSSE(t *testing.T) {
 	if !ok {
 		t.Fatal("decodeSSE() produced no events")
 	}
-	if got.MessageID != "m-1" || got.RoomID != "room-1" || got.Text != "hello" {
+	if got.MessageID != "m-1" || got.RoomID != "room-1" || got.ChatType != "direct" || got.Text != "hello" {
 		t.Fatalf("decoded event = %+v", got)
+	}
+}
+
+func TestHTTPClientStreamEventsMentionOnly(t *testing.T) {
+	t.Parallel()
+
+	client := &HTTPClient{
+		BaseURL:     "http://example.test",
+		MentionOnly: true,
+		HTTPClient: &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(
+						"event: message\n" +
+							"data: {\"message_id\":\"m-1\",\"room_id\":\"room-1\",\"chat_type\":\"group\",\"text\":\"plain hello\"}\n\n" +
+							"event: message\n" +
+							"data: {\"message_id\":\"m-2\",\"room_id\":\"room-1\",\"chat_type\":\"group\",\"text\":\"<at user_id=\\\"u-codex\\\"></at> hello\"}\n\n" +
+							"event: message\n" +
+							"data: {\"message_id\":\"m-3\",\"room_id\":\"room-2\",\"chat_type\":\"direct\",\"text\":\"direct hello\"}\n\n",
+					)),
+				}, nil
+			}),
+		},
+	}
+
+	events, errs := client.StreamEvents(context.Background(), "u-codex", "")
+	var got []BotEvent
+	for event := range events {
+		got = append(got, event)
+	}
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("StreamEvents() error = %v", err)
+		}
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("received %d events, want 2: %+v", len(got), got)
+	}
+	if got[0].MessageID != "m-2" {
+		t.Fatalf("received first event = %+v, want m-2", got[0])
+	}
+	if got[1].MessageID != "m-3" {
+		t.Fatalf("received second event = %+v, want m-3", got[1])
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func TestHasInboundBotAtMention(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+		botID   string
+		want    bool
+	}{
+		{name: "empty content", content: "", botID: "u-codex", want: false},
+		{name: "empty bot id", content: `<at user_id="u-codex"></at>`, botID: "", want: false},
+		{name: "no mention", content: "hello", botID: "u-codex", want: false},
+		{name: "wrong mention", content: `<at user_id="u-other"></at> hello`, botID: "u-codex", want: false},
+		{name: "match", content: `<at user_id="u-codex"></at> hello`, botID: "u-codex", want: true},
+		{name: "trimmed id", content: `<at user_id=" u-codex "></at> hello`, botID: "u-codex", want: true},
+		{name: "later mention matches", content: `<at user_id="u-other"></at> hi <at user_id="u-codex"></at> hello`, botID: "u-codex", want: true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := hasInboundBotAtMention(tc.content, tc.botID); got != tc.want {
+				t.Fatalf("hasInboundBotAtMention(%q, %q) = %v, want %v", tc.content, tc.botID, got, tc.want)
+			}
+		})
 	}
 }
 

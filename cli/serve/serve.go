@@ -811,8 +811,9 @@ func newCodexBridgeManager(cfg config.Config, svc *agent.Service) (codexBridgeMa
 		svc:     svc,
 		runtime: codexRuntime,
 		bridge: codexbridge.NewService(&codexbridge.HTTPClient{
-			BaseURL: apiBaseURL(cfg.Server),
-			Token:   cfg.Server.AccessToken,
+			BaseURL:     apiBaseURL(cfg.Server),
+			Token:       cfg.Server.AccessToken,
+			MentionOnly: true,
 		}, codexRuntime.SessionManager(), events),
 		active: make(map[string]bool),
 	}, nil

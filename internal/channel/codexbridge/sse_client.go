@@ -15,6 +15,7 @@ import (
 type BotEvent struct {
 	MessageID string   `json:"message_id"`
 	RoomID    string   `json:"room_id"`
+	ChatType  string   `json:"chat_type"`
 	Text      string   `json:"text"`
 	Mentions  []string `json:"mentions,omitempty"`
 }
@@ -30,9 +31,10 @@ type BotClient interface {
 }
 
 type HTTPClient struct {
-	BaseURL    string
-	Token      string
-	HTTPClient *http.Client
+	BaseURL     string
+	Token       string
+	MentionOnly bool
+	HTTPClient  *http.Client
 }
 
 func (c *HTTPClient) StreamEvents(ctx context.Context, botID, lastEventID string) (<-chan BotEvent, <-chan error) {
@@ -66,7 +68,15 @@ func (c *HTTPClient) StreamEvents(ctx context.Context, botID, lastEventID string
 			errs <- fmt.Errorf("stream bot events: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 			return
 		}
-		if err := decodeSSE(ctx, resp.Body, events); err != nil && ctx.Err() == nil {
+		if err := decodeSSE(ctx, resp.Body, events, func(event BotEvent) bool {
+			if c == nil || !c.MentionOnly {
+				return true
+			}
+			if strings.TrimSpace(event.ChatType) != "group" {
+				return true
+			}
+			return hasInboundBotAtMention(event.Text, botID)
+		}); err != nil && ctx.Err() == nil {
 			errs <- err
 		}
 	}()
@@ -107,7 +117,7 @@ func (c *HTTPClient) httpClient() *http.Client {
 	return &http.Client{Timeout: 0}
 }
 
-func decodeSSE(ctx context.Context, r io.Reader, events chan<- BotEvent) error {
+func decodeSSE(ctx context.Context, r io.Reader, events chan<- BotEvent, accept func(BotEvent) bool) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
@@ -122,7 +132,7 @@ func decodeSSE(ctx context.Context, r io.Reader, events chan<- BotEvent) error {
 
 		line := scanner.Text()
 		if line == "" {
-			if err := emitSSEEvent(eventName, dataLines, events); err != nil {
+			if err := emitSSEEvent(eventName, dataLines, events, accept); err != nil {
 				return err
 			}
 			eventName = ""
@@ -147,10 +157,10 @@ func decodeSSE(ctx context.Context, r io.Reader, events chan<- BotEvent) error {
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	return emitSSEEvent(eventName, dataLines, events)
+	return emitSSEEvent(eventName, dataLines, events, accept)
 }
 
-func emitSSEEvent(eventName string, dataLines []string, events chan<- BotEvent) error {
+func emitSSEEvent(eventName string, dataLines []string, events chan<- BotEvent, accept func(BotEvent) bool) error {
 	if eventName != "" && eventName != "message" {
 		return nil
 	}
@@ -161,8 +171,37 @@ func emitSSEEvent(eventName string, dataLines []string, events chan<- BotEvent) 
 	if err := json.Unmarshal([]byte(strings.Join(dataLines, "\n")), &event); err != nil {
 		return fmt.Errorf("decode bot event: %w", err)
 	}
+	if accept != nil && !accept(event) {
+		return nil
+	}
 	events <- event
 	return nil
+}
+
+func hasInboundBotAtMention(content, botID string) bool {
+	content = strings.TrimSpace(content)
+	botID = strings.TrimSpace(botID)
+	if content == "" || botID == "" {
+		return false
+	}
+
+	const prefix = `<at user_id="`
+	searchFrom := 0
+	for {
+		start := strings.Index(content[searchFrom:], prefix)
+		if start < 0 {
+			return false
+		}
+		start += searchFrom + len(prefix)
+		end := strings.IndexByte(content[start:], '"')
+		if end < 0 {
+			return false
+		}
+		if strings.TrimSpace(content[start:start+end]) == botID {
+			return true
+		}
+		searchFrom = start + end + 1
+	}
 }
 
 const defaultReconnectDelay = 500 * time.Millisecond
