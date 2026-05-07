@@ -885,6 +885,9 @@ function App() {
   const channelToolsRef = useRef(null);
   const profilePreviewRef = useRef(null);
   const agentRefreshTimerRef = useRef(null);
+  const profileDraftRef = useRef(null);
+  const agentDraftRef = useRef(null);
+  const agentPageDraftRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
   const autoScrollConversationRef = useRef(activeConversationId);
 
@@ -976,6 +979,18 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(WORKSPACE_GROUPS_COLLAPSED_STORAGE_KEY, JSON.stringify(collapsedWorkspaceGroups));
   }, [collapsedWorkspaceGroups]);
+
+  useEffect(() => {
+    profileDraftRef.current = profileDraft;
+  }, [profileDraft]);
+
+  useEffect(() => {
+    agentDraftRef.current = agentDraft;
+  }, [agentDraft]);
+
+  useEffect(() => {
+    agentPageDraftRef.current = agentPageDraft;
+  }, [agentPageDraft]);
 
   useEffect(() => {
     setWorkspaceTab(workspaceTabForPane(activePane));
@@ -1804,6 +1819,7 @@ function App() {
     if (!draft?.provider) {
       return;
     }
+    const requestKey = modelRequestKey(draft);
     if (!options.silent) {
       setProfileError("");
     }
@@ -1823,15 +1839,25 @@ function App() {
         throw new Error((await resp.text()).trim() || t("modelLoadFailed"));
       }
       const payload = await resp.json();
+      if (modelRequestKey(profileDraftRef.current) !== requestKey) {
+        return;
+      }
       setProfileModels(payload.models ?? []);
-      if (!draft.model_id && payload.models?.length > 0) {
-        setProfileDraft((current) => ({ ...current, model_id: payload.models[0] }));
+      if (!profileDraftRef.current?.model_id && payload.models?.length > 0) {
+        setProfileDraft((current) => {
+          if (modelRequestKey(current) !== requestKey || current.model_id) {
+            return current;
+          }
+          return { ...current, model_id: payload.models[0] };
+        });
       }
     } catch (err) {
       if (!options.silent) {
         setProfileError(err.message || t("modelLoadFailed"));
       }
-      setProfileModels([]);
+      if (modelRequestKey(profileDraftRef.current) === requestKey) {
+        setProfileModels([]);
+      }
     } finally {
       setProfileModelBusy(false);
     }
@@ -1956,6 +1982,7 @@ function App() {
     if (!draft?.provider) {
       return;
     }
+    const requestKey = modelRequestKey(draft);
     if (!options.silent) {
       setAgentPageError("");
     }
@@ -1975,15 +2002,25 @@ function App() {
         throw new Error((await resp.text()).trim() || t("modelLoadFailed"));
       }
       const payload = await resp.json();
+      if (modelRequestKey(agentPageDraftRef.current) !== requestKey) {
+        return;
+      }
       setAgentPageModels(payload.models ?? []);
-      if (!draft.model_id && payload.models?.length > 0) {
-        setAgentPageDraft((current) => ({ ...current, model_id: payload.models[0] }));
+      if (!agentPageDraftRef.current?.model_id && payload.models?.length > 0) {
+        setAgentPageDraft((current) => {
+          if (modelRequestKey(current) !== requestKey || current.model_id) {
+            return current;
+          }
+          return { ...current, model_id: payload.models[0] };
+        });
       }
     } catch (err) {
       if (!options.silent) {
         setAgentPageError(err.message || t("modelLoadFailed"));
       }
-      setAgentPageModels([]);
+      if (modelRequestKey(agentPageDraftRef.current) === requestKey) {
+        setAgentPageModels([]);
+      }
     } finally {
       setAgentPageModelBusy(false);
     }
@@ -1993,6 +2030,7 @@ function App() {
     if (!draft?.provider) {
       return;
     }
+    const requestKey = modelRequestKey(draft);
     if (!options.silent) {
       setAgentError("");
     }
@@ -2012,15 +2050,25 @@ function App() {
         throw new Error((await resp.text()).trim() || t("modelLoadFailed"));
       }
       const payload = await resp.json();
+      if (modelRequestKey(agentDraftRef.current) !== requestKey) {
+        return;
+      }
       setAgentModels(payload.models ?? []);
-      if (!draft.model_id && payload.models?.length > 0) {
-        setAgentDraft((current) => ({ ...current, model_id: payload.models[0] }));
+      if (!agentDraftRef.current?.model_id && payload.models?.length > 0) {
+        setAgentDraft((current) => {
+          if (modelRequestKey(current) !== requestKey || current.model_id) {
+            return current;
+          }
+          return { ...current, model_id: payload.models[0] };
+        });
       }
     } catch (err) {
       if (!options.silent) {
         setAgentError(err.message || t("modelLoadFailed"));
       }
-      setAgentModels([]);
+      if (modelRequestKey(agentDraftRef.current) === requestKey) {
+        setAgentModels([]);
+      }
     } finally {
       setAgentModelBusy(false);
     }
@@ -4326,6 +4374,18 @@ function profileToDraft(profile) {
     requestOptionsText: stringifyJSON(profile?.request_options || {}),
     envRows: mapToEnvRows(profile?.env || {}),
   };
+}
+
+function modelRequestKey(draft) {
+  if (!draft) {
+    return "";
+  }
+  return JSON.stringify({
+    provider: draft.provider || "",
+    base_url: draft.base_url || "",
+    api_key: draft.api_key || "",
+    headersText: draft.headersText || "",
+  });
 }
 
 function agentToDraft(agent) {

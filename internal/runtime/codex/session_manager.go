@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -107,7 +108,6 @@ func (m *acpManager) Start(ctx context.Context, spec SessionSpec) (*Session, err
 		_ = stderrFile.Close()
 		return nil, fmt.Errorf("create codex session: %w", err)
 	}
-
 	now := time.Now().UTC()
 	client.setSessionID(string(newSession.SessionId))
 	session := &Session{
@@ -239,6 +239,7 @@ func (m *acpManager) waitSession(runtimeID string, live *liveSession) {
 }
 
 func buildSessionEnv(spec SessionSpec) []string {
+	spec.Profile = spec.Profile.Normalized()
 	envMap := make(map[string]string)
 	for _, entry := range os.Environ() {
 		key, value, ok := strings.Cut(entry, "=")
@@ -249,12 +250,21 @@ func buildSessionEnv(spec SessionSpec) []string {
 	}
 	envMap["HOME"] = spec.HomeDir
 	envMap["CODEX_HOME"] = spec.CodexHomeDir
-	if modelID := strings.TrimSpace(spec.Profile.ModelID); modelID != "" {
-		envMap["OPENAI_MODEL"] = modelID
+	// if baseURL := spec.Profile.BaseURL; baseURL != "" {
+	// 	envMap["OPENAI_BASE_URL"] = baseURL
+	// }
+	if apiKey := spec.Profile.APIKey; apiKey != "" {
+		envMap["OPENAI_API_KEY"] = apiKey
 	}
+	// if modelID := spec.Profile.ModelID; modelID != "" {
+	// 	envMap["OPENAI_MODEL"] = modelID
+	// }
 	for key, value := range spec.Profile.Env {
 		key = strings.TrimSpace(key)
 		if key == "" {
+			continue
+		}
+		if isReservedSessionEnvKey(key) {
 			continue
 		}
 		envMap[key] = value
@@ -268,6 +278,86 @@ func buildSessionEnv(spec SessionSpec) []string {
 		out = append(out, key+"="+envMap[key])
 	}
 	return out
+}
+
+func isReservedSessionEnvKey(key string) bool {
+	switch strings.ToUpper(strings.TrimSpace(key)) {
+	case "HOME", "CODEX_HOME", "OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL":
+		return true
+	default:
+		return false
+	}
+}
+
+func formatSessionConfigOptionsDebug(options []acp.SessionConfigOption) string {
+	if len(options) == 0 {
+		return "codex-acp new session config options: []\n"
+	}
+
+	lines := []string{"codex-acp new session config options:"}
+	for i, option := range options {
+		if option.Select != nil {
+			lines = append(lines, fmt.Sprintf("  [%d] select id=%q name=%q current=%q", i, option.Select.Id, option.Select.Name, option.Select.CurrentValue))
+			for _, value := range flattenSelectOptions(option.Select.Options) {
+				lines = append(lines, fmt.Sprintf("       - %q => %q", value.Name, value.Value))
+			}
+			continue
+		}
+		if option.Boolean != nil {
+			lines = append(lines, fmt.Sprintf("  [%d] boolean id=%q name=%q current=%t", i, option.Boolean.Id, option.Boolean.Name, option.Boolean.CurrentValue))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("  [%d] <unknown option variant>", i))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func flattenSelectOptions(options acp.SessionConfigSelectOptions) []acp.SessionConfigSelectOption {
+	if options.Ungrouped != nil {
+		out := make([]acp.SessionConfigSelectOption, len(*options.Ungrouped))
+		copy(out, *options.Ungrouped)
+		return out
+	}
+	if options.Grouped != nil {
+		var out []acp.SessionConfigSelectOption
+		for _, group := range *options.Grouped {
+			out = append(out, group.Options...)
+		}
+		return out
+	}
+	return nil
+}
+
+func formatSessionModelsDebug(models *acp.SessionModelState) string {
+	if models == nil {
+		return "codex-acp new session models: <nil>\n"
+	}
+
+	type modelLine struct {
+		ModelID     acp.ModelId `json:"model_id"`
+		Name        string      `json:"name"`
+		Description *string     `json:"description,omitempty"`
+	}
+	payload := struct {
+		CurrentModelID  acp.ModelId `json:"current_model_id"`
+		AvailableModels []modelLine `json:"available_models"`
+	}{
+		CurrentModelID:  models.CurrentModelId,
+		AvailableModels: make([]modelLine, 0, len(models.AvailableModels)),
+	}
+	for _, model := range models.AvailableModels {
+		payload.AvailableModels = append(payload.AvailableModels, modelLine{
+			ModelID:     model.ModelId,
+			Name:        model.Name,
+			Description: model.Description,
+		})
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("codex-acp new session models: marshal error: %v\n", err)
+	}
+	return "codex-acp new session models:\n" + string(data) + "\n"
 }
 
 type sessionClient struct {

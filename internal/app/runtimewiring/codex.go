@@ -28,15 +28,16 @@ func WithCodexRuntime() agent.ServiceOption {
 				if err != nil {
 					return runtimecodex.AgentRef{}, err
 				}
+				profile, err := host.ResolveRuntimeProfile(h)
+				if err != nil {
+					return runtimecodex.AgentRef{}, err
+				}
 				return runtimecodex.AgentRef{
 					ID:        got.ID,
 					Name:      got.Name,
 					RuntimeID: strings.TrimSpace(got.RuntimeID),
 					HandleID:  strings.TrimSpace(got.BoxID),
-					Profile: agentruntime.Profile{
-						ModelID: codexModelID(got),
-						Env:     cloneEnvMap(got.AgentProfile.Env),
-					},
+					Profile:   profile,
 				}, nil
 			},
 			AgentHome: host.AgentHome,
@@ -44,30 +45,4 @@ func WithCodexRuntime() agent.ServiceOption {
 		})
 		return agent.WithRuntime(rt)(s)
 	}
-}
-
-func codexModelID(got agent.Agent) string {
-	modelID := strings.TrimSpace(got.AgentProfile.ModelID)
-	if modelID != "" {
-		return modelID
-	}
-	return strings.TrimSpace(got.ModelID)
-}
-
-func cloneEnvMap(src map[string]string) map[string]string {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make(map[string]string, len(src))
-	for key, value := range src {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		dst[key] = value
-	}
-	if len(dst) == 0 {
-		return nil
-	}
-	return dst
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,7 +81,11 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 				ID:        "u-alice",
 				Name:      "alice",
 				RuntimeID: h.RuntimeID,
-				Profile:   agentruntime.Profile{ModelID: "gpt-5.5"},
+				Profile: agentruntime.Profile{
+					ModelID: "gpt-5.5",
+					BaseURL: "https://runtime.example/v1",
+					APIKey:  "runtime-key",
+				},
 			}, nil
 		},
 		Manager: fakeManager{
@@ -113,7 +118,11 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 		RuntimeID: "rt-u-alice",
 		AgentID:   "u-alice",
 		AgentName: "alice",
-		Profile:   agentruntime.Profile{ModelID: "gpt-5.5"},
+		Profile: agentruntime.Profile{
+			ModelID: "gpt-5.5",
+			BaseURL: "https://runtime.example/v1",
+			APIKey:  "runtime-key",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -152,6 +161,10 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 	}
 	if string(authRaw) != `{"tokens":{"access_token":"access","refresh_token":"refresh"}}` {
 		t.Fatalf("runtime auth = %q, want copied host auth", string(authRaw))
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "alice", ".codex", configFileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("config.toml should not be written when auth.json exists, stat err = %v", err)
 	}
 }
 
@@ -216,6 +229,56 @@ func TestRuntimeStopAndDelete(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "alice", ".codex")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("runtime dir still exists, stat err = %v", err)
+	}
+}
+
+func TestBuildSessionEnvOnlyInjectsOpenAIAPIKey(t *testing.T) {
+	t.Setenv("OPENAI_BASE_URL", "https://host.example/v1")
+	t.Setenv("OPENAI_API_KEY", "host-key")
+	t.Setenv("OPENAI_MODEL", "host-model")
+
+	env := buildSessionEnv(SessionSpec{
+		HomeDir:      "/tmp/runtime-home",
+		CodexHomeDir: "/tmp/runtime-codex-home",
+		Profile: agentruntime.Profile{
+			ModelID: " gpt-5.5 ",
+			BaseURL: "https://runtime.example/v1/",
+			APIKey:  " runtime-key ",
+			Env: map[string]string{
+				"OPENAI_BASE_URL": "https://env.example/v1",
+				"OPENAI_API_KEY":  "env-key",
+				"OPENAI_MODEL":    "env-model",
+				" EXTRA_FLAG ":    " 1 ",
+			},
+		},
+	})
+
+	envMap := make(map[string]string, len(env))
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			t.Fatalf("invalid env entry %q", entry)
+		}
+		envMap[key] = value
+	}
+
+	if got, want := envMap["HOME"], "/tmp/runtime-home"; got != want {
+		t.Fatalf("HOME = %q, want %q", got, want)
+	}
+	if got, want := envMap["CODEX_HOME"], "/tmp/runtime-codex-home"; got != want {
+		t.Fatalf("CODEX_HOME = %q, want %q", got, want)
+	}
+	if got, want := envMap["OPENAI_API_KEY"], "runtime-key"; got != want {
+		t.Fatalf("OPENAI_API_KEY = %q, want %q", got, want)
+	}
+	if got := envMap["OPENAI_BASE_URL"]; got != "https://host.example/v1" {
+		t.Fatalf("OPENAI_BASE_URL = %q, want host value preserved", got)
+	}
+	if got := envMap["OPENAI_MODEL"]; got != "host-model" {
+		t.Fatalf("OPENAI_MODEL = %q, want host value preserved", got)
+	}
+	if got, want := envMap["EXTRA_FLAG"], "1"; got != want {
+		t.Fatalf("EXTRA_FLAG = %q, want %q", got, want)
 	}
 }
 
@@ -303,6 +366,225 @@ func TestRuntimeCreateKeepsExistingRuntimeAuth(t *testing.T) {
 	}
 	if string(authRaw) != `{"tokens":{"access_token":"runtime","refresh_token":"runtime-refresh"}}` {
 		t.Fatalf("runtime auth = %q, want existing runtime auth preserved", string(authRaw))
+	}
+	if _, err := os.Stat(filepath.Join(root, "alice", ".codex", configFileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("config.toml should not be written when auth.json exists, stat err = %v", err)
+	}
+}
+
+func TestRuntimeCreateSkipsConfigWhenHostAuthIsSeeded(t *testing.T) {
+	root := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	if err := os.MkdirAll(filepath.Join(hostHome, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hostHome, ".codex", "auth.json"), []byte(`{"tokens":{"access_token":"access","refresh_token":"refresh"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := New(Dependencies{
+		BinaryProvider: fakeBinaryProvider{path: "/tmp/codex-acp"},
+		AgentHome: func(agentName string) (string, error) {
+			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
+			return AgentRef{
+				ID:        "u-alice",
+				Name:      "alice",
+				RuntimeID: h.RuntimeID,
+				Profile: agentruntime.Profile{
+					ModelID: "gpt-5.5",
+					BaseURL: "https://runtime.example/v1",
+					APIKey:  "runtime-key",
+				},
+			}, nil
+		},
+		Manager: fakeManager{
+			start: func(_ context.Context, spec SessionSpec) (*Session, error) {
+				return &Session{
+					RuntimeID:    spec.RuntimeID,
+					AgentID:      spec.AgentID,
+					AgentName:    spec.AgentName,
+					SessionID:    "sess-seeded-auth",
+					BinaryPath:   spec.BinaryPath,
+					WorkspaceDir: spec.WorkspaceDir,
+					HomeDir:      spec.HomeDir,
+					CodexHomeDir: spec.CodexHomeDir,
+					StderrPath:   spec.StderrPath,
+					ProcessID:    os.Getpid(),
+					CreatedAt:    time.Now().UTC(),
+					StartedAt:    time.Now().UTC(),
+				}, nil
+			},
+		},
+	})
+
+	if _, err := rt.Create(context.Background(), agentruntime.Spec{
+		RuntimeID: "rt-u-alice",
+		AgentID:   "u-alice",
+		AgentName: "alice",
+		Profile: agentruntime.Profile{
+			ModelID: "gpt-5.5",
+			BaseURL: "https://runtime.example/v1",
+			APIKey:  "runtime-key",
+		},
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(root, "alice", ".codex", configFileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("config.toml should not be written after host auth seeding, stat err = %v", err)
+	}
+}
+
+func TestRuntimeCreateWritesConfigWithoutAuth(t *testing.T) {
+	root := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	t.Setenv("CODEX_HOME", "")
+
+	rt := New(Dependencies{
+		BinaryProvider: fakeBinaryProvider{path: "/tmp/codex-acp"},
+		AgentHome: func(agentName string) (string, error) {
+			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
+			return AgentRef{
+				ID:        "u-alice",
+				Name:      "alice",
+				RuntimeID: h.RuntimeID,
+				Profile: agentruntime.Profile{
+					ModelID: "gpt-5.5",
+					BaseURL: "https://runtime.example/v1",
+					APIKey:  "runtime-key",
+				},
+			}, nil
+		},
+		Manager: fakeManager{
+			start: func(_ context.Context, spec SessionSpec) (*Session, error) {
+				return &Session{
+					RuntimeID:    spec.RuntimeID,
+					AgentID:      spec.AgentID,
+					AgentName:    spec.AgentName,
+					SessionID:    "sess-write-config",
+					BinaryPath:   spec.BinaryPath,
+					WorkspaceDir: spec.WorkspaceDir,
+					HomeDir:      spec.HomeDir,
+					CodexHomeDir: spec.CodexHomeDir,
+					StderrPath:   spec.StderrPath,
+					ProcessID:    os.Getpid(),
+					CreatedAt:    time.Now().UTC(),
+					StartedAt:    time.Now().UTC(),
+				}, nil
+			},
+		},
+	})
+
+	if _, err := rt.Create(context.Background(), agentruntime.Spec{
+		RuntimeID: "rt-u-alice",
+		AgentID:   "u-alice",
+		AgentName: "alice",
+		Profile: agentruntime.Profile{
+			ModelID: "gpt-5.5",
+			BaseURL: "https://runtime.example/v1",
+			APIKey:  "runtime-key",
+		},
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	configRaw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", configFileName))
+	if err != nil {
+		t.Fatalf("read seeded runtime config: %v", err)
+	}
+	configText := string(configRaw)
+	for _, want := range []string{
+		`model = "gpt-5.5"`,
+		`model_provider = "proxy"`,
+		`[model_providers.proxy]`,
+		`name = "OpenAI using LLM proxy"`,
+		`base_url = "https://runtime.example/v1"`,
+		`env_key = "OPENAI_API_KEY"`,
+	} {
+		if !strings.Contains(configText, want) {
+			t.Fatalf("runtime config missing %q:\n%s", want, configText)
+		}
+	}
+	for _, unwanted := range []string{
+		`wire_api = "chat"`,
+	} {
+		if strings.Contains(configText, unwanted) {
+			t.Fatalf("runtime config unexpectedly contains %q:\n%s", unwanted, configText)
+		}
+	}
+}
+
+func TestRuntimeCreateRemovesStaleConfigWhenAuthExists(t *testing.T) {
+	root := t.TempDir()
+	runtimeRoot := filepath.Join(root, "alice", ".codex")
+	if err := os.MkdirAll(runtimeRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeRoot, "auth.json"), []byte(`{"tokens":{"access_token":"runtime","refresh_token":"runtime-refresh"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeRoot, configFileName), []byte("stale = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := New(Dependencies{
+		BinaryProvider: fakeBinaryProvider{path: "/tmp/codex-acp"},
+		AgentHome: func(agentName string) (string, error) {
+			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
+			return AgentRef{
+				ID:        "u-alice",
+				Name:      "alice",
+				RuntimeID: h.RuntimeID,
+				Profile: agentruntime.Profile{
+					ModelID: "gpt-5.5",
+					BaseURL: "https://runtime.example/v1",
+					APIKey:  "runtime-key",
+				},
+			}, nil
+		},
+		Manager: fakeManager{
+			start: func(_ context.Context, spec SessionSpec) (*Session, error) {
+				return &Session{
+					RuntimeID:    spec.RuntimeID,
+					AgentID:      spec.AgentID,
+					AgentName:    spec.AgentName,
+					SessionID:    "sess-clean-config",
+					BinaryPath:   spec.BinaryPath,
+					WorkspaceDir: spec.WorkspaceDir,
+					HomeDir:      spec.HomeDir,
+					CodexHomeDir: spec.CodexHomeDir,
+					StderrPath:   spec.StderrPath,
+					ProcessID:    os.Getpid(),
+					CreatedAt:    time.Now().UTC(),
+					StartedAt:    time.Now().UTC(),
+				}, nil
+			},
+		},
+	})
+
+	if _, err := rt.Create(context.Background(), agentruntime.Spec{
+		RuntimeID: "rt-u-alice",
+		AgentID:   "u-alice",
+		AgentName: "alice",
+		Profile: agentruntime.Profile{
+			ModelID: "gpt-5.5",
+			BaseURL: "https://runtime.example/v1",
+			APIKey:  "runtime-key",
+		},
+	}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(runtimeRoot, configFileName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale config.toml should be removed when auth.json exists, stat err = %v", err)
 	}
 }
 

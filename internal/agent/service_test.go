@@ -477,7 +477,11 @@ func TestCreateWorkerUsesCodexRuntimeWhenRequested(t *testing.T) {
 
 	svc, err := NewService(
 		testModelConfig(),
-		config.ServerConfig{},
+		config.ServerConfig{
+			ListenAddr:       "0.0.0.0:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
 		"",
 		"",
 		WithRuntime(fakeAgentRuntime{
@@ -488,6 +492,12 @@ func TestCreateWorkerUsesCodexRuntimeWhenRequested(t *testing.T) {
 				}
 				if spec.AgentName != "alice" {
 					t.Fatalf("Create() agent name = %q, want %q", spec.AgentName, "alice")
+				}
+				if got, want := spec.Profile.BaseURL, "http://127.0.0.1:18080/api/bots/u-alice/llm"; got != want {
+					t.Fatalf("Create() profile base url = %q, want %q", got, want)
+				}
+				if got, want := spec.Profile.APIKey, "shared-token"; got != want {
+					t.Fatalf("Create() profile api key = %q, want %q", got, want)
 				}
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-alice"}, nil
 			},
@@ -501,6 +511,14 @@ func TestCreateWorkerUsesCodexRuntimeWhenRequested(t *testing.T) {
 		ID:          "u-alice",
 		Name:        "alice",
 		RuntimeKind: RuntimeKindCodex,
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderAPI,
+			BaseURL:         "https://api.example/v1",
+			APIKey:          "api-key",
+			ModelID:         "gpt-4.1",
+			ProfileComplete: true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
@@ -560,7 +578,11 @@ func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		config.ModelConfig{},
-		config.ServerConfig{},
+		config.ServerConfig{
+			ListenAddr:       "0.0.0.0:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
 		"",
 		"",
 		WithLifecycleObserver(observer),
@@ -568,6 +590,12 @@ func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 			kind: RuntimeKindCodex,
 			del:  func(context.Context, agentruntime.Handle) error { return nil },
 			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				if got, want := spec.Profile.BaseURL, "http://127.0.0.1:18080/api/bots/u-alice/llm"; got != want {
+					t.Fatalf("Create() profile base url = %q, want %q", got, want)
+				}
+				if got, want := spec.Profile.APIKey, "shared-token"; got != want {
+					t.Fatalf("Create() profile api key = %q, want %q", got, want)
+				}
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-" + spec.AgentName + "-new"}, nil
 			},
 			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
@@ -579,14 +607,21 @@ func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:              "u-alice",
-		Name:            "alice",
-		Role:            RoleWorker,
-		RuntimeID:       "rt-u-alice",
-		RuntimeKind:     RuntimeKindCodex,
-		BoxID:           "codex-session-alice-old",
-		Status:          string(agentruntime.StateRunning),
-		AgentProfile:    AgentProfile{Name: "alice", Provider: ProviderCodex, ModelID: "gpt-5.4", ProfileComplete: true},
+		ID:          "u-alice",
+		Name:        "alice",
+		Role:        RoleWorker,
+		RuntimeID:   "rt-u-alice",
+		RuntimeKind: RuntimeKindCodex,
+		BoxID:       "codex-session-alice-old",
+		Status:      string(agentruntime.StateRunning),
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderAPI,
+			BaseURL:         "https://api.example/v1",
+			APIKey:          "api-key",
+			ModelID:         "gpt-4.1",
+			ProfileComplete: true,
+		},
 		ProfileComplete: true,
 	}
 

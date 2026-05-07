@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -51,7 +52,33 @@ const (
 
 type Profile struct {
 	ModelID string
+	BaseURL string
+	APIKey  string
 	Env     map[string]string
+}
+
+func (p Profile) Normalized() Profile {
+	p.ModelID = strings.TrimSpace(p.ModelID)
+	p.BaseURL = strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
+	p.APIKey = strings.TrimSpace(p.APIKey)
+	if len(p.Env) == 0 {
+		p.Env = nil
+		return p
+	}
+	env := make(map[string]string, len(p.Env))
+	for key, value := range p.Env {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		env[key] = strings.TrimSpace(value)
+	}
+	if len(env) == 0 {
+		p.Env = nil
+		return p
+	}
+	p.Env = env
+	return p
 }
 
 type Spec struct {

@@ -1247,7 +1247,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		AgentID:   id,
 		AgentName: name,
 		Image:     image,
-		Profile:   runtimeProfileFromAgent(resolvedProfile),
+		Profile:   s.runtimeProfileForKind(runtimeKind, id, name, description, resolvedProfile),
 	})
 	if err != nil {
 		return Agent{}, fmt.Errorf("create worker box: %w", err)

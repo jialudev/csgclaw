@@ -34,28 +34,29 @@ type gatewayBoxFactory interface {
 }
 
 type PicoClawRuntimeHost struct {
-	ModelFallback       string
-	Server              config.ServerConfig
-	Channels            config.ChannelsConfig
-	EnsureRuntime       func(agentName string) (sandbox.Runtime, error)
-	AgentHome           func(agentName string) (string, error)
-	RuntimeHome         func(agentName string) (string, error)
-	CloseRuntime        func(homeDir string, rt sandbox.Runtime) error
-	ResolveBox          func(ctx context.Context, rt sandbox.Runtime, got Agent) (sandbox.Instance, string, error)
-	CreateBox           func(ctx context.Context, rt sandbox.Runtime, spec sandbox.CreateSpec) (sandbox.Instance, error)
-	StartBox            func(ctx context.Context, box sandbox.Instance) error
-	StopBox             func(ctx context.Context, box sandbox.Instance, opts sandbox.StopOptions) error
-	BoxInfo             func(ctx context.Context, box sandbox.Instance) (sandbox.Info, error)
-	ForceRemoveBox      func(ctx context.Context, rt sandbox.Runtime, idOrName string) error
-	CloseBox            func(box sandbox.Instance) error
-	RunBoxCommand       func(ctx context.Context, box sandbox.Instance, name string, args []string, w io.Writer) (int, error)
-	ResolveAgent        func(h agentruntime.Handle) (Agent, error)
-	SyncHandle          func(h agentruntime.Handle) error
-	EnsureGatewayConfig func(agentName, botID, modelID string) error
-	EnsureWorkspace     func(agentName, template string) (string, error)
-	WorkspaceTemplate   func(name, botID string) string
-	EnsureProjectsRoot  func() (string, error)
-	StreamLogs          func(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error
+	ModelFallback         string
+	Server                config.ServerConfig
+	Channels              config.ChannelsConfig
+	EnsureRuntime         func(agentName string) (sandbox.Runtime, error)
+	AgentHome             func(agentName string) (string, error)
+	RuntimeHome           func(agentName string) (string, error)
+	CloseRuntime          func(homeDir string, rt sandbox.Runtime) error
+	ResolveBox            func(ctx context.Context, rt sandbox.Runtime, got Agent) (sandbox.Instance, string, error)
+	CreateBox             func(ctx context.Context, rt sandbox.Runtime, spec sandbox.CreateSpec) (sandbox.Instance, error)
+	StartBox              func(ctx context.Context, box sandbox.Instance) error
+	StopBox               func(ctx context.Context, box sandbox.Instance, opts sandbox.StopOptions) error
+	BoxInfo               func(ctx context.Context, box sandbox.Instance) (sandbox.Info, error)
+	ForceRemoveBox        func(ctx context.Context, rt sandbox.Runtime, idOrName string) error
+	CloseBox              func(box sandbox.Instance) error
+	RunBoxCommand         func(ctx context.Context, box sandbox.Instance, name string, args []string, w io.Writer) (int, error)
+	ResolveAgent          func(h agentruntime.Handle) (Agent, error)
+	ResolveRuntimeProfile func(h agentruntime.Handle) (agentruntime.Profile, error)
+	SyncHandle            func(h agentruntime.Handle) error
+	EnsureGatewayConfig   func(agentName, botID, modelID string) error
+	EnsureWorkspace       func(agentName, template string) (string, error)
+	WorkspaceTemplate     func(name, botID string) string
+	EnsureProjectsRoot    func() (string, error)
+	StreamLogs            func(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error
 }
 
 func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
@@ -78,7 +79,14 @@ func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
 		CloseBox:       s.closeBox,
 		RunBoxCommand:  s.runBoxCommand,
 		ResolveAgent:   s.gatewayRuntimeAgent,
-		SyncHandle:     s.syncRuntimeHandle,
+		ResolveRuntimeProfile: func(h agentruntime.Handle) (agentruntime.Profile, error) {
+			got, err := s.gatewayRuntimeAgent(h)
+			if err != nil {
+				return agentruntime.Profile{}, err
+			}
+			return s.runtimeProfileForAgent(got), nil
+		},
+		SyncHandle: s.syncRuntimeHandle,
 		EnsureGatewayConfig: func(agentName, botID, modelID string) error {
 			_, err := ensureAgentPicoClawConfig(agentName, botID, s.server, config.ModelConfig{ModelID: modelID})
 			return err
@@ -107,6 +115,33 @@ func (s *Service) runtimeForKind(kind string) (agentruntime.Runtime, error) {
 
 func (s *Service) runtimeForAgent(a Agent) (agentruntime.Runtime, error) {
 	return s.runtimeForKind(runtimeKindForAgent(a))
+}
+
+func (s *Service) runtimeProfileForAgent(a Agent) agentruntime.Profile {
+	return s.runtimeProfileForKind(runtimeKindForAgent(a), a.ID, a.Name, a.Description, a.AgentProfile)
+}
+
+func (s *Service) runtimeProfileForKind(runtimeKind, agentID, fallbackName, fallbackDescription string, profile AgentProfile) agentruntime.Profile {
+	profile = normalizeProfile(profile, fallbackName, fallbackDescription)
+	baseURL := profile.BaseURL
+	apiKey := profile.APIKey
+
+	if normalizeRuntimeKind(runtimeKind) == RuntimeKindCodex {
+		managerBaseURL := resolveManagerBaseURL(s.server)
+		if managerBaseURL != "" {
+			baseURL = llmBridgeBaseURL(managerBaseURL, agentID)
+		}
+		if token := strings.TrimSpace(s.server.AccessToken); token != "" {
+			apiKey = token
+		}
+	}
+
+	return (agentruntime.Profile{
+		ModelID: profile.ModelID,
+		BaseURL: baseURL,
+		APIKey:  apiKey,
+		Env:     normalizeStringMap(profile.Env),
+	}).Normalized()
 }
 
 func (s *Service) Runtime(kind string) (agentruntime.Runtime, error) {
@@ -361,10 +396,12 @@ func bridgeLLMEnvVars(llmBaseURL, accessToken, modelID string) map[string]string
 
 func runtimeProfileFromAgent(profile AgentProfile) agentruntime.Profile {
 	profile = normalizeProfile(profile, profile.Name, profile.Description)
-	return agentruntime.Profile{
+	return (agentruntime.Profile{
 		ModelID: strings.TrimSpace(profile.ModelID),
+		BaseURL: profile.BaseURL,
+		APIKey:  profile.APIKey,
 		Env:     normalizeStringMap(profile.Env),
-	}
+	}).Normalized()
 }
 
 func (s *Service) gatewayRuntimeAgent(h agentruntime.Handle) (Agent, error) {

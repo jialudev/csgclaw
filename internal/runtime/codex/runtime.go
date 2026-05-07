@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,13 +22,15 @@ import (
 )
 
 const (
-	hostStateDirName  = ".codex"
-	runtimeFileName   = "runtime.json"
-	sessionFileName   = "session.json"
-	stderrLogFileName = "stderr.log"
-	workspaceDirName  = "workspace"
-	homeDirName       = "home"
-	logPollInterval   = 200 * time.Millisecond
+	hostStateDirName       = ".codex"
+	configFileName         = "config.toml"
+	runtimeFileName        = "runtime.json"
+	sessionFileName        = "session.json"
+	stderrLogFileName      = "stderr.log"
+	workspaceDirName       = "workspace"
+	homeDirName            = "home"
+	logPollInterval        = 200 * time.Millisecond
+	codexProxyProviderName = "proxy"
 )
 
 type AgentRef struct {
@@ -158,6 +162,7 @@ func (r *Runtime) Create(ctx context.Context, spec agentruntime.Spec) (agentrunt
 	if err := r.ensureRuntimeHome(spec.AgentName); err != nil {
 		return agentruntime.Handle{}, err
 	}
+	spec.Profile = spec.Profile.Normalized()
 	session, err := r.ensureSession(ctx, SessionSpec{
 		RuntimeID: strings.TrimSpace(spec.RuntimeID),
 		AgentID:   strings.TrimSpace(spec.AgentID),
@@ -182,6 +187,7 @@ func (r *Runtime) Start(ctx context.Context, h agentruntime.Handle) (agentruntim
 	if err != nil {
 		return agentruntime.StateUnknown, err
 	}
+	agentRef.Profile = agentRef.Profile.Normalized()
 	session, err := r.ensureSession(ctx, SessionSpec{
 		RuntimeID: strings.TrimSpace(h.RuntimeID),
 		AgentID:   strings.TrimSpace(agentRef.ID),
@@ -332,6 +338,9 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 	if err := r.seedCodexHomeAuth(spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
+	if err := r.seedCodexHomeConfig(spec.CodexHomeDir, spec.Profile); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(spec.BinaryPath) == "" {
 		binaryPath, err := r.ensureBinary(ctx)
 		if err != nil {
@@ -383,6 +392,58 @@ func (r *Runtime) seedCodexHomeAuth(runtimeCodexHome string) error {
 		return fmt.Errorf("seed runtime codex auth %s: %w", runtimeAuthPath, err)
 	}
 	return nil
+}
+
+func (r *Runtime) seedCodexHomeConfig(runtimeCodexHome string, profile agentruntime.Profile) error {
+	runtimeCodexHome = strings.TrimSpace(runtimeCodexHome)
+	if runtimeCodexHome == "" {
+		return fmt.Errorf("codex home dir is required")
+	}
+	configPath := filepath.Join(runtimeCodexHome, configFileName)
+	if hasAuth, err := r.codexHomeHasAuth(runtimeCodexHome); err != nil {
+		return err
+	} else if hasAuth {
+		if err := r.removeAll(configPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove runtime codex config %s: %w", configPath, err)
+		}
+		return nil
+	}
+	profile = profile.Normalized()
+	slog.Info("codex runtime profile before writing config",
+		"codex_home", runtimeCodexHome,
+		"base_url", profile.BaseURL,
+		"model_id", profile.ModelID,
+	)
+	if profile.BaseURL == "" || profile.ModelID == "" {
+		return nil
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "model = %s\n", strconv.Quote(profile.ModelID))
+	fmt.Fprintf(&b, "model_provider = %s\n\n", strconv.Quote(codexProxyProviderName))
+	fmt.Fprintf(&b, "[model_providers.%s]\n", codexProxyProviderName)
+	fmt.Fprintf(&b, "name = %s\n", strconv.Quote("OpenAI using LLM proxy"))
+	// fmt.Fprintf(&b, "wire_api = %s\n", strconv.Quote("chat"))
+	fmt.Fprintf(&b, "base_url = %s\n", strconv.Quote(profile.BaseURL))
+	if profile.APIKey != "" {
+		fmt.Fprintf(&b, "env_key = %s\n", strconv.Quote("OPENAI_API_KEY"))
+	}
+
+	if err := r.writeFile(configPath, []byte(b.String()), 0o600); err != nil {
+		return fmt.Errorf("write runtime codex config %s: %w", configPath, err)
+	}
+	return nil
+}
+
+func (r *Runtime) codexHomeHasAuth(runtimeCodexHome string) (bool, error) {
+	runtimeAuthPath := filepath.Join(strings.TrimSpace(runtimeCodexHome), "auth.json")
+	if _, err := r.readFile(runtimeAuthPath); err == nil {
+		return true, nil
+	} else if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else {
+		return false, fmt.Errorf("read runtime codex auth %s: %w", runtimeAuthPath, err)
+	}
 }
 
 func (r *Runtime) ensureBinary(ctx context.Context) (string, error) {
