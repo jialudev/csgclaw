@@ -363,12 +363,36 @@ func ensureServeBootstrapState(ctx context.Context, configPath string) error {
 		return err
 	}
 	if state.Complete() {
-		return nil
+		needsMigration, err := configNeedsLegacyBoxLiteProviderMigration(state.ConfigPath)
+		if err != nil {
+			return err
+		}
+		if !needsMigration {
+			return nil
+		}
 	}
 
 	slog.Info("bootstrap state incomplete; auto-initializing local state", "config_path", state.ConfigPath)
 	_, err = EnsureBootstrapState(ctx, internalonboard.EnsureStateOptions{ConfigPath: configPath})
 	return err
+}
+
+func configNeedsLegacyBoxLiteProviderMigration(path string) (bool, error) {
+	if strings.TrimSpace(path) == "" {
+		return false, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read config: %w", err)
+	}
+	// Keep `serve` rewriting older config.toml files that still use the legacy
+	// sandbox provider alias even when the rest of bootstrap state is already
+	// complete, so migration is not skipped by the startup fast path.
+	// TODO: Remove this migration trigger after older config.toml files have been migrated.
+	return strings.Contains(string(data), `provider = "boxlite-cli"`), nil
 }
 
 func configureServeLogger(w io.Writer, level string) (func(), error) {

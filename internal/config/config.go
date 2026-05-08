@@ -67,7 +67,8 @@ type SandboxConfig struct {
 }
 
 func (c SandboxConfig) Resolved() SandboxConfig {
-	if strings.TrimSpace(c.Provider) == "" {
+	c.Provider = normalizeSandboxProvider(c.Provider)
+	if c.Provider == "" {
 		c.Provider = DefaultSandboxProvider
 	}
 	c.StoragePath = strings.TrimSpace(c.StoragePath)
@@ -133,14 +134,16 @@ const (
 	IMDirName       = "im"
 	ChannelsDirName = "channels"
 
-	DefaultHTTPPort       = apiclient.DefaultHTTPPort
-	DefaultAccessToken    = "your_access_token"
-	DefaultManagerImage   = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
-	CSGHubProvider        = "csghub"
-	DockerProvider        = "docker"
-	BoxLiteCLIProvider    = "boxlite-cli"
-	BoxLiteCLIHomeDirName = "boxlite"
-	RuntimeHomeDirName    = BoxLiteCLIHomeDirName
+	DefaultHTTPPort     = apiclient.DefaultHTTPPort
+	DefaultAccessToken  = "your_access_token"
+	DefaultManagerImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
+	CSGHubProvider      = "csghub"
+	DockerProvider      = "docker"
+	BoxLiteCLIProvider  = "boxlite"
+	// TODO: Remove this alias after older config.toml files have been migrated.
+	legacyBoxLiteCLIProvider = "boxlite-cli"
+	BoxLiteCLIHomeDirName    = "boxlite"
+	RuntimeHomeDirName       = BoxLiteCLIHomeDirName
 )
 
 // DefaultDebianRegistries is the default BoxLite Debian registry lookup order when
@@ -433,7 +436,7 @@ manager_image_override = %q
 	sandboxSection := fmt.Sprintf(`
 [sandbox]
 provider = %q
-`, cfg.rawOrResolvedString(cfg.raw.sandbox.Provider, loadedRaw.sandbox.Provider, resolvedSandbox.Provider))
+`, cfg.rawOrResolvedSandboxProvider(cfg.raw.sandbox.Provider, loadedRaw.sandbox.Provider, resolvedSandbox.Provider))
 	if strings.TrimSpace(resolvedSandbox.StoragePath) != "" {
 		sandboxSection = strings.Replace(sandboxSection, "[sandbox]\n", fmt.Sprintf("[sandbox]\nstorage_path = %q\n", cfg.rawOrResolvedString(cfg.raw.sandbox.StoragePath, loadedRaw.sandbox.StoragePath, resolvedSandbox.StoragePath)), 1)
 	}
@@ -667,6 +670,19 @@ func formatStringArray(values []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
+func normalizeSandboxProvider(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	switch provider {
+	case "":
+		return ""
+	// TODO: Remove this alias mapping after older config.toml files have been migrated.
+	case legacyBoxLiteCLIProvider:
+		return BoxLiteCLIProvider
+	default:
+		return provider
+	}
+}
+
 func sortedProviderNames(providers map[string]ProviderConfig) []string {
 	names := make([]string, 0, len(providers))
 	for name := range providers {
@@ -710,6 +726,17 @@ func (c Config) rawOrResolvedString(raw, loaded, resolved string) string {
 		return raw
 	}
 	return resolved
+}
+
+func (c Config) rawOrResolvedSandboxProvider(raw, loaded, resolved string) string {
+	// Keep reading the legacy "boxlite-cli" alias for backward compatibility,
+	// but rewrite it to the canonical "boxlite" value on the next save so the
+	// migration happens automatically.
+	// TODO: Remove this special-case after older config.toml files have been migrated.
+	if strings.EqualFold(strings.TrimSpace(raw), legacyBoxLiteCLIProvider) {
+		return resolved
+	}
+	return c.rawOrResolvedString(raw, loaded, resolved)
 }
 
 func (c Config) rawOrResolvedStringArray(raw, loaded, resolved []string) []string {

@@ -102,7 +102,7 @@ func TestLoadReadsSandboxConfig(t *testing.T) {
 listen_addr = "127.0.0.1:18080"
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 home_dir_name = "sandbox-home"
 debian_registries_override = ["registry.a", " docker.io ", "registry.a"]
 storage_path = "/shared/csgclaw"
@@ -134,6 +134,36 @@ models = ["minimax-m2.7"]
 	}
 	if got, want := cfg.Sandbox.StoragePath, "/shared/csgclaw"; got != want {
 		t.Fatalf("cfg.Sandbox.StoragePath = %q, want %q", got, want)
+	}
+}
+
+func TestLoadNormalizesLegacyBoxLiteCLIProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[sandbox]
+provider = "boxlite-cli"
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
+		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 }
 
@@ -431,7 +461,7 @@ func TestSaveWritesModelsSection(t *testing.T) {
 	if !strings.Contains(content, "[models]") || !strings.Contains(content, "[models.providers.default]") {
 		t.Fatalf("saved config missing models sections:\n%s", content)
 	}
-	if !strings.Contains(content, "[sandbox]") || !strings.Contains(content, `provider = "boxlite-cli"`) {
+	if !strings.Contains(content, "[sandbox]") || !strings.Contains(content, `provider = "boxlite"`) {
 		t.Fatalf("saved config missing sandbox section:\n%s", content)
 	}
 	if strings.Contains(content, "boxlite_cli_path") {
@@ -561,7 +591,7 @@ no_auth = true
 manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 debian_registries_override = []
 
 [models]
@@ -606,6 +636,48 @@ func TestSaveWritesEmptySandboxDebianRegistriesOverride(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `debian_registries_override = []`) {
 		t.Fatalf("saved config missing empty sandbox debian_registries_override:\n%s", string(data))
+	}
+}
+
+func TestSaveRewritesLegacyBoxLiteCLIProviderAfterLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[sandbox]
+provider = "boxlite-cli"
+
+[models]
+default = "default.gpt-test"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["gpt-test"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	saved := string(data)
+	if !strings.Contains(saved, `provider = "boxlite"`) {
+		t.Fatalf("saved config missing canonical sandbox provider:\n%s", saved)
+	}
+	if strings.Contains(saved, `provider = "boxlite-cli"`) {
+		t.Fatalf("saved config kept legacy sandbox provider alias:\n%s", saved)
 	}
 }
 
@@ -903,7 +975,7 @@ func TestLoadIgnoresLegacyBoxLiteCLIPath(t *testing.T) {
 listen_addr = "127.0.0.1:18080"
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 home_dir_name = "sandbox-home"
 boxlite_cli_path = "/custom/boxlite"
 

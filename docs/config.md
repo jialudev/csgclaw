@@ -49,7 +49,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
 ### Remote LLM API
@@ -73,7 +73,7 @@ models = ["gpt-5.4"]
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
 ### Dynamic Codex or Claude Code profiles
@@ -89,7 +89,7 @@ no_auth = false
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
 Codex and Claude Code profiles are configured in agent state through the Web UI. CSGClaw starts an embedded CLIProxyAPI on a private localhost port at serve time, so static CLIProxy base URLs are not required.
@@ -119,31 +119,31 @@ When a worker uses the Codex runtime, CSGClaw resolves `codex-acp` automatically
 
 ## Sandbox Providers
 
-CSGClaw runs Workers through the configured sandbox provider. BoxLite integration is provided through `boxlite-cli`, which runs BoxLite through the external CLI process.
+CSGClaw runs Workers through the configured sandbox provider. BoxLite integration is provided through `boxlite`, which runs BoxLite through the external CLI process.
 
 The default source build and official release bundles already align with the CLI-backed provider:
 
 ```toml
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
-For `provider = "boxlite-cli"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
+For `provider = "boxlite"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
 
 `debian_registries_override` controls where BoxLite pulls `debian:bookworm-slim` when you need to override the built-in default order. If omitted or empty, CSGClaw uses `harbor.opencsg.com` then `docker.io`. When CSGClaw writes `config.toml`, it keeps this field visible as an empty array so it can be edited in place:
 
 ```toml
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 debian_registries_override = []
 ```
 
 CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the fixed per-agent runtime home `~/.csgclaw/agents/<agent-id>/boxlite`. That explicit home takes precedence over `BOXLITE_HOME` for CSGClaw-managed sandboxes, while `BOXLITE_HOME` still applies when you run `boxlite` manually without `--home`.
 
-The `boxlite-cli` provider does not need a vendored Go SDK at runtime. Current source builds and release packaging use the same BoxLite CLI-backed integration:
+The `boxlite` provider does not need a vendored Go SDK at runtime. Current source builds and release packaging use the same BoxLite CLI-backed integration:
 
-- `make build`, `make test`, `make run`, and `make package` all use the standard `boxlite-cli` path.
-- `boxlite-cli` remains the built-in BoxLite sandbox provider, alongside other non-BoxLite providers such as `csghub`.
+- `make build`, `make test`, `make run`, and `make package` all use the standard `boxlite` path.
+- `boxlite` remains the built-in BoxLite sandbox provider, alongside other non-BoxLite providers such as `csghub`.
 
 ## Channel Configuration
 

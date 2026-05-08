@@ -49,7 +49,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
 ### 远程 LLM API
@@ -73,7 +73,7 @@ models = ["gpt-5.4"]
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
 ### 动态 Codex 或 Claude Code Profile
@@ -89,7 +89,7 @@ no_auth = false
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
 Codex 和 Claude Code Profile 通过 Web UI 写入 agent state。CSGClaw 在 `serve` 时会嵌入启动 CLIProxyAPI，并绑定到私有 localhost 端口，因此不再需要配置固定的 CLIProxy base URL。
@@ -119,31 +119,31 @@ Worker 在创建时也可以显式选择 runtime kind。默认值是 `picoclaw-s
 
 ## Sandbox Provider
 
-CSGClaw 通过配置的 sandbox provider 隔离 Worker 执行环境。当前 BoxLite 集成统一通过 `boxlite-cli` 提供，也就是通过外部 CLI 进程运行 BoxLite。
+CSGClaw 通过配置的 sandbox provider 隔离 Worker 执行环境。当前 BoxLite 集成统一通过 `boxlite` 提供，也就是通过外部 CLI 进程运行 BoxLite。
 
 默认源码构建和官方 release bundle 已经统一到基于 CLI 的 provider：
 
 ```toml
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 ```
 
-对于 `provider = "boxlite-cli"`，CSGClaw 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
+对于 `provider = "boxlite"`，CSGClaw 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
 
 `debian_registries_override` 用于在你需要覆盖内置顺序时，控制 BoxLite 拉取 `debian:bookworm-slim` 的仓库顺序。若省略或为空，CSGClaw 会使用默认顺序 `harbor.opencsg.com`、`docker.io`。当 CSGClaw 写入 `config.toml` 时，会把该字段保留为空数组，方便直接原地修改：
 
 ```toml
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 debian_registries_override = []
 ```
 
 CSGClaw 会为每个 agent 调用 BoxLite CLI 时显式传入 `--home`，固定使用 `~/.csgclaw/agents/<agent-id>/boxlite` 作为每个 agent 的 runtime home。这个显式 home 对 CSGClaw 管理的 sandbox 生效，优先于 `BOXLITE_HOME`；你手动运行 `boxlite` 且不传 `--home` 时，`BOXLITE_HOME` 仍按 BoxLite 自身规则生效。
 
-`boxlite-cli` provider 运行时不需要 vendored Go SDK。当前源码构建和 release 打包都走同一条 BoxLite CLI 路径：
+`boxlite` provider 运行时不需要 vendored Go SDK。当前源码构建和 release 打包都走同一条 BoxLite CLI 路径：
 
-- `make build`、`make test`、`make run`、`make package` 都使用标准的 `boxlite-cli` 路径。
-- `boxlite-cli` 是内置的 BoxLite sandbox provider，同时仓库也保留 `csghub` 等其他非 BoxLite provider。
+- `make build`、`make test`、`make run`、`make package` 都使用标准的 `boxlite` 路径。
+- `boxlite` 是内置的 BoxLite sandbox provider，同时仓库也保留 `csghub` 等其他非 BoxLite provider。
 
 ## Channel 配置
 
