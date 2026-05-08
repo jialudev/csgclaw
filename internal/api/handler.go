@@ -75,9 +75,10 @@ type imAgentJoinResponse struct {
 }
 
 type bootstrapConfigResponse struct {
-	RuntimeKind           string   `json:"runtime_kind"`
-	EffectiveManagerImage string   `json:"effective_manager_image"`
-	SupportedRuntimeKinds []string `json:"supported_runtime_kinds"`
+	RuntimeKind           string            `json:"runtime_kind"`
+	EffectiveManagerImage string            `json:"effective_manager_image"`
+	SupportedRuntimeKinds []string          `json:"supported_runtime_kinds"`
+	RuntimeDefaultImages  map[string]string `json:"runtime_default_images,omitempty"`
 }
 
 type updateBootstrapConfigRequest struct {
@@ -192,6 +193,10 @@ func bootstrapConfigView(cfg config.Config) bootstrapConfigResponse {
 		SupportedRuntimeKinds: []string{
 			agent.RuntimeKindPicoClawSandbox,
 			agent.RuntimeKindOpenClawSandbox,
+		},
+		RuntimeDefaultImages: map[string]string{
+			agent.RuntimeKindPicoClawSandbox: config.DefaultManagerImageForAgentRuntime(config.AgentRuntimePicoclaw),
+			agent.RuntimeKindOpenClawSandbox: config.DefaultManagerImageForAgentRuntime(config.AgentRuntimeOpenClaw),
 		},
 	}
 }
