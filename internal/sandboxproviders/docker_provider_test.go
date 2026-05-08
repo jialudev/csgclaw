@@ -59,14 +59,13 @@ func dockerProviderPath(t *testing.T, provider dockercli.Provider) string {
 
 func TestDockerServiceOptionWiresProvider(t *testing.T) {
 	opt, err := ServiceOptions(config.SandboxConfig{
-		Provider:    config.DockerProvider,
-		HomeDirName: "docker-runtime",
+		Provider: config.DockerProvider,
 	})
 	if err != nil {
 		t.Fatalf("ServiceOptions() error = %v", err)
 	}
-	if len(opt) != 2 {
-		t.Fatalf("len(opt) = %d, want 2", len(opt))
+	if len(opt) != 1 {
+		t.Fatalf("len(opt) = %d, want 1", len(opt))
 	}
 	svc := &agent.Service{}
 	if err := opt[0](svc); err != nil {

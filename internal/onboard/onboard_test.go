@@ -68,9 +68,6 @@ func TestEnsureStateCreatesConfigAndBootstrapsManagerState(t *testing.T) {
 	if got, want := gotCfg.Sandbox.Provider, config.DefaultSandboxProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
-	if got, want := gotCfg.Sandbox.HomeDirName, config.DefaultSandboxHomeDirName; got != want {
-		t.Fatalf("cfg.Sandbox.HomeDirName = %q, want %q", got, want)
-	}
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -81,7 +78,6 @@ func TestEnsureStateCreatesConfigAndBootstrapsManagerState(t *testing.T) {
 		`[bootstrap]`,
 		`[sandbox]`,
 		`provider = "` + config.DefaultSandboxProvider + `"`,
-		`home_dir_name = "` + config.DefaultSandboxHomeDirName + `"`,
 		`debian_registries_override = []`,
 	} {
 		if !strings.Contains(string(data), want) {
@@ -241,7 +237,6 @@ access_token = "your_access_token"
 		`manager_image_override = ""`,
 		`[sandbox]`,
 		`provider = "` + config.DefaultSandboxProvider + `"`,
-		`home_dir_name = "` + config.DefaultSandboxHomeDirName + `"`,
 		`debian_registries_override = []`,
 	} {
 		if !strings.Contains(content, want) {

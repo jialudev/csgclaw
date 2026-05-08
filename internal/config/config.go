@@ -61,7 +61,6 @@ func (c BootstrapConfig) EffectiveManagerImage() string {
 
 type SandboxConfig struct {
 	Provider                 string
-	HomeDirName              string
 	StoragePath              string
 	DebianRegistriesOverride []string
 	DockerCLIPath            string
@@ -70,9 +69,6 @@ type SandboxConfig struct {
 func (c SandboxConfig) Resolved() SandboxConfig {
 	if strings.TrimSpace(c.Provider) == "" {
 		c.Provider = DefaultSandboxProvider
-	}
-	if strings.TrimSpace(c.HomeDirName) == "" {
-		c.HomeDirName = DefaultSandboxHomeDirName
 	}
 	c.StoragePath = strings.TrimSpace(c.StoragePath)
 	c.DebianRegistriesOverride = normalizeStringList(c.DebianRegistriesOverride)
@@ -137,14 +133,14 @@ const (
 	IMDirName       = "im"
 	ChannelsDirName = "channels"
 
-	DefaultHTTPPort           = apiclient.DefaultHTTPPort
-	DefaultAccessToken        = "your_access_token"
-	DefaultManagerImage       = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
-	CSGHubProvider            = "csghub"
-	DockerProvider            = "docker"
-	BoxLiteCLIProvider        = "boxlite-cli"
-	DefaultSandboxHomeDirName = "boxlite"
-	RuntimeHomeDirName        = DefaultSandboxHomeDirName
+	DefaultHTTPPort       = apiclient.DefaultHTTPPort
+	DefaultAccessToken    = "your_access_token"
+	DefaultManagerImage   = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.29.0"
+	CSGHubProvider        = "csghub"
+	DockerProvider        = "docker"
+	BoxLiteCLIProvider    = "boxlite-cli"
+	BoxLiteCLIHomeDirName = "boxlite"
+	RuntimeHomeDirName    = BoxLiteCLIHomeDirName
 )
 
 // DefaultDebianRegistries is the default BoxLite Debian registry lookup order when
@@ -317,8 +313,8 @@ func Load(path string) (Config, error) {
 				cfg.raw.sandbox.Provider = parseRawStringValue(rawValue)
 				cfg.Sandbox.Provider = value
 			case "home_dir_name":
-				cfg.raw.sandbox.HomeDirName = parseRawStringValue(rawValue)
-				cfg.Sandbox.HomeDirName = value
+				// Keep loading legacy configs that still contain this key, but
+				// do not surface it in the public config model anymore.
 			case "storage_path":
 				cfg.raw.sandbox.StoragePath = parseRawStringValue(rawValue)
 				cfg.Sandbox.StoragePath = value
@@ -437,8 +433,7 @@ manager_image_override = %q
 	sandboxSection := fmt.Sprintf(`
 [sandbox]
 provider = %q
-home_dir_name = %q
-`, cfg.rawOrResolvedString(cfg.raw.sandbox.Provider, loadedRaw.sandbox.Provider, resolvedSandbox.Provider), cfg.rawOrResolvedString(cfg.raw.sandbox.HomeDirName, loadedRaw.sandbox.HomeDirName, resolvedSandbox.HomeDirName))
+`, cfg.rawOrResolvedString(cfg.raw.sandbox.Provider, loadedRaw.sandbox.Provider, resolvedSandbox.Provider))
 	if strings.TrimSpace(resolvedSandbox.StoragePath) != "" {
 		sandboxSection = strings.Replace(sandboxSection, "[sandbox]\n", fmt.Sprintf("[sandbox]\nstorage_path = %q\n", cfg.rawOrResolvedString(cfg.raw.sandbox.StoragePath, loadedRaw.sandbox.StoragePath, resolvedSandbox.StoragePath)), 1)
 	}
@@ -770,9 +765,6 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	}
 	if c.raw.sandbox.Provider != "" {
 		out.sandbox.Provider = c.Sandbox.Provider
-	}
-	if c.raw.sandbox.HomeDirName != "" {
-		out.sandbox.HomeDirName = c.Sandbox.HomeDirName
 	}
 	if c.raw.sandbox.StoragePath != "" {
 		out.sandbox.StoragePath = c.Sandbox.StoragePath

@@ -64,8 +64,7 @@ func TestServeRunAutoBootstrapsWhenStateIncomplete(t *testing.T) {
 			AccessToken: "pc-secret",
 		},
 		Sandbox: config.SandboxConfig{
-			Provider:    config.DefaultSandboxProvider,
-			HomeDirName: config.DefaultSandboxHomeDirName,
+			Provider: config.DefaultSandboxProvider,
 		},
 	}).Save(configPath); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -127,8 +126,7 @@ func TestServeRunSkipsAutoBootstrapWhenStateComplete(t *testing.T) {
 			AccessToken: "pc-secret",
 		},
 		Sandbox: config.SandboxConfig{
-			Provider:    config.DefaultSandboxProvider,
-			HomeDirName: config.DefaultSandboxHomeDirName,
+			Provider: config.DefaultSandboxProvider,
 		},
 	}).Save(configPath); err != nil {
 		t.Fatalf("Save() error = %v", err)
@@ -317,8 +315,7 @@ func TestServeRunRepeatedAutoBootstrapRemainsIdempotent(t *testing.T) {
 			AccessToken: "pc-secret",
 		},
 		Sandbox: config.SandboxConfig{
-			Provider:    config.DefaultSandboxProvider,
-			HomeDirName: config.DefaultSandboxHomeDirName,
+			Provider: config.DefaultSandboxProvider,
 		},
 	}
 	if err := cfg.Save(configPath); err != nil {
@@ -541,7 +538,6 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`no_auth = true`,
 		`[sandbox]`,
 		fmt.Sprintf(`provider = %q`, config.DefaultSandboxProvider),
-		fmt.Sprintf(`home_dir_name = %q`, config.DefaultSandboxHomeDirName),
 		`debian_registries_override = []`,
 		`[models]`,
 		`default = "default.model-test"`,
@@ -902,8 +898,7 @@ func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T
 			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
 		},
 		Sandbox: config.SandboxConfig{
-			Provider:    config.BoxLiteCLIProvider,
-			HomeDirName: config.DefaultSandboxHomeDirName,
+			Provider: config.BoxLiteCLIProvider,
 		},
 	}
 
@@ -918,7 +913,6 @@ manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
 
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 # using default debian registries: ["harbor.opencsg.com", "docker.io"]
 debian_registries_override = []
 
@@ -938,22 +932,20 @@ models = ["local.minimax-m2.5"]
 func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
 		Provider:                 config.BoxLiteCLIProvider,
-		HomeDirName:              "sandbox-home",
 		DebianRegistriesOverride: []string{"registry.a"},
 	})
 	if err != nil {
 		t.Fatalf("sandboxServiceOptions() error = %v", err)
 	}
-	if len(opts) != 2 {
-		t.Fatalf("len(opts) = %d, want 2", len(opts))
+	if len(opts) != 1 {
+		t.Fatalf("len(opts) = %d, want 1", len(opts))
 	}
 }
 
 func TestNewAgentServiceRejectsUnsupportedSandboxProvider(t *testing.T) {
 	_, err := newAgentService(config.Config{
 		Sandbox: config.SandboxConfig{
-			Provider:    "not-a-sandbox-backend",
-			HomeDirName: "runtime",
+			Provider: "not-a-sandbox-backend",
 		},
 	})
 	if err == nil {
@@ -967,8 +959,7 @@ func TestNewAgentServiceRejectsUnsupportedSandboxProvider(t *testing.T) {
 func TestNewAgentServiceRegistersCodexRuntime(t *testing.T) {
 	svc, err := newAgentService(config.Config{
 		Sandbox: config.SandboxConfig{
-			Provider:    config.DefaultSandboxProvider,
-			HomeDirName: config.DefaultSandboxHomeDirName,
+			Provider: config.DefaultSandboxProvider,
 		},
 	})
 	if err != nil {

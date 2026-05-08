@@ -50,7 +50,6 @@ manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 ### 远程 LLM API
@@ -75,7 +74,6 @@ manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 ### 动态 Codex 或 Claude Code Profile
@@ -92,7 +90,6 @@ manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 Codex 和 Claude Code Profile 通过 Web UI 写入 agent state。CSGClaw 在 `serve` 时会嵌入启动 CLIProxyAPI，并绑定到私有 localhost 端口，因此不再需要配置固定的 CLIProxy base URL。
@@ -129,7 +126,6 @@ CSGClaw 通过配置的 sandbox provider 隔离 Worker 执行环境。当前 Box
 ```toml
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 对于 `provider = "boxlite-cli"`，CSGClaw 会优先解析与 `csgclaw` 同 bundle 的 `boxlite`，只有 bundle 缺失时才回退到 `PATH`。
@@ -139,11 +135,10 @@ home_dir_name = "boxlite"
 ```toml
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 debian_registries_override = []
 ```
 
-CSGClaw 会为每个 agent 调用 BoxLite CLI 时显式传入 `--home`，目录由 agent 目录和 `home_dir_name` 组成，例如 `~/.csgclaw/agents/<agent-id>/boxlite`。这个显式 home 对 CSGClaw 管理的 sandbox 生效，优先于 `BOXLITE_HOME`；你手动运行 `boxlite` 且不传 `--home` 时，`BOXLITE_HOME` 仍按 BoxLite 自身规则生效。
+CSGClaw 会为每个 agent 调用 BoxLite CLI 时显式传入 `--home`，固定使用 `~/.csgclaw/agents/<agent-id>/boxlite` 作为每个 agent 的 runtime home。这个显式 home 对 CSGClaw 管理的 sandbox 生效，优先于 `BOXLITE_HOME`；你手动运行 `boxlite` 且不传 `--home` 时，`BOXLITE_HOME` 仍按 BoxLite 自身规则生效。
 
 `boxlite-cli` provider 运行时不需要 vendored Go SDK。当前源码构建和 release 打包都走同一条 BoxLite CLI 路径：
 

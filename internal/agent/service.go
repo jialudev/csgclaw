@@ -152,7 +152,6 @@ type Service struct {
 	managerImage     string
 	state            string
 	sandbox          sandbox.Provider
-	sandboxHome      string
 	mu               sync.RWMutex
 	runtimes         map[string]sandbox.Runtime
 	agents           map[string]Agent
@@ -188,17 +187,6 @@ func WithRuntime(rt agentruntime.Runtime) ServiceOption {
 			return fmt.Errorf("runtime kind is required")
 		}
 		s.runtimeRegistry[kind] = rt
-		return nil
-	}
-}
-
-func WithSandboxHomeDirName(name string) ServiceOption {
-	return func(s *Service) error {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return fmt.Errorf("sandbox home dir name is required")
-		}
-		s.sandboxHome = name
 		return nil
 	}
 }
@@ -246,7 +234,6 @@ func NewServiceWithLLMAndChannels(llmCfg config.LLMConfig, server config.ServerC
 		managerImage:    managerImage,
 		state:           statePath,
 		sandbox:         defaultSandboxProvider,
-		sandboxHome:     config.DefaultSandboxHomeDirName,
 		runtimes:        make(map[string]sandbox.Runtime),
 		agents:          make(map[string]Agent),
 		runtimeRecords:  make(map[string]RuntimeRecord),

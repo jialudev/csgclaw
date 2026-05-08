@@ -147,8 +147,7 @@ func defaultConfig() config.Config {
 		},
 		Bootstrap: config.BootstrapConfig{},
 		Sandbox: config.SandboxConfig{
-			Provider:    config.DefaultSandboxProvider,
-			HomeDirName: config.DefaultSandboxHomeDirName,
+			Provider: config.DefaultSandboxProvider,
 		},
 	}
 }
@@ -196,7 +195,6 @@ func configNeedsCompletion(content string) bool {
 		`manager_image_override = `,
 		"[sandbox]",
 		`provider = `,
-		`home_dir_name = `,
 		`debian_registries_override = `,
 	}
 	for _, snippet := range requiredSnippets {

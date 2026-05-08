@@ -50,7 +50,6 @@ manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 ### Remote LLM API
@@ -75,7 +74,6 @@ manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 ### Dynamic Codex or Claude Code profiles
@@ -92,7 +90,6 @@ manager_image_override = ""
 
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 Codex and Claude Code profiles are configured in agent state through the Web UI. CSGClaw starts an embedded CLIProxyAPI on a private localhost port at serve time, so static CLIProxy base URLs are not required.
@@ -129,7 +126,6 @@ The default source build and official release bundles already align with the CLI
 ```toml
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 ```
 
 For `provider = "boxlite-cli"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
@@ -139,11 +135,10 @@ For `provider = "boxlite-cli"`, CSGClaw resolves the bundled sibling `boxlite` b
 ```toml
 [sandbox]
 provider = "boxlite-cli"
-home_dir_name = "boxlite"
 debian_registries_override = []
 ```
 
-CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the agent directory plus `home_dir_name` such as `~/.csgclaw/agents/<agent-id>/boxlite`. That explicit home takes precedence over `BOXLITE_HOME` for CSGClaw-managed sandboxes, while `BOXLITE_HOME` still applies when you run `boxlite` manually without `--home`.
+CSGClaw passes an explicit `--home` to the BoxLite CLI for each agent, using the fixed per-agent runtime home `~/.csgclaw/agents/<agent-id>/boxlite`. That explicit home takes precedence over `BOXLITE_HOME` for CSGClaw-managed sandboxes, while `BOXLITE_HOME` still applies when you run `boxlite` manually without `--home`.
 
 The `boxlite-cli` provider does not need a vendored Go SDK at runtime. Current source builds and release packaging use the same BoxLite CLI-backed integration:
 

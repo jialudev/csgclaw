@@ -670,8 +670,7 @@ manager_image_override = %q
 
 [sandbox]
 provider = %q
-home_dir_name = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImageOverride, cfg.Sandbox.Resolved().Provider, cfg.Sandbox.Resolved().HomeDirName)
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImageOverride, cfg.Sandbox.Resolved().Provider)
 	if strings.TrimSpace(cfg.Bootstrap.ManagerImageOverride) == "" {
 		content = strings.Replace(content, "[bootstrap]\nmanager_image_override", fmt.Sprintf("[bootstrap]\n# using default image: %q\nmanager_image_override", config.DefaultManagerImage), 1)
 	}
