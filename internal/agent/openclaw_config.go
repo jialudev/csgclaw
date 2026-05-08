@@ -34,6 +34,11 @@ const (
 	openClawMinimaxGlobalBaseURL = "https://api.minimax.io/anthropic"
 )
 
+type openClawConfigOptions struct {
+	GatewayPort int
+	PluginPaths []string
+}
+
 func agentOpenClawRoot(agentName string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -60,6 +65,10 @@ func ensureOpenClawCsgSkills(agentName, botID string) error {
 }
 
 func ensureAgentOpenClawConfig(agentName, botID string, server config.ServerConfig, model config.ModelConfig) (string, error) {
+	return ensureAgentOpenClawConfigWithOptions(agentName, botID, server, model, openClawConfigOptions{})
+}
+
+func ensureAgentOpenClawConfigWithOptions(agentName, botID string, server config.ServerConfig, model config.ModelConfig, opts openClawConfigOptions) (string, error) {
 	hostRoot, err := agentOpenClawRoot(agentName)
 	if err != nil {
 		return "", err
@@ -67,7 +76,7 @@ func ensureAgentOpenClawConfig(agentName, botID string, server config.ServerConf
 	if err := os.MkdirAll(filepath.Join(hostRoot, hostOpenClawLogs), 0o755); err != nil {
 		return "", fmt.Errorf("create openclaw logs dir: %w", err)
 	}
-	data, err := renderAgentOpenClawConfig(botID, server, model)
+	data, err := renderAgentOpenClawConfig(botID, server, model, opts)
 	if err != nil {
 		return "", err
 	}
@@ -127,7 +136,11 @@ func writeOpenClawExecApprovalsAllowAll(hostRoot string) error {
 	return nil
 }
 
-func renderAgentOpenClawConfig(botID string, server config.ServerConfig, model config.ModelConfig) ([]byte, error) {
+func renderAgentOpenClawConfig(botID string, server config.ServerConfig, model config.ModelConfig, options ...openClawConfigOptions) ([]byte, error) {
+	opts := openClawConfigOptions{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	var cfg map[string]any
 	if err := json.Unmarshal(defaultOpenClawGatewayConfig, &cfg); err != nil {
 		return nil, fmt.Errorf("decode embedded openclaw config: %w", err)
@@ -139,6 +152,9 @@ func renderAgentOpenClawConfig(botID string, server config.ServerConfig, model c
 		return nil, err
 	}
 	if err := updateOpenClawGatewayAuth(cfg, server); err != nil {
+		return nil, err
+	}
+	if err := updateOpenClawGatewayRuntimeOptions(cfg, opts); err != nil {
 		return nil, err
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -328,4 +344,56 @@ func updateOpenClawGatewayAuth(cfg map[string]any, server config.ServerConfig) e
 		auth["token"] = server.AccessToken
 	}
 	return nil
+}
+
+func updateOpenClawGatewayRuntimeOptions(cfg map[string]any, opts openClawConfigOptions) error {
+	if opts.GatewayPort > 0 {
+		gw, ok := cfg["gateway"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("embedded openclaw config is missing gateway")
+		}
+		gw["port"] = opts.GatewayPort
+	}
+	pluginPaths := normalizeOpenClawStringList(opts.PluginPaths)
+	if len(pluginPaths) == 0 {
+		return nil
+	}
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("embedded openclaw config is missing plugins")
+	}
+	load, ok := plugins["load"].(map[string]any)
+	if !ok {
+		load = map[string]any{}
+		plugins["load"] = load
+	}
+	paths := make([]any, 0, len(pluginPaths))
+	for _, path := range pluginPaths {
+		paths = append(paths, path)
+	}
+	load["paths"] = paths
+	return nil
+}
+
+func normalizeOpenClawStringList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

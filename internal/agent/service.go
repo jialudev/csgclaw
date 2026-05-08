@@ -681,12 +681,13 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
+	runtimeExplicit := strings.TrimSpace(spec.RuntimeKind) != ""
 	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
 	if runtimeKind == "" {
 		runtimeKind = s.gatewayRuntimeKind()
 	}
 	if image == "" {
-		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && strings.TrimSpace(spec.RuntimeKind) != "" {
+		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && runtimeExplicit {
 			image = defaultImage
 		}
 		if image == "" {
@@ -1298,15 +1299,16 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
+	runtimeExplicit := strings.TrimSpace(spec.RuntimeKind) != ""
 	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
 	if runtimeKind == "" {
 		runtimeKind = s.gatewayRuntimeKind()
 	}
 	if image == "" {
-		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && strings.TrimSpace(spec.RuntimeKind) != "" {
+		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && runtimeExplicit {
 			image = defaultImage
 		}
-		if image == "" {
+		if image == "" && isGatewayRuntimeKind(runtimeKind) {
 			image = s.managerImage
 		}
 	}

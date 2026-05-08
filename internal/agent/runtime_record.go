@@ -12,6 +12,7 @@ import (
 const (
 	RuntimeKindPicoClawSandbox = agentruntime.KindPicoClawSandbox
 	RuntimeKindOpenClawSandbox = agentruntime.KindOpenClawSandbox
+	RuntimeKindOpenClaw        = agentruntime.KindOpenClaw
 	RuntimeKindCodex           = agentruntime.KindCodex
 )
 
@@ -92,6 +93,8 @@ func normalizeRuntimeKind(kind string) string {
 		return RuntimeKindPicoClawSandbox
 	case RuntimeKindOpenClawSandbox, "openclaw-sandbox":
 		return RuntimeKindOpenClawSandbox
+	case RuntimeKindOpenClaw, "openclaw-host":
+		return RuntimeKindOpenClaw
 	case RuntimeKindCodex:
 		return RuntimeKindCodex
 	default:

@@ -1834,6 +1834,97 @@ func TestCreateWorkerUsesRequestedImageOrManagerFallback(t *testing.T) {
 	}
 }
 
+func TestCreateWorkerUsesRuntimeDefaultImageWhenGatewayRuntimeExplicit(t *testing.T) {
+	var gotImage string
+	SetTestHooks(
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, image, name, _ string, _ AgentProfile) (sandbox.Instance, sandbox.Info, error) {
+			gotImage = image
+			return nil, sandbox.Info{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     sandbox.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithRuntime(fakeAgentRuntime{kind: RuntimeKindOpenClawSandbox}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		Name:        "alice",
+		RuntimeKind: RuntimeKindOpenClawSandbox,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if gotImage != config.DefaultOpenClawManagerImage {
+		t.Fatalf("createGatewayBox() image = %q, want %q", gotImage, config.DefaultOpenClawManagerImage)
+	}
+	if got.Image != config.DefaultOpenClawManagerImage {
+		t.Fatalf("CreateWorker().Image = %q, want %q", got.Image, config.DefaultOpenClawManagerImage)
+	}
+}
+
+func TestCreateWorkerUsesHostOpenClawRuntimeWithoutSandboxImage(t *testing.T) {
+	SetTestHooks(
+		func(_ *Service, _ string) (sandbox.Runtime, error) {
+			t.Fatal("ensureRuntime() should not be used for host openclaw worker creation")
+			return nil, nil
+		},
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, _ string, _ string, _ AgentProfile) (sandbox.Instance, sandbox.Info, error) {
+			t.Fatal("createGatewayBox() should not be used for host openclaw worker creation")
+			return nil, sandbox.Info{}, nil
+		},
+	)
+	defer ResetTestHooks()
+
+	var gotSpec agentruntime.Spec
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindOpenClaw,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				gotSpec = spec
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "1234"}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		Name:        "alice",
+		RuntimeKind: RuntimeKindOpenClaw,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if gotSpec.Image != "" {
+		t.Fatalf("openclaw runtime spec image = %q, want empty", gotSpec.Image)
+	}
+	if got.Image != "" {
+		t.Fatalf("CreateWorker().Image = %q, want empty", got.Image)
+	}
+	if got.RuntimeKind != RuntimeKindOpenClaw {
+		t.Fatalf("CreateWorker().RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindOpenClaw)
+	}
+}
+
 func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },

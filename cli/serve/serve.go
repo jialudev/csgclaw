@@ -774,6 +774,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	opts = append(opts,
 		runtimewiring.WithPicoClawSandboxRuntime(),
 		runtimewiring.WithOpenClawSandboxRuntime(),
+		runtimewiring.WithOpenClawRuntime(),
 		runtimewiring.WithCodexRuntime(),
 		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntime()),
 	)

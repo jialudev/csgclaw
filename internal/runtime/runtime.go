@@ -10,6 +10,7 @@ import (
 const (
 	KindPicoClawSandbox = "picoclaw_sandbox"
 	KindOpenClawSandbox = "openclaw_sandbox"
+	KindOpenClaw        = "openclaw"
 	KindCodex           = "codex"
 )
 

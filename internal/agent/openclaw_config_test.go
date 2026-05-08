@@ -150,3 +150,35 @@ func TestRenderAgentOpenClawConfigPassesThroughDockerHostAlias(t *testing.T) {
 		t.Fatalf("expected OpenClaw MiniMax provider primary model:\n%s", text)
 	}
 }
+
+func TestRenderAgentOpenClawConfigAppliesHostRuntimeOptions(t *testing.T) {
+	data, err := renderAgentOpenClawConfig("u-worker", config.ServerConfig{
+		ListenAddr:       "127.0.0.1:18080",
+		AdvertiseBaseURL: "http://127.0.0.1:18080",
+		AccessToken:      "shared-token",
+	}, config.ModelConfig{
+		ModelID: "gpt-5.5",
+	}, openClawConfigOptions{
+		GatewayPort: 18790,
+		PluginPaths: []string{
+			"/Users/test/.csgclaw/openclaw/node_modules/csgclaw-extension",
+		},
+	})
+	if err != nil {
+		t.Fatalf("renderAgentOpenClawConfig() error = %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	gateway := cfg["gateway"].(map[string]any)
+	if got, want := gateway["port"], float64(18790); got != want {
+		t.Fatalf("gateway port = %v, want %v", got, want)
+	}
+	plugins := cfg["plugins"].(map[string]any)
+	load := plugins["load"].(map[string]any)
+	paths := load["paths"].([]any)
+	if got, want := paths[0], "/Users/test/.csgclaw/openclaw/node_modules/csgclaw-extension"; got != want {
+		t.Fatalf("plugin path = %v, want %v", got, want)
+	}
+}

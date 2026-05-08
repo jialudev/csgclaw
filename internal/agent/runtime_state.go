@@ -10,6 +10,7 @@ import (
 
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
+	runtimeopenclaw "csgclaw/internal/runtime/openclaw"
 	"csgclaw/internal/sandbox"
 )
 
@@ -62,6 +63,14 @@ type PicoClawRuntimeHost struct {
 	GatewayLogPath        string
 	GatewayCommand        func() string
 	StreamLogs            func(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error
+}
+
+type OpenClawHostRuntimeHost struct {
+	ResolveAgent          func(h agentruntime.Handle) (Agent, error)
+	ResolveRuntimeProfile func(h agentruntime.Handle) (agentruntime.Profile, error)
+	AgentHome             func(agentName string) (string, error)
+	InstallRoot           func() (string, error)
+	PrepareAgent          func(agentName, botID string, profile agentruntime.Profile, opts runtimeopenclaw.PrepareOptions) (runtimeopenclaw.PreparedAgent, error)
 }
 
 func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
@@ -131,6 +140,66 @@ func (s *Service) OpenClawRuntimeHost() PicoClawRuntimeHost {
 	host.GatewayLogPath = openClawGatewayLog
 	host.GatewayCommand = openClawStartScript
 	return host
+}
+
+func (s *Service) OpenClawHostRuntimeHost() OpenClawHostRuntimeHost {
+	return OpenClawHostRuntimeHost{
+		ResolveAgent: s.gatewayRuntimeAgent,
+		ResolveRuntimeProfile: func(h agentruntime.Handle) (agentruntime.Profile, error) {
+			got, err := s.gatewayRuntimeAgent(h)
+			if err != nil {
+				return agentruntime.Profile{}, err
+			}
+			return s.runtimeProfileForAgent(got), nil
+		},
+		AgentHome:   agentHomeDir,
+		InstallRoot: openClawHostInstallRoot,
+		PrepareAgent: func(agentName, botID string, profile agentruntime.Profile, opts runtimeopenclaw.PrepareOptions) (runtimeopenclaw.PreparedAgent, error) {
+			template := workspaceTemplateForAgent(agentName, botID, true)
+			workspaceDir, err := ensureAgentOpenClawWorkspace(agentName, template)
+			if err != nil {
+				return runtimeopenclaw.PreparedAgent{}, err
+			}
+			root, err := ensureAgentOpenClawConfigWithOptions(agentName, botID, s.server, config.ModelConfig{
+				Provider:        profile.Provider,
+				BaseURL:         profile.BaseURL,
+				APIKey:          profile.APIKey,
+				ModelID:         profile.ModelID,
+				ReasoningEffort: profile.ReasoningEffort,
+			}, openClawConfigOptions{
+				GatewayPort: opts.GatewayPort,
+				PluginPaths: opts.PluginPaths,
+			})
+			if err != nil {
+				return runtimeopenclaw.PreparedAgent{}, err
+			}
+			if err := ensureOpenClawCsgSkills(agentName, botID); err != nil {
+				return runtimeopenclaw.PreparedAgent{}, err
+			}
+			agentHome, err := agentHomeDir(agentName)
+			if err != nil {
+				return runtimeopenclaw.PreparedAgent{}, err
+			}
+			logPath, err := agentOpenClawGatewayLogPath(agentName)
+			if err != nil {
+				return runtimeopenclaw.PreparedAgent{}, err
+			}
+			return runtimeopenclaw.PreparedAgent{
+				AgentHome:    agentHome,
+				OpenClawRoot: root,
+				WorkspaceDir: workspaceDir,
+				LogPath:      logPath,
+			}, nil
+		},
+	}
+}
+
+func openClawHostInstallRoot() (string, error) {
+	root, err := config.DefaultDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "openclaw"), nil
 }
 
 func (s *Service) setGatewayWorkPhase(p uint32) {
