@@ -119,7 +119,11 @@ When a worker uses the Codex runtime, CSGClaw resolves `codex-acp` automatically
 
 ## Sandbox Providers
 
-CSGClaw runs Workers through the configured sandbox provider. BoxLite integration is provided through `boxlite`, which runs BoxLite through the external CLI process.
+CSGClaw runs Workers through the configured sandbox provider. Supported built-in providers are:
+
+- `boxlite`: runs Workers through the local `boxlite` CLI.
+- `docker`: runs Workers through the local Docker CLI.
+- `csghub`: runs Workers in the remote CSGHub sandbox. This is currently supported only in [AgenticHub](https://opencsg.com/agentichub).
 
 The default source build and official release bundles already align with the CLI-backed provider:
 
@@ -144,6 +148,21 @@ The `boxlite` provider does not need a vendored Go SDK at runtime. Current sourc
 
 - `make build`, `make test`, `make run`, and `make package` all use the standard `boxlite` path.
 - `boxlite` remains the built-in BoxLite sandbox provider, alongside other non-BoxLite providers such as `csghub`.
+
+To use Docker as the sandbox provider:
+
+```toml
+[sandbox]
+provider = "docker"
+```
+
+When `provider = "docker"`, CSGClaw runs the local `docker` CLI. By default it resolves `docker` from `PATH`. If you need a specific binary, set `docker_cli_path`:
+
+```toml
+[sandbox]
+provider = "docker"
+docker_cli_path = "/usr/local/bin/docker"
+```
 
 ## Channel Configuration
 
