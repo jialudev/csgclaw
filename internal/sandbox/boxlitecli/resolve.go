@@ -10,6 +10,16 @@ const defaultCLIPath = "boxlite"
 
 var executablePath = os.Executable
 
+func StubExecutablePathForTest(path string) func() {
+	previous := executablePath
+	executablePath = func() (string, error) {
+		return path, nil
+	}
+	return func() {
+		executablePath = previous
+	}
+}
+
 // ResolvePath chooses the effective boxlite CLI path. Custom paths override
 // the bundled binary. The default "boxlite" value falls back to a sibling
 // bundled binary first, then PATH resolution.

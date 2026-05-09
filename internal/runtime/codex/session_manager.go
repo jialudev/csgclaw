@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -50,7 +49,7 @@ func (m *acpManager) Start(ctx context.Context, spec SessionSpec) (*Session, err
 	cmd.Dir = spec.WorkspaceDir
 	cmd.Env = buildSessionEnv(spec)
 	cmd.Stderr = stderrFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = newSessionSysProcAttr()
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

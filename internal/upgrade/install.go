@@ -85,7 +85,7 @@ func bundleInstallRoot(exePath string) (string, bool) {
 	if exePath == "" {
 		return "", false
 	}
-	if filepath.Base(exePath) != "csgclaw" {
+	if !isCSGClawExecutableName(filepath.Base(exePath)) {
 		return "", false
 	}
 	binDir := filepath.Dir(exePath)
@@ -93,6 +93,15 @@ func bundleInstallRoot(exePath string) (string, bool) {
 		return "", false
 	}
 	return filepath.Dir(binDir), true
+}
+
+func isCSGClawExecutableName(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "csgclaw", "csgclaw.exe":
+		return true
+	default:
+		return false
+	}
 }
 
 func installBundle(bundleDir, installRoot string) error {

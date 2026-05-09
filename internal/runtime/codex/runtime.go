@@ -711,11 +711,7 @@ func normalizeRuntimeState(state agentruntime.State) agentruntime.State {
 }
 
 func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil
+	return processAlivePID(pid)
 }
 
 func stopProcess(pid int) error {

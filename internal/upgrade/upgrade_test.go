@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -124,6 +125,34 @@ func TestClientCheckErrorsWhenAssetMissing(t *testing.T) {
 	}
 }
 
+func TestClientCheckSelectsWindowsZipAsset(t *testing.T) {
+	client := Client{
+		HTTPClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, `{
+				"name":"v0.2.7",
+				"assets":[
+					{"name":"csgclaw_v0.2.7_windows_amd64.zip","browser_download_url":"http://csgclaw.opencsg.com/releases/v0.2.7/csgclaw_v0.2.7_windows_amd64.zip","size":123,"sha256":"abc"},
+					{"name":"csgclaw_v0.2.7_windows_arm64.zip","browser_download_url":"http://csgclaw.opencsg.com/releases/v0.2.7/csgclaw_v0.2.7_windows_arm64.zip","size":456,"sha256":"def"}
+				]
+			}`), nil
+		}),
+		LatestURL: "https://example.test/releases/latest",
+		GOOS:      "windows",
+		GOARCH:    "amd64",
+	}
+
+	result, err := client.Check(context.Background(), "v0.2.5")
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+	if result.Asset == nil {
+		t.Fatal("Asset = nil, want matched asset")
+	}
+	if got, want := result.Asset.Name, "csgclaw_v0.2.7_windows_amd64.zip"; got != want {
+		t.Fatalf("Asset.Name = %q, want %q", got, want)
+	}
+}
+
 func TestClientPrepareReleaseDownloadsVerifiesAndExtracts(t *testing.T) {
 	archive := releaseTarball(t, map[string]string{
 		"csgclaw/bin/csgclaw": "#!/bin/sh\n",
@@ -172,6 +201,75 @@ func TestClientPrepareReleaseDownloadsVerifiesAndExtracts(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("Stat(%q) error = %v", path, err)
 		}
+	}
+}
+
+func TestClientPrepareReleaseAllowsBundleWithoutBoxLite(t *testing.T) {
+	archive := releaseTarball(t, map[string]string{
+		"csgclaw/bin/csgclaw": "#!/bin/sh\n",
+		"csgclaw/README.md":   "bundle\n",
+	})
+	sum := sha256.Sum256(archive)
+
+	client := Client{
+		HTTPClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     http.StatusText(http.StatusOK),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(archive)),
+			}, nil
+		}),
+	}
+
+	prepared, err := client.PrepareRelease(context.Background(), ReleaseAsset{
+		Name:        "csgclaw_v0.2.7_linux_amd64.tar.gz",
+		DownloadURL: "https://downloads.example.test/csgclaw.tar.gz",
+		Size:        int64(len(archive)),
+		SHA256:      hex.EncodeToString(sum[:]),
+	}, t.TempDir())
+	if err != nil {
+		t.Fatalf("PrepareRelease() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(prepared.BundleDir, "bin", "csgclaw")); err != nil {
+		t.Fatalf("Stat(csgclaw) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(prepared.BundleDir, "bin", "boxlite")); !os.IsNotExist(err) {
+		t.Fatalf("Stat(boxlite) error = %v, want not exist", err)
+	}
+}
+
+func TestClientPrepareReleaseExtractsWindowsZipBundle(t *testing.T) {
+	archive := releaseZipArchive(t, map[string]string{
+		"csgclaw/bin/csgclaw.exe": "@echo off\r\n",
+		"csgclaw/README.md":       "bundle\n",
+	})
+	sum := sha256.Sum256(archive)
+
+	client := Client{
+		HTTPClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     http.StatusText(http.StatusOK),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(archive)),
+			}, nil
+		}),
+	}
+
+	prepared, err := client.PrepareRelease(context.Background(), ReleaseAsset{
+		Name:        "csgclaw_v0.2.7_windows_amd64.zip",
+		DownloadURL: "https://downloads.example.test/csgclaw.zip",
+		Size:        int64(len(archive)),
+		SHA256:      hex.EncodeToString(sum[:]),
+	}, t.TempDir())
+	if err != nil {
+		t.Fatalf("PrepareRelease() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(prepared.BundleDir, "bin", "csgclaw.exe")); err != nil {
+		t.Fatalf("Stat(csgclaw.exe) error = %v", err)
 	}
 }
 
@@ -236,7 +334,7 @@ func TestClientPrepareReleaseAllowsMissingSHA256MetadataTemporarily(t *testing.T
 
 func TestClientPrepareReleaseRejectsInvalidBundle(t *testing.T) {
 	archive := releaseTarball(t, map[string]string{
-		"csgclaw/bin/csgclaw": "#!/bin/sh\n",
+		"csgclaw/bin/boxlite": "#!/bin/sh\n",
 	})
 	sum := sha256.Sum256(archive)
 
@@ -257,8 +355,65 @@ func TestClientPrepareReleaseRejectsInvalidBundle(t *testing.T) {
 		Size:        int64(len(archive)),
 		SHA256:      hex.EncodeToString(sum[:]),
 	}, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "release bundle is missing bin/boxlite") {
+	if err == nil || !strings.Contains(err.Error(), "release bundle is missing bin/csgclaw") {
 		t.Fatalf("PrepareRelease() error = %v, want bundle validation error", err)
+	}
+}
+
+func TestClientPrepareReleaseRejectsMalformedTarArchive(t *testing.T) {
+	archive := releaseTarball(t, map[string]string{
+		"../escape":           "bad\n",
+		"csgclaw/bin/csgclaw": "#!/bin/sh\n",
+		"csgclaw/bin/boxlite": "#!/bin/sh\n",
+		"csgclaw/README.md":   "bundle\n",
+	})
+
+	client := Client{
+		HTTPClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     http.StatusText(http.StatusOK),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(archive)),
+			}, nil
+		}),
+	}
+
+	_, err := client.PrepareRelease(context.Background(), ReleaseAsset{
+		Name:        "csgclaw_v0.2.7_darwin_arm64.tar.gz",
+		DownloadURL: "https://downloads.example.test/csgclaw.tar.gz",
+		Size:        int64(len(archive)),
+	}, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `release archive contains invalid entry "../escape"`) {
+		t.Fatalf("PrepareRelease() error = %v, want invalid tar entry", err)
+	}
+}
+
+func TestClientPrepareReleaseRejectsMalformedZipArchive(t *testing.T) {
+	archive := releaseZipArchive(t, map[string]string{
+		"../escape":               "bad\n",
+		"csgclaw/bin/csgclaw.exe": "@echo off\r\n",
+		"csgclaw/README.md":       "bundle\n",
+	})
+
+	client := Client{
+		HTTPClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     http.StatusText(http.StatusOK),
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(archive)),
+			}, nil
+		}),
+	}
+
+	_, err := client.PrepareRelease(context.Background(), ReleaseAsset{
+		Name:        "csgclaw_v0.2.7_windows_amd64.zip",
+		DownloadURL: "https://downloads.example.test/csgclaw.zip",
+		Size:        int64(len(archive)),
+	}, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `release archive contains invalid entry "../escape"`) {
+		t.Fatalf("PrepareRelease() error = %v, want invalid zip entry", err)
 	}
 }
 
@@ -311,6 +466,34 @@ func TestClientInstallPreparedReplacesBundleFromSymlinkedExecutable(t *testing.T
 	}
 	assertFileContent(t, filepath.Join(installRoot, "README.md"), "new")
 	assertFileContent(t, filepath.Join(installRoot, "bin", "boxlite"), "#!/bin/sh\n# new boxlite\n")
+}
+
+func TestClientInstallPreparedReplacesWindowsBundle(t *testing.T) {
+	installParent := t.TempDir()
+	installRoot := writeBundleFiles(t, installParent, map[string]string{
+		filepath.Join("csgclaw", "bin", "csgclaw.exe"): "@echo off\r\nREM old\r\n",
+		filepath.Join("csgclaw", "README.md"):          "old",
+	})
+	preparedRoot := writeBundleFiles(t, t.TempDir(), map[string]string{
+		filepath.Join("csgclaw", "bin", "csgclaw.exe"): "@echo off\r\nREM new\r\n",
+		filepath.Join("csgclaw", "README.md"):          "new",
+	})
+
+	client := Client{
+		ExecutablePath: func() (string, error) {
+			return filepath.Join(installRoot, "bin", "csgclaw.exe"), nil
+		},
+	}
+
+	installed, err := client.InstallPrepared(PreparedBundle{BundleDir: preparedRoot})
+	if err != nil {
+		t.Fatalf("InstallPrepared() error = %v", err)
+	}
+	if got, want := installed.InstallRoot, installRoot; got != want {
+		t.Fatalf("InstallRoot = %q, want %q", got, want)
+	}
+	assertFileContent(t, filepath.Join(installRoot, "README.md"), "new")
+	assertFileContent(t, filepath.Join(installRoot, "bin", "csgclaw.exe"), "@echo off\r\nREM new\r\n")
 }
 
 func TestClientInstallPreparedRollsBackOnRenameFailure(t *testing.T) {
@@ -404,7 +587,8 @@ func TestClientRestartIfRunningStopsAndStartsDaemon(t *testing.T) {
 		t.Fatalf("WriteFile(%q) error = %v", pidPath, err)
 	}
 
-	installRoot := t.TempDir()
+	installParent := t.TempDir()
+	installRoot := writeBundleDir(t, installParent, "restart")
 	var calls [][]string
 	originalExec := execCommandContext
 	execCommandContext = func(_ context.Context, name string, args ...string) *exec.Cmd {
@@ -497,12 +681,39 @@ func releaseTarball(t *testing.T, files map[string]string) []byte {
 func writeBundleDir(t *testing.T, parentDir, marker string) string {
 	t.Helper()
 
+	return writeBundleFiles(t, parentDir, map[string]string{
+		filepath.Join("csgclaw", "bin", "csgclaw"): "#!/bin/sh\n# " + marker + "\n",
+		filepath.Join("csgclaw", "bin", "boxlite"): "#!/bin/sh\n# " + marker + " boxlite\n",
+		filepath.Join("csgclaw", "README.md"):      marker,
+	})
+}
+
+func releaseZipArchive(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) error = %v", name, err)
+		}
+		if _, err := io.WriteString(w, content); err != nil {
+			t.Fatalf("WriteString(%q) error = %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close error = %v", err)
+	}
+	return buf.Bytes()
+}
+
+func writeBundleFiles(t *testing.T, parentDir string, files map[string]string) string {
+	t.Helper()
+
 	root := filepath.Join(parentDir, "csgclaw")
-	for path, content := range map[string]string{
-		filepath.Join(root, "bin", "csgclaw"): "#!/bin/sh\n# " + marker + "\n",
-		filepath.Join(root, "bin", "boxlite"): "#!/bin/sh\n# " + marker + " boxlite\n",
-		filepath.Join(root, "README.md"):      marker,
-	} {
+	for relPath, content := range files {
+		path := filepath.Join(parentDir, relPath)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(path), err)
 		}

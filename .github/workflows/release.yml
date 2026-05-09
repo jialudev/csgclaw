@@ -9,14 +9,6 @@ on:
       version:
         description: "Release version, for example v0.1.0"
         required: true
-      package_mode:
-        description: "Packaging mode for the csgclaw release artifact"
-        required: false
-        default: "bundled-boxlite-cli"
-        type: choice
-        options:
-          - bundled-boxlite-cli
-          - legacy-single-binary
 
 permissions:
   contents: write
@@ -33,12 +25,28 @@ jobs:
           - runner: ubuntu-latest
             goos: linux
             goarch: amd64
+            include_boxlite: 1
+            cgo_enabled: 0
           - runner: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
+            include_boxlite: 1
+            cgo_enabled: 0
           - runner: macos-14
             goos: darwin
             goarch: arm64
+            include_boxlite: 1
+            cgo_enabled: 0
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+            include_boxlite: 0
+            cgo_enabled: 0
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            include_boxlite: 0
+            cgo_enabled: 0
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -61,17 +69,6 @@ jobs:
           fi
           echo "value=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve package mode
-        id: package_mode
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.package_mode }}" ]; then
-            package_mode="${{ github.event.inputs.package_mode }}"
-          else
-            package_mode="bundled-boxlite-cli"
-          fi
-          echo "value=${package_mode}" >> "$GITHUB_OUTPUT"
-
       - name: Resolve build metadata
         id: build_meta
         shell: bash
@@ -89,9 +86,9 @@ jobs:
           DIST_DIR=dist \
           APP=csgclaw \
           GOCACHE="${{ github.workspace }}/.gocache" \
-          PACKAGE_MODE="${{ steps.package_mode.outputs.value }}" \
+          INCLUDE_BOXLITE="${{ matrix.include_boxlite }}" \
           BOXLITE_CLI_VERSION="${{ env.BOXLITE_CLI_VERSION }}" \
-          CGO_ENABLED=1 \
+          CGO_ENABLED="${{ matrix.cgo_enabled }}" \
           ./scripts/package-release.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
           VERSION="${{ steps.version.outputs.value }}" \
           COMMIT="${{ steps.build_meta.outputs.commit }}" \
@@ -99,7 +96,8 @@ jobs:
           DIST_DIR=dist \
           APP=csgclaw-cli \
           GOCACHE="${{ github.workspace }}/.gocache" \
-          CGO_ENABLED=1 \
+          INCLUDE_BOXLITE=0 \
+          CGO_ENABLED="${{ matrix.cgo_enabled }}" \
           ./scripts/package-release.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
 
       - name: Upload release asset

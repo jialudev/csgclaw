@@ -65,7 +65,10 @@ func TestEnsureStateCreatesConfigAndBootstrapsManagerState(t *testing.T) {
 	if got, want := gotCfg.Server.AccessToken, config.DefaultAccessToken; got != want {
 		t.Fatalf("cfg.Server.AccessToken = %q, want %q", got, want)
 	}
-	if got, want := gotCfg.Sandbox.Provider, config.DefaultSandboxProvider; got != want {
+	if got := gotCfg.Sandbox.Provider; got != "" {
+		t.Fatalf("cfg.Sandbox.Provider = %q, want empty dynamic default", got)
+	}
+	if got, want := gotCfg.Sandbox.Resolved().Provider, config.DockerProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 
@@ -77,7 +80,7 @@ func TestEnsureStateCreatesConfigAndBootstrapsManagerState(t *testing.T) {
 		`[server]`,
 		`[bootstrap]`,
 		`[sandbox]`,
-		`provider = "` + config.DefaultSandboxProvider + `"`,
+		`provider = ""`,
 		`debian_registries_override = []`,
 	} {
 		if !strings.Contains(string(data), want) {
@@ -275,7 +278,7 @@ access_token = "your_access_token"
 	defer restore()
 	EnsureIMBootstrapState = func(string) error { return nil }
 	CreateManagerBot = func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
-		if got, want := cfg.Sandbox.Provider, config.DefaultSandboxProvider; got != want {
+		if got, want := cfg.Sandbox.Resolved().Provider, config.DockerProvider; got != want {
 			t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 		}
 		return bot.Bot{}, nil
@@ -295,7 +298,7 @@ access_token = "your_access_token"
 		`[bootstrap]`,
 		`manager_image_override = ""`,
 		`[sandbox]`,
-		`provider = "` + config.DefaultSandboxProvider + `"`,
+		`provider = ""`,
 		`debian_registries_override = []`,
 	} {
 		if !strings.Contains(content, want) {

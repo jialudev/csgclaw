@@ -22,6 +22,7 @@ import (
 	"csgclaw/internal/llm"
 	internalonboard "csgclaw/internal/onboard"
 	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/sandboxproviders"
 	"csgclaw/internal/server"
 	"csgclaw/internal/upgrade"
 )
@@ -168,6 +169,17 @@ func TestServeRunSkipsAutoBootstrapWhenStateComplete(t *testing.T) {
 func TestServeRunRewritesLegacyBoxLiteProviderWhenStateComplete(t *testing.T) {
 	restore := stubServeDependencies(t)
 	defer restore()
+	t.Setenv("HOME", t.TempDir())
+	origCreateManagerBot := internalonboard.CreateManagerBot
+	origEnsureIMBootstrapState := internalonboard.EnsureIMBootstrapState
+	t.Cleanup(func() {
+		internalonboard.CreateManagerBot = origCreateManagerBot
+		internalonboard.EnsureIMBootstrapState = origEnsureIMBootstrapState
+	})
+	internalonboard.EnsureIMBootstrapState = func(string) error { return nil }
+	internalonboard.CreateManagerBot = func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
+		return bot.Bot{ID: agent.ManagerUserID}, nil
+	}
 
 	origDetectBootstrapState := DetectBootstrapState
 	origEnsureBootstrapState := EnsureBootstrapState
@@ -619,7 +631,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`access_token = "pc*****et"`,
 		`no_auth = true`,
 		`[sandbox]`,
-		fmt.Sprintf(`provider = %q`, config.DefaultSandboxProvider),
+		fmt.Sprintf(`provider = %q`, config.DockerProvider),
 		`debian_registries_override = []`,
 		`[models]`,
 		`default = "default.model-test"`,
@@ -1077,6 +1089,37 @@ func TestNewAgentServiceRejectsUnsupportedSandboxProvider(t *testing.T) {
 	}
 }
 
+func TestNewAgentServiceExplainsMissingConfiguredBoxLite(t *testing.T) {
+	prevLookPath := sandboxprovidersTestOnlyLookPath(t, func(string) (string, error) {
+		return "", fmt.Errorf("not found")
+	})
+	defer prevLookPath()
+
+	prevStatPath := sandboxprovidersTestOnlyStatPath(t, func(string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	})
+	defer prevStatPath()
+
+	_, err := newAgentService(config.Config{
+		Sandbox: config.SandboxConfig{
+			Provider: config.BoxLiteCLIProvider,
+		},
+	})
+	if err == nil {
+		t.Fatal("newAgentService() error = nil, want actionable boxlite availability error")
+	}
+	for _, want := range []string{
+		`sandbox provider "boxlite" is configured`,
+		`no bundled boxlite binary was found`,
+		`"boxlite" is not available on PATH`,
+		`Switch [sandbox].provider to "docker"`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("newAgentService() error = %q, want substring %q", err, want)
+		}
+	}
+}
+
 func TestNewAgentServiceRegistersCodexRuntime(t *testing.T) {
 	svc, err := newAgentService(config.Config{
 		Sandbox: config.SandboxConfig{
@@ -1112,6 +1155,18 @@ func csgHubLiteServeConfig(baseURL string) config.Config {
 			ManagerImageOverride: "ghcr.io/example/manager:latest",
 		},
 	}
+}
+
+func sandboxprovidersTestOnlyLookPath(t *testing.T, fn func(string) (string, error)) func() {
+	t.Helper()
+	prev := sandboxproviders.LookPathForTest(fn)
+	return prev
+}
+
+func sandboxprovidersTestOnlyStatPath(t *testing.T, fn func(string) (os.FileInfo, error)) func() {
+	t.Helper()
+	prev := sandboxproviders.StatPathForTest(fn)
+	return prev
 }
 
 func stubServeDependencies(t *testing.T) func() {

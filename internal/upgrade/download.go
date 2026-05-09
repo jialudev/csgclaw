@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -16,6 +17,23 @@ type PreparedBundle struct {
 	WorkDir     string
 	ArchivePath string
 	BundleDir   string
+}
+
+// BundleLayout describes the official csgclaw bundle shape after extraction.
+// All official bundles use the same root directory layout:
+//
+//	csgclaw/
+//	  bin/
+//	    csgclaw[.exe]
+//	    boxlite[.exe]   (optional)
+//
+// The main csgclaw binary is always required. Bundled boxlite is optional so
+// release artifacts can support platforms where only the Docker-backed runtime
+// is shipped.
+type BundleLayout struct {
+	RootDir     string
+	CSGClawPath string
+	BoxLitePath string
 }
 
 func (c Client) PrepareRelease(ctx context.Context, asset ReleaseAsset, parentDir string) (PreparedBundle, error) {
@@ -33,7 +51,10 @@ func (c Client) PrepareRelease(ctx context.Context, asset ReleaseAsset, parentDi
 	// if strings.TrimSpace(asset.SHA256) == "" {
 	// 	return PreparedBundle{}, fmt.Errorf("release asset %s is missing sha256 metadata", asset.Name)
 	// }
-	if !strings.HasSuffix(asset.Name, ".tar.gz") {
+	switch {
+	case strings.HasSuffix(asset.Name, ".tar.gz"):
+	case strings.HasSuffix(asset.Name, ".zip"):
+	default:
 		return PreparedBundle{}, fmt.Errorf("unsupported release archive format for %s", asset.Name)
 	}
 
@@ -57,7 +78,7 @@ func (c Client) PrepareRelease(ctx context.Context, asset ReleaseAsset, parentDi
 	if err := os.MkdirAll(extractDir, 0o755); err != nil {
 		return PreparedBundle{}, fmt.Errorf("mkdir %s: %w", extractDir, err)
 	}
-	if err := extractTarGz(archivePath, extractDir); err != nil {
+	if err := extractArchive(archivePath, extractDir); err != nil {
 		return PreparedBundle{}, err
 	}
 
@@ -181,6 +202,72 @@ func extractTarGz(archivePath, targetDir string) error {
 	}
 }
 
+func extractZip(archivePath, targetDir string) error {
+	zr, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return fmt.Errorf("read release archive %s: %w", archivePath, err)
+	}
+	defer zr.Close()
+
+	for _, file := range zr.File {
+		targetPath, err := archiveTargetPath(targetDir, file.Name)
+		if err != nil {
+			return err
+		}
+
+		info := file.FileInfo()
+		switch {
+		case info.IsDir():
+			if err := os.MkdirAll(targetPath, 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", targetPath, err)
+			}
+		case info.Mode().IsRegular():
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", filepath.Dir(targetPath), err)
+			}
+			mode := info.Mode().Perm()
+			if mode == 0 {
+				mode = 0o644
+			}
+			src, err := file.Open()
+			if err != nil {
+				return fmt.Errorf("open release archive entry %s: %w", file.Name, err)
+			}
+			dst, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			if err != nil {
+				_ = src.Close()
+				return fmt.Errorf("open %s: %w", targetPath, err)
+			}
+			if _, err := io.Copy(dst, src); err != nil {
+				_ = dst.Close()
+				_ = src.Close()
+				return fmt.Errorf("write %s: %w", targetPath, err)
+			}
+			if err := dst.Close(); err != nil {
+				_ = src.Close()
+				return fmt.Errorf("close %s: %w", targetPath, err)
+			}
+			if err := src.Close(); err != nil {
+				return fmt.Errorf("close release archive entry %s: %w", file.Name, err)
+			}
+		default:
+			return fmt.Errorf("release archive contains unsupported entry %s", file.Name)
+		}
+	}
+	return nil
+}
+
+func extractArchive(archivePath, targetDir string) error {
+	switch {
+	case strings.HasSuffix(archivePath, ".tar.gz"):
+		return extractTarGz(archivePath, targetDir)
+	case strings.HasSuffix(archivePath, ".zip"):
+		return extractZip(archivePath, targetDir)
+	default:
+		return fmt.Errorf("unsupported release archive format for %s", filepath.Base(archivePath))
+	}
+}
+
 func archiveTargetPath(rootDir, name string) (string, error) {
 	cleanName := filepath.Clean(strings.TrimSpace(name))
 	if cleanName == "." || cleanName == "" {
@@ -200,22 +287,93 @@ func archiveTargetPath(rootDir, name string) (string, error) {
 	return targetPath, nil
 }
 
-func validateBundleDir(bundleDir string) error {
-	required := []string{
-		filepath.Join(bundleDir, "bin", "csgclaw"),
-		filepath.Join(bundleDir, "bin", "boxlite"),
+func inspectBundleDir(bundleDir string) (BundleLayout, error) {
+	csgclawPath, err := requiredBundleExecutable(bundleDir, "csgclaw")
+	if err != nil {
+		return BundleLayout{}, err
 	}
-	for _, path := range required {
-		info, err := os.Stat(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("release bundle is missing %s", strings.TrimPrefix(path, bundleDir+string(filepath.Separator)))
-			}
-			return fmt.Errorf("stat %s: %w", path, err)
+	boxlitePath, err := optionalBundleExecutable(bundleDir, "boxlite")
+	if err != nil {
+		return BundleLayout{}, err
+	}
+	return BundleLayout{
+		RootDir:     bundleDir,
+		CSGClawPath: csgclawPath,
+		BoxLitePath: boxlitePath,
+	}, nil
+}
+
+func validateBundleDir(bundleDir string) error {
+	_, err := inspectBundleDir(bundleDir)
+	return err
+}
+
+func requireRegularBundleFile(bundleDir, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("release bundle is missing %s", bundleRelativePath(bundleDir, path))
 		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("release bundle entry %s is not a file", strings.TrimPrefix(path, bundleDir+string(filepath.Separator)))
-		}
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("release bundle entry %s is not a file", bundleRelativePath(bundleDir, path))
 	}
 	return nil
+}
+
+func requiredBundleExecutable(bundleDir, baseName string) (string, error) {
+	for _, path := range bundleExecutableCandidates(bundleDir, baseName) {
+		if _, err := os.Lstat(path); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", fmt.Errorf("stat %s: %w", path, err)
+		}
+		if err := requireRegularBundleFile(bundleDir, path); err == nil {
+			return path, nil
+		} else {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("release bundle is missing %s", filepath.Join("bin", baseName))
+}
+
+func optionalRegularBundleFile(bundleDir, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("release bundle entry %s is not a file", bundleRelativePath(bundleDir, path))
+	}
+	return nil
+}
+
+func optionalBundleExecutable(bundleDir, baseName string) (string, error) {
+	for _, path := range bundleExecutableCandidates(bundleDir, baseName) {
+		if _, err := os.Lstat(path); err == nil {
+			if err := optionalRegularBundleFile(bundleDir, path); err != nil {
+				return "", err
+			}
+			return path, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("stat %s: %w", path, err)
+		}
+	}
+	return "", nil
+}
+
+func bundleExecutableCandidates(bundleDir, baseName string) []string {
+	return []string{
+		filepath.Join(bundleDir, "bin", baseName),
+		filepath.Join(bundleDir, "bin", baseName+".exe"),
+	}
+}
+
+func bundleRelativePath(bundleDir, path string) string {
+	return strings.TrimPrefix(path, bundleDir+string(filepath.Separator))
 }

@@ -1,7 +1,11 @@
 package sandboxproviders
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -12,6 +16,13 @@ import (
 )
 
 func TestBoxLiteCLIProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
+	restore := stubBoxLiteAvailability(t, func(path string) (string, error) {
+		return path, nil
+	}, func(path string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	})
+	defer restore()
+
 	factory, ok := factories[config.BoxLiteCLIProvider]
 	if !ok {
 		t.Fatalf("boxlite-cli provider factory not registered")
@@ -38,6 +49,64 @@ func TestBoxLiteCLIProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
 	}
 }
 
+func TestBoxLiteCLIProviderFactoryErrorsWhenBundledAndPATHFallbackAreUnavailable(t *testing.T) {
+	restore := stubBoxLiteAvailability(t, func(string) (string, error) {
+		return "", fmt.Errorf("not found")
+	}, func(path string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	})
+	defer restore()
+
+	factory, ok := factories[config.BoxLiteCLIProvider]
+	if !ok {
+		t.Fatalf("boxlite-cli provider factory not registered")
+	}
+
+	_, err := factory(config.SandboxConfig{Provider: config.BoxLiteCLIProvider})
+	if err == nil {
+		t.Fatal("factory() error = nil, want actionable boxlite availability error")
+	}
+	for _, want := range []string{
+		`sandbox provider "boxlite" is configured`,
+		`no bundled boxlite binary was found`,
+		`"boxlite" is not available on PATH`,
+		`Switch [sandbox].provider to "docker"`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("factory() error = %q, want substring %q", err, want)
+		}
+	}
+}
+
+func TestBoxLiteCLIProviderFactoryAcceptsBundledBinaryWithoutPATHLookup(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	bundled := filepath.Join(binDir, "boxlite")
+	if err := os.WriteFile(bundled, []byte(""), 0o755); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	restoreExe := boxlitecli.StubExecutablePathForTest(filepath.Join(binDir, "csgclaw"))
+	defer restoreExe()
+
+	restore := stubBoxLiteAvailability(t, func(string) (string, error) {
+		t.Fatal("lookPath() should not be called when bundled boxlite exists")
+		return "", nil
+	}, os.Stat)
+	defer restore()
+
+	factory, ok := factories[config.BoxLiteCLIProvider]
+	if !ok {
+		t.Fatalf("boxlite-cli provider factory not registered")
+	}
+	if _, err := factory(config.SandboxConfig{Provider: config.BoxLiteCLIProvider}); err != nil {
+		t.Fatalf("factory() error = %v", err)
+	}
+}
+
 func sandboxProviderFromOption(t *testing.T, opt agent.ServiceOption) sandbox.Provider {
 	t.Helper()
 	svc := &agent.Service{}
@@ -52,4 +121,16 @@ func providerPath(t *testing.T, provider boxlitecli.Provider) string {
 	t.Helper()
 	value := reflect.ValueOf(&provider).Elem().FieldByName("path")
 	return reflect.NewAt(value.Type(), unsafe.Pointer(value.UnsafeAddr())).Elem().String()
+}
+
+func stubBoxLiteAvailability(t *testing.T, look func(string) (string, error), stat func(string) (os.FileInfo, error)) func() {
+	t.Helper()
+	prevLookPath := lookPath
+	prevStatPath := statPath
+	lookPath = look
+	statPath = stat
+	return func() {
+		lookPath = prevLookPath
+		statPath = prevStatPath
+	}
 }

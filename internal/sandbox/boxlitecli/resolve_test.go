@@ -100,15 +100,5 @@ func TestResolvePathFallsBackToPATHValue(t *testing.T) {
 
 func stubExecutablePath(t *testing.T, path string) func() {
 	t.Helper()
-	previous := executablePath
-	executablePath = func() (string, error) {
-		return path, nil
-	}
-	return func() {
-		executablePath = previous
-	}
-}
-
-func StubExecutablePathForTest(t *testing.T, path string) func() {
-	return stubExecutablePath(t, path)
+	return StubExecutablePathForTest(path)
 }

@@ -16,7 +16,8 @@ BUILD_TIME="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 DIST_DIR="${DIST_DIR:-dist}"
 GOCACHE="${GOCACHE:-$(pwd)/.gocache}"
 GO_BUILD_TAGS="${GO_BUILD_TAGS:-}"
-PACKAGE_MODE="${PACKAGE_MODE:-bundled-boxlite-cli}"
+PACKAGE_MODE="${PACKAGE_MODE:-}"
+INCLUDE_BOXLITE="${INCLUDE_BOXLITE:-}"
 VERSION_PKG="${VERSION_PKG:-csgclaw/internal/version}"
 BOXLITE_CLI_VERSION="${BOXLITE_CLI_VERSION:-v0.9.0}"
 BOXLITE_CLI_BASE_URL="${BOXLITE_CLI_BASE_URL:-https://github.com/boxlite-ai/boxlite/releases/download}"
@@ -28,20 +29,63 @@ fi
 mkdir -p "$DIST_DIR"
 "$(dirname "$0")/sync-agent-runtimes.sh"
 
-case "$PACKAGE_MODE" in
-  bundled-boxlite-cli|legacy-single-binary) ;;
+supports_boxlite_bundle() {
+  case "$1/$2" in
+    darwin/arm64|linux/amd64|linux/arm64) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_include_boxlite() {
+  if [ -n "$INCLUDE_BOXLITE" ]; then
+    echo "$INCLUDE_BOXLITE"
+    return
+  fi
+
+  if [ -n "$PACKAGE_MODE" ]; then
+    case "$PACKAGE_MODE" in
+      bundled-boxlite-cli) echo "1" ;;
+      legacy-single-binary) echo "0" ;;
+      *)
+        echo "unsupported PACKAGE_MODE: ${PACKAGE_MODE}" >&2
+        exit 1
+        ;;
+    esac
+    return
+  fi
+
+  if [ "$APP" = "csgclaw" ] && supports_boxlite_bundle "$GOOS_TARGET" "$GOARCH_TARGET"; then
+    echo "1"
+    return
+  fi
+
+  echo "0"
+}
+
+INCLUDE_BOXLITE="$(resolve_include_boxlite)"
+case "$INCLUDE_BOXLITE" in
+  0|1) ;;
   *)
-    echo "unsupported PACKAGE_MODE: ${PACKAGE_MODE}" >&2
+    echo "INCLUDE_BOXLITE must be 0 or 1, got: ${INCLUDE_BOXLITE}" >&2
     exit 1
     ;;
 esac
+
+if [ "$APP" != "csgclaw" ] && [ "$INCLUDE_BOXLITE" = "1" ]; then
+  echo "INCLUDE_BOXLITE=1 is only supported for APP=csgclaw" >&2
+  exit 1
+fi
+
+if [ "$APP" = "csgclaw" ] && [ "$INCLUDE_BOXLITE" = "1" ] && ! supports_boxlite_bundle "$GOOS_TARGET" "$GOARCH_TARGET"; then
+  echo "bundled boxlite is not supported for ${GOOS_TARGET}/${GOARCH_TARGET}" >&2
+  exit 1
+fi
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 binary_name="$APP"
 archive_ext="tar.gz"
-archive_name_prefix="$APP"
 if [ "$GOOS_TARGET" = "windows" ]; then
   binary_name="${APP}.exe"
   archive_ext="zip"
@@ -50,7 +94,7 @@ fi
 stage_dir="$tmpdir"
 binary_output="${tmpdir}/${binary_name}"
 archive_source="${binary_name}"
-if [ "$APP" = "csgclaw" ] && [ "$GOOS_TARGET" != "windows" ] && [ "$PACKAGE_MODE" = "bundled-boxlite-cli" ]; then
+if [ "$APP" = "csgclaw" ]; then
   stage_dir="${tmpdir}/${APP}/bin"
   mkdir -p "$stage_dir"
   binary_output="${stage_dir}/${binary_name}"
@@ -65,28 +109,33 @@ else
     go build -ldflags "${LDFLAGS}" -o "${binary_output}" "${CMD_PATH}"
 fi
 
-if [ "$APP" = "csgclaw" ] && [ "$GOOS_TARGET" != "windows" ] && [ "$PACKAGE_MODE" = "bundled-boxlite-cli" ]; then
+if [ "$APP" = "csgclaw" ] && [ "$INCLUDE_BOXLITE" = "1" ]; then
   BOXLITE_CLI_VERSION="$BOXLITE_CLI_VERSION" \
   BOXLITE_CLI_BASE_URL="$BOXLITE_CLI_BASE_URL" \
   "$(dirname "$0")/fetch-boxlite-cli.sh" "$GOOS_TARGET" "$GOARCH_TARGET" "$stage_dir"
 fi
 
-if [ "$APP" = "csgclaw" ] && [ "$PACKAGE_MODE" = "legacy-single-binary" ]; then
-  archive_name_prefix="${APP}-sdk-legacy"
-fi
-
-archive_base="${archive_name_prefix}_${VERSION}_${GOOS_TARGET}_${GOARCH_TARGET}"
+archive_base="${APP}_${VERSION}_${GOOS_TARGET}_${GOARCH_TARGET}"
 
 if [ "$GOOS_TARGET" = "windows" ]; then
   archive_path="${DIST_DIR}/${archive_base}.zip"
+  archive_output="$archive_path"
+  case "$archive_output" in
+    /*) ;;
+    *) archive_output="${PWD}/${archive_output}" ;;
+  esac
   if command -v zip >/dev/null 2>&1; then
     (
       cd "$tmpdir"
-      zip -q "${OLDPWD}/${archive_path}" "${binary_name}"
+      if [ "$archive_source" = "$APP" ]; then
+        zip -qr "${archive_output}" "${archive_source}"
+      else
+        zip -q "${archive_output}" "${binary_name}"
+      fi
     )
   elif command -v powershell.exe >/dev/null 2>&1; then
     powershell.exe -NoLogo -NoProfile -Command \
-      "Compress-Archive -Path '${tmpdir//\//\\/}\\${binary_name}' -DestinationPath '${PWD//\//\\/}\\${archive_path}' -Force" >/dev/null
+      "Compress-Archive -Path '${tmpdir//\//\\/}\\${archive_source}' -DestinationPath '${archive_output//\//\\/}' -Force" >/dev/null
   else
     echo "zip or powershell.exe is required to package Windows artifacts" >&2
     exit 1

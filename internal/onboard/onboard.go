@@ -153,9 +153,7 @@ func defaultConfig() config.Config {
 			NoAuth:      false,
 		},
 		Bootstrap: config.BootstrapConfig{},
-		Sandbox: config.SandboxConfig{
-			Provider: config.DefaultSandboxProvider,
-		},
+		Sandbox:   config.SandboxConfig{},
 	}
 }
 

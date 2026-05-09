@@ -47,6 +47,9 @@ func TestDefaultIMStatePathUsesDomainSubdirectory(t *testing.T) {
 }
 
 func TestLoadUsesDefaultManagerImageWhenOverrideIsEmpty(t *testing.T) {
+	restore := stubSandboxProviderExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
+	defer restore()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	content := `[server]
@@ -81,7 +84,7 @@ models = ["minimax-m2.7"]
 	if cfg.Server.NoAuth {
 		t.Fatal("cfg.Server.NoAuth = true, want false")
 	}
-	if got, want := cfg.Sandbox.Provider, DefaultSandboxProvider; got != want {
+	if got, want := cfg.Sandbox.Provider, DockerProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(cfg.Sandbox.EffectiveDebianRegistries(), ","), strings.Join(DefaultDebianRegistries, ","); got != want {
@@ -138,6 +141,9 @@ models = ["minimax-m2.7"]
 }
 
 func TestLoadNormalizesLegacyBoxLiteCLIProvider(t *testing.T) {
+	restore := stubSandboxProviderExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
+	defer restore()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	content := `[server]
@@ -168,6 +174,9 @@ models = ["minimax-m2.7"]
 }
 
 func TestLoadReadsDockerSandboxConfig(t *testing.T) {
+	restore := stubSandboxProviderExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
+	defer restore()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	content := `[server]
@@ -209,6 +218,83 @@ func TestSandboxEffectiveDockerCLIPathDefault(t *testing.T) {
 	cfg := SandboxConfig{Provider: DockerProvider}.Resolved()
 	if got, want := cfg.EffectiveDockerCLIPath(), "docker"; got != want {
 		t.Fatalf("EffectiveDockerCLIPath() = %q, want %q", got, want)
+	}
+}
+
+func TestLoadUsesBundledBoxLiteWhenSandboxProviderUnset(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bundle", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "boxlite"), []byte(""), 0o755); err != nil {
+		t.Fatalf("WriteFile(boxlite) error = %v", err)
+	}
+	restore := stubSandboxProviderExecutablePath(t, filepath.Join(binDir, "csgclaw"))
+	defer restore()
+
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
+		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
+	}
+}
+
+func TestLoadKeepsExplicitDockerProviderWhenBundledBoxLiteIsPresent(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bundle", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "boxlite"), []byte(""), 0o755); err != nil {
+		t.Fatalf("WriteFile(boxlite) error = %v", err)
+	}
+	restore := stubSandboxProviderExecutablePath(t, filepath.Join(binDir, "csgclaw"))
+	defer restore()
+
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[sandbox]
+provider = "docker"
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Sandbox.Provider, DockerProvider; got != want {
+		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 }
 
@@ -668,6 +754,50 @@ models = ["gpt-test"]
 	}
 	if strings.Contains(saved, `provider = "boxlite-cli"`) {
 		t.Fatalf("saved config kept legacy sandbox provider alias:\n%s", saved)
+	}
+}
+
+func TestSaveKeepsSandboxProviderUnsetWhenItUsesDynamicDefault(t *testing.T) {
+	restore := stubSandboxProviderExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
+	defer restore()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[sandbox]
+provider = ""
+
+[models]
+default = "default.gpt-test"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["gpt-test"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Sandbox.Provider, DockerProvider; got != want {
+		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
+	}
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if got := string(data); !strings.Contains(got, `provider = ""`) {
+		t.Fatalf("saved config should keep sandbox provider unset:\n%s", got)
 	}
 }
 

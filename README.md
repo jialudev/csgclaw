@@ -20,7 +20,9 @@ CSGClaw is a multi-agent collaboration platform built by OpenCSG — designed ar
 curl -fsSL https://csgclaw.opencsg.com/install.sh | bash
 ```
 
-The installer downloads a prebuilt release bundle, installs it into user-local directories, and links `csgclaw` into your `PATH`. Prebuilt bundles are currently available for macOS arm64, Linux amd64, and Linux arm64.
+The installer downloads a prebuilt release bundle, installs it into user-local directories, and links `csgclaw` into your `PATH`. The Unix installer currently supports macOS arm64, Linux amd64, and Linux arm64.
+
+Official release bundles are also published for macOS amd64 and Windows amd64. Windows users should download the `.zip` bundle from Releases, extract it, and run `csgclaw.exe` from `csgclaw/bin/`. Windows bundles currently default to Docker and require a working local Docker installation.
 
 **Build from source:**
 
@@ -45,7 +47,7 @@ CSGClaw will open the IM workspace in your browser automatically when possible. 
 ## Features
 
 - **Multi-agent coordination** — work with a team of specialized agents through a single coordination point, not a pile of chat windows
-- **One-click install** — prebuilt binaries for macOS arm64, Linux amd64, and Linux arm64; up and running in minutes
+- **One-click install** — prebuilt releases for macOS arm64/amd64, Linux amd64/arm64, and Windows amd64; up and running in minutes
 - **WebUI out of the box** — browser-based workspace available immediately after `csgclaw serve`
 - **Multi-channel support** — connect Feishu, WeChat, Matrix, or other channels when needed
 - **Isolated execution** — each Worker runs in a secure sandbox with security boundaries enabled by default
@@ -74,7 +76,7 @@ CSGClaw gives you one **Manager** and a set of specialized **Workers**, so inste
 
 **Workers** — role-specific executors (frontend, backend, testing, docs, research…). Specialization keeps context clean and reduces role confusion.
 
-**Sandbox** — Worker execution is isolated by the configured sandbox provider. The default is **BoxLite**, with support for `boxlite` and custom providers.
+**Sandbox** — Worker execution is isolated by the configured sandbox provider. Official bundles default to **BoxLite** when they include a bundled `boxlite`, and default to **Docker** otherwise.
 
 **Interface** — WebUI out of the box; Feishu, WeChat, Matrix, and other channels available as integrations.
 
@@ -104,8 +106,8 @@ The key isn't that multiple agents exist — it's that **their collaboration is 
 **PicoClaw by default, extensible by design.**
 CSGClaw uses PicoClaw as its lightweight default Agent Runtime, keeping the Manager fast to start and cheap to run. The runtime remains pluggable, so deployments can integrate alternatives such as OpenClaw when needed.
 
-**BoxLite by default, sandbox provider as an extension point.**
-Isolation is non-negotiable, but Docker is often overkill for local-first use. BoxLite gives Workers meaningful security boundaries without a container runtime. Teams that need a different isolation model can add a custom sandbox provider.
+**BoxLite by default, sandbox-agnostic by design.**
+Isolation is non-negotiable. BoxLite is the preferred default because it is lightweight, fast to start, and convenient for local-first workflows. When BoxLite is unavailable, Docker is fully supported as a mature cross-platform fallback, and teams can switch sandbox providers explicitly when their environment requires it.
 
 **WebUI first, channel-agnostic by design.**
 Many multi-agent systems are tightly coupled to one messaging protocol. CSGClaw ships with a built-in WebUI so you can start immediately, while keeping other channels (Feishu, WeChat, Matrix) as optional integrations — not assumptions.

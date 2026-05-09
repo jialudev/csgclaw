@@ -69,7 +69,7 @@ type SandboxConfig struct {
 func (c SandboxConfig) Resolved() SandboxConfig {
 	c.Provider = normalizeSandboxProvider(c.Provider)
 	if c.Provider == "" {
-		c.Provider = DefaultSandboxProvider
+		c.Provider = defaultSandboxProvider()
 	}
 	c.StoragePath = strings.TrimSpace(c.StoragePath)
 	c.DebianRegistriesOverride = normalizeStringList(c.DebianRegistriesOverride)
@@ -675,6 +675,9 @@ func (c Config) rawOrResolvedSandboxProvider(raw, loaded, resolved string) strin
 	// TODO: Remove this special-case after older config.toml files have been migrated.
 	if strings.EqualFold(strings.TrimSpace(raw), legacyBoxLiteCLIProvider) {
 		return resolved
+	}
+	if strings.TrimSpace(raw) == "" && strings.TrimSpace(loaded) == "" && resolved == defaultSandboxProvider() {
+		return ""
 	}
 	return c.rawOrResolvedString(raw, loaded, resolved)
 }

@@ -323,7 +323,7 @@ func serveBackground(run *command.Context, cfg config.Config, globals command.Gl
 	cmd := exec.Command(exe, childArgs...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = backgroundServeSysProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start daemon: %w", err)

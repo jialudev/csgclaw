@@ -171,14 +171,16 @@ csgclaw upgrade [flags]
 - `csgclaw upgrade --check` 会输出当前版本、最新版本、是否可升级，以及匹配到的 asset 名称。
 - `csgclaw upgrade` 会下载当前平台对应的 release archive，完成校验，安装完整官方 bundle，并在检测到 daemon 运行时自动重启。
 - `csgclaw upgrade --no-restart` 会安装新 bundle，但不会影响当前正在运行的 daemon 进程。
-- 自动安装只支持官方 bundle 布局，也就是当前可执行文件能够解析回 `<install-root>/bin/csgclaw`。
+- 自动安装只支持官方 bundle 布局，也就是当前可执行文件能够解析回 `<install-root>/bin/csgclaw` 或 `<install-root>/bin/csgclaw.exe`。
+- Windows 平台的 release asset 使用 `.zip`；当前其他支持的平台使用 `.tar.gz`。
 - 自动重启只支持默认 PID 路径 `~/.csgclaw/server.pid`。如果 daemon 是用自定义 PID 或其他启动参数拉起的，请改用 `--no-restart` 后手动重启。
 
 常见失败场景：
 
 - 源码构建或手工复制单个二进制的安装方式可以使用 `--check`，但自动安装会被拒绝，因为没有可原子替换的官方 bundle 根目录。
 - 如果下载后的 archive 没通过 size 或 SHA256 校验，CLI 会在安装前中止，并提示稍后重试或反馈 release 异常。
-- 如果 release archive 结构不合法，或者缺少 `bin/csgclaw` / `bin/boxlite`，CLI 会在安装前中止。
+- 如果 release archive 结构不合法，或者缺少 `bin/csgclaw` / `bin/csgclaw.exe`，CLI 会在安装前中止。
+- `bin/boxlite` 现在是可选的。没有它的 bundle 仍然是合法官方 bundle，并且在 `[sandbox].provider` 未设置时默认回退到 Docker。
 - 如果自动重启阶段无法使用默认 PID 路径，请重新执行 `csgclaw upgrade --no-restart`，然后手动运行 `csgclaw stop` 和 `csgclaw serve --daemon`。
 
 示例：

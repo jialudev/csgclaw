@@ -171,14 +171,16 @@ Behavior:
 - `csgclaw upgrade --check` prints the current version, latest version, update availability, and matched asset name.
 - `csgclaw upgrade` downloads the matching release archive, validates it, installs the full official bundle, and restarts the daemon if one is running.
 - `csgclaw upgrade --no-restart` installs the new bundle but leaves the current daemon process unchanged.
-- Automatic install supports only the official bundle layout, where the executable resolves to `<install-root>/bin/csgclaw`.
+- Automatic install supports only the official bundle layout, where the executable resolves to `<install-root>/bin/csgclaw` or `<install-root>/bin/csgclaw.exe`.
+- On Windows, release assets use `.zip`; other currently supported release assets use `.tar.gz`.
 - Automatic restart supports only the default PID path `~/.csgclaw/server.pid`. If the daemon was started with custom PID or startup flags, use `--no-restart` and restart manually.
 
 Common failure cases:
 
 - Source builds or manually copied single binaries can use `--check`, but automatic install is rejected because there is no official bundle root to replace.
 - If the downloaded archive fails size or SHA256 validation, the CLI aborts before installation and asks you to retry later or report a broken release.
-- If the release archive is malformed or missing `bin/csgclaw` or `bin/boxlite`, the CLI aborts before installation.
+- If the release archive is malformed or missing `bin/csgclaw` / `bin/csgclaw.exe`, the CLI aborts before installation.
+- `bin/boxlite` is optional. Bundles without it remain valid and will default to Docker when `[sandbox].provider` is unset.
 - If restart cannot use the default PID path, rerun `csgclaw upgrade --no-restart`, then run `csgclaw stop` and `csgclaw serve --daemon` manually.
 
 Examples:

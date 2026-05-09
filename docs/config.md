@@ -125,14 +125,36 @@ CSGClaw runs Workers through the configured sandbox provider. Supported built-in
 - `docker`: runs Workers through the local Docker CLI.
 - `csghub`: runs Workers in the remote CSGHub sandbox. This is currently supported only in [AgenticHub](https://opencsg.com/agentichub).
 
-The default source build and official release bundles already align with the CLI-backed provider:
+Official bundles use one of these layouts:
+
+- `csgclaw/bin/csgclaw` plus `csgclaw/bin/boxlite`
+- `csgclaw/bin/csgclaw` only
+
+If `[sandbox].provider` is omitted or empty, CSGClaw chooses the default dynamically from the installed bundle:
+
+- bundled `boxlite` present: default to `boxlite`
+- bundled `boxlite` absent: default to `docker`
+
+That means a generated config can keep the provider empty to follow the bundle default:
+
+```toml
+[sandbox]
+provider = ""
+```
+
+You can always override the default explicitly:
 
 ```toml
 [sandbox]
 provider = "boxlite"
 ```
 
-For `provider = "boxlite"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing.
+```toml
+[sandbox]
+provider = "docker"
+```
+
+For `provider = "boxlite"`, CSGClaw resolves the bundled sibling `boxlite` binary next to `csgclaw` first, then falls back to `PATH` if that bundle is missing. If neither exists, startup fails with an actionable error instead of silently rewriting the provider.
 
 `debian_registries_override` controls where BoxLite pulls `debian:bookworm-slim` when you need to override the built-in default order. If omitted or empty, CSGClaw uses `harbor.opencsg.com` then `docker.io`. When CSGClaw writes `config.toml`, it keeps this field visible as an empty array so it can be edited in place:
 
@@ -163,6 +185,12 @@ When `provider = "docker"`, CSGClaw runs the local `docker` CLI. By default it r
 provider = "docker"
 docker_cli_path = "/usr/local/bin/docker"
 ```
+
+Current platform expectations:
+
+- Linux amd64, Linux arm64, and macOS arm64 official bundles include `boxlite`, so an empty provider resolves to `boxlite`.
+- macOS amd64 and Windows amd64 official bundles do not include `boxlite`, so an empty provider resolves to `docker`.
+- Windows users should have Docker installed and reachable on `PATH`, or set `[sandbox].docker_cli_path` explicitly.
 
 ## Channel Configuration
 

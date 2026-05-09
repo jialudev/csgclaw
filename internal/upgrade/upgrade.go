@@ -129,7 +129,7 @@ func (c Client) resolvedGOARCH() string {
 
 func selectAsset(release LatestRelease, goos, goarch string) (ReleaseAsset, error) {
 	version := normalizeSemver(release.Name)
-	wantName := "csgclaw_" + version + "_" + goos + "_" + goarch + ".tar.gz"
+	wantName := officialAssetName(version, goos, goarch)
 	for _, asset := range release.Assets {
 		if strings.HasPrefix(asset.Name, "csgclaw-cli_") {
 			continue
@@ -141,6 +141,14 @@ func selectAsset(release LatestRelease, goos, goarch string) (ReleaseAsset, erro
 		return asset, nil
 	}
 	return ReleaseAsset{}, fmt.Errorf("no release asset for %s/%s at version %s", goos, goarch, version)
+}
+
+func officialAssetName(version, goos, goarch string) string {
+	ext := ".tar.gz"
+	if goos == "windows" {
+		ext = ".zip"
+	}
+	return "csgclaw_" + version + "_" + goos + "_" + goarch + ext
 }
 
 func absolutizeURL(baseURL, raw string) string {

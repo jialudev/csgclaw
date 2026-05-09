@@ -51,7 +51,11 @@ func (c Client) RestartIfRunning(ctx context.Context, installed InstalledBundle,
 		return result, nil
 	}
 
-	exePath := filepath.Join(installed.InstallRoot, "bin", "csgclaw")
+	layout, err := inspectBundleDir(installed.InstallRoot)
+	if err != nil {
+		return RestartResult{}, err
+	}
+	exePath := layout.CSGClawPath
 	if err := runUpgradeCommand(ctx, exePath, "stop"); err != nil {
 		return RestartResult{}, fmt.Errorf("stop running daemon: %w", err)
 	}
