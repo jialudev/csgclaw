@@ -36,6 +36,26 @@ supports_boxlite_bundle() {
   esac
 }
 
+to_windows_path() {
+  local path="$1"
+
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$path"
+    return
+  fi
+
+  case "$path" in
+    [A-Za-z]:\\*) printf '%s\n' "$path" ;;
+    *)
+      if [[ "$path" =~ ^/([A-Za-z])/(.*)$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]^}:\\${BASH_REMATCH[2]//\//\\}"
+      else
+        printf '%s\n' "${path//\//\\}"
+      fi
+      ;;
+  esac
+}
+
 resolve_include_boxlite() {
   if [ -n "$INCLUDE_BOXLITE" ]; then
     echo "$INCLUDE_BOXLITE"
@@ -134,8 +154,11 @@ if [ "$GOOS_TARGET" = "windows" ]; then
       fi
     )
   elif command -v powershell.exe >/dev/null 2>&1; then
-    powershell.exe -NoLogo -NoProfile -Command \
-      "Compress-Archive -Path '${tmpdir//\//\\/}\\${archive_source}' -DestinationPath '${archive_output//\//\\/}' -Force" >/dev/null
+    archive_input="$(to_windows_path "${tmpdir}/${archive_source}")"
+    archive_output_windows="$(to_windows_path "${archive_output}")"
+    ARCHIVE_INPUT="$archive_input" ARCHIVE_OUTPUT="$archive_output_windows" MSYS2_ARG_CONV_EXCL='*' \
+      powershell.exe -NoLogo -NoProfile -Command \
+      "Compress-Archive -LiteralPath \$env:ARCHIVE_INPUT -DestinationPath \$env:ARCHIVE_OUTPUT -Force" >/dev/null
   else
     echo "zip or powershell.exe is required to package Windows artifacts" >&2
     exit 1

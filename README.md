@@ -20,9 +20,18 @@ CSGClaw is a multi-agent collaboration platform built by OpenCSG — designed ar
 curl -fsSL https://csgclaw.opencsg.com/install.sh | bash
 ```
 
-The installer downloads a prebuilt release bundle, installs it into user-local directories, and links `csgclaw` into your `PATH`. The Unix installer currently supports macOS arm64, Linux amd64, and Linux arm64.
+**Windows (PowerShell):**
 
-Official release bundles are also published for macOS amd64 and Windows amd64. Windows users should download the `.zip` bundle from Releases, extract it, and run `csgclaw.exe` from `csgclaw/bin/`. Windows bundles currently default to Docker and require a working local Docker installation.
+```powershell
+curl.exe -fsSL https://csgclaw.opencsg.com/install.ps1 | powershell -ExecutionPolicy Bypass -Command -
+```
+
+The installers download a prebuilt release bundle, install it into user-local directories, and put `csgclaw` on your `PATH`.
+
+- `install.sh` currently supports macOS arm64, Linux amd64, and Linux arm64.
+- `install.ps1` currently supports Windows amd64.
+
+Official release bundles are also published for macOS amd64 and Windows amd64. Windows bundles currently default to Docker and require a working local Docker installation.
 
 **Build from source:**
 
