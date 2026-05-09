@@ -99,7 +99,7 @@ function subscribeIMEvents(onEvent) {
 
 const messages = {
   zh: {
-    pageTitle: "CSGClaw IM",
+    pageTitle: "CSGClaw",
     localAgentConsole: "本地 Agent 控制台",
     loading: "正在加载 IM 工作区...",
     loadingFailed: "加载失败，请稍后重试。",
@@ -281,7 +281,7 @@ const messages = {
     },
   },
   en: {
-    pageTitle: "CSGClaw IM",
+    pageTitle: "CSGClaw",
     localAgentConsole: "Local agent console",
     loading: "Loading IM workspace...",
     loadingFailed: "Failed to load the workspace. Please try again.",
