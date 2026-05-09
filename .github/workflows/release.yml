@@ -32,12 +32,12 @@ jobs:
             goarch: arm64
             include_boxlite: 1
             cgo_enabled: 0
-          - runner: macos-14
+          - runner: macos-latest
             goos: darwin
             goarch: arm64
             include_boxlite: 1
             cgo_enabled: 0
-          - runner: macos-13
+          - runner: macos-latest
             goos: darwin
             goarch: amd64
             include_boxlite: 0
