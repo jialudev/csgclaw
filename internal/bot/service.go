@@ -9,7 +9,7 @@ import (
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/apitypes"
-	"csgclaw/internal/channel"
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/im"
 )
 
@@ -19,7 +19,7 @@ type Service struct {
 	im     *im.Service
 	imBus  *im.Bus
 	imProv *im.Provisioner
-	feishu *channel.FeishuService
+	feishu *feishu.Service
 }
 
 func NewService(store *Store) (*Service, error) {
@@ -29,7 +29,7 @@ func NewService(store *Store) (*Service, error) {
 	return &Service{store: store}, nil
 }
 
-func NewServiceWithDependencies(store *Store, agentSvc *agent.Service, imSvc *im.Service, feishuSvc ...*channel.FeishuService) (*Service, error) {
+func NewServiceWithDependencies(store *Store, agentSvc *agent.Service, imSvc *im.Service, feishuSvc ...*feishu.Service) (*Service, error) {
 	s, err := NewService(store)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func NewServiceWithDependencies(store *Store, agentSvc *agent.Service, imSvc *im
 	return s, nil
 }
 
-func (s *Service) SetDependencies(agentSvc *agent.Service, imSvc *im.Service, feishuSvc ...*channel.FeishuService) {
+func (s *Service) SetDependencies(agentSvc *agent.Service, imSvc *im.Service, feishuSvc ...*feishu.Service) {
 	if s == nil {
 		return
 	}
@@ -455,7 +455,7 @@ func (s *Service) ensureChannelUser(ctx context.Context, channelName string, cre
 		if s.feishu == nil {
 			return "", time.Time{}, fmt.Errorf("feishu service is required")
 		}
-		user, err := s.feishu.EnsureUser(channel.FeishuCreateUserRequest{
+		user, err := s.feishu.EnsureUser(feishu.CreateUserRequest{
 			ID:     created.ID,
 			Name:   created.Name,
 			Handle: deriveAgentHandle(created),

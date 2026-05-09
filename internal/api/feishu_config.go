@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"csgclaw/internal/apitypes"
-	feishuconfig "csgclaw/internal/channel/feishu"
+	"csgclaw/internal/channel/feishu"
 )
 
 func (h *Handler) handleFeishuConfig(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func (h *Handler) handleFeishuConfigPut(w http.ResponseWriter, r *http.Request) 
 		reload = *req.Reload
 	}
 
-	view, err := h.feishu.UpdateConfig(feishuconfig.Update{
+	view, err := h.feishu.UpdateConfig(feishu.Update{
 		BotID:       req.BotID,
 		AppID:       req.AppID,
 		AppSecret:   req.AppSecret,
@@ -82,14 +82,14 @@ func (h *Handler) handleFeishuConfigReload(w http.ResponseWriter) {
 }
 
 func writeFeishuConfigError(w http.ResponseWriter, err error) {
-	if feishuconfig.IsValidationError(err) {
+	if feishu.IsValidationError(err) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
-func presentFeishuConfig(view feishuconfig.Entry, reloaded bool) apitypes.FeishuConfigResponse {
+func presentFeishuConfig(view feishu.Entry, reloaded bool) apitypes.FeishuConfigResponse {
 	secretStatus := "missing"
 	if view.HasSecret {
 		secretStatus = "present"

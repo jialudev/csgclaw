@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"csgclaw/internal/apitypes"
-	"csgclaw/internal/channel"
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 )
 
@@ -20,7 +20,7 @@ func TestFeishuChannelConfigPutWritesStandaloneConfigAndReloads(t *testing.T) {
 	configPath := filepath.Join(dir, config.ConfigFileName)
 	writeMinimalAPIConfig(t, configPath)
 
-	feishuSvc := channel.NewFeishuService()
+	feishuSvc := feishu.NewService()
 	feishuSvc.SetConfigPath(configPath)
 	h := NewHandlerWithBotAndAuth(nil, nil, nil, nil, nil, feishuSvc, nil, "secret", false)
 
@@ -80,7 +80,7 @@ func TestFeishuChannelConfigGetMasksSecret(t *testing.T) {
 		t.Fatalf("SaveFeishuChannelConfig() error = %v", err)
 	}
 
-	feishuSvc := channel.NewFeishuService()
+	feishuSvc := feishu.NewService()
 	feishuSvc.SetConfigPath(configPath)
 	h := NewHandlerWithBotAndAuth(nil, nil, nil, nil, nil, feishuSvc, nil, "secret", false)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/config?bot_id=u-dev", nil)
@@ -104,7 +104,7 @@ func TestChannelsReloadDoesNotDuplicateAuthorization(t *testing.T) {
 	configPath := filepath.Join(dir, config.ConfigFileName)
 	writeMinimalAPIConfig(t, configPath)
 
-	feishuSvc := channel.NewFeishuService()
+	feishuSvc := feishu.NewService()
 	feishuSvc.SetConfigPath(configPath)
 	h := NewHandlerWithBotAndAuth(nil, nil, nil, nil, nil, feishuSvc, nil, "secret", false)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/feishu/config", nil)
@@ -116,7 +116,7 @@ func TestChannelsReloadDoesNotDuplicateAuthorization(t *testing.T) {
 }
 
 func TestLegacyChannelsReloadRouteIsNotRegistered(t *testing.T) {
-	h := NewHandlerWithBotAndAuth(nil, nil, nil, nil, nil, channel.NewFeishuService(), nil, "secret", false)
+	h := NewHandlerWithBotAndAuth(nil, nil, nil, nil, nil, feishu.NewService(), nil, "secret", false)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/reload", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	rec := httptest.NewRecorder()
@@ -127,7 +127,7 @@ func TestLegacyChannelsReloadRouteIsNotRegistered(t *testing.T) {
 }
 
 func TestLegacyFeishuConfigBotIDPathIsNotRegistered(t *testing.T) {
-	h := NewHandlerWithBotAndAuth(nil, nil, nil, nil, nil, channel.NewFeishuService(), nil, "secret", false)
+	h := NewHandlerWithBotAndAuth(nil, nil, nil, nil, nil, feishu.NewService(), nil, "secret", false)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/config/u-dev", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	rec := httptest.NewRecorder()

@@ -16,7 +16,7 @@ import (
 	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
 	"csgclaw/internal/bot"
-	"csgclaw/internal/channel"
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
@@ -485,7 +485,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	NewBotService = func() (*bot.Service, error) {
 		return wantBotSvc, nil
 	}
-	NewFeishuService = func(cfg config.Config) (*channel.FeishuService, error) {
+	NewFeishuService = func(cfg config.Config) (*feishu.Service, error) {
 		if got, want := cfg.Channels.Feishu["manager"].AppID, "cli_manager"; got != want {
 			return nil, fmt.Errorf("manager app_id = %q, want %q", got, want)
 		}
@@ -1140,7 +1140,7 @@ func stubServeDependencies(t *testing.T) func() {
 	NewAgentService = func(config.Config) (*agent.Service, error) { return &agent.Service{}, nil }
 	NewBotService = func() (*bot.Service, error) { return &bot.Service{}, nil }
 	NewIMService = func(*im.Bus) (*im.Service, error) { return nil, nil }
-	NewFeishuService = func(config.Config) (*channel.FeishuService, error) { return nil, nil }
+	NewFeishuService = func(config.Config) (*feishu.Service, error) { return nil, nil }
 	NewLLMService = func(config.Config, *agent.Service) (*llm.Service, error) { return nil, nil }
 	StartConfiguredAgents = func(context.Context, *agent.Service) error { return nil }
 	NewCodexBridgeManager = func(config.Config, *agent.Service) (codexBridgeManager, error) { return nil, nil }

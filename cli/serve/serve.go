@@ -26,8 +26,8 @@ import (
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
-	"csgclaw/internal/channel"
 	"csgclaw/internal/channel/codexbridge"
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
@@ -427,11 +427,11 @@ func parseServeLogLevel(level string) (slog.Level, error) {
 	}
 }
 
-func startServer(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, output string) error {
+func startServer(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *feishu.Service, output string) error {
 	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, "", output)
 }
 
-func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *channel.FeishuService, configPath, output string) error {
+func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *feishu.Service, configPath, output string) error {
 	_ = EnsureCLIProxy(ctx)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -527,7 +527,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	})
 }
 
-func configureFeishuService(feishu *channel.FeishuService, configPath string, onReload func(config.ChannelsConfig)) {
+func configureFeishuService(feishu *feishu.Service, configPath string, onReload func(config.ChannelsConfig)) {
 	if feishu == nil {
 		return
 	}
@@ -992,14 +992,14 @@ func newBotService() (*bot.Service, error) {
 	return bot.NewService(store)
 }
 
-func newFeishuService(cfg config.Config) (*channel.FeishuService, error) {
-	return channel.NewFeishuService(feishuAppsFromConfig(cfg.Channels)), nil
+func newFeishuService(cfg config.Config) (*feishu.Service, error) {
+	return feishu.NewService(feishuAppsFromConfig(cfg.Channels)), nil
 }
 
-func feishuAppsFromConfig(cfg config.ChannelsConfig) map[string]channel.FeishuAppConfig {
-	apps := make(map[string]channel.FeishuAppConfig, len(cfg.Feishu))
+func feishuAppsFromConfig(cfg config.ChannelsConfig) map[string]feishu.AppConfig {
+	apps := make(map[string]feishu.AppConfig, len(cfg.Feishu))
 	for name, app := range cfg.Feishu {
-		apps[name] = channel.FeishuAppConfig{
+		apps[name] = feishu.AppConfig{
 			AppID:       app.AppID,
 			AppSecret:   app.AppSecret,
 			AdminOpenID: cfg.FeishuAdminOpenID,

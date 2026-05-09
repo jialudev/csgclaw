@@ -13,7 +13,7 @@ import (
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/apitypes"
-	"csgclaw/internal/channel"
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	agentruntime "csgclaw/internal/runtime"
@@ -265,20 +265,20 @@ func TestServiceListFeishuIncludesConfiguredUnavailableBots(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMemoryStore() error = %v", err)
 	}
-	feishuSvc := channel.NewFeishuServiceWithBotOpenIDResolver(
-		map[string]channel.FeishuAppConfig{
+	feishuSvc := feishu.NewServiceWithBotOpenIDResolver(
+		map[string]feishu.AppConfig{
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 			"u-worker":  {AppID: "cli_worker", AppSecret: "worker-secret"},
 		},
-		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
+		func(_ context.Context, app feishu.AppConfig) (feishu.BotInfo, error) {
 			switch app.AppID {
 			case "cli_manager":
-				return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
+				return feishu.BotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
 			case "cli_worker":
-				return channel.FeishuBotInfo{OpenID: "ou_worker", AppName: "Worker Bot"}, nil
+				return feishu.BotInfo{OpenID: "ou_worker", AppName: "Worker Bot"}, nil
 			default:
 				t.Fatalf("unexpected app_id %q", app.AppID)
-				return channel.FeishuBotInfo{}, nil
+				return feishu.BotInfo{}, nil
 			}
 		},
 	)
@@ -326,15 +326,15 @@ func TestServiceListFeishuConfiguredBotUsesMatchingAgent(t *testing.T) {
 			ModelID:   "default-model",
 		},
 	})
-	feishuSvc := channel.NewFeishuServiceWithBotOpenIDResolver(
-		map[string]channel.FeishuAppConfig{
+	feishuSvc := feishu.NewServiceWithBotOpenIDResolver(
+		map[string]feishu.AppConfig{
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 		},
-		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
+		func(_ context.Context, app feishu.AppConfig) (feishu.BotInfo, error) {
 			if app.AppID != "cli_manager" {
 				t.Fatalf("unexpected app_id %q", app.AppID)
 			}
-			return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
+			return feishu.BotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
 		},
 	)
 	svc, err := NewServiceWithDependencies(store, agentSvc, nil, feishuSvc)
@@ -446,20 +446,20 @@ func TestServiceListFeishuConfiguredBotsRespectRoleFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMemoryStore() error = %v", err)
 	}
-	feishuSvc := channel.NewFeishuServiceWithBotOpenIDResolver(
-		map[string]channel.FeishuAppConfig{
+	feishuSvc := feishu.NewServiceWithBotOpenIDResolver(
+		map[string]feishu.AppConfig{
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 			"u-worker":  {AppID: "cli_worker", AppSecret: "worker-secret"},
 		},
-		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
+		func(_ context.Context, app feishu.AppConfig) (feishu.BotInfo, error) {
 			switch app.AppID {
 			case "cli_manager":
-				return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
+				return feishu.BotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
 			case "cli_worker":
-				return channel.FeishuBotInfo{OpenID: "ou_worker", AppName: "Worker Bot"}, nil
+				return feishu.BotInfo{OpenID: "ou_worker", AppName: "Worker Bot"}, nil
 			default:
 				t.Fatalf("unexpected app_id %q", app.AppID)
-				return channel.FeishuBotInfo{}, nil
+				return feishu.BotInfo{}, nil
 			}
 		},
 	)
@@ -754,7 +754,7 @@ func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
-	feishuSvc := channel.NewFeishuService()
+	feishuSvc := feishu.NewService()
 	store, err := NewMemoryStore(nil)
 	if err != nil {
 		t.Fatalf("NewMemoryStore() error = %v", err)
@@ -813,7 +813,7 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
 	imSvc := im.NewService()
-	feishuSvc := channel.NewFeishuService()
+	feishuSvc := feishu.NewService()
 	store, err := NewMemoryStore(nil)
 	if err != nil {
 		t.Fatalf("NewMemoryStore() error = %v", err)
@@ -914,7 +914,7 @@ func TestServiceCreateManagerBindsSameAgentAcrossChannels(t *testing.T) {
 		},
 	})
 	imSvc := im.NewService()
-	feishuSvc := channel.NewFeishuService()
+	feishuSvc := feishu.NewService()
 	store, err := NewMemoryStore(nil)
 	if err != nil {
 		t.Fatalf("NewMemoryStore() error = %v", err)
@@ -1012,8 +1012,8 @@ func TestServiceCreateFeishuManagerEnsuresExistingUser(t *testing.T) {
 			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
 		},
 	})
-	feishuSvc := channel.NewFeishuService()
-	if _, err := feishuSvc.CreateUser(channel.FeishuCreateUserRequest{ID: agent.ManagerUserID, Name: "manager"}); err != nil {
+	feishuSvc := feishu.NewService()
+	if _, err := feishuSvc.CreateUser(feishu.CreateUserRequest{ID: agent.ManagerUserID, Name: "manager"}); err != nil {
 		t.Fatalf("CreateUser(manager) error = %v", err)
 	}
 	store, err := NewMemoryStore(nil)
@@ -1047,15 +1047,15 @@ func TestServiceCreateFeishuManagerUsesConfiguredOpenID(t *testing.T) {
 			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
 		},
 	})
-	feishuSvc := channel.NewFeishuServiceWithBotOpenIDResolver(
-		map[string]channel.FeishuAppConfig{
+	feishuSvc := feishu.NewServiceWithBotOpenIDResolver(
+		map[string]feishu.AppConfig{
 			"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 		},
-		func(_ context.Context, app channel.FeishuAppConfig) (channel.FeishuBotInfo, error) {
+		func(_ context.Context, app feishu.AppConfig) (feishu.BotInfo, error) {
 			if got, want := app.AppID, "cli_manager"; got != want {
 				t.Fatalf("resolve app_id = %q, want %q", got, want)
 			}
-			return channel.FeishuBotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
+			return feishu.BotInfo{OpenID: "ou_manager", AppName: "Manager Bot"}, nil
 		},
 	)
 	store, err := NewMemoryStore(nil)

@@ -17,7 +17,7 @@ import (
 
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/bot"
-	"csgclaw/internal/channel"
+	"csgclaw/internal/channel/feishu"
 	appversion "csgclaw/internal/version"
 )
 
@@ -1661,7 +1661,7 @@ func TestExecuteUserCreateUsesFeishuChannelRoute(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/channels/feishu/users" {
 				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/channels/feishu/users")
 			}
-			var body channel.FeishuCreateUserRequest
+			var body feishu.CreateUserRequest
 			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 				t.Fatalf("decode request: %v", err)
 			}
