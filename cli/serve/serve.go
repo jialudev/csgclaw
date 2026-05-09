@@ -477,6 +477,9 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 			})
 		},
 	})
+	configureFeishuService(feishuSvc, configPath, func(channels config.ChannelsConfig) {
+		runtimewiring.UpdatePicoClawChannels(svc, channels)
+	})
 	if message, err := upgrade.ConsumeApplyFailure(configPath); err != nil {
 		slog.Warn("load upgrade helper failure", "error", err)
 	} else if message != "" {
@@ -521,6 +524,18 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 				}
 			}()
 		},
+	})
+}
+
+func configureFeishuService(feishu *channel.FeishuService, configPath string, onReload func(config.ChannelsConfig)) {
+	if feishu == nil {
+		return
+	}
+	feishu.SetConfigPath(configPath)
+	feishu.SetConfigReloadHook(func(channels config.ChannelsConfig) {
+		if onReload != nil {
+			onReload(channels)
+		}
 	})
 }
 
@@ -713,28 +728,6 @@ provider = %q
 default = %q
 `, llmCfg.DefaultSelector()) + formatEffectiveProviders(llmCfg)
 
-	if strings.TrimSpace(cfg.Channels.FeishuAdminOpenID) != "" {
-		content += fmt.Sprintf(`
-[channels.feishu]
-admin_open_id = %q
-`, cfg.Channels.FeishuAdminOpenID)
-	}
-
-	if len(cfg.Channels.Feishu) > 0 {
-		names := make([]string, 0, len(cfg.Channels.Feishu))
-		for name := range cfg.Channels.Feishu {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			feishu := cfg.Channels.Feishu[name]
-			content += fmt.Sprintf(`
-[channels.feishu.%s]
-app_id = %q
-app_secret = %q
-`, name, feishu.AppID, partiallyMaskSecret(feishu.AppSecret))
-		}
-	}
 	return content
 }
 
@@ -751,9 +744,9 @@ func partiallyMaskSecret(value string) string {
 
 func loadConfig(path string) (config.Config, error) {
 	if path == "" {
-		return config.LoadDefault()
+		return config.LoadDefaultWithChannelFiles()
 	}
-	return config.Load(path)
+	return config.LoadWithChannelFiles(path)
 }
 
 func validateModelConfig(cfg config.Config) error {
@@ -799,9 +792,9 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, runtimewiring.WithPicoClawSandboxRuntime())
+	opts = append(opts, runtimewiring.WithPicoClawSandboxRuntime(cfg.Channels))
 	opts = append(opts, runtimewiring.WithCodexRuntime())
-	return agent.NewServiceWithLLMAndChannels(effectiveLLMConfig(cfg), cfg.Server, cfg.Channels, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
+	return agent.NewServiceWithLLM(effectiveLLMConfig(cfg), cfg.Server, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
 }
 
 type codexBridgeManager interface {

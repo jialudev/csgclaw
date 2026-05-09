@@ -43,6 +43,15 @@ func TestExecuteAgentListUsesHTTPClientJSON(t *testing.T) {
 	}
 }
 
+func TestExecuteChannelCommandIsRemoved(t *testing.T) {
+	var stderr bytes.Buffer
+	app := &App{stdout: io.Discard, stderr: &stderr}
+	err := app.Execute(context.Background(), []string{"channel", "reload"})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "channel"`) {
+		t.Fatalf("Execute() error = %v, want unknown channel command", err)
+	}
+}
+
 func TestExecuteDefaultsToJSONOutputForNonTerminalStdout(t *testing.T) {
 	stdout, err := os.CreateTemp(t.TempDir(), "stdout-*")
 	if err != nil {
@@ -382,6 +391,30 @@ func TestExecuteBotDeleteSupportsJSONOutput(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("stdout = %q, want %s", stdout.String(), want)
 		}
+	}
+}
+
+func TestExecuteBotConfigGetUsesFeishuConfigRoute(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/config?bot_id=u-dev" {
+				t.Fatalf("url = %q, want feishu config get route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `{"bot_id":"u-dev","configured":true,"app_id":"cli_dev","app_secret":"present"}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "config", "--channel", "feishu", "--get", "--bot-id", "u-dev"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "u-dev") || !strings.Contains(stdout.String(), "present") {
+		t.Fatalf("stdout = %s, want bot and masked secret", stdout.String())
 	}
 }
 

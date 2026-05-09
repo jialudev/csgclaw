@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	feishuconfig "csgclaw/internal/channel/feishu"
+	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -89,6 +91,8 @@ type FeishuSendMessageResponse struct {
 
 type FeishuSendMessageFunc func(context.Context, FeishuAppConfig, FeishuSendMessageRequest) (FeishuSendMessageResponse, error)
 
+type FeishuConfigReloadHook func(config.ChannelsConfig)
+
 type FeishuService struct {
 	mu               sync.RWMutex
 	users            map[string]im.User
@@ -104,6 +108,8 @@ type FeishuService struct {
 	deleteChat       FeishuDeleteChatFunc
 	sendMessage      FeishuSendMessageFunc
 	messageBus       *FeishuMessageBus
+	configStore      *feishuconfig.Config
+	configReloadHook FeishuConfigReloadHook
 }
 
 func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
@@ -127,6 +133,7 @@ func NewFeishuService(apps ...map[string]FeishuAppConfig) *FeishuService {
 		deleteChat:       defaultFeishuDeleteChat,
 		sendMessage:      defaultFeishuSendMessage,
 		messageBus:       NewFeishuMessageBus(),
+		configStore:      feishuconfig.NewConfig(""),
 	}
 }
 
@@ -200,11 +207,28 @@ func (s *FeishuService) AppConfigs() map[string]FeishuAppConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	apps := make(map[string]FeishuAppConfig, len(s.apps))
-	for name, app := range s.apps {
-		apps[name] = app
+	return cloneFeishuAppConfigs(s.apps)
+}
+
+func (s *FeishuService) SetAppConfigs(apps map[string]FeishuAppConfig) {
+	if s == nil {
+		return
 	}
-	return apps
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.apps = cloneFeishuAppConfigs(apps)
+}
+
+func cloneFeishuAppConfigs(apps map[string]FeishuAppConfig) map[string]FeishuAppConfig {
+	cloned := make(map[string]FeishuAppConfig, len(apps))
+	for name, app := range apps {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		cloned[name] = app
+	}
+	return cloned
 }
 
 func (s *FeishuService) CreateUser(req FeishuCreateUserRequest) (im.User, error) {
@@ -1487,4 +1511,58 @@ func formatMembers(n int) string {
 		return "1 member"
 	}
 	return fmt.Sprintf("%d members", n)
+}
+
+func (s *FeishuService) SetConfigPath(path string) {
+	if s == nil {
+		return
+	}
+	s.configStore.SetPath(path)
+}
+
+func (s *FeishuService) SetConfigReloadHook(hook FeishuConfigReloadHook) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configReloadHook = hook
+}
+
+func (s *FeishuService) GetConfig(botID string) (feishuconfig.Entry, error) {
+	return s.configStore.Get(botID)
+}
+
+func (s *FeishuService) UpdateConfig(update feishuconfig.Update) (feishuconfig.Entry, error) {
+	return s.configStore.Update(update)
+}
+
+func (s *FeishuService) ReloadConfig() ([]string, error) {
+	cfg, err := s.configStore.Load()
+	if err != nil {
+		return nil, err
+	}
+	s.SetAppConfigs(convertFeishuConfigApps(feishuconfig.AppsFromChannels(cfg.Channels)))
+	if hook := s.configReloadHookSnapshot(); hook != nil {
+		hook(cfg.Channels)
+	}
+	return feishuconfig.SortedBotIDs(cfg.Channels), nil
+}
+
+func (s *FeishuService) configReloadHookSnapshot() FeishuConfigReloadHook {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.configReloadHook
+}
+
+func convertFeishuConfigApps(apps map[string]feishuconfig.AppConfig) map[string]FeishuAppConfig {
+	converted := make(map[string]FeishuAppConfig, len(apps))
+	for name, app := range apps {
+		converted[name] = FeishuAppConfig{
+			AppID:       app.AppID,
+			AppSecret:   app.AppSecret,
+			AdminOpenID: app.AdminOpenID,
+		}
+	}
+	return converted
 }

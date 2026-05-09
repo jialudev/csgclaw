@@ -36,7 +36,7 @@ type fakeCompatRuntime struct {
 }
 
 func init() {
-	_ = agent.TestOnlySetDefaultServiceOption(runtimewiring.WithPicoClawSandboxRuntime())
+	_ = agent.TestOnlySetDefaultServiceOption(runtimewiring.WithPicoClawSandboxRuntime(config.ChannelsConfig{}))
 }
 
 func (f fakeCompatRuntime) Kind() string {
@@ -3398,7 +3398,12 @@ func mustNewSeededServiceWithPath(t *testing.T, agents []agent.Agent) (*agent.Se
 		t.Fatalf("writeSeededAgents() error = %v", err)
 	}
 
-	svc, err := agent.NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := agent.NewService(config.ModelConfig{
+		Provider: config.ProviderLLMAPI,
+		BaseURL:  "http://127.0.0.1:4000",
+		APIKey:   "sk-test",
+		ModelID:  "model-1",
+	}, config.ServerConfig{}, "", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

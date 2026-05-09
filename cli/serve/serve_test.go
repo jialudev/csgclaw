@@ -624,16 +624,14 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`[models]`,
 		`default = "default.model-test"`,
 		`[models.providers.default]`,
-		`[channels.feishu]`,
-		`admin_open_id = "ou_admin"`,
-		`[channels.feishu.manager]`,
-		`app_id = "cli_manager"`,
-		`app_secret = "ma**********et"`,
 		"CSGClaw IM is available at: http://example.test/",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "[channels.feishu") {
+		t.Fatalf("stdout included Feishu channel config:\n%s", got)
 	}
 	if strings.Contains(got, "sk-secret") {
 		t.Fatalf("stdout leaked model API key:\n%s", got)
@@ -950,8 +948,6 @@ func TestFormatEffectiveConfigPrintsExpandedMaskedEnvValues(t *testing.T) {
 	t.Setenv("MODEL_BASE_HOST", "models.example.test")
 	t.Setenv("MODEL_API_KEY", "sk-env-secret")
 	t.Setenv("MODEL_ID", "gpt-env")
-	t.Setenv("FEISHU_APP_ID", "cli_env")
-	t.Setenv("FEISHU_APP_SECRET", "feishu-env-secret")
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -968,10 +964,6 @@ default = "${MODEL_SELECTOR}"
 base_url = "https://${MODEL_BASE_HOST}/v1"
 api_key = "${MODEL_API_KEY}"
 models = ["${MODEL_ID}"]
-
-[channels.feishu.manager]
-app_id = "${FEISHU_APP_ID}"
-app_secret = "${FEISHU_APP_SECRET}"
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -992,8 +984,6 @@ app_secret = "${FEISHU_APP_SECRET}"
 		`base_url = "https://models.example.test/v1"`,
 		`api_key = "sk*********et"`,
 		`models = ["gpt-env"]`,
-		`app_id = "cli_env"`,
-		`app_secret = "fe*************et"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("effective config missing %q:\n%s", want, got)
@@ -1003,10 +993,8 @@ app_secret = "${FEISHU_APP_SECRET}"
 		"${PORT}",
 		"${ACCESS_TOKEN}",
 		"${MODEL_API_KEY}",
-		"${FEISHU_APP_SECRET}",
 		"pc-env-secret",
 		"sk-env-secret",
-		"feishu-env-secret",
 	} {
 		if strings.Contains(got, leaked) {
 			t.Fatalf("effective config leaked %q:\n%s", leaked, got)

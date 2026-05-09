@@ -109,7 +109,7 @@ func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im
 		botSvc.SetDependencies(svc, imSvc, feishu)
 		botSvc.SetIMBus(imBus)
 	}
-	return &Handler{
+	h := &Handler{
 		svc:               svc,
 		botSvc:            botSvc,
 		im:                imSvc,
@@ -122,6 +122,7 @@ func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im
 		serverNoAuth:      serverNoAuth,
 		upgradeApply:      upgrade.StartApplyHelper,
 	}
+	return h
 }
 
 func (h *Handler) SetUpgradeManager(manager *upgrade.Manager) {
