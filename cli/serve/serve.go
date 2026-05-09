@@ -477,6 +477,11 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 			})
 		},
 	})
+	if message, err := upgrade.ConsumeApplyFailure(configPath); err != nil {
+		slog.Warn("load upgrade helper failure", "error", err)
+	} else if message != "" {
+		upgradeManager.MarkUpgradeFailed(errors.New(message))
+	}
 	return RunServer(server.Options{
 		ListenAddr:  cfg.Server.ListenAddr,
 		Service:     svc,

@@ -1374,9 +1374,11 @@ function App() {
       } else if (!payload?.update_available) {
         setUpgradeBusy(false);
       }
+      return payload;
     } catch (_) {
       setUpgradeStatus(null);
       setUpgradeBusy(false);
+      return null;
     }
   }
 
@@ -1423,7 +1425,9 @@ function App() {
         stopUpgradePoll();
         setUpgradeBusy(false);
         setUpgradePhase("error");
-        setUpgradeError(t("upgradeApplyFailed"));
+        const latest = await refreshUpgradeStatus();
+        const detail = latest?.last_error ? ` ${latest.last_error}` : "";
+        setUpgradeError(`${t("upgradeApplyFailed")}${detail}`);
       }
     };
     poll();

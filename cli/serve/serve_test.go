@@ -3,6 +3,7 @@ package serve
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -22,6 +23,7 @@ import (
 	internalonboard "csgclaw/internal/onboard"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/server"
+	"csgclaw/internal/upgrade"
 )
 
 func TestServeForegroundPreflightsCSGHubLiteProvider(t *testing.T) {
@@ -641,6 +643,57 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	}
 	if strings.Contains(got, "manager-secret") {
 		t.Fatalf("stdout leaked feishu app secret:\n%s", got)
+	}
+}
+
+func TestStartServerWithConfigPathLoadsPersistedUpgradeFailure(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	origRunServer := RunServer
+	t.Cleanup(func() {
+		RunServer = origRunServer
+	})
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	artifacts, err := upgrade.ResolveApplyArtifacts(configPath)
+	if err != nil {
+		t.Fatalf("ResolveApplyArtifacts() error = %v", err)
+	}
+	if err := artifacts.RecordFailure(errors.New("restart daemon: boom")); err != nil {
+		t.Fatalf("RecordFailure() error = %v", err)
+	}
+
+	RunServer = func(opts server.Options) error {
+		if opts.Upgrade == nil {
+			return errors.New("Upgrade = nil, want configured manager")
+		}
+		status := opts.Upgrade.Status()
+		if !strings.Contains(status.LastError, "restart daemon: boom") {
+			return fmt.Errorf("LastError = %q, want persisted failure", status.LastError)
+		}
+		if !strings.Contains(status.LastError, artifacts.LogPath) {
+			return fmt.Errorf("LastError = %q, want log path", status.LastError)
+		}
+		return nil
+	}
+
+	run := testContext()
+	cfg := config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:  "127.0.0.1:18080",
+			AccessToken: "pc-secret",
+		},
+		Sandbox: config.SandboxConfig{
+			Provider: config.DefaultSandboxProvider,
+		},
+	}
+
+	if err := startServerWithConfigPath(context.Background(), run, cfg, nil, nil, nil, nil, nil, configPath, "table"); err != nil {
+		t.Fatalf("startServerWithConfigPath() error = %v", err)
+	}
+	if _, err := os.Stat(artifacts.StatusPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("status file still exists after startup; stat err = %v", err)
 	}
 }
 
