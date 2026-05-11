@@ -36,7 +36,7 @@ func StatPathForTest(fn func(string) (os.FileInfo, error)) func() {
 // Non-SDK sandbox providers register unconditionally so they remain available
 // in every csgclaw build.
 func init() {
-	Register(config.BoxLiteCLIProvider, func(cfg config.SandboxConfig) (agent.ServiceOption, error) {
+	Register(config.BoxLiteProvider, func(cfg config.SandboxConfig) (agent.ServiceOption, error) {
 		resolvedPath := boxlitecli.ResolvePath("")
 		if err := ensureBoxLiteAvailable(resolvedPath); err != nil {
 			return nil, err
@@ -53,7 +53,7 @@ func init() {
 func ensureBoxLiteAvailable(resolvedPath string) error {
 	resolvedPath = strings.TrimSpace(resolvedPath)
 	if resolvedPath == "" {
-		return fmt.Errorf("sandbox provider %q is configured, but the boxlite executable path is empty", config.BoxLiteCLIProvider)
+		return fmt.Errorf("sandbox provider %q is configured, but the boxlite executable path is empty", config.BoxLiteProvider)
 	}
 
 	if filepath.Base(resolvedPath) != resolvedPath {
@@ -65,5 +65,5 @@ func ensureBoxLiteAvailable(resolvedPath string) error {
 		return nil
 	}
 
-	return fmt.Errorf("sandbox provider %q is configured, but no bundled boxlite binary was found and %q is not available on PATH\nSwitch [sandbox].provider to %q, or install boxlite separately if your platform later supports it.", config.BoxLiteCLIProvider, resolvedPath, config.DockerProvider)
+	return fmt.Errorf("sandbox provider %q is configured, but no bundled boxlite binary was found and %q is not available on PATH\nSwitch [sandbox].provider to %q, or install boxlite separately if your platform later supports it.", config.BoxLiteProvider, resolvedPath, config.DockerProvider)
 }

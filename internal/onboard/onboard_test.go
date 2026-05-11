@@ -202,7 +202,7 @@ models = ["gpt-test"]
 	}
 }
 
-func TestEnsureStateRewritesLegacyBoxLiteCLIProviderInExistingCompleteConfig(t *testing.T) {
+func TestEnsureStateKeepsExistingCompleteConfigWithCanonicalBoxLiteProvider(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	configPath := filepath.Join(t.TempDir(), "config.toml")
@@ -218,7 +218,7 @@ no_auth = false
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 home_dir_name = "boxlite"
 debian_registries_override = []
 
@@ -238,7 +238,7 @@ models = ["gpt-test"]
 	defer restore()
 	EnsureIMBootstrapState = func(string) error { return nil }
 	CreateManagerBot = func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
-		if got, want := cfg.Sandbox.Provider, config.BoxLiteCLIProvider; got != want {
+		if got, want := cfg.Sandbox.Provider, config.BoxLiteProvider; got != want {
 			t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 		}
 		return bot.Bot{}, nil
@@ -252,12 +252,8 @@ models = ["gpt-test"]
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	got := string(data)
-	if !strings.Contains(got, `provider = "boxlite"`) {
-		t.Fatalf("EnsureState() did not write canonical provider.\nGot:\n%s", got)
-	}
-	if strings.Contains(got, `provider = "boxlite-cli"`) {
-		t.Fatalf("EnsureState() kept legacy provider alias.\nGot:\n%s", got)
+	if string(data) != original {
+		t.Fatalf("EnsureState() rewrote complete config.\nGot:\n%s\nWant:\n%s", string(data), original)
 	}
 }
 

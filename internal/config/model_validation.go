@@ -101,10 +101,10 @@ func (c ModelConfig) Validate() error {
 func (c SandboxConfig) Validate() error {
 	cfg := c.Resolved()
 	switch cfg.Provider {
-	case BoxLiteCLIProvider, CSGHubProvider, DockerProvider:
+	case BoxLiteProvider, CSGHubProvider, DockerProvider:
 		return nil
 	default:
-		return fmt.Errorf("unsupported sandbox provider %q; supported values are %q, %q, or %q", cfg.Provider, BoxLiteCLIProvider, CSGHubProvider, DockerProvider)
+		return fmt.Errorf("unsupported sandbox provider %q; supported values are %q, %q, or %q", cfg.Provider, BoxLiteProvider, CSGHubProvider, DockerProvider)
 	}
 }
 

@@ -166,7 +166,7 @@ func TestServeRunSkipsAutoBootstrapWhenStateComplete(t *testing.T) {
 	}
 }
 
-func TestServeRunRewritesLegacyBoxLiteProviderWhenStateComplete(t *testing.T) {
+func TestServeRunSkipsBootstrapWhenStateComplete(t *testing.T) {
 	restore := stubServeDependencies(t)
 	defer restore()
 	t.Setenv("HOME", t.TempDir())
@@ -201,7 +201,7 @@ no_auth = false
 manager_image_override = ""
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 debian_registries_override = []
 `), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -241,19 +241,8 @@ debian_registries_override = []
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if ensureCalls != 1 {
-		t.Fatalf("EnsureBootstrapState calls = %d, want 1", ensureCalls)
-	}
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
-	}
-	got := string(data)
-	if !strings.Contains(got, `provider = "boxlite"`) {
-		t.Fatalf("config missing canonical sandbox provider:\n%s", got)
-	}
-	if strings.Contains(got, `provider = "boxlite-cli"`) {
-		t.Fatalf("config kept legacy sandbox provider alias:\n%s", got)
+	if ensureCalls != 0 {
+		t.Fatalf("EnsureBootstrapState calls = %d, want 0", ensureCalls)
 	}
 }
 
@@ -1031,7 +1020,7 @@ func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T
 			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
 		},
 		Sandbox: config.SandboxConfig{
-			Provider: config.BoxLiteCLIProvider,
+			Provider: config.BoxLiteProvider,
 		},
 	}
 
@@ -1065,7 +1054,7 @@ models = ["local.minimax-m2.5"]
 
 func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
-		Provider:                 config.BoxLiteCLIProvider,
+		Provider:                 config.BoxLiteProvider,
 		DebianRegistriesOverride: []string{"registry.a"},
 	})
 	if err != nil {
@@ -1103,7 +1092,7 @@ func TestNewAgentServiceExplainsMissingConfiguredBoxLite(t *testing.T) {
 
 	_, err := newAgentService(config.Config{
 		Sandbox: config.SandboxConfig{
-			Provider: config.BoxLiteCLIProvider,
+			Provider: config.BoxLiteProvider,
 		},
 	})
 	if err == nil {

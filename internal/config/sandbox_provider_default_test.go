@@ -19,7 +19,7 @@ func TestDefaultSandboxProviderUsesBundledBoxLiteWhenPresent(t *testing.T) {
 	restore := stubSandboxProviderExecutablePath(t, filepath.Join(binDir, "csgclaw"))
 	defer restore()
 
-	if got, want := defaultSandboxProvider(), BoxLiteCLIProvider; got != want {
+	if got, want := defaultSandboxProvider(), BoxLiteProvider; got != want {
 		t.Fatalf("defaultSandboxProvider() = %q, want %q", got, want)
 	}
 }

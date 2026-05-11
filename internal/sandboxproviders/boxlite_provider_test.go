@@ -15,7 +15,7 @@ import (
 	"csgclaw/internal/sandbox/boxlitecli"
 )
 
-func TestBoxLiteCLIProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
+func TestBoxLiteProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
 	restore := stubBoxLiteAvailability(t, func(path string) (string, error) {
 		return path, nil
 	}, func(path string) (os.FileInfo, error) {
@@ -23,13 +23,13 @@ func TestBoxLiteCLIProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
 	})
 	defer restore()
 
-	factory, ok := factories[config.BoxLiteCLIProvider]
+	factory, ok := factories[config.BoxLiteProvider]
 	if !ok {
-		t.Fatalf("boxlite-cli provider factory not registered")
+		t.Fatalf("boxlite provider factory not registered")
 	}
 
 	opt, err := factory(config.SandboxConfig{
-		Provider:                 config.BoxLiteCLIProvider,
+		Provider:                 config.BoxLiteProvider,
 		DebianRegistriesOverride: []string{"registry.a"},
 	})
 	if err != nil {
@@ -44,12 +44,12 @@ func TestBoxLiteCLIProviderFactoryUsesDefaultResolvedPath(t *testing.T) {
 	if got, want := providerPath(t, boxliteProvider), boxlitecli.ResolvePath(""); got != want {
 		t.Fatalf("provider path = %q, want %q", got, want)
 	}
-	if got, want := provider.Name(), config.BoxLiteCLIProvider; got != want {
+	if got, want := provider.Name(), config.BoxLiteProvider; got != want {
 		t.Fatalf("provider.Name() = %q, want %q", got, want)
 	}
 }
 
-func TestBoxLiteCLIProviderFactoryErrorsWhenBundledAndPATHFallbackAreUnavailable(t *testing.T) {
+func TestBoxLiteProviderFactoryErrorsWhenBundledAndPATHFallbackAreUnavailable(t *testing.T) {
 	restore := stubBoxLiteAvailability(t, func(string) (string, error) {
 		return "", fmt.Errorf("not found")
 	}, func(path string) (os.FileInfo, error) {
@@ -57,12 +57,12 @@ func TestBoxLiteCLIProviderFactoryErrorsWhenBundledAndPATHFallbackAreUnavailable
 	})
 	defer restore()
 
-	factory, ok := factories[config.BoxLiteCLIProvider]
+	factory, ok := factories[config.BoxLiteProvider]
 	if !ok {
-		t.Fatalf("boxlite-cli provider factory not registered")
+		t.Fatalf("boxlite provider factory not registered")
 	}
 
-	_, err := factory(config.SandboxConfig{Provider: config.BoxLiteCLIProvider})
+	_, err := factory(config.SandboxConfig{Provider: config.BoxLiteProvider})
 	if err == nil {
 		t.Fatal("factory() error = nil, want actionable boxlite availability error")
 	}
@@ -78,7 +78,7 @@ func TestBoxLiteCLIProviderFactoryErrorsWhenBundledAndPATHFallbackAreUnavailable
 	}
 }
 
-func TestBoxLiteCLIProviderFactoryAcceptsBundledBinaryWithoutPATHLookup(t *testing.T) {
+func TestBoxLiteProviderFactoryAcceptsBundledBinaryWithoutPATHLookup(t *testing.T) {
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
@@ -98,11 +98,11 @@ func TestBoxLiteCLIProviderFactoryAcceptsBundledBinaryWithoutPATHLookup(t *testi
 	}, os.Stat)
 	defer restore()
 
-	factory, ok := factories[config.BoxLiteCLIProvider]
+	factory, ok := factories[config.BoxLiteProvider]
 	if !ok {
-		t.Fatalf("boxlite-cli provider factory not registered")
+		t.Fatalf("boxlite provider factory not registered")
 	}
-	if _, err := factory(config.SandboxConfig{Provider: config.BoxLiteCLIProvider}); err != nil {
+	if _, err := factory(config.SandboxConfig{Provider: config.BoxLiteProvider}); err != nil {
 		t.Fatalf("factory() error = %v", err)
 	}
 }

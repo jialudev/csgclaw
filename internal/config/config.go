@@ -193,11 +193,9 @@ const (
 	DefaultOpenClawManagerImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260509.1-csgclaw"
 	CSGHubProvider              = "csghub"
 	DockerProvider              = "docker"
-	BoxLiteCLIProvider          = "boxlite"
-	// TODO: Remove this alias after older config.toml files have been migrated.
-	legacyBoxLiteCLIProvider = "boxlite-cli"
-	BoxLiteCLIHomeDirName    = "boxlite"
-	RuntimeHomeDirName       = BoxLiteCLIHomeDirName
+	BoxLiteProvider             = "boxlite"
+	BoxLiteCLIHomeDirName       = "boxlite"
+	RuntimeHomeDirName          = BoxLiteCLIHomeDirName
 )
 
 // DefaultDebianRegistries is the default BoxLite Debian registry lookup order when
@@ -693,9 +691,6 @@ func normalizeSandboxProvider(provider string) string {
 	switch provider {
 	case "":
 		return ""
-	// TODO: Remove this alias mapping after older config.toml files have been migrated.
-	case legacyBoxLiteCLIProvider:
-		return BoxLiteCLIProvider
 	default:
 		return provider
 	}
@@ -747,13 +742,6 @@ func (c Config) rawOrResolvedString(raw, loaded, resolved string) string {
 }
 
 func (c Config) rawOrResolvedSandboxProvider(raw, loaded, resolved string) string {
-	// Keep reading the legacy "boxlite-cli" alias for backward compatibility,
-	// but rewrite it to the canonical "boxlite" value on the next save so the
-	// migration happens automatically.
-	// TODO: Remove this special-case after older config.toml files have been migrated.
-	if strings.EqualFold(strings.TrimSpace(raw), legacyBoxLiteCLIProvider) {
-		return resolved
-	}
 	if strings.TrimSpace(raw) == "" && strings.TrimSpace(loaded) == "" && resolved == defaultSandboxProvider() {
 		return ""
 	}

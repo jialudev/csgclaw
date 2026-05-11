@@ -735,7 +735,7 @@ func TestCreateWorkerUsesPicoClawByDefaultWhenRuntimeKindUnset(t *testing.T) {
 	}
 }
 
-func TestBoxLiteCLIProviderGatewayLifecycle(t *testing.T) {
+func TestBoxLiteProviderGatewayLifecycle(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	orig := localIPv4Resolver

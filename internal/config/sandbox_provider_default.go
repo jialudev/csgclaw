@@ -9,13 +9,13 @@ import (
 
 // DefaultSandboxProvider remains the canonical bundled-BoxLite provider name
 // for explicit configs. Unset providers are resolved dynamically at runtime.
-const DefaultSandboxProvider = BoxLiteCLIProvider
+const DefaultSandboxProvider = BoxLiteProvider
 
 var sandboxProviderExecutablePath = os.Executable
 
 func defaultSandboxProvider() string {
 	if hasBundledBoxLite() {
-		return BoxLiteCLIProvider
+		return BoxLiteProvider
 	}
 	return DockerProvider
 }

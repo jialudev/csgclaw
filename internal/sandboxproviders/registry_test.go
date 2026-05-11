@@ -7,10 +7,10 @@ import (
 	"csgclaw/internal/config"
 )
 
-func TestSupportedProvidersAlwaysIncludeBoxLiteCLI(t *testing.T) {
+func TestSupportedProvidersAlwaysIncludeBoxLite(t *testing.T) {
 	supported := SupportedProviders()
-	if !slices.Contains(supported, config.BoxLiteCLIProvider) {
-		t.Fatalf("SupportedProviders() = %v, want %q to be compiled in", supported, config.BoxLiteCLIProvider)
+	if !slices.Contains(supported, config.BoxLiteProvider) {
+		t.Fatalf("SupportedProviders() = %v, want %q to be compiled in", supported, config.BoxLiteProvider)
 	}
 	if len(supported) != 3 {
 		t.Fatalf("SupportedProviders() = %v, want exactly the compiled providers", supported)

@@ -148,7 +148,7 @@ models = ["minimax-m2.7"]
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
+	if got, want := cfg.Sandbox.Provider, BoxLiteProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 	if got, want := strings.Join(cfg.Sandbox.DebianRegistriesOverride, ","), "registry.a,docker.io"; got != want {
@@ -162,7 +162,7 @@ models = ["minimax-m2.7"]
 	}
 }
 
-func TestLoadNormalizesLegacyBoxLiteCLIProvider(t *testing.T) {
+func TestLoadRejectsRemovedLegacyBoxLiteProvider(t *testing.T) {
 	restore := stubSandboxProviderExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
 	defer restore()
 
@@ -186,12 +186,12 @@ models = ["minimax-m2.7"]
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want unsupported sandbox provider error")
 	}
-	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
-		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
+	if !strings.Contains(err.Error(), `unsupported sandbox provider "boxlite-cli"`) {
+		t.Fatalf("Load() error = %q, want unsupported legacy provider error", err)
 	}
 }
 
@@ -275,7 +275,7 @@ models = ["minimax-m2.7"]
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
+	if got, want := cfg.Sandbox.Provider, BoxLiteProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 }
@@ -520,7 +520,7 @@ func TestSaveWritesModelsSection(t *testing.T) {
 		Models: models,
 		LLM:    models,
 		Sandbox: SandboxConfig{
-			Provider:                 BoxLiteCLIProvider,
+			Provider:                 BoxLiteProvider,
 			StoragePath:              "/mnt/csgclaw",
 			DebianRegistriesOverride: []string{"registry.a", "docker.io"},
 		},
@@ -664,7 +664,7 @@ func TestSaveFormatsTopLevelSectionsWithoutExtraWhitespace(t *testing.T) {
 			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
 		},
 		Sandbox: SandboxConfig{
-			Provider: BoxLiteCLIProvider,
+			Provider: BoxLiteProvider,
 		},
 	}
 
@@ -716,7 +716,7 @@ func TestSaveWritesEmptySandboxDebianRegistriesOverride(t *testing.T) {
 			AccessToken:      "shared-token",
 		},
 		Sandbox: SandboxConfig{
-			Provider: BoxLiteCLIProvider,
+			Provider: BoxLiteProvider,
 		},
 		Models: SingleProfileLLM(ModelConfig{
 			BaseURL: "http://127.0.0.1:4000",
@@ -738,14 +738,14 @@ func TestSaveWritesEmptySandboxDebianRegistriesOverride(t *testing.T) {
 	}
 }
 
-func TestSaveRewritesLegacyBoxLiteCLIProviderAfterLoad(t *testing.T) {
+func TestSavePreservesCanonicalBoxLiteProvider(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	content := `[server]
 listen_addr = "127.0.0.1:18080"
 
 [sandbox]
-provider = "boxlite-cli"
+provider = "boxlite"
 
 [models]
 default = "default.gpt-test"
@@ -774,9 +774,6 @@ models = ["gpt-test"]
 	saved := string(data)
 	if !strings.Contains(saved, `provider = "boxlite"`) {
 		t.Fatalf("saved config missing canonical sandbox provider:\n%s", saved)
-	}
-	if strings.Contains(saved, `provider = "boxlite-cli"`) {
-		t.Fatalf("saved config kept legacy sandbox provider alias:\n%s", saved)
 	}
 }
 
@@ -871,7 +868,7 @@ models = ["gpt-test"]
 
 func TestLoadExpandsNonServerEnvValues(t *testing.T) {
 	t.Setenv("MANAGER_IMAGE", "picoclaw:test")
-	t.Setenv("SANDBOX_PROVIDER", BoxLiteCLIProvider)
+	t.Setenv("SANDBOX_PROVIDER", BoxLiteProvider)
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
 	t.Setenv("MODEL_BASE_HOST", "models.example.test")
 	t.Setenv("MODEL_API_KEY", "sk-env")
@@ -910,7 +907,7 @@ reasoning_effort = "${REASONING_EFFORT}"
 	if got, want := cfg.Bootstrap.ManagerImageOverride, "picoclaw:test"; got != want {
 		t.Fatalf("cfg.Bootstrap.ManagerImageOverride = %q, want %q", got, want)
 	}
-	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
+	if got, want := cfg.Sandbox.Provider, BoxLiteProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 	if got, want := cfg.Models.Default, "remote.gpt-env"; got != want {
@@ -938,7 +935,7 @@ func TestSavePreservesEnvPlaceholdersAfterLoad(t *testing.T) {
 	t.Setenv("PORT", "18080")
 	t.Setenv("ACCESS_TOKEN", "your_access_token")
 	t.Setenv("MANAGER_IMAGE", "picoclaw:test")
-	t.Setenv("SANDBOX_PROVIDER", BoxLiteCLIProvider)
+	t.Setenv("SANDBOX_PROVIDER", BoxLiteProvider)
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
 	t.Setenv("MODEL_BASE_HOST", "models.example.test")
 	t.Setenv("MODEL_API_KEY", "sk-env")
@@ -1108,7 +1105,7 @@ models = ["gpt-test"]
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got, want := cfg.Sandbox.Provider, BoxLiteCLIProvider; got != want {
+	if got, want := cfg.Sandbox.Provider, BoxLiteProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
 	}
 }
