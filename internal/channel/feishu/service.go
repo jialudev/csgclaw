@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -84,7 +83,7 @@ type SendMessageResponse struct {
 
 type SendMessageFunc func(context.Context, AppConfig, SendMessageRequest) (SendMessageResponse, error)
 
-type ConfigReloadHook func(config.ChannelsConfig)
+type ConfigReloadHook func(Snapshot)
 
 type Service struct {
 	mu               sync.RWMutex
@@ -101,7 +100,7 @@ type Service struct {
 	deleteChat       DeleteChatFunc
 	sendMessage      SendMessageFunc
 	messageBus       *MessageBus
-	configStore      *Config
+	configProvider   Provider
 	configReloadHook ConfigReloadHook
 }
 
@@ -126,8 +125,13 @@ func NewService(apps ...map[string]AppConfig) *Service {
 		deleteChat:       defaultDeleteChat,
 		sendMessage:      defaultSendMessage,
 		messageBus:       NewMessageBus(),
-		configStore:      NewConfig(""),
 	}
+}
+
+func NewServiceWithProvider(provider Provider) *Service {
+	svc := NewService()
+	svc.SetConfigProvider(provider)
+	return svc
 }
 
 func NewServiceWithBotOpenIDResolver(apps map[string]AppConfig, resolveBotInfo func(context.Context, AppConfig) (BotInfo, error)) *Service {
@@ -1510,7 +1514,36 @@ func (s *Service) SetConfigPath(path string) {
 	if s == nil {
 		return
 	}
-	s.configStore.SetPath(path)
+	provider, err := NewProvider(NewFileStore(path))
+	if err != nil {
+		s.SetConfigProvider(errorProvider{err: err})
+		return
+	}
+	s.SetConfigProvider(provider)
+}
+
+func (s *Service) SetConfigProvider(provider Provider) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.configProvider = provider
+	if provider != nil {
+		s.apps = AppsFromSnapshot(provider.Snapshot())
+		provider.SetReloadHook(s.applyProviderSnapshot)
+	} else {
+		s.apps = nil
+	}
+	s.mu.Unlock()
+}
+
+func (s *Service) ConfigProvider() Provider {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.configProvider
 }
 
 func (s *Service) SetConfigReloadHook(hook ConfigReloadHook) {
@@ -1523,23 +1556,37 @@ func (s *Service) SetConfigReloadHook(hook ConfigReloadHook) {
 }
 
 func (s *Service) GetConfig(botID string) (Entry, error) {
-	return s.configStore.Get(botID)
+	botID, err := normalizeConfigBotID(botID)
+	if err != nil {
+		return Entry{}, err
+	}
+	provider := s.configProviderSnapshot()
+	if provider == nil {
+		return MaskAppConfig(botID, AppConfig{}, false), nil
+	}
+	app, ok := provider.BotConfig(botID)
+	return MaskAppConfig(botID, app, ok), nil
 }
 
 func (s *Service) UpdateConfig(update Update) (Entry, error) {
-	return s.configStore.Update(update)
+	provider := s.configProviderSnapshot()
+	if provider == nil {
+		return Entry{}, nil
+	}
+	view, _, err := provider.Update(update)
+	return view, err
 }
 
 func (s *Service) ReloadConfig() ([]string, error) {
-	cfg, err := s.configStore.Load()
+	provider := s.configProviderSnapshot()
+	if provider == nil {
+		return nil, nil
+	}
+	snapshot, err := provider.Reload()
 	if err != nil {
 		return nil, err
 	}
-	s.SetAppConfigs(AppsFromChannels(cfg.Channels))
-	if hook := s.configReloadHookSnapshot(); hook != nil {
-		hook(cfg.Channels)
-	}
-	return SortedBotIDs(cfg.Channels), nil
+	return sortedSnapshotBotIDs(snapshot), nil
 }
 
 func (s *Service) configReloadHookSnapshot() ConfigReloadHook {
@@ -1547,3 +1594,41 @@ func (s *Service) configReloadHookSnapshot() ConfigReloadHook {
 	defer s.mu.RUnlock()
 	return s.configReloadHook
 }
+
+func (s *Service) configProviderSnapshot() Provider {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.configProvider
+}
+
+func (s *Service) applyProviderSnapshot(snapshot Snapshot) {
+	if s == nil {
+		return
+	}
+	s.SetAppConfigs(AppsFromSnapshot(snapshot))
+	if hook := s.configReloadHookSnapshot(); hook != nil {
+		hook(cloneSnapshot(snapshot))
+	}
+}
+
+type errorProvider struct {
+	err error
+}
+
+func (p errorProvider) Snapshot() Snapshot {
+	return Snapshot{}
+}
+
+func (p errorProvider) BotConfig(string) (AppConfig, bool) {
+	return AppConfig{}, false
+}
+
+func (p errorProvider) Reload() (Snapshot, error) {
+	return Snapshot{}, p.err
+}
+
+func (p errorProvider) Update(Update) (Entry, Snapshot, error) {
+	return Entry{}, Snapshot{}, p.err
+}
+
+func (p errorProvider) SetReloadHook(func(Snapshot)) {}

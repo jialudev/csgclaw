@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/runtime/openclawsandbox"
@@ -16,13 +17,13 @@ import (
 	"csgclaw/internal/sandbox"
 )
 
-func WithPicoClawSandboxRuntime(channels config.ChannelsConfig) agent.ServiceOption {
+func WithPicoClawSandboxRuntime(feishuProvider feishu.BotCredentialProvider) agent.ServiceOption {
 	return func(s *agent.Service) error {
 		if s == nil {
 			return fmt.Errorf("agent service is required")
 		}
 		host := s.PicoClawRuntimeHost()
-		return withSandboxRuntimeHost(host, channels, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
+		return withSandboxRuntimeHost(host, feishuProvider, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
 			return picoclawsandbox.New(deps)
 		})(s)
 	}
@@ -34,18 +35,18 @@ func WithOpenClawSandboxRuntime() agent.ServiceOption {
 			return fmt.Errorf("agent service is required")
 		}
 		host := s.OpenClawRuntimeHost()
-		return withSandboxRuntimeHost(host, config.ChannelsConfig{}, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
+		return withSandboxRuntimeHost(host, nil, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
 			return openclawsandbox.New(deps)
 		})(s)
 	}
 }
 
-func withSandboxRuntimeHost(host agent.PicoClawRuntimeHost, channels config.ChannelsConfig, newRuntime func(sandboxgateway.Dependencies) agentruntime.Runtime) agent.ServiceOption {
+func withSandboxRuntimeHost(host agent.PicoClawRuntimeHost, feishuProvider feishu.BotCredentialProvider, newRuntime func(sandboxgateway.Dependencies) agentruntime.Runtime) agent.ServiceOption {
 	return func(s *agent.Service) error {
 		return agent.WithRuntime(newRuntime(sandboxgateway.Dependencies{
 			ModelFallback:  host.ModelFallback,
 			Server:         host.Server,
-			Channels:       channels,
+			FeishuProvider: feishuProvider,
 			ResolveBaseURL: resolveManagerBaseURL,
 			EnsureRuntime:  host.EnsureRuntime,
 			RuntimeHome:    host.RuntimeHome,
@@ -82,9 +83,9 @@ func withSandboxRuntimeHost(host agent.PicoClawRuntimeHost, channels config.Chan
 			EnsureWorkspace:     host.EnsureWorkspace,
 			WorkspaceTemplate:   host.WorkspaceTemplate,
 			EnsureProjectsRoot:  host.EnsureProjectsRoot,
-			BuildRuntimeEnv: func(baseURL, accessToken, botID, llmBaseURL, modelID string, channels config.ChannelsConfig) map[string]string {
+			BuildRuntimeEnv: func(baseURL, accessToken, botID, llmBaseURL, modelID string, provider feishu.BotCredentialProvider) map[string]string {
 				env := picoClawBoxEnvVars(baseURL, accessToken, botID, llmBaseURL, modelID)
-				addFeishuBoxEnvVars(env, botID, channels)
+				addFeishuBoxEnvVars(env, botID, provider)
 				return env
 			},
 			AddProfileEnv:      agentAddProfileEnv,
@@ -98,24 +99,24 @@ func withSandboxRuntimeHost(host agent.PicoClawRuntimeHost, channels config.Chan
 	}
 }
 
-func UpdatePicoClawChannels(svc *agent.Service, channels config.ChannelsConfig) {
+func UpdatePicoClawFeishuProvider(svc *agent.Service, provider feishu.BotCredentialProvider) {
 	if svc == nil {
-		slog.Warn("skip picoclaw channel reload: agent service is nil")
+		slog.Warn("skip picoclaw feishu provider update: agent service is nil")
 		return
 	}
 	rt, err := svc.Runtime(agentruntime.KindPicoClawSandbox)
 	if err != nil {
-		slog.Warn("skip picoclaw channel reload: runtime not available", "runtime_kind", agentruntime.KindPicoClawSandbox, "error", err)
+		slog.Warn("skip picoclaw feishu provider update: runtime not available", "runtime_kind", agentruntime.KindPicoClawSandbox, "error", err)
 		return
 	}
 	updater, ok := rt.(interface {
-		SetChannels(config.ChannelsConfig)
+		SetFeishuProvider(feishu.BotCredentialProvider)
 	})
 	if !ok {
-		slog.Warn("skip picoclaw channel reload: runtime does not support channel updates", "runtime_kind", rt.Kind())
+		slog.Warn("skip picoclaw feishu provider update: runtime does not support provider updates", "runtime_kind", rt.Kind())
 		return
 	}
-	updater.SetChannels(channels)
+	updater.SetFeishuProvider(provider)
 }
 
 func resolveManagerBaseURL(server config.ServerConfig) string {
@@ -145,20 +146,20 @@ func picoClawBoxEnvVars(baseURL, accessToken, botID, llmBaseURL, modelID string)
 	return env
 }
 
-func addFeishuBoxEnvVars(envVars map[string]string, botID string, channels config.ChannelsConfig) {
+func addFeishuBoxEnvVars(envVars map[string]string, botID string, provider feishu.BotCredentialProvider) {
 	if envVars == nil {
 		return
 	}
 	botID = strings.TrimSpace(botID)
-	if botID == "" || len(channels.Feishu) == 0 {
+	if botID == "" || provider == nil {
 		return
 	}
-	feishu, ok := channels.Feishu[botID]
+	app, ok := provider.BotConfig(botID)
 	if !ok {
 		return
 	}
-	envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"] = feishu.AppID
-	envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"] = feishu.AppSecret
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"] = app.AppID
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"] = app.AppSecret
 }
 
 func agentAddProfileEnv(envVars map[string]string, profileEnv map[string]string) {

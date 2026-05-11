@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/runtime/openclawsandbox"
@@ -3309,12 +3310,10 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 	localIPv4Resolver = func() string { return "10.0.0.8" }
 	defer func() { localIPv4Resolver = orig }()
 
-	channels := config.ChannelsConfig{
-		Feishu: map[string]config.FeishuConfig{
-			"u-worker-1": {
-				AppID:     "cli_worker",
-				AppSecret: "worker-secret",
-			},
+	apps := map[string]feishu.AppConfig{
+		"u-worker-1": {
+			AppID:     "cli_worker",
+			AppSecret: "worker-secret",
 		},
 	}
 	svc, err := NewService(
@@ -3322,7 +3321,7 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
 		"",
 		"",
-		withTestPicoClawSandboxRuntime(channels),
+		withTestPicoClawSandboxRuntime(apps),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -3669,12 +3668,9 @@ func TestPicoclawBoxEnvVarsPrefixesCustomModelIDForSlashNames(t *testing.T) {
 
 func TestAddFeishuBoxEnvVarsUsesMatchingBotID(t *testing.T) {
 	envVars := map[string]string{}
-	addFeishuBoxEnvVars(envVars, "u-worker-1", config.ChannelsConfig{
-		Feishu: map[string]config.FeishuConfig{
-			"u-worker-1": {
-				AppID:     "cli_worker",
-				AppSecret: "worker-secret",
-			},
+	addFeishuBoxEnvVars(envVars, "u-worker-1", testStaticFeishuProvider{
+		apps: map[string]feishu.AppConfig{
+			"u-worker-1": {AppID: "cli_worker", AppSecret: "worker-secret"},
 		},
 	})
 
@@ -3688,12 +3684,9 @@ func TestAddFeishuBoxEnvVarsUsesMatchingBotID(t *testing.T) {
 
 func TestAddFeishuBoxEnvVarsRequiresExactBotIDMatch(t *testing.T) {
 	envVars := map[string]string{}
-	addFeishuBoxEnvVars(envVars, ManagerUserID, config.ChannelsConfig{
-		Feishu: map[string]config.FeishuConfig{
-			"manager": {
-				AppID:     "cli_manager",
-				AppSecret: "manager-secret",
-			},
+	addFeishuBoxEnvVars(envVars, ManagerUserID, testStaticFeishuProvider{
+		apps: map[string]feishu.AppConfig{
+			"manager": {AppID: "cli_manager", AppSecret: "manager-secret"},
 		},
 	})
 
@@ -3721,45 +3714,45 @@ func picoclawBoxEnvVars(baseURL, accessToken, botID, llmBaseURL, modelID string)
 	return env
 }
 
-func addFeishuBoxEnvVars(envVars map[string]string, botID string, channels config.ChannelsConfig) {
+func addFeishuBoxEnvVars(envVars map[string]string, botID string, provider feishu.BotCredentialProvider) {
 	if envVars == nil {
 		return
 	}
 	botID = strings.TrimSpace(botID)
-	if botID == "" || len(channels.Feishu) == 0 {
+	if botID == "" || provider == nil {
 		return
 	}
-	feishu, ok := channels.Feishu[botID]
+	app, ok := provider.BotConfig(botID)
 	if !ok {
 		return
 	}
-	envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"] = feishu.AppID
-	envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"] = feishu.AppSecret
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_ID"] = app.AppID
+	envVars["PICOCLAW_CHANNELS_FEISHU_APP_SECRET"] = app.AppSecret
 }
 
-func withTestPicoClawSandboxRuntime(channels ...config.ChannelsConfig) ServiceOption {
+func withTestPicoClawSandboxRuntime(apps ...map[string]feishu.AppConfig) ServiceOption {
 	return func(s *Service) error {
-		channelConfig := config.ChannelsConfig{}
-		if len(channels) > 0 {
-			channelConfig = channels[0]
+		var provider feishu.BotCredentialProvider
+		if len(apps) > 0 && len(apps[0]) > 0 {
+			provider = testStaticFeishuProvider{apps: cloneTestFeishuApps(apps[0])}
 		}
-		if err := withTestSandboxRuntimeHost(s.PicoClawRuntimeHost(), channelConfig, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
+		if err := withTestSandboxRuntimeHost(s.PicoClawRuntimeHost(), provider, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
 			return picoclawsandbox.New(deps)
 		})(s); err != nil {
 			return err
 		}
-		return withTestSandboxRuntimeHost(s.OpenClawRuntimeHost(), config.ChannelsConfig{}, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
+		return withTestSandboxRuntimeHost(s.OpenClawRuntimeHost(), nil, func(deps sandboxgateway.Dependencies) agentruntime.Runtime {
 			return openclawsandbox.New(deps)
 		})(s)
 	}
 }
 
-func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, channels config.ChannelsConfig, newRuntime func(sandboxgateway.Dependencies) agentruntime.Runtime) ServiceOption {
+func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, provider feishu.BotCredentialProvider, newRuntime func(sandboxgateway.Dependencies) agentruntime.Runtime) ServiceOption {
 	return func(s *Service) error {
 		return WithRuntime(newRuntime(sandboxgateway.Dependencies{
 			ModelFallback:  host.ModelFallback,
 			Server:         host.Server,
-			Channels:       channels,
+			FeishuProvider: provider,
 			ResolveBaseURL: resolveManagerBaseURL,
 			EnsureRuntime:  host.EnsureRuntime,
 			RuntimeHome:    host.RuntimeHome,
@@ -3796,9 +3789,9 @@ func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, channels config.Channe
 			EnsureWorkspace:     host.EnsureWorkspace,
 			WorkspaceTemplate:   host.WorkspaceTemplate,
 			EnsureProjectsRoot:  host.EnsureProjectsRoot,
-			BuildRuntimeEnv: func(baseURL, accessToken, botID, llmBaseURL, modelID string, channels config.ChannelsConfig) map[string]string {
+			BuildRuntimeEnv: func(baseURL, accessToken, botID, llmBaseURL, modelID string, provider feishu.BotCredentialProvider) map[string]string {
 				env := picoclawBoxEnvVars(baseURL, accessToken, botID, llmBaseURL, modelID)
-				addFeishuBoxEnvVars(env, botID, channels)
+				addFeishuBoxEnvVars(env, botID, provider)
 				return env
 			},
 			AddProfileEnv:      addProfileEnvVars,
@@ -3810,6 +3803,23 @@ func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, channels config.Channe
 			StreamLogs:         host.StreamLogs,
 		}))(s)
 	}
+}
+
+type testStaticFeishuProvider struct {
+	apps map[string]feishu.AppConfig
+}
+
+func (p testStaticFeishuProvider) BotConfig(botID string) (feishu.AppConfig, bool) {
+	app, ok := p.apps[strings.TrimSpace(botID)]
+	return app, ok
+}
+
+func cloneTestFeishuApps(apps map[string]feishu.AppConfig) map[string]feishu.AppConfig {
+	cloned := make(map[string]feishu.AppConfig, len(apps))
+	for botID, app := range apps {
+		cloned[strings.TrimSpace(botID)] = app
+	}
+	return cloned
 }
 
 func TestResolveManagerBaseURLPrefersAdvertiseBaseURL(t *testing.T) {

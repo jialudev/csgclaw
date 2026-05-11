@@ -235,7 +235,11 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 
 	printEffectiveConfig(run, cfg, globals.Output)
 	imBus := im.NewBus()
-	svc, err := NewAgentService(cfg)
+	feishuProvider, feishuSvc, err := buildFeishuComponents(*configPathFlag)
+	if err != nil {
+		return err
+	}
+	svc, err := NewAgentService(cfg, feishuProvider)
 	if err != nil {
 		return err
 	}
@@ -244,10 +248,6 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 		return err
 	}
 	botSvc, err := NewBotService()
-	if err != nil {
-		return err
-	}
-	feishuSvc, err := NewFeishuService(cfg)
 	if err != nil {
 		return err
 	}
@@ -261,7 +261,11 @@ func serveForeground(ctx context.Context, run *command.Context, cfg config.Confi
 func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, configPath string, output string) error {
 	_ = preflightDefaultModelProvider(ctx, cfg)
 	imBus := im.NewBus()
-	svc, err := NewAgentService(cfg)
+	feishuProvider, feishuSvc, err := buildFeishuComponents(configPath)
+	if err != nil {
+		return err
+	}
+	svc, err := NewAgentService(cfg, feishuProvider)
 	if err != nil {
 		return err
 	}
@@ -270,10 +274,6 @@ func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cf
 		return err
 	}
 	botSvc, err := NewBotService()
-	if err != nil {
-		return err
-	}
-	feishuSvc, err := NewFeishuService(cfg)
 	if err != nil {
 		return err
 	}
@@ -453,9 +453,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 			})
 		},
 	})
-	configureFeishuService(feishuSvc, configPath, func(channels config.ChannelsConfig) {
-		runtimewiring.UpdatePicoClawChannels(svc, channels)
-	})
+	configureFeishuService(feishuSvc, svc)
 	if message, err := upgrade.ConsumeApplyFailure(configPath); err != nil {
 		slog.Warn("load upgrade helper failure", "error", err)
 	} else if message != "" {
@@ -503,16 +501,11 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	})
 }
 
-func configureFeishuService(feishu *feishu.Service, configPath string, onReload func(config.ChannelsConfig)) {
-	if feishu == nil {
+func configureFeishuService(feishuSvc *feishu.Service, svc *agent.Service) {
+	if feishuSvc == nil {
 		return
 	}
-	feishu.SetConfigPath(configPath)
-	feishu.SetConfigReloadHook(func(channels config.ChannelsConfig) {
-		if onReload != nil {
-			onReload(channels)
-		}
-	})
+	runtimewiring.UpdatePicoClawFeishuProvider(svc, feishuSvc.ConfigProvider())
 }
 
 func preflightDefaultModelProvider(ctx context.Context, cfg config.Config) error {
@@ -721,9 +714,9 @@ func partiallyMaskSecret(value string) string {
 
 func loadConfig(path string) (config.Config, error) {
 	if path == "" {
-		return config.LoadDefaultWithChannelFiles()
+		return config.LoadDefault()
 	}
-	return config.LoadWithChannelFiles(path)
+	return config.Load(path)
 }
 
 func validateModelConfig(cfg config.Config) error {
@@ -763,7 +756,7 @@ func missingModelFlags(fields []string) []string {
 	return flags
 }
 
-func newAgentService(cfg config.Config) (*agent.Service, error) {
+func newAgentService(cfg config.Config, feishuProvider feishu.BotCredentialProvider) (*agent.Service, error) {
 	agentsPath, err := config.DefaultAgentsPath()
 	if err != nil {
 		return nil, err
@@ -773,7 +766,7 @@ func newAgentService(cfg config.Config) (*agent.Service, error) {
 		return nil, err
 	}
 	opts = append(opts,
-		runtimewiring.WithPicoClawSandboxRuntime(cfg.Channels),
+		runtimewiring.WithPicoClawSandboxRuntime(feishuProvider),
 		runtimewiring.WithOpenClawSandboxRuntime(),
 		runtimewiring.WithCodexRuntime(),
 		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
@@ -976,20 +969,20 @@ func newBotService() (*bot.Service, error) {
 	return bot.NewService(store)
 }
 
-func newFeishuService(cfg config.Config) (*feishu.Service, error) {
-	return feishu.NewService(feishuAppsFromConfig(cfg.Channels)), nil
+func buildFeishuComponents(configPath string) (feishu.Provider, *feishu.Service, error) {
+	provider, err := feishu.NewProvider(feishu.NewFileStore(configPath))
+	if err != nil {
+		return nil, nil, err
+	}
+	svc, err := NewFeishuService(provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	return provider, svc, nil
 }
 
-func feishuAppsFromConfig(cfg config.ChannelsConfig) map[string]feishu.AppConfig {
-	apps := make(map[string]feishu.AppConfig, len(cfg.Feishu))
-	for name, app := range cfg.Feishu {
-		apps[name] = feishu.AppConfig{
-			AppID:       app.AppID,
-			AppSecret:   app.AppSecret,
-			AdminOpenID: cfg.FeishuAdminOpenID,
-		}
-	}
-	return apps
+func newFeishuService(provider feishu.Provider) (*feishu.Service, error) {
+	return feishu.NewServiceWithProvider(provider), nil
 }
 
 func newLLMService(cfg config.Config, svc *agent.Service) (*llm.Service, error) {

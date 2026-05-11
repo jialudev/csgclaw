@@ -494,12 +494,8 @@ app_secret = "dev-secret"
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-
-	if got := cfg.Channels.FeishuAdminOpenID; got != "" {
-		t.Fatalf("feishu admin_open_id = %q, want empty", got)
-	}
-	if len(cfg.Channels.Feishu) != 0 {
-		t.Fatalf("legacy feishu channel config was loaded: %+v", cfg.Channels.Feishu)
+	if got := cfg.Server.ListenAddr; got != "127.0.0.1:18080" {
+		t.Fatalf("cfg.Server.ListenAddr = %q, want %q", got, "127.0.0.1:18080")
 	}
 }
 
@@ -526,19 +522,6 @@ func TestSaveWritesModelsSection(t *testing.T) {
 		},
 		Bootstrap: BootstrapConfig{
 			ManagerImageOverride: "img",
-		},
-		Channels: ChannelsConfig{
-			FeishuAdminOpenID: "ou_admin",
-			Feishu: map[string]FeishuConfig{
-				"manager": {
-					AppID:     "cli_manager",
-					AppSecret: "manager-secret",
-				},
-				"dev": {
-					AppID:     "cli_dev",
-					AppSecret: "dev-secret",
-				},
-			},
 		},
 	}
 

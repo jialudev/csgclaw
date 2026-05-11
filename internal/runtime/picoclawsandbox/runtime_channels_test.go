@@ -3,26 +3,27 @@ package picoclawsandbox
 import (
 	"testing"
 
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 )
 
-func TestRuntimeSetChannelsUpdatesGatewayCreateSpecEnv(t *testing.T) {
+func TestRuntimeSetFeishuProviderUpdatesGatewayCreateSpecEnv(t *testing.T) {
 	rt := New(Dependencies{
 		ModelFallback: "model-1",
 		Server: config.ServerConfig{
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "token",
 		},
-		Channels: config.ChannelsConfig{
-			Feishu: map[string]config.FeishuConfig{
+		FeishuProvider: feishuProviderStub{
+			apps: map[string]feishu.AppConfig{
 				"u-dev": {AppID: "old-app", AppSecret: "old-secret"},
 			},
 		},
 		ResolveBaseURL: func(server config.ServerConfig) string {
 			return server.AdvertiseBaseURL
 		},
-		EnsureGatewayConfig: func(_, _, _ string) error { return nil },
+		EnsureGatewayConfig: func(_, _ string, _ agentruntime.Profile) error { return nil },
 		EnsureWorkspace: func(_, _ string) (string, error) {
 			return t.TempDir(), nil
 		},
@@ -30,19 +31,19 @@ func TestRuntimeSetChannelsUpdatesGatewayCreateSpecEnv(t *testing.T) {
 		EnsureProjectsRoot: func() (string, error) {
 			return t.TempDir(), nil
 		},
-		BuildRuntimeEnv: func(_, _, botID, _, _ string, channels config.ChannelsConfig) map[string]string {
+		BuildRuntimeEnv: func(_, _, botID, _, _ string, provider feishu.BotCredentialProvider) map[string]string {
 			env := map[string]string{}
-			if feishu, ok := channels.Feishu[botID]; ok {
-				env["APP_ID"] = feishu.AppID
-				env["APP_SECRET"] = feishu.AppSecret
+			if app, ok := provider.BotConfig(botID); ok {
+				env["APP_ID"] = app.AppID
+				env["APP_SECRET"] = app.AppSecret
 			}
 			return env
 		},
 		AddProfileEnv: func(envVars map[string]string, profileEnv map[string]string) {},
 	})
 
-	rt.SetChannels(config.ChannelsConfig{
-		Feishu: map[string]config.FeishuConfig{
+	rt.SetFeishuProvider(feishuProviderStub{
+		apps: map[string]feishu.AppConfig{
 			"u-dev": {AppID: "new-app", AppSecret: "new-secret"},
 		},
 	})
@@ -57,4 +58,13 @@ func TestRuntimeSetChannelsUpdatesGatewayCreateSpecEnv(t *testing.T) {
 	if got, want := spec.Env["APP_SECRET"], "new-secret"; got != want {
 		t.Fatalf("APP_SECRET = %q, want %q", got, want)
 	}
+}
+
+type feishuProviderStub struct {
+	apps map[string]feishu.AppConfig
+}
+
+func (p feishuProviderStub) BotConfig(botID string) (feishu.AppConfig, bool) {
+	app, ok := p.apps[botID]
+	return app, ok
 }

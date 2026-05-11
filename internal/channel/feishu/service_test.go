@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 )
 
@@ -59,6 +60,86 @@ func TestFeishuServiceKeepsNamedAppConfigs(t *testing.T) {
 	apps["manager"] = AppConfig{AppID: "mutated"}
 	if got, want := svc.AppConfigs()["manager"].AppID, "cli_manager"; got != want {
 		t.Fatalf("manager app_id after caller mutation = %q, want %q", got, want)
+	}
+}
+
+func TestFeishuServiceUsesProviderForConfigOperations(t *testing.T) {
+	dir := t.TempDir()
+	provider, err := NewProvider(NewFileStore(filepath.Join(dir, config.ConfigFileName)))
+	if err != nil {
+		t.Fatalf("NewProvider() error = %v", err)
+	}
+	svc := NewServiceWithProvider(provider)
+
+	view, err := svc.UpdateConfig(Update{
+		BotID:       "u-dev",
+		AppID:       "cli_dev",
+		AppSecret:   "dev-secret",
+		AdminOpenID: "ou_admin",
+	})
+	if err != nil {
+		t.Fatalf("UpdateConfig() error = %v", err)
+	}
+	if !view.Configured || !view.HasSecret || view.AdminOpenID != "ou_admin" {
+		t.Fatalf("UpdateConfig() view = %+v, want configured masked entry", view)
+	}
+
+	got, err := svc.GetConfig("u-dev")
+	if err != nil {
+		t.Fatalf("GetConfig() error = %v", err)
+	}
+	if got.AppID != "cli_dev" || !got.HasSecret || got.AdminOpenID != "ou_admin" {
+		t.Fatalf("GetConfig() = %+v, want saved provider config", got)
+	}
+}
+
+func TestFeishuServiceReloadConfigSyncsAppsAndHookFromProvider(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(filepath.Join(dir, config.ConfigFileName))
+	if err := store.Save(Snapshot{
+		AdminOpenID: "ou_admin",
+		Bots: map[string]AppConfig{
+			"u-dev": {AppID: "cli_dev", AppSecret: "dev-secret"},
+		},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	provider, err := NewProvider(store)
+	if err != nil {
+		t.Fatalf("NewProvider() error = %v", err)
+	}
+	svc := NewServiceWithProvider(provider)
+
+	if err := store.Save(Snapshot{
+		AdminOpenID: "ou_new",
+		Bots: map[string]AppConfig{
+			"u-worker": {AppID: "cli_worker", AppSecret: "worker-secret"},
+		},
+	}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var hookSnapshot Snapshot
+	svc.SetConfigReloadHook(func(snapshot Snapshot) {
+		hookSnapshot = snapshot
+	})
+	botIDs, err := svc.ReloadConfig()
+	if err != nil {
+		t.Fatalf("ReloadConfig() error = %v", err)
+	}
+
+	if got, want := strings.Join(botIDs, ","), "u-worker"; got != want {
+		t.Fatalf("ReloadConfig() bot ids = %q, want %q", got, want)
+	}
+	apps := svc.AppConfigs()
+	if _, ok := apps["u-dev"]; ok {
+		t.Fatalf("AppConfigs() still contains old bot after reload: %+v", apps)
+	}
+	if got, want := apps["u-worker"].AdminOpenID, "ou_new"; got != want {
+		t.Fatalf("reloaded admin_open_id = %q, want %q", got, want)
+	}
+	if got, want := hookSnapshot.Bots["u-worker"].AppID, "cli_worker"; got != want {
+		t.Fatalf("reload hook snapshot = %+v, want updated snapshot", hookSnapshot)
 	}
 }
 

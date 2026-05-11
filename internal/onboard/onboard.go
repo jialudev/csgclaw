@@ -111,7 +111,7 @@ func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg c
 		return bot.Bot{}, err
 	}
 	opts = append(opts,
-		runtimewiring.WithPicoClawSandboxRuntime(cfg.Channels),
+		runtimewiring.WithPicoClawSandboxRuntime(nil),
 		runtimewiring.WithOpenClawSandboxRuntime(),
 		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
 	)

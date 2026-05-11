@@ -476,7 +476,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	ctx := context.WithValue(context.Background(), struct{}{}, "serve-context")
 	svc := &agent.Service{}
 
-	NewAgentService = func(config.Config) (*agent.Service, error) {
+	NewAgentService = func(config.Config, feishu.BotCredentialProvider) (*agent.Service, error) {
 		return svc, nil
 	}
 	NewIMService = func(*im.Bus) (*im.Service, error) {
@@ -486,11 +486,18 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	NewBotService = func() (*bot.Service, error) {
 		return wantBotSvc, nil
 	}
-	NewFeishuService = func(cfg config.Config) (*feishu.Service, error) {
-		if got, want := cfg.Channels.Feishu["manager"].AppID, "cli_manager"; got != want {
+	NewFeishuService = func(provider feishu.Provider) (*feishu.Service, error) {
+		if provider == nil {
+			return nil, fmt.Errorf("provider = nil, want configured provider")
+		}
+		app, ok := provider.BotConfig("manager")
+		if !ok {
+			return nil, fmt.Errorf("provider missing manager bot config")
+		}
+		if got, want := app.AppID, "cli_manager"; got != want {
 			return nil, fmt.Errorf("manager app_id = %q, want %q", got, want)
 		}
-		return nil, nil
+		return feishu.NewServiceWithProvider(provider), nil
 	}
 	NewLLMService = func(config.Config, *agent.Service) (*llm.Service, error) {
 		return nil, nil
@@ -564,15 +571,6 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		}),
 		Bootstrap: config.BootstrapConfig{
 			ManagerImageOverride: "ghcr.io/example/manager:latest",
-		},
-		Channels: config.ChannelsConfig{
-			FeishuAdminOpenID: "ou_admin",
-			Feishu: map[string]config.FeishuConfig{
-				"manager": {
-					AppID:     "cli_manager",
-					AppSecret: "manager-secret",
-				},
-			},
 		},
 	}
 
@@ -929,7 +927,7 @@ func TestServeForegroundPreservesManagerImageOverride(t *testing.T) {
 			ManagerImageOverride: "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0",
 		},
 	}
-	NewAgentService = func(got config.Config) (*agent.Service, error) {
+	NewAgentService = func(got config.Config, _ feishu.BotCredentialProvider) (*agent.Service, error) {
 		if got.Bootstrap.ManagerImageOverride != "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0" {
 			t.Fatalf("manager image override = %q, want preserved override", got.Bootstrap.ManagerImageOverride)
 		}
@@ -1070,7 +1068,7 @@ func TestNewAgentServiceRejectsUnsupportedSandboxProvider(t *testing.T) {
 		Sandbox: config.SandboxConfig{
 			Provider: "not-a-sandbox-backend",
 		},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("newAgentService() error = nil, want unsupported sandbox provider")
 	}
@@ -1094,7 +1092,7 @@ func TestNewAgentServiceExplainsMissingConfiguredBoxLite(t *testing.T) {
 		Sandbox: config.SandboxConfig{
 			Provider: config.BoxLiteProvider,
 		},
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("newAgentService() error = nil, want actionable boxlite availability error")
 	}
@@ -1115,7 +1113,7 @@ func TestNewAgentServiceRegistersCodexRuntime(t *testing.T) {
 		Sandbox: config.SandboxConfig{
 			Provider: config.DefaultSandboxProvider,
 		},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("newAgentService() error = %v", err)
 	}
@@ -1182,10 +1180,12 @@ func stubServeDependencies(t *testing.T) func() {
 		}
 		return nil
 	}
-	NewAgentService = func(config.Config) (*agent.Service, error) { return &agent.Service{}, nil }
+	NewAgentService = func(config.Config, feishu.BotCredentialProvider) (*agent.Service, error) {
+		return &agent.Service{}, nil
+	}
 	NewBotService = func() (*bot.Service, error) { return &bot.Service{}, nil }
 	NewIMService = func(*im.Bus) (*im.Service, error) { return nil, nil }
-	NewFeishuService = func(config.Config) (*feishu.Service, error) { return nil, nil }
+	NewFeishuService = func(feishu.Provider) (*feishu.Service, error) { return nil, nil }
 	NewLLMService = func(config.Config, *agent.Service) (*llm.Service, error) { return nil, nil }
 	StartConfiguredAgents = func(context.Context, *agent.Service) error { return nil }
 	NewCodexBridgeManager = func(config.Config, *agent.Service) (codexBridgeManager, error) { return nil, nil }

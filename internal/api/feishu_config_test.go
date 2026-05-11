@@ -44,7 +44,7 @@ func TestFeishuChannelConfigPutWritesStandaloneConfigAndReloads(t *testing.T) {
 		t.Fatalf("response = %+v, want configured reloaded masked secret", resp)
 	}
 
-	feishuPath := filepath.Join(dir, config.ChannelsDirName, config.FeishuChannelConfigFileName)
+	feishuPath := filepath.Join(dir, config.ChannelsDirName, feishu.FeishuChannelConfigFileName)
 	data, err := os.ReadFile(feishuPath)
 	if err != nil {
 		t.Fatalf("ReadFile(feishu) error = %v", err)
@@ -70,14 +70,13 @@ func TestFeishuChannelConfigGetMasksSecret(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, config.ConfigFileName)
 	writeMinimalAPIConfig(t, configPath)
-	feishuPath := filepath.Join(dir, config.ChannelsDirName, config.FeishuChannelConfigFileName)
-	if err := config.SaveFeishuChannelConfig(feishuPath, config.ChannelsConfig{
-		FeishuAdminOpenID: "ou_admin",
-		Feishu: map[string]config.FeishuConfig{
+	if err := feishu.NewFileStore(configPath).Save(feishu.Snapshot{
+		AdminOpenID: "ou_admin",
+		Bots: map[string]feishu.AppConfig{
 			"u-dev": {AppID: "cli_dev", AppSecret: "dev-secret"},
 		},
 	}); err != nil {
-		t.Fatalf("SaveFeishuChannelConfig() error = %v", err)
+		t.Fatalf("Save() error = %v", err)
 	}
 
 	feishuSvc := feishu.NewService()

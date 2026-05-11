@@ -29,7 +29,7 @@ func TestConfigUpdateGetAndLoad(t *testing.T) {
 		t.Fatalf("Update() view = %+v, want configured masked secret without reload", view)
 	}
 
-	feishuPath := filepath.Join(dir, config.ChannelsDirName, config.FeishuChannelConfigFileName)
+	feishuPath := filepath.Join(dir, config.ChannelsDirName, FeishuChannelConfigFileName)
 	data, err := os.ReadFile(feishuPath)
 	if err != nil {
 		t.Fatalf("ReadFile(feishu) error = %v", err)
@@ -42,15 +42,8 @@ func TestConfigUpdateGetAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	apps := AppsFromChannels(cfg.Channels)
-	if got, want := apps["u-dev"].AppID, "cli_dev"; got != want {
-		t.Fatalf("app_id = %q, want %q", got, want)
-	}
-	if got, want := apps["u-dev"].AppSecret, "dev-secret"; got != want {
-		t.Fatalf("app_secret = %q, want %q", got, want)
-	}
-	if got, want := apps["u-dev"].AdminOpenID, "ou_admin"; got != want {
-		t.Fatalf("admin_open_id = %q, want %q", got, want)
+	if got := cfg.Server.AccessToken; got != "secret" {
+		t.Fatalf("cfg.Load() should still return the main config, got access_token %q", got)
 	}
 
 	got, err := cfgStore.Get("u-dev")
@@ -59,10 +52,6 @@ func TestConfigUpdateGetAndLoad(t *testing.T) {
 	}
 	if !got.Configured || !got.HasSecret || got.AppID != "cli_dev" {
 		t.Fatalf("Get() view = %+v, want masked saved config", got)
-	}
-
-	if got := SortedBotIDs(cfg.Channels); len(got) != 1 || got[0] != "u-dev" {
-		t.Fatalf("SortedBotIDs() = %#v, want u-dev", got)
 	}
 }
 

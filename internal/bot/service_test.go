@@ -135,7 +135,7 @@ func testRuntimeIDForAgentName(agentName string) string {
 
 func init() {
 	agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
-		if err := runtimewiring.WithPicoClawSandboxRuntime(config.ChannelsConfig{})(s); err != nil {
+		if err := runtimewiring.WithPicoClawSandboxRuntime(nil)(s); err != nil {
 			return err
 		}
 		return runtimewiring.WithOpenClawSandboxRuntime()(s)

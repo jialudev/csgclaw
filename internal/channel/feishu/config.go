@@ -2,7 +2,6 @@ package feishu
 
 import (
 	"errors"
-	"sort"
 	"strings"
 	"sync"
 
@@ -68,45 +67,21 @@ func (c *Config) Get(botID string) (Entry, error) {
 	if err != nil {
 		return Entry{}, err
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	cfg, err := c.loadConfigWithChannelFiles()
+	provider, err := c.provider()
 	if err != nil {
 		return Entry{}, err
 	}
-	app, ok := cfg.Channels.Feishu[botID]
-	return MaskConfig(botID, app, ok, cfg.Channels.FeishuAdminOpenID), nil
+	app, ok := provider.BotConfig(botID)
+	return MaskAppConfig(botID, app, ok), nil
 }
 
 func (c *Config) Update(req Update) (Entry, error) {
-	botID, appID, appSecret, adminOpenID, err := normalizeConfigUpdate(req)
+	provider, err := c.provider()
 	if err != nil {
 		return Entry{}, err
 	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	channels, err := c.loadStandaloneFeishuChannelConfig()
-	if err != nil {
-		return Entry{}, err
-	}
-	if channels.Feishu == nil {
-		channels.Feishu = make(map[string]config.FeishuConfig)
-	}
-	if adminOpenID != "" {
-		channels.FeishuAdminOpenID = adminOpenID
-	}
-	channels.Feishu[botID] = config.FeishuConfig{AppID: appID, AppSecret: appSecret}
-
-	feishuPath, err := config.FeishuChannelConfigPath(c.configPath)
-	if err != nil {
-		return Entry{}, err
-	}
-	if err := config.SaveFeishuChannelConfig(feishuPath, channels); err != nil {
-		return Entry{}, err
-	}
-	return MaskConfig(botID, channels.Feishu[botID], true, channels.FeishuAdminOpenID), nil
+	view, _, err := provider.Update(req)
+	return view, err
 }
 
 func (c *Config) Load() (config.Config, error) {
@@ -133,7 +108,7 @@ func normalizeConfigUpdate(req Update) (string, string, string, string, error) {
 
 func normalizeConfigBotID(botID string) (string, error) {
 	botID = strings.TrimSpace(botID)
-	if err := config.ValidateFeishuChannelBotID(botID); err != nil {
+	if err := ValidateBotID(botID); err != nil {
 		return "", ValidationError{Message: err.Error()}
 	}
 	return botID, nil
@@ -141,31 +116,16 @@ func normalizeConfigBotID(botID string) (string, error) {
 
 func (c *Config) loadConfigWithChannelFiles() (config.Config, error) {
 	if strings.TrimSpace(c.configPath) == "" {
-		return config.LoadDefaultWithChannelFiles()
+		return config.LoadDefault()
 	}
-	return config.LoadWithChannelFiles(c.configPath)
+	return config.Load(c.configPath)
 }
 
-func (c *Config) loadStandaloneFeishuChannelConfig() (config.ChannelsConfig, error) {
-	path, err := config.FeishuChannelConfigPath(c.configPath)
-	if err != nil {
-		return config.ChannelsConfig{}, err
-	}
-	channels, ok, err := config.LoadFeishuChannelConfigIfExists(path)
-	if err != nil {
-		return config.ChannelsConfig{}, err
-	}
-	if !ok {
-		return config.ChannelsConfig{}, nil
-	}
-	return channels, nil
-}
-
-func MaskConfig(botID string, app config.FeishuConfig, configured bool, adminOpenID string) Entry {
+func MaskAppConfig(botID string, app AppConfig, configured bool) Entry {
 	view := Entry{
 		BotID:       botID,
 		Configured:  configured,
-		AdminOpenID: strings.TrimSpace(adminOpenID),
+		AdminOpenID: strings.TrimSpace(app.AdminOpenID),
 	}
 	if configured {
 		view.AppID = strings.TrimSpace(app.AppID)
@@ -174,27 +134,13 @@ func MaskConfig(botID string, app config.FeishuConfig, configured bool, adminOpe
 	return view
 }
 
-func AppsFromChannels(cfg config.ChannelsConfig) map[string]AppConfig {
-	apps := make(map[string]AppConfig, len(cfg.Feishu))
-	for name, app := range cfg.Feishu {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		apps[name] = AppConfig{
-			AppID:       app.AppID,
-			AppSecret:   app.AppSecret,
-			AdminOpenID: cfg.FeishuAdminOpenID,
-		}
-	}
-	return apps
+func AppsFromSnapshot(snapshot Snapshot) map[string]AppConfig {
+	return cloneAppConfigs(snapshot.Bots)
 }
 
-func SortedBotIDs(channels config.ChannelsConfig) []string {
-	ids := make([]string, 0, len(channels.Feishu))
-	for id := range channels.Feishu {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
+func (c *Config) provider() (*ConfigProvider, error) {
+	c.mu.RLock()
+	path := c.configPath
+	c.mu.RUnlock()
+	return NewProvider(NewFileStore(path))
 }

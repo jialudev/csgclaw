@@ -21,7 +21,6 @@ type Config struct {
 	Model     ModelConfig
 	Bootstrap BootstrapConfig
 	Sandbox   SandboxConfig
-	Channels  ChannelsConfig
 
 	raw rawConfigValues
 }
@@ -147,29 +146,13 @@ func (c SandboxConfig) EffectiveDockerCLIPath() string {
 	return "docker"
 }
 
-type ChannelsConfig struct {
-	FeishuAdminOpenID string
-	Feishu            map[string]FeishuConfig
-}
-
-type FeishuConfig struct {
-	AppID     string
-	AppSecret string
-}
-
 type rawConfigValues struct {
 	server        ServerConfig
 	bootstrap     BootstrapConfig
 	sandbox       SandboxConfig
 	modelsDefault string
 	models        map[string]rawProviderConfig
-	channels      rawChannelsConfig
 	resolved      *rawConfigValues
-}
-
-type rawChannelsConfig struct {
-	FeishuAdminOpenID string
-	Feishu            map[string]FeishuConfig
 }
 
 type rawProviderConfig struct {
@@ -301,9 +284,6 @@ func Load(path string) (Config, error) {
 		LLM:    newLLMConfig(),
 		raw: rawConfigValues{
 			models: make(map[string]rawProviderConfig),
-			channels: rawChannelsConfig{
-				Feishu: make(map[string]FeishuConfig),
-			},
 		},
 	}
 
@@ -771,9 +751,6 @@ func (r rawConfigValues) resolvedOrZero() rawConfigValues {
 	if r.resolved == nil {
 		return rawConfigValues{
 			models: make(map[string]rawProviderConfig),
-			channels: rawChannelsConfig{
-				Feishu: make(map[string]FeishuConfig),
-			},
 		}
 	}
 	return *r.resolved
@@ -782,9 +759,6 @@ func (r rawConfigValues) resolvedOrZero() rawConfigValues {
 func (c Config) resolvedRawValues() *rawConfigValues {
 	out := rawConfigValues{
 		models: make(map[string]rawProviderConfig),
-		channels: rawChannelsConfig{
-			Feishu: make(map[string]FeishuConfig),
-		},
 	}
 
 	if c.raw.server.ListenAddr != "" {

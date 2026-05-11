@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
@@ -25,7 +26,7 @@ type Dependencies struct {
 	RuntimeKind    string
 	ModelFallback  string
 	Server         config.ServerConfig
-	Channels       config.ChannelsConfig
+	FeishuProvider feishu.BotCredentialProvider
 	ResolveBaseURL func(server config.ServerConfig) string
 
 	EnsureRuntime    func(agentName string) (sandbox.Runtime, error)
@@ -47,7 +48,7 @@ type Dependencies struct {
 	EnsureWorkspace     func(agentName, template string) (string, error)
 	WorkspaceTemplate   func(name, botID string) string
 	EnsureProjectsRoot  func() (string, error)
-	BuildRuntimeEnv     func(baseURL, accessToken, botID, llmBaseURL, modelID string, channels config.ChannelsConfig) map[string]string
+	BuildRuntimeEnv     func(baseURL, accessToken, botID, llmBaseURL, modelID string, feishuProvider feishu.BotCredentialProvider) map[string]string
 	AddProfileEnv       func(envVars map[string]string, profileEnv map[string]string)
 	HomeEnv             string
 	WorkspaceGuestPath  string
@@ -68,26 +69,25 @@ var (
 )
 
 func New(deps Dependencies) *Runtime {
-	deps.Channels = cloneChannelsConfig(deps.Channels)
 	return &Runtime{deps: deps}
 }
 
-func (r *Runtime) SetChannels(channels config.ChannelsConfig) {
+func (r *Runtime) SetFeishuProvider(provider feishu.BotCredentialProvider) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.deps.Channels = cloneChannelsConfig(channels)
+	r.deps.FeishuProvider = provider
 }
 
-func (r *Runtime) channels() config.ChannelsConfig {
+func (r *Runtime) feishuProvider() feishu.BotCredentialProvider {
 	if r == nil {
-		return config.ChannelsConfig{}
+		return nil
 	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return cloneChannelsConfig(r.deps.Channels)
+	return r.deps.FeishuProvider
 }
 
 func (r *Runtime) Kind() string {
@@ -315,7 +315,7 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
-	envVars := r.deps.BuildRuntimeEnv(managerBaseURL, r.deps.Server.AccessToken, botID, llmBaseURL, modelID, r.channels())
+	envVars := r.deps.BuildRuntimeEnv(managerBaseURL, r.deps.Server.AccessToken, botID, llmBaseURL, modelID, r.feishuProvider())
 	r.deps.AddProfileEnv(envVars, profile.Env)
 	homeEnv := r.homeEnv()
 	workspaceGuestPath := r.workspaceGuestPath()
@@ -474,17 +474,4 @@ func stateFromSandboxState(state sandbox.State) agentruntime.State {
 func llmBridgeBaseURL(managerBaseURL, botID string) string {
 	managerBaseURL = strings.TrimRight(strings.TrimSpace(managerBaseURL), "/")
 	return managerBaseURL + "/api/bots/" + strings.TrimSpace(botID) + "/llm"
-}
-
-func cloneChannelsConfig(channels config.ChannelsConfig) config.ChannelsConfig {
-	cloned := config.ChannelsConfig{
-		FeishuAdminOpenID: channels.FeishuAdminOpenID,
-	}
-	if len(channels.Feishu) > 0 {
-		cloned.Feishu = make(map[string]config.FeishuConfig, len(channels.Feishu))
-		for name, feishu := range channels.Feishu {
-			cloned.Feishu[name] = feishu
-		}
-	}
-	return cloned
 }
