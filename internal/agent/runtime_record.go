@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 )
 
@@ -51,8 +52,33 @@ func runtimeKindForAgent(a Agent) string {
 	}
 }
 
+func isGatewayRuntimeKind(kind string) bool {
+	switch normalizeRuntimeKind(kind) {
+	case RuntimeKindPicoClawSandbox, RuntimeKindOpenClawSandbox:
+		return true
+	default:
+		return false
+	}
+}
+
+func runtimeKindForGatewayRuntime(runtime string) string {
+	if kind := normalizeRuntimeKind(runtime); kind == RuntimeKindPicoClawSandbox {
+		return kind
+	}
+	return ""
+}
+
+func managerImageForRuntimeKind(kind string) string {
+	switch normalizeRuntimeKind(kind) {
+	case RuntimeKindOpenClawSandbox, RuntimeKindPicoClawSandbox:
+		return config.DefaultManagerImageForRuntimeKind(kind)
+	default:
+		return ""
+	}
+}
+
 func normalizeRuntimeKind(kind string) string {
-	switch strings.TrimSpace(kind) {
+	switch strings.TrimSpace(strings.ToLower(kind)) {
 	case RuntimeKindPicoClawSandbox:
 		return RuntimeKindPicoClawSandbox
 	case RuntimeKindOpenClawSandbox:

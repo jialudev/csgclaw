@@ -47,6 +47,7 @@ models = ["Qwen/Qwen3-0.6B-GGUF"]
 
 [bootstrap]
 manager_image_override = ""
+runtime_kind = "picoclaw_sandbox"
 
 [sandbox]
 provider = "boxlite"
@@ -71,6 +72,7 @@ models = ["gpt-5.4"]
 
 [bootstrap]
 manager_image_override = ""
+runtime_kind = "picoclaw_sandbox"
 
 [sandbox]
 provider = "boxlite"
@@ -87,6 +89,7 @@ no_auth = false
 
 [bootstrap]
 manager_image_override = ""
+runtime_kind = "picoclaw_sandbox"
 
 [sandbox]
 provider = "boxlite"
@@ -94,9 +97,10 @@ provider = "boxlite"
 
 Codex and Claude Code profiles are configured in agent state through the Web UI. CSGClaw starts an embedded CLIProxyAPI on a private localhost port at serve time, so static CLIProxy base URLs are not required.
 
-Workers can also select an explicit runtime kind when they are created. The default runtime kind is `picoclaw-sandbox`. To create a Codex worker, use `csgclaw agent create --runtime codex ...` or send `runtime_kind: "codex"` to `POST /api/v1/agents`.
+Workers can also select an explicit runtime kind when they are created. The default runtime kind is `picoclaw_sandbox`. To create a sandboxed OpenClaw worker, use `csgclaw agent create --runtime openclaw_sandbox ...`; to create a Codex worker, use `csgclaw agent create --runtime codex ...`. The API accepts the same values through `runtime_kind` on `POST /api/v1/agents`.
 
 Leave `[bootstrap].manager_image_override` empty to use the built-in default manager image. Set it only when you need to override that default.
+The bootstrap manager currently runs on `picoclaw_sandbox`; `openclaw_sandbox` is supported for workers, not as the manager runtime.
 
 Auth is also managed locally:
 
@@ -116,6 +120,16 @@ When a worker uses the Codex runtime, CSGClaw resolves `codex-acp` automatically
 - `CSGCLAW_CODEX_ACP_PATH` to point at a preinstalled `codex-acp` binary
 - `CSGCLAW_CODEX_ACP_VERSION` to pin the download version
 - `CSGCLAW_CODEX_ACP_BASE_URL` to change the download source
+
+## OpenClaw Runtime
+
+CSGClaw defaults to PicoClaw for the bootstrap manager. To create a sandboxed OpenClaw worker, set the worker runtime explicitly:
+
+```bash
+csgclaw agent create --name alice --runtime openclaw_sandbox
+```
+
+The recommended image shape is a slim OpenClaw base image with the CSGClaw channel plugin baked under `/home/node/openclaw-plugins/csgclaw-extension`. Runtime state still comes from `~/.csgclaw/agents/<agent>/.openclaw/openclaw.json`; do not mount an empty host directory over `/home/node/openclaw-plugins`, because that hides baked plugins.
 
 ## Sandbox Providers
 

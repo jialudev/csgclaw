@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -29,6 +30,12 @@ const (
 	hostWorkspaceDir = "workspace"
 	hostProjectsDir  = "projects"
 	gatewayLogPoll   = 200 * time.Millisecond
+)
+
+const (
+	gatewayBoxPhaseIdle uint32 = iota
+	gatewayBoxPhasePreparing
+	gatewayBoxPhaseCreating
 )
 
 var localIPv4Resolver = localIPv4
@@ -149,6 +156,7 @@ type Service struct {
 	llm              config.LLMConfig
 	server           config.ServerConfig
 	managerImage     string
+	gatewayRuntime   string
 	state            string
 	sandbox          sandbox.Provider
 	mu               sync.RWMutex
@@ -159,6 +167,9 @@ type Service struct {
 	lifecycle        LifecycleObserver
 	profileDefaults  AgentProfile
 	detectionResults []ProfileDetectionResult
+
+	// gatewayWorkPhase is set by createGatewayBox for bootstrap progress logs (best-effort if concurrent).
+	gatewayWorkPhase atomic.Uint32
 }
 
 type ServiceOption func(*Service) error
@@ -198,6 +209,51 @@ func WithLifecycleObserver(observer LifecycleObserver) ServiceOption {
 		s.lifecycle = observer
 		return nil
 	}
+}
+
+// WithGatewayRuntime sets picoclaw vs openclaw gateway behavior (from [bootstrap] or image inference).
+func WithGatewayRuntime(runtime string) ServiceOption {
+	return func(s *Service) error {
+		kind := runtimeKindForGatewayRuntime(runtime)
+		if kind == "" {
+			return fmt.Errorf("gateway runtime %q is not supported", runtime)
+		}
+		s.gatewayRuntime = kind
+		return nil
+	}
+}
+
+func (s *Service) GatewayRuntime() string {
+	if s == nil {
+		return RuntimeKindPicoClawSandbox
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if kind := runtimeKindForGatewayRuntime(s.gatewayRuntime); kind != "" {
+		return kind
+	}
+	return RuntimeKindPicoClawSandbox
+}
+
+func (s *Service) SetGatewayRuntime(runtime, managerImage string) error {
+	if s == nil {
+		return fmt.Errorf("agent service is required")
+	}
+	kind := runtimeKindForGatewayRuntime(runtime)
+	if kind == "" {
+		return fmt.Errorf("gateway runtime %q is not supported", runtime)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gatewayRuntime = kind
+	if image := strings.TrimSpace(managerImage); image != "" {
+		s.managerImage = image
+	}
+	return nil
+}
+
+func (s *Service) useOpenClawGateway() bool {
+	return s != nil && s.gatewayRuntimeKind() == RuntimeKindOpenClawSandbox
 }
 
 func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
@@ -271,7 +327,14 @@ func (svc *Service) EnsureBootstrapManager(ctx context.Context, forceRecreate bo
 	if svc == nil {
 		return nil
 	}
-	_, err := svc.EnsureManager(ctx, forceRecreate)
+	_, defaultModel, err := svc.llm.Resolve("")
+	if err != nil {
+		return err
+	}
+	if _, err := ensureAgentPicoClawConfig(ManagerName, ManagerUserID, svc.server, defaultModel); err != nil {
+		return err
+	}
+	_, err = svc.EnsureManager(ctx, forceRecreate)
 	return err
 }
 
@@ -282,6 +345,19 @@ func (s *Service) SetLifecycleObserver(observer LifecycleObserver) {
 	s.mu.Lock()
 	s.lifecycle = observer
 	s.mu.Unlock()
+}
+
+func (s *Service) logBootstrapManagerBoxProgress(elapsed time.Duration) {
+	wait := elapsed.Round(time.Second).String()
+	ph := s.gatewayWorkPhase.Load()
+	switch ph {
+	case gatewayBoxPhasePreparing:
+		log.Printf(`still in stage "preparing" for bootstrap manager %q [%s elapsed]: host filesystem + gateway config/skills mounts (no registry pull yet)`, ManagerName, wait)
+	case gatewayBoxPhaseCreating:
+		log.Printf(`still in stage "creating" for manager %q [%s elapsed]: boxlite provisioning the sandbox (unpack layers if needed, disk/VM shim, boot, then CMD)`, ManagerName, wait)
+	default:
+		log.Printf(`still working on bootstrap manager %q [%s elapsed], image=%q`, ManagerName, wait, s.managerImage)
+	}
 }
 
 func (s *Service) EnsureManager(ctx context.Context, forceRecreate bool) (Agent, error) {
@@ -355,6 +431,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 	}
 	if !startProfile.ProfileComplete {
 		now := time.Now().UTC()
+		runtimeKind := s.gatewayRuntimeKind()
 		s.mu.Lock()
 		manager := s.agents[ManagerUserID]
 		if manager.ID == "" || forceRecreate {
@@ -362,13 +439,14 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 				ID:          ManagerUserID,
 				Name:        ManagerName,
 				RuntimeID:   runtimeIDForAgentID(ManagerUserID),
-				RuntimeKind: RuntimeKindPicoClawSandbox,
+				RuntimeKind: runtimeKind,
 				Image:       managerImage,
 				Status:      "profile_incomplete",
 				CreatedAt:   now,
 				Role:        RoleManager,
 			}
 		}
+		manager.RuntimeKind = runtimeKind
 		manager.AgentProfile = startProfile
 		manager.ProfileComplete = false
 		manager.DetectionResults = detectionResults
@@ -392,6 +470,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		log.Printf("bootstrap manager box %q not found, creating it with image %q", ManagerName, managerImage)
 		log.Printf("if the image is not present locally, the first pull may take a while")
 		progressDone := make(chan struct{})
+		waitStarted := time.Now()
 		go func() {
 			ticker := time.NewTicker(10 * time.Second)
 			defer ticker.Stop()
@@ -400,7 +479,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 				case <-progressDone:
 					return
 				case <-ticker.C:
-					log.Printf("still creating bootstrap manager box %q with image %q; image download may still be in progress", ManagerName, managerImage)
+					s.logBootstrapManagerBoxProgress(time.Since(waitStarted))
 				}
 			}
 		}()
@@ -411,12 +490,18 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		}
 		log.Printf("bootstrap manager box %q created", ManagerName)
 	} else {
-		if err := s.startBox(ctx, box); err != nil {
-			return Agent{}, fmt.Errorf("start bootstrap manager box: %w", err)
-		}
 		info, err = s.boxInfo(ctx, box)
 		if err != nil {
 			return Agent{}, fmt.Errorf("read bootstrap manager box info: %w", err)
+		}
+		if info.State != sandbox.StateRunning {
+			if err := s.startBox(ctx, box); err != nil {
+				return Agent{}, fmt.Errorf("start bootstrap manager box: %w", err)
+			}
+			info, err = s.boxInfo(ctx, box)
+			if err != nil {
+				return Agent{}, fmt.Errorf("read bootstrap manager box info after start: %w", err)
+			}
 		}
 	}
 	defer func() {
@@ -430,7 +515,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		ID:               ManagerUserID,
 		Name:             ManagerName,
 		RuntimeID:        runtimeIDForAgentID(ManagerUserID),
-		RuntimeKind:      RuntimeKindPicoClawSandbox,
+		RuntimeKind:      s.gatewayRuntimeKind(),
 		Image:            managerImage,
 		BoxID:            info.ID,
 		Status:           string(info.State),
@@ -468,6 +553,20 @@ func (s *Service) managerStartupProfile(ctx context.Context) (AgentProfile, []Pr
 		return normalizeProfile(profile, ManagerName, existing.Description), results
 	}
 	s.mu.RUnlock()
+	if s != nil {
+		if profileName, model, err := s.llm.Resolve(""); err == nil {
+			profile := profileFromConfigModel(profileName, "", model)
+			profile.Name = ManagerName
+			profile = normalizeProfile(profile, ManagerName, "")
+			if profile.ProfileComplete {
+				return profile, []ProfileDetectionResult{{
+					Provider: profile.Provider,
+					Status:   "ok",
+					ModelID:  profile.ModelID,
+				}}
+			}
+		}
+	}
 	return s.DetectDefaultProfile(ctx)
 }
 
@@ -490,9 +589,13 @@ func (s *Service) syncRuntimeRecordLocked(a Agent) {
 	if s == nil {
 		return
 	}
+	agentRuntimeKind := normalizeRuntimeKind(a.RuntimeKind)
 	rt := runtimeRecordForAgent(a)
 	if rt.ID == "" {
 		return
+	}
+	if strings.EqualFold(normalizeRole(a.Role), RoleManager) || (strings.EqualFold(normalizeRole(a.Role), RoleWorker) && (agentRuntimeKind == "" || isGatewayRuntimeKind(agentRuntimeKind))) {
+		rt.Kind = s.runtimeKindForGatewayAgent(a)
 	}
 	s.runtimeRecords[rt.ID] = rt
 }
@@ -533,8 +636,18 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
+	runtimeExplicit := strings.TrimSpace(spec.RuntimeKind) != ""
+	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
+	if runtimeKind == "" {
+		runtimeKind = s.gatewayRuntimeKind()
+	}
 	if image == "" {
-		image = s.managerImage
+		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && runtimeExplicit {
+			image = defaultImage
+		}
+		if image == "" && isGatewayRuntimeKind(runtimeKind) {
+			image = s.managerImage
+		}
 	}
 	role := normalizeRole(spec.Role)
 	if name == "" {
@@ -622,7 +735,7 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 		Name:            name,
 		Description:     description,
 		RuntimeID:       runtimeIDForAgentID(id),
-		RuntimeKind:     runtimeKindForAgent(Agent{Role: role, RuntimeKind: spec.RuntimeKind}),
+		RuntimeKind:     runtimeKindForAgent(Agent{Role: role, RuntimeKind: runtimeKind}),
 		Image:           image,
 		Role:            role,
 		Status:          status,
@@ -906,7 +1019,7 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 	if info.State == "" {
 		info.State = state
 	}
-	updated, err := s.updateAgentRuntimeState(id, info)
+	updated, err := s.updateRuntimeState(id, info)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -917,8 +1030,24 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 }
 
 func (s *Service) ensureWorkerGatewayConfig(got Agent) error {
-	if s == nil || !strings.EqualFold(strings.TrimSpace(got.Role), RoleWorker) || !isAgentProfileComplete(got) {
+	if s == nil || !strings.EqualFold(normalizeRole(got.Role), RoleWorker) {
 		return nil
+	}
+	return s.ensureGatewayConfigForAgent(got)
+}
+
+func (s *Service) ensureGatewayConfigForAgent(got Agent) error {
+	if s == nil || !isAgentProfileComplete(got) {
+		return nil
+	}
+	role := normalizeRole(got.Role)
+	if role != RoleManager && role != RoleWorker {
+		return nil
+	}
+	if role == RoleWorker {
+		if kind := normalizeRuntimeKind(got.RuntimeKind); kind != "" && !isGatewayRuntimeKind(kind) {
+			return nil
+		}
 	}
 	name := strings.TrimSpace(got.Name)
 	botID := strings.TrimSpace(got.ID)
@@ -933,7 +1062,7 @@ func (s *Service) ensureWorkerGatewayConfig(got Agent) error {
 	if modelID == "" {
 		modelID = s.model.Resolved().ModelID
 	}
-	gatewayConfig, err := s.gatewayConfigurer()
+	gatewayConfig, err := s.gatewayConfigurerForAgent(got)
 	if err != nil {
 		return err
 	}
@@ -970,7 +1099,7 @@ func (s *Service) Stop(ctx context.Context, id string) (Agent, error) {
 	if info.State == "" {
 		info.State = state
 	}
-	updated, err := s.updateAgentRuntimeState(id, info)
+	updated, err := s.updateRuntimeState(id, info)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -1103,7 +1232,7 @@ func (s *Service) StartConfiguredAgents(ctx context.Context) error {
 			return err
 		}
 		live := s.hydrateAgentStatus(ctx, a)
-		if isAgentRuntimeRunning(live) {
+		if isRuntimeRunning(live) {
 			continue
 		}
 		if _, err := s.Start(ctx, live.ID); err != nil {
@@ -1132,7 +1261,7 @@ func isAgentProfileComplete(a Agent) bool {
 	return a.ProfileComplete || a.AgentProfile.ProfileComplete
 }
 
-func isAgentRuntimeRunning(a Agent) bool {
+func isRuntimeRunning(a Agent) bool {
 	return strings.EqualFold(strings.TrimSpace(a.Status), string(sandbox.StateRunning))
 }
 
@@ -1141,8 +1270,17 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
+	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
+	if runtimeKind == "" {
+		runtimeKind = s.gatewayRuntimeKind()
+	}
 	if image == "" {
-		image = s.managerImage
+		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && strings.TrimSpace(spec.RuntimeKind) != "" {
+			image = defaultImage
+		}
+		if image == "" {
+			image = s.managerImage
+		}
 	}
 	switch {
 	case name == "":
@@ -1169,9 +1307,8 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
 	}
 
-	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
 	if runtimeKind == "" {
-		runtimeKind = RuntimeKindPicoClawSandbox
+		runtimeKind = s.gatewayRuntimeKind()
 	}
 	runtimeImpl, err := s.runtimeForKind(runtimeKind)
 	if err != nil {
@@ -1181,7 +1318,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	if err != nil {
 		return Agent{}, err
 	}
-	if testCreateGatewayBoxHook != nil && runtimeKind == RuntimeKindPicoClawSandbox {
+	if testCreateGatewayBoxHook != nil && isGatewayRuntimeKind(runtimeKind) {
 		rt, err := s.ensureRuntime(name)
 		if err != nil {
 			return Agent{}, err
@@ -1318,6 +1455,10 @@ func streamHostGatewayLog(ctx context.Context, agentName string, follow bool, li
 	if err != nil {
 		return err
 	}
+	return streamHostGatewayLogPaths(ctx, logPaths, follow, lines, w)
+}
+
+func streamHostGatewayLogPaths(ctx context.Context, logPaths []string, follow bool, lines int, w io.Writer) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}

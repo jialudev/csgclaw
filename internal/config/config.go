@@ -50,20 +50,73 @@ type LLMConfig struct {
 
 type BootstrapConfig struct {
 	ManagerImageOverride string
+	RuntimeKind          string
 }
 
 func (c BootstrapConfig) EffectiveManagerImage() string {
-	if strings.TrimSpace(c.ManagerImageOverride) == "" {
+	if override := strings.TrimSpace(c.ManagerImageOverride); override != "" {
+		return override
+	}
+	return DefaultManagerImageForRuntimeKind(c.ResolvedGatewayRuntimeKind())
+}
+
+const (
+	RuntimeKindPicoClawSandbox = "picoclaw_sandbox"
+	RuntimeKindOpenClawSandbox = "openclaw_sandbox"
+)
+
+// ResolvedGatewayRuntimeKind selects the bootstrap manager runtime.
+func (b BootstrapConfig) ResolvedGatewayRuntimeKind() string {
+	if normalizeGatewayRuntimeKind(b.RuntimeKind) == RuntimeKindPicoClawSandbox {
+		return RuntimeKindPicoClawSandbox
+	}
+	return RuntimeKindPicoClawSandbox
+}
+
+func (b BootstrapConfig) Validate() error {
+	runtimeKind := strings.TrimSpace(b.RuntimeKind)
+	normalized := normalizeGatewayRuntimeKind(runtimeKind)
+	if normalized == RuntimeKindOpenClawSandbox {
+		return fmt.Errorf("bootstrap runtime_kind %q is not supported yet; only %q is supported for the manager runtime; use agent runtime_kind %q for OpenClaw workers", b.RuntimeKind, RuntimeKindPicoClawSandbox, RuntimeKindOpenClawSandbox)
+	}
+	if runtimeKind != "" && normalized == "" {
+		return fmt.Errorf("bootstrap runtime_kind %q is not supported (use %q)", b.RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
+	if strings.Contains(strings.ToLower(b.ManagerImageOverride), "opencsghq/openclaw") {
+		return fmt.Errorf("bootstrap manager_image_override uses an OpenClaw manager image, which is not supported yet; use the PicoClaw manager and create OpenClaw workers with runtime_kind %q", RuntimeKindOpenClawSandbox)
+	}
+	if runtimeKind == "" || normalized == RuntimeKindPicoClawSandbox {
+		return nil
+	}
+	return nil
+}
+
+// DefaultManagerImageForRuntimeKind returns the default manager/worker sandbox image for an explicit runtime_kind value.
+func DefaultManagerImageForRuntimeKind(runtimeKind string) string {
+	switch normalizeGatewayRuntimeKind(runtimeKind) {
+	case RuntimeKindOpenClawSandbox:
+		return DefaultOpenClawManagerImage
+	default:
 		return DefaultManagerImage
 	}
-	return c.ManagerImageOverride
+}
+
+func normalizeGatewayRuntimeKind(kind string) string {
+	switch strings.TrimSpace(strings.ToLower(kind)) {
+	case RuntimeKindPicoClawSandbox:
+		return RuntimeKindPicoClawSandbox
+	case RuntimeKindOpenClawSandbox:
+		return RuntimeKindOpenClawSandbox
+	default:
+		return ""
+	}
 }
 
 type SandboxConfig struct {
 	Provider                 string
 	StoragePath              string
-	DebianRegistriesOverride []string
 	DockerCLIPath            string
+	DebianRegistriesOverride []string
 }
 
 func (c SandboxConfig) Resolved() SandboxConfig {
@@ -110,7 +163,13 @@ type rawConfigValues struct {
 	sandbox       SandboxConfig
 	modelsDefault string
 	models        map[string]rawProviderConfig
+	channels      rawChannelsConfig
 	resolved      *rawConfigValues
+}
+
+type rawChannelsConfig struct {
+	FeishuAdminOpenID string
+	Feishu            map[string]FeishuConfig
 }
 
 type rawProviderConfig struct {
@@ -128,12 +187,13 @@ const (
 	IMDirName       = "im"
 	ChannelsDirName = "channels"
 
-	DefaultHTTPPort     = apiclient.DefaultHTTPPort
-	DefaultAccessToken  = "your_access_token"
-	DefaultManagerImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.5.9"
-	CSGHubProvider      = "csghub"
-	DockerProvider      = "docker"
-	BoxLiteCLIProvider  = "boxlite"
+	DefaultHTTPPort             = apiclient.DefaultHTTPPort
+	DefaultAccessToken          = "your_access_token"
+	DefaultManagerImage         = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.5.9"
+	DefaultOpenClawManagerImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260509.1-csgclaw"
+	CSGHubProvider              = "csghub"
+	DockerProvider              = "docker"
+	BoxLiteCLIProvider          = "boxlite"
 	// TODO: Remove this alias after older config.toml files have been migrated.
 	legacyBoxLiteCLIProvider = "boxlite-cli"
 	BoxLiteCLIHomeDirName    = "boxlite"
@@ -243,6 +303,9 @@ func Load(path string) (Config, error) {
 		LLM:    newLLMConfig(),
 		raw: rawConfigValues{
 			models: make(map[string]rawProviderConfig),
+			channels: rawChannelsConfig{
+				Feishu: make(map[string]FeishuConfig),
+			},
 		},
 	}
 
@@ -300,6 +363,12 @@ func Load(path string) (Config, error) {
 			case "manager_image_override":
 				cfg.raw.bootstrap.ManagerImageOverride = parseRawStringValue(rawValue)
 				cfg.Bootstrap.ManagerImageOverride = value
+			case "manager_image":
+				cfg.raw.bootstrap.ManagerImageOverride = parseRawStringValue(rawValue)
+				cfg.Bootstrap.ManagerImageOverride = value
+			case "runtime_kind":
+				cfg.raw.bootstrap.RuntimeKind = parseRawStringValue(rawValue)
+				cfg.Bootstrap.RuntimeKind = value
 			}
 		case section == "sandbox":
 			switch key {
@@ -312,15 +381,15 @@ func Load(path string) (Config, error) {
 			case "storage_path":
 				cfg.raw.sandbox.StoragePath = parseRawStringValue(rawValue)
 				cfg.Sandbox.StoragePath = value
+			case "docker_cli_path":
+				cfg.raw.sandbox.DockerCLIPath = parseRawStringValue(rawValue)
+				cfg.Sandbox.DockerCLIPath = value
 			case "debian_registries_override":
 				registries, parseErr := parseStringArray(rawValue)
 				if parseErr != nil {
 					return Config{}, fmt.Errorf("parse sandbox.debian_registries_override: %w", parseErr)
 				}
 				cfg.Sandbox.DebianRegistriesOverride = registries
-			case "docker_cli_path":
-				cfg.raw.sandbox.DockerCLIPath = parseRawStringValue(rawValue)
-				cfg.Sandbox.DockerCLIPath = value
 			}
 		default:
 			if name, ok := modelsProviderSectionName(section); ok {
@@ -356,6 +425,10 @@ func Load(path string) (Config, error) {
 	if cfg.Server.ListenAddr == "" {
 		cfg.Server.ListenAddr = DefaultListenAddr()
 	}
+	if err := cfg.Bootstrap.Validate(); err != nil {
+		return Config{}, err
+	}
+	cfg.Bootstrap.RuntimeKind = normalizeGatewayRuntimeKind(cfg.Bootstrap.RuntimeKind)
 	if cfg.Server.AccessToken == "" {
 		cfg.Server.AccessToken = DefaultAccessToken
 	}
@@ -387,6 +460,10 @@ func (c Config) Save(path string) error {
 	loadedRaw := cfg.raw.resolvedOrZero()
 
 	var b strings.Builder
+	runtimeKind := strings.TrimSpace(cfg.Bootstrap.RuntimeKind)
+	if runtimeKind == "" {
+		runtimeKind = cfg.Bootstrap.ResolvedGatewayRuntimeKind()
+	}
 	fmt.Fprintf(&b, `# Generated by csgclaw.
 
 [server]
@@ -397,7 +474,8 @@ no_auth = %t
 
 [bootstrap]
 manager_image_override = %q
-`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.rawOrResolvedString(cfg.raw.bootstrap.ManagerImageOverride, loadedRaw.bootstrap.ManagerImageOverride, cfg.Bootstrap.ManagerImageOverride))
+runtime_kind = %q
+`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.rawOrResolvedString(cfg.raw.bootstrap.ManagerImageOverride, loadedRaw.bootstrap.ManagerImageOverride, cfg.Bootstrap.ManagerImageOverride), runtimeKind)
 	sandboxSection := fmt.Sprintf(`
 [sandbox]
 provider = %q
@@ -705,6 +783,9 @@ func (r rawConfigValues) resolvedOrZero() rawConfigValues {
 	if r.resolved == nil {
 		return rawConfigValues{
 			models: make(map[string]rawProviderConfig),
+			channels: rawChannelsConfig{
+				Feishu: make(map[string]FeishuConfig),
+			},
 		}
 	}
 	return *r.resolved
@@ -713,6 +794,9 @@ func (r rawConfigValues) resolvedOrZero() rawConfigValues {
 func (c Config) resolvedRawValues() *rawConfigValues {
 	out := rawConfigValues{
 		models: make(map[string]rawProviderConfig),
+		channels: rawChannelsConfig{
+			Feishu: make(map[string]FeishuConfig),
+		},
 	}
 
 	if c.raw.server.ListenAddr != "" {
@@ -727,17 +811,20 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	if c.raw.bootstrap.ManagerImageOverride != "" {
 		out.bootstrap.ManagerImageOverride = c.Bootstrap.ManagerImageOverride
 	}
+	if c.raw.bootstrap.RuntimeKind != "" {
+		out.bootstrap.RuntimeKind = c.Bootstrap.RuntimeKind
+	}
 	if c.raw.sandbox.Provider != "" {
 		out.sandbox.Provider = c.Sandbox.Provider
 	}
 	if c.raw.sandbox.StoragePath != "" {
 		out.sandbox.StoragePath = c.Sandbox.StoragePath
 	}
-	if len(c.raw.sandbox.DebianRegistriesOverride) > 0 {
-		out.sandbox.DebianRegistriesOverride = append([]string(nil), c.Sandbox.DebianRegistriesOverride...)
-	}
 	if c.raw.sandbox.DockerCLIPath != "" {
 		out.sandbox.DockerCLIPath = c.Sandbox.DockerCLIPath
+	}
+	if len(c.raw.sandbox.DebianRegistriesOverride) > 0 {
+		out.sandbox.DebianRegistriesOverride = append([]string(nil), c.Sandbox.DebianRegistriesOverride...)
 	}
 	if c.raw.modelsDefault != "" {
 		out.modelsDefault = c.Models.Default

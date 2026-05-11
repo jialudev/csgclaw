@@ -10,6 +10,7 @@ import (
 
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/runtime/openclawsandbox"
 	"csgclaw/internal/sandbox"
 )
 
@@ -51,10 +52,15 @@ type PicoClawRuntimeHost struct {
 	ResolveAgent          func(h agentruntime.Handle) (Agent, error)
 	ResolveRuntimeProfile func(h agentruntime.Handle) (agentruntime.Profile, error)
 	SyncHandle            func(h agentruntime.Handle) error
-	EnsureGatewayConfig   func(agentName, botID, modelID string) error
+	EnsureGatewayConfig   func(agentName, botID string, profile agentruntime.Profile) error
 	EnsureWorkspace       func(agentName, template string) (string, error)
 	WorkspaceTemplate     func(name, botID string) string
 	EnsureProjectsRoot    func() (string, error)
+	HomeEnv               string
+	WorkspaceGuestPath    string
+	ProjectsGuestPath     string
+	GatewayLogPath        string
+	GatewayCommand        func() string
 	StreamLogs            func(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error
 }
 
@@ -90,8 +96,8 @@ func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
 			return s.runtimeProfileForAgent(got), nil
 		},
 		SyncHandle: s.syncRuntimeHandle,
-		EnsureGatewayConfig: func(agentName, botID, modelID string) error {
-			_, err := ensureAgentPicoClawConfig(agentName, botID, s.server, config.ModelConfig{ModelID: modelID})
+		EnsureGatewayConfig: func(agentName, botID string, profile agentruntime.Profile) error {
+			_, err := ensureAgentPicoClawConfig(agentName, botID, s.server, config.ModelConfig{ModelID: profile.ModelID})
 			return err
 		},
 		EnsureWorkspace:    ensureAgentWorkspace,
@@ -99,6 +105,51 @@ func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
 		EnsureProjectsRoot: ensureAgentProjectsRoot,
 		StreamLogs:         s.streamRuntimeHostLogs,
 	}
+}
+
+func (s *Service) OpenClawRuntimeHost() PicoClawRuntimeHost {
+	host := s.PicoClawRuntimeHost()
+	host.EnsureGatewayConfig = func(agentName, botID string, profile agentruntime.Profile) error {
+		agentHome, err := agentHomeDir(agentName)
+		if err != nil {
+			return err
+		}
+		_, err = openclawsandbox.EnsureConfig(agentHome, botID, s.server, config.ModelConfig{
+			Provider:        profile.Provider,
+			BaseURL:         profile.BaseURL,
+			APIKey:          profile.APIKey,
+			ModelID:         profile.ModelID,
+			ReasoningEffort: profile.ReasoningEffort,
+		}, resolveManagerBaseURL)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	host.EnsureWorkspace = func(agentName, template string) (string, error) {
+		agentHome, err := agentHomeDir(agentName)
+		if err != nil {
+			return "", err
+		}
+		if _, err := ensureWorkspaceAtRoot(openclawsandbox.WorkspaceRoot(agentHome), template); err != nil {
+			return "", err
+		}
+		return openclawsandbox.Root(agentHome), nil
+	}
+	host.WorkspaceTemplate = func(name, botID string) string { return openclawsandbox.WorkspaceTemplateWorker }
+	host.HomeEnv = openclawsandbox.BoxUserHome
+	host.WorkspaceGuestPath = openclawsandbox.BoxDir
+	host.ProjectsGuestPath = openclawsandbox.BoxProjectsDir
+	host.GatewayLogPath = openclawsandbox.BoxGatewayLogPath
+	host.GatewayCommand = openclawsandbox.GatewayRunCommand
+	return host
+}
+
+func (s *Service) setGatewayWorkPhase(p uint32) {
+	if s == nil {
+		return
+	}
+	s.gatewayWorkPhase.Store(p)
 }
 
 func (s *Service) runtimeForKind(kind string) (agentruntime.Runtime, error) {
@@ -116,7 +167,34 @@ func (s *Service) runtimeForKind(kind string) (agentruntime.Runtime, error) {
 	return rt, nil
 }
 
+func (s *Service) gatewayRuntimeKind() string {
+	if s == nil {
+		return RuntimeKindPicoClawSandbox
+	}
+	if kind := runtimeKindForGatewayRuntime(s.gatewayRuntime); kind != "" {
+		return kind
+	}
+	return RuntimeKindPicoClawSandbox
+}
+
+func (s *Service) runtimeKindForGatewayAgent(a Agent) string {
+	if kind := normalizeRuntimeKind(a.RuntimeKind); kind != "" && isGatewayRuntimeKind(kind) {
+		return kind
+	}
+	return s.gatewayRuntimeKind()
+}
+
 func (s *Service) runtimeForAgent(a Agent) (agentruntime.Runtime, error) {
+	kind := normalizeRuntimeKind(a.RuntimeKind)
+	if strings.EqualFold(normalizeRole(a.Role), RoleManager) {
+		return s.runtimeForKind(s.runtimeKindForGatewayAgent(a))
+	}
+	if strings.EqualFold(normalizeRole(a.Role), RoleWorker) {
+		if kind != "" && !isGatewayRuntimeKind(kind) {
+			return s.runtimeForKind(kind)
+		}
+		return s.runtimeForKind(s.runtimeKindForGatewayAgent(a))
+	}
 	return s.runtimeForKind(runtimeKindForAgent(a))
 }
 
@@ -140,10 +218,12 @@ func (s *Service) runtimeProfileForKind(runtimeKind, agentID, fallbackName, fall
 	}
 
 	return (agentruntime.Profile{
-		ModelID: profile.ModelID,
-		BaseURL: baseURL,
-		APIKey:  apiKey,
-		Env:     normalizeStringMap(profile.Env),
+		Provider:        profile.Provider,
+		BaseURL:         baseURL,
+		APIKey:          apiKey,
+		ModelID:         profile.ModelID,
+		ReasoningEffort: profile.ReasoningEffort,
+		Env:             normalizeStringMap(profile.Env),
 	}).Normalized()
 }
 
@@ -159,7 +239,19 @@ func runtimeHandleForAgent(a Agent) agentruntime.Handle {
 }
 
 func (s *Service) gatewayConfigurer() (gatewayConfigurer, error) {
-	rt, err := s.runtimeForKind(RuntimeKindPicoClawSandbox)
+	rt, err := s.runtimeForKind(s.gatewayRuntimeKind())
+	if err != nil {
+		return nil, err
+	}
+	cfg, ok := rt.(gatewayConfigurer)
+	if !ok {
+		return nil, fmt.Errorf("runtime %q does not support gateway configuration", rt.Kind())
+	}
+	return cfg, nil
+}
+
+func (s *Service) gatewayConfigurerForAgent(a Agent) (gatewayConfigurer, error) {
+	rt, err := s.runtimeForKind(s.runtimeKindForGatewayAgent(a))
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +263,7 @@ func (s *Service) gatewayConfigurer() (gatewayConfigurer, error) {
 }
 
 func (s *Service) gatewayBoxFactory() (gatewayBoxFactory, error) {
-	rt, err := s.runtimeForKind(RuntimeKindPicoClawSandbox)
+	rt, err := s.runtimeForKind(s.gatewayRuntimeKind())
 	if err != nil {
 		return nil, err
 	}
@@ -271,10 +363,17 @@ func (s *Service) streamRuntimeHostLogs(ctx context.Context, agentID string, fol
 	if !ok {
 		return fmt.Errorf("agent %q not found", strings.TrimSpace(agentID))
 	}
+	if s.useOpenClawGateway() {
+		agentHome, err := agentHomeDir(got.Name)
+		if err != nil {
+			return err
+		}
+		return streamHostGatewayLogPaths(ctx, []string{openclawsandbox.HostGatewayLogPath(agentHome)}, follow, lines, w)
+	}
 	return streamHostGatewayLog(ctx, got.Name, follow, lines, w)
 }
 
-func (s *Service) updateAgentRuntimeState(id string, info agentruntime.Info) (Agent, error) {
+func (s *Service) updateRuntimeState(id string, info agentruntime.Info) (Agent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -316,6 +415,8 @@ func (s *Service) createGatewayBox(ctx context.Context, rt sandbox.Runtime, imag
 	if err != nil {
 		return nil, sandbox.Info{}, err
 	}
+	s.setGatewayWorkPhase(gatewayBoxPhaseCreating)
+	defer s.setGatewayWorkPhase(gatewayBoxPhaseIdle)
 	return factory.CreateGatewayBox(ctx, rt, image, name, botID, runtimeProfileFromAgent(profile))
 }
 
@@ -400,10 +501,12 @@ func bridgeLLMEnvVars(llmBaseURL, accessToken, modelID string) map[string]string
 func runtimeProfileFromAgent(profile AgentProfile) agentruntime.Profile {
 	profile = normalizeProfile(profile, profile.Name, profile.Description)
 	return (agentruntime.Profile{
-		ModelID: strings.TrimSpace(profile.ModelID),
-		BaseURL: profile.BaseURL,
-		APIKey:  profile.APIKey,
-		Env:     normalizeStringMap(profile.Env),
+		Provider:        strings.TrimSpace(profile.Provider),
+		BaseURL:         strings.TrimSpace(profile.BaseURL),
+		APIKey:          strings.TrimSpace(profile.APIKey),
+		ModelID:         strings.TrimSpace(profile.ModelID),
+		ReasoningEffort: strings.TrimSpace(profile.ReasoningEffort),
+		Env:             normalizeStringMap(profile.Env),
 	}).Normalized()
 }
 
