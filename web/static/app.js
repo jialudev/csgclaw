@@ -5038,10 +5038,17 @@ function toggleSelection(current, id) {
 
 function renderMarkdown(content) {
   const raw = marked.parse(decorateMentionMarkup(content));
-  return DOMPurify.sanitize(raw, {
+  const sanitized = DOMPurify.sanitize(raw, {
     USE_PROFILES: { html: true },
     ADD_ATTR: ["target", "rel", "class", "data-user-id"],
   });
+  const template = document.createElement("template");
+  template.innerHTML = sanitized;
+  template.content.querySelectorAll("a[href]").forEach((link) => {
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
+  });
+  return template.innerHTML;
 }
 
 function createMentionTokenElement(user) {

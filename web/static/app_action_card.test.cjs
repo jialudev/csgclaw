@@ -37,3 +37,11 @@ assert(
   !source.includes('saved.profile_complete') && !source.includes('if (saved.profile_complete)'),
   'saving the manager profile must not auto-trigger manager rebuild; rebuilds require an explicit window button click',
 );
+assert(
+  source.includes('link.setAttribute("target", "_blank");'),
+  'markdown links must open in a new browser tab',
+);
+assert(
+  source.includes('link.setAttribute("rel", "noopener noreferrer");'),
+  'markdown links must use a safe rel attribute when opening a new tab',
+);
