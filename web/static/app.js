@@ -28,6 +28,8 @@ const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
 const WORKSPACE_TAB_MESSAGES = "messages";
 const WORKSPACE_TAB_AGENTS = "agents";
+const CSGCLAW_ACTION_CARD_TYPE = "csgclaw.action_card";
+const ACTION_REBUILD_MANAGER = "rebuild-manager";
 
 marked.setOptions({
   gfm: true,
@@ -203,6 +205,7 @@ const messages = {
     agentCreated: "Agent 已创建",
     agentUpdated: "Agent 已更新",
     agentActionFailed: "Agent 操作失败",
+    managerRebuildConfirm: "重建 Manager 会中断当前 Manager，会话可能需要刷新。确认继续？",
     profileRestartRequired: "需要重建",
     profileCompleteBadge: "已配置",
     profileIncompleteBadge: "未配置",
@@ -396,6 +399,7 @@ const messages = {
     agentCreated: "Agent created",
     agentUpdated: "Agent updated",
     agentActionFailed: "Agent action failed",
+    managerRebuildConfirm: "Rebuilding Manager interrupts the current Manager and this session may need a refresh. Continue?",
     profileRestartRequired: "Restart needed",
     profileCompleteBadge: "Configured",
     profileIncompleteBadge: "Incomplete",
@@ -559,7 +563,7 @@ function MoonIcon() {
   return IconImage("moon");
 }
 
-function MessageContent({ content }) {
+function MessageContent({ content, message, actionBusy, actionError, onAction }) {
   const containerRef = useRef(null);
   const structured = useMemo(() => parseStructuredMessage(content), [content]);
   const markup = useMemo(() => renderMarkdown(content), [content]);
@@ -590,6 +594,9 @@ function MessageContent({ content }) {
   }, [markup]);
 
   if (structured) {
+    if (structured.kind === "action_card") {
+      return html`<${ActionCard} data=${structured} message=${message} busyKey=${actionBusy} error=${actionError} onAction=${onAction} />`;
+    }
     return html`<${StructuredMessageCard} data=${structured} />`;
   }
 
@@ -623,6 +630,48 @@ function StructuredMessageCard({ data }) {
             </details>
           `
         : null}
+    </div>
+  `;
+}
+
+function ActionCard({ data, message, busyKey, error, onAction }) {
+  const actionError = data.actions?.some((action) => `${message?.id || "message"}:${action.id}` === error?.key)
+    ? error?.message
+    : "";
+  return html`
+    <div className="structured-message action-card">
+      <div className="structured-message-header">
+        <div>
+          <div className="structured-message-title">${data.title}</div>
+          ${data.subtitle ? html`<div className="structured-message-subtitle">${data.subtitle}</div>` : null}
+        </div>
+        ${data.badge ? html`<span className="structured-message-badge">${data.badge}</span>` : null}
+      </div>
+      ${data.summary ? html`<div className="structured-message-summary">${data.summary}</div>` : null}
+      ${data.actions?.length
+        ? html`
+            <div className="structured-message-actions">
+              ${data.actions.map((action) => {
+                const key = `${message?.id || "message"}:${action.id}`;
+                const busy = busyKey === key;
+                const danger = action.style === "danger";
+                return html`
+                  <button
+                    key=${action.id}
+                    type="button"
+                    className=${`btn ${danger ? "btn-outline-danger" : "btn-secondary-gray"} btn-sm structured-message-action-button`}
+                    disabled=${busy || !onAction}
+                    onClick=${() => onAction?.(action, message)}
+                  >
+                    ${busy ? "..." : action.label}
+                  </button>
+                `;
+              })}
+            </div>
+          `
+        : null}
+      ${actionError ? html`<div className="structured-message-action-error">${actionError}</div>` : null}
+      ${data.fallback ? html`<div className="structured-message-subtitle">${data.fallback}</div>` : null}
     </div>
   `;
 }
@@ -796,6 +845,10 @@ async function readErrorMessage(resp) {
   }
 }
 
+function isManagerAgent(item) {
+  return item?.role === "manager" || item?.id === "u-manager";
+}
+
 function App() {
   const initialPane = useMemo(() => paneFromLocation(), []);
   const [locale, setLocale] = useState(() => detectInitialLocale());
@@ -847,6 +900,8 @@ function App() {
   const [agentError, setAgentError] = useState("");
   const [agentProgress, setAgentProgress] = useState(null);
   const [agentActionBusy, setAgentActionBusy] = useState("");
+  const [messageActionBusy, setMessageActionBusy] = useState("");
+  const [messageActionError, setMessageActionError] = useState({ key: "", message: "" });
   const [agentPageDraft, setAgentPageDraft] = useState(null);
   const [agentPageModels, setAgentPageModels] = useState([]);
   const [agentPageBusy, setAgentPageBusy] = useState(false);
@@ -1996,6 +2051,63 @@ function App() {
     }
   }
 
+  async function requestManagerRebuild() {
+    const resp = await fetch("api/v1/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "u-manager",
+        replace: true,
+      }),
+    });
+    if (!resp.ok) {
+      throw new Error((await readErrorMessage(resp)) || t("agentActionFailed"));
+    }
+    await refreshAgents();
+    await refreshManagerProfile();
+  }
+
+  async function rebuildManagerFromBrowser(options = {}) {
+    const confirmText = options.confirm || t("managerRebuildConfirm");
+    if (!options.skipConfirm && confirmText && !window.confirm(confirmText)) {
+      return false;
+    }
+    setAgentActionBusy("u-manager:recreate");
+    setAgentsError("");
+    try {
+      await requestManagerRebuild();
+      return true;
+    } catch (err) {
+      setAgentsError(err.message || t("agentActionFailed"));
+      return false;
+    } finally {
+      setAgentActionBusy("");
+    }
+  }
+
+  async function handleMessageAction(action, message) {
+    if (!action || action.id !== ACTION_REBUILD_MANAGER) {
+      return;
+    }
+    const busyKey = `${message?.id || "message"}:${action.id}`;
+    if (messageActionBusy || agentActionBusy) {
+      return;
+    }
+    const confirmText = action.confirm || t("managerRebuildConfirm");
+    if (confirmText && !window.confirm(confirmText)) {
+      return;
+    }
+    setMessageActionBusy(busyKey);
+    setMessageActionError({ key: "", message: "" });
+    try {
+      await requestManagerRebuild();
+    } catch (err) {
+      setMessageActionError({ key: busyKey, message: err.message || t("agentActionFailed") });
+    } finally {
+      setMessageActionBusy("");
+    }
+  }
+
   async function saveManagerProfile() {
     if (!profileDraft) {
       return;
@@ -2016,9 +2128,6 @@ function App() {
       const saved = await resp.json();
       setManagerProfile(saved);
       setProfileDraft({ ...profileToDraft(saved), agent_id: "u-manager" });
-      if (saved.profile_complete) {
-        await fetch("api/v1/agents/u-manager/recreate", { method: "POST" });
-      }
       await refreshManagerProfile();
       setComposerError("");
     } catch (err) {
@@ -2328,6 +2437,10 @@ function App() {
     setAgentActionBusy(`${item.id}:${action}`);
     setAgentsError("");
     try {
+      if (action === "recreate" && isManagerAgent(item)) {
+        await rebuildManagerFromBrowser({ confirm: t("managerRebuildConfirm") });
+        return;
+      }
       const url = action === "delete"
         ? `api/v1/bots/${encodeURIComponent(item.id)}`
         : `api/v1/agents/${encodeURIComponent(item.id)}/${action}`;
@@ -2957,7 +3070,7 @@ function App() {
                             <span className="message-author">${user.name}</span>
                             <span>${formatTime(message.created_at, locale)}</span>
                           </div>
-                          <div className="message-bubble"><${MessageContent} key=${`${message.id}:${theme}`} content=${message.content} /></div>
+                          <div className="message-bubble"><${MessageContent} key=${`${message.id}:${theme}`} content=${message.content} message=${message} actionBusy=${messageActionBusy} actionError=${messageActionError} onAction=${handleMessageAction} /></div>
                         </div>
                       </div>
                     `;
@@ -5358,8 +5471,20 @@ function parseStructuredMessage(content) {
   const fencedJSON = cleaned.match(/^```(?:json|javascript|js)?\s*([\s\S]+?)\s*```$/i);
   const rawJSON = fencedJSON ? fencedJSON[1].trim() : cleaned;
   const parsed = tryParseJSON(rawJSON);
+  if (parsed && isActionCardPayload(parsed)) {
+    return buildActionCardPayload(parsed);
+  }
   if (parsed && isStructuredPayload(parsed)) {
     return buildStructuredPayload(parsed);
+  }
+
+  const extracted = extractTopLevelJSONObject(cleaned);
+  const extractedParsed = tryParseJSON(extracted);
+  if (extractedParsed && isActionCardPayload(extractedParsed)) {
+    return buildActionCardPayload(extractedParsed);
+  }
+  if (extractedParsed && isStructuredPayload(extractedParsed)) {
+    return buildStructuredPayload(extractedParsed);
   }
 
   const codeBlock = extractSingleLargeCodeBlock(cleaned);
@@ -5379,6 +5504,84 @@ function tryParseJSON(input) {
   } catch {
     return null;
   }
+}
+
+function extractTopLevelJSONObject(input) {
+  if (!input) {
+    return null;
+  }
+  const firstBrace = input.indexOf("{");
+  if (firstBrace < 0) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = firstBrace; index < input.length; index += 1) {
+    const char = input[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inString) {
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return input.slice(firstBrace, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function isActionCardPayload(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return value.type === CSGCLAW_ACTION_CARD_TYPE && Array.isArray(value.actions);
+}
+
+function buildActionCardPayload(value) {
+  return {
+    kind: "action_card",
+    title: firstNonEmptyString(value.title, value.name, "Action required"),
+    subtitle: firstNonEmptyString(value.subtitle, value.bot_id),
+    badge: firstNonEmptyString(value.badge, value.status),
+    summary: firstNonEmptyString(value.summary, value.message, value.description),
+    fallback: firstNonEmptyString(value.fallback),
+    actions: normalizeActionCardActions(value.actions),
+  };
+}
+
+function normalizeActionCardActions(actions) {
+  return (actions ?? [])
+    .filter((action) => action && action.id === ACTION_REBUILD_MANAGER)
+    .slice(0, 1)
+    .map((action) => ({
+      id: ACTION_REBUILD_MANAGER,
+      label: firstNonEmptyString(action.label, "重建 Manager"),
+      style: action.style === "danger" ? "danger" : "default",
+      confirm: firstNonEmptyString(action.confirm),
+    }));
 }
 
 function isStructuredPayload(value) {

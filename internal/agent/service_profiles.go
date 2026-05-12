@@ -218,6 +218,7 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 	if image == "" {
 		image = s.managerImage
 	}
+
 	if testCreateGatewayBoxHook != nil {
 		rt, err := s.ensureRuntime(got.Name)
 		if err != nil {
@@ -231,8 +232,9 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 			_ = s.closeRuntime(runtimeHome, rt)
 		}()
 		if strings.TrimSpace(got.BoxID) != "" {
-			if err := s.forceRemoveBox(ctx, rt, got.BoxID); err != nil && !sandbox.IsNotFound(err) {
-				return Agent{}, fmt.Errorf("remove existing agent box: %w", err)
+			deleteErr := s.forceRemoveBox(ctx, rt, got.BoxID)
+			if deleteErr != nil && !sandbox.IsNotFound(deleteErr) {
+				return Agent{}, fmt.Errorf("remove existing agent box: %w", deleteErr)
 			}
 		}
 		box, sandboxInfo, err := s.createGatewayBox(ctx, rt, image, got.Name, got.ID, profile)
@@ -247,26 +249,41 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 			State:     agentruntime.State(sandboxInfo.State),
 			CreatedAt: sandboxInfo.CreatedAt.UTC(),
 		}
-		return s.persistRecreatedAgent(ctx, id, info)
+		recreated, err := s.persistRecreatedAgent(ctx, id, info)
+		if err != nil {
+			return Agent{}, err
+		}
+		return recreated, nil
 	}
-	if err := runtimeImpl.Delete(ctx, runtimeHandleForAgent(got)); err != nil && !sandbox.IsNotFound(err) {
-		return Agent{}, fmt.Errorf("remove existing agent box: %w", err)
+
+	deleteHandle := runtimeHandleForAgent(got)
+	deleteErr := runtimeImpl.Delete(ctx, deleteHandle)
+	if deleteErr != nil && !sandbox.IsNotFound(deleteErr) {
+		return Agent{}, fmt.Errorf("remove existing agent box: %w", deleteErr)
 	}
-	handle, err := runtimeImpl.Create(ctx, agentruntime.Spec{
+
+	createSpec := agentruntime.Spec{
 		RuntimeID: normalizeRuntimeID(got.RuntimeID, got.ID),
 		AgentID:   got.ID,
 		AgentName: got.Name,
 		Image:     image,
 		Profile:   s.runtimeProfileForKind(runtimeKindForAgent(got), got.ID, got.Name, got.Description, profile),
-	})
+	}
+	handle, err := runtimeImpl.Create(ctx, createSpec)
 	if err != nil {
 		return Agent{}, fmt.Errorf("create agent box: %w", err)
 	}
+
 	info, err := s.runtimeInfo(ctx, runtimeImpl, handle)
 	if err != nil {
 		return Agent{}, fmt.Errorf("read agent runtime info: %w", err)
 	}
-	return s.persistRecreatedAgent(ctx, id, info)
+
+	recreated, err := s.persistRecreatedAgent(ctx, id, info)
+	if err != nil {
+		return Agent{}, err
+	}
+	return recreated, nil
 }
 
 func (s *Service) persistRecreatedAgent(ctx context.Context, id string, info agentruntime.Info) (Agent, error) {
