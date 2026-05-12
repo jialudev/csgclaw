@@ -25,6 +25,7 @@ type CreateAgentRequest struct {
 	Description  string             `json:"description,omitempty"`
 	Image        string             `json:"image,omitempty"`
 	RuntimeKind  string             `json:"runtime_kind,omitempty"`
+	FromTemplate string             `json:"from_template,omitempty"`
 	Replace      bool               `json:"replace,omitempty"`
 	FieldMask    []string           `json:"field_mask,omitempty"`
 	Role         string             `json:"role,omitempty"`

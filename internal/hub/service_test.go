@@ -1,0 +1,230 @@
+package hub
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"csgclaw/internal/config"
+)
+
+func TestNewServiceUsesResolvedBuiltinRegistry(t *testing.T) {
+	var got []config.HubRegistryConfig
+	svc, err := NewService(config.HubConfig{}, func(cfg config.HubRegistryConfig) (Store, error) {
+		got = append(got, cfg)
+		return stubStore{}, nil
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if svc == nil {
+		t.Fatal("NewService() = nil, want service")
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(factory calls) = %d, want 1", len(got))
+	}
+	if got[0].Name != config.DefaultHubRegistry {
+		t.Fatalf("factory registry name = %q, want %q", got[0].Name, config.DefaultHubRegistry)
+	}
+	if got[0].Kind != config.HubRegistryKindBuiltin {
+		t.Fatalf("factory registry kind = %q, want %q", got[0].Kind, config.HubRegistryKindBuiltin)
+	}
+}
+
+func TestListAggregatesAndNamespacesTemplates(t *testing.T) {
+	svc := mustService(t, config.HubConfig{
+		DefaultRegistry:        "team",
+		DefaultPublishRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "builtin", Kind: RegistryKindBuiltin, Enabled: true},
+			{Name: "team", Kind: RegistryKindRemote, Enabled: true},
+		},
+	}, map[string]Store{
+		"builtin": stubStore{
+			listResult: []Template{{ID: "frontend-alice", Name: "frontend-alice"}},
+		},
+		"team": stubStore{
+			listResult: []Template{{Name: "review-bot"}},
+		},
+	})
+
+	items, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if got, want := len(items), 2; got != want {
+		t.Fatalf("len(List()) = %d, want %d", got, want)
+	}
+	if got, want := items[0].ID, "builtin/frontend-alice"; got != want {
+		t.Fatalf("List()[0].ID = %q, want %q", got, want)
+	}
+	if got, want := items[0].Source.Name, "builtin"; got != want {
+		t.Fatalf("List()[0].Source.Name = %q, want %q", got, want)
+	}
+	if got, want := items[1].ID, "team/review-bot"; got != want {
+		t.Fatalf("List()[1].ID = %q, want %q", got, want)
+	}
+	if got, want := items[1].Source.Kind, RegistryKindRemote; got != want {
+		t.Fatalf("List()[1].Source.Kind = %q, want %q", got, want)
+	}
+}
+
+func TestGetUsesDefaultRegistryForUnqualifiedID(t *testing.T) {
+	teamStore := &recordingStore{
+		getResult: Template{ID: "frontend-alice", Name: "frontend-alice"},
+	}
+	svc := mustService(t, config.HubConfig{
+		DefaultRegistry:        "team",
+		DefaultPublishRegistry: "team",
+		Registries: []config.HubRegistryConfig{
+			{Name: "team", Kind: RegistryKindRemote, Enabled: true},
+		},
+	}, map[string]Store{
+		"team": teamStore,
+	})
+
+	item, err := svc.Get(context.Background(), "frontend-alice")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got, want := teamStore.lastGetID, "frontend-alice"; got != want {
+		t.Fatalf("store Get id = %q, want %q", got, want)
+	}
+	if got, want := item.ID, "team/frontend-alice"; got != want {
+		t.Fatalf("Get().ID = %q, want %q", got, want)
+	}
+}
+
+func TestGetUsesQualifiedRegistryWhenPresent(t *testing.T) {
+	localStore := &recordingStore{
+		getResult: Template{ID: "frontend-alice", Name: "frontend-alice"},
+	}
+	svc := mustService(t, config.HubConfig{
+		DefaultRegistry:        "team",
+		DefaultPublishRegistry: "team",
+		Registries: []config.HubRegistryConfig{
+			{Name: "local", Kind: RegistryKindLocal, Enabled: true},
+			{Name: "team", Kind: RegistryKindRemote, Enabled: true},
+		},
+	}, map[string]Store{
+		"local": localStore,
+		"team":  stubStore{},
+	})
+
+	item, err := svc.Get(context.Background(), "local/frontend-alice")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got, want := localStore.lastGetID, "frontend-alice"; got != want {
+		t.Fatalf("store Get id = %q, want %q", got, want)
+	}
+	if got, want := item.Source.Name, "local"; got != want {
+		t.Fatalf("Get().Source.Name = %q, want %q", got, want)
+	}
+}
+
+func TestPublishUsesDefaultPublishRegistry(t *testing.T) {
+	localStore := &recordingStore{
+		publishResult: Template{ID: "frontend-alice", Name: "frontend-alice"},
+	}
+	svc := mustService(t, config.HubConfig{
+		DefaultRegistry:        "builtin",
+		DefaultPublishRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "builtin", Kind: RegistryKindBuiltin, Enabled: true},
+			{Name: "local", Kind: RegistryKindLocal, Enabled: true},
+		},
+	}, map[string]Store{
+		"builtin": stubStore{},
+		"local":   localStore,
+	})
+
+	item, err := svc.Publish(context.Background(), PublishSpec{Name: "frontend-alice"})
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if got, want := localStore.lastPublishSpec.Registry, "local"; got != want {
+		t.Fatalf("publish registry = %q, want %q", got, want)
+	}
+	if got, want := item.ID, "local/frontend-alice"; got != want {
+		t.Fatalf("Publish().ID = %q, want %q", got, want)
+	}
+}
+
+func TestPublishRejectsBuiltinRegistry(t *testing.T) {
+	svc := mustService(t, config.HubConfig{
+		DefaultRegistry:        "builtin",
+		DefaultPublishRegistry: "builtin",
+		Registries: []config.HubRegistryConfig{
+			{Name: "builtin", Kind: RegistryKindBuiltin, Enabled: true},
+		},
+	}, map[string]Store{
+		"builtin": stubStore{},
+	})
+
+	_, err := svc.Publish(context.Background(), PublishSpec{Name: "frontend-alice"})
+	if !errors.Is(err, ErrRegistryNotWritable) {
+		t.Fatalf("Publish() error = %v, want ErrRegistryNotWritable", err)
+	}
+}
+
+type stubStore struct {
+	listResult []Template
+	getResult  Template
+}
+
+func (s stubStore) List(context.Context) ([]Template, error) {
+	return append([]Template(nil), s.listResult...), nil
+}
+
+func (s stubStore) Get(context.Context, string) (Template, error) {
+	return s.getResult, nil
+}
+
+func (s stubStore) FetchWorkspace(context.Context, string) (WorkspaceRef, error) {
+	return WorkspaceRef{Kind: WorkspaceKindDir, Path: "/tmp/workspace"}, nil
+}
+
+func (s stubStore) Publish(context.Context, PublishSpec) (Template, error) {
+	return Template{}, nil
+}
+
+type recordingStore struct {
+	lastGetID       string
+	lastPublishSpec PublishSpec
+	getResult       Template
+	publishResult   Template
+}
+
+func (s *recordingStore) List(context.Context) ([]Template, error) {
+	return nil, nil
+}
+
+func (s *recordingStore) Get(_ context.Context, id string) (Template, error) {
+	s.lastGetID = id
+	return s.getResult, nil
+}
+
+func (s *recordingStore) FetchWorkspace(context.Context, string) (WorkspaceRef, error) {
+	return WorkspaceRef{}, nil
+}
+
+func (s *recordingStore) Publish(_ context.Context, spec PublishSpec) (Template, error) {
+	s.lastPublishSpec = spec
+	return s.publishResult, nil
+}
+
+func mustService(t *testing.T, cfg config.HubConfig, stores map[string]Store) *Service {
+	t.Helper()
+	svc, err := NewService(cfg, func(reg config.HubRegistryConfig) (Store, error) {
+		store, ok := stores[reg.Name]
+		if !ok {
+			return nil, errors.New("unexpected registry")
+		}
+		return store, nil
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	return svc
+}

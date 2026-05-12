@@ -11,6 +11,7 @@ import (
 	"csgclaw/internal/api"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel/feishu"
+	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/upgrade"
@@ -19,6 +20,7 @@ import (
 type Options struct {
 	ListenAddr  string
 	Service     *agent.Service
+	Hub         *hub.Service
 	Bot         *bot.Service
 	IM          *im.Service
 	IMBus       *im.Bus
@@ -38,6 +40,7 @@ func Run(opts Options) error {
 		opts.Context = context.Background()
 	}
 	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	handler.SetHubService(opts.Hub)
 	handler.SetUpgradeManager(opts.Upgrade)
 	handler.SetUpgradeConfigPath(opts.ConfigPath)
 	handler.SetConfigPath(opts.ConfigPath)

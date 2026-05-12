@@ -21,6 +21,7 @@ type Config struct {
 	Model     ModelConfig
 	Bootstrap BootstrapConfig
 	Sandbox   SandboxConfig
+	Hub       HubConfig
 
 	raw rawConfigValues
 }
@@ -118,6 +119,56 @@ type SandboxConfig struct {
 	DebianRegistriesOverride []string
 }
 
+type HubConfig struct {
+	DefaultRegistry        string
+	DefaultPublishRegistry string
+	Registries             []HubRegistryConfig
+}
+
+type HubRegistryConfig struct {
+	Name    string
+	Kind    string
+	Path    string
+	URL     string
+	Token   string
+	Enabled bool
+}
+
+func (c HubConfig) Resolved() HubConfig {
+	c.DefaultRegistry = strings.TrimSpace(c.DefaultRegistry)
+	if c.DefaultRegistry == "" {
+		c.DefaultRegistry = DefaultHubRegistry
+	}
+	c.DefaultPublishRegistry = strings.TrimSpace(c.DefaultPublishRegistry)
+	if c.DefaultPublishRegistry == "" {
+		c.DefaultPublishRegistry = DefaultHubPublishRegistry
+	}
+	if len(c.Registries) == 0 {
+		c.Registries = []HubRegistryConfig{defaultBuiltinHubRegistry()}
+		return c
+	}
+
+	out := make([]HubRegistryConfig, 0, len(c.Registries))
+	for _, registry := range c.Registries {
+		registry.Name = strings.TrimSpace(registry.Name)
+		registry.Kind = strings.TrimSpace(registry.Kind)
+		registry.Path = strings.TrimSpace(registry.Path)
+		registry.URL = strings.TrimSpace(strings.TrimRight(registry.URL, "/"))
+		registry.Token = strings.TrimSpace(registry.Token)
+		out = append(out, registry)
+	}
+	c.Registries = out
+	return c
+}
+
+func defaultBuiltinHubRegistry() HubRegistryConfig {
+	return HubRegistryConfig{
+		Name:    DefaultHubRegistry,
+		Kind:    HubRegistryKindBuiltin,
+		Enabled: true,
+	}
+}
+
 func (c SandboxConfig) Resolved() SandboxConfig {
 	c.Provider = normalizeSandboxProvider(c.Provider)
 	if c.Provider == "" {
@@ -150,6 +201,7 @@ type rawConfigValues struct {
 	server        ServerConfig
 	bootstrap     BootstrapConfig
 	sandbox       SandboxConfig
+	hub           rawHubConfig
 	modelsDefault string
 	models        map[string]rawProviderConfig
 	resolved      *rawConfigValues
@@ -160,6 +212,21 @@ type rawProviderConfig struct {
 	APIKey          string
 	Models          []string
 	ReasoningEffort string
+}
+
+type rawHubConfig struct {
+	DefaultRegistry        string
+	DefaultPublishRegistry string
+	Registries             []rawHubRegistryConfig
+}
+
+type rawHubRegistryConfig struct {
+	Name       string
+	Kind       string
+	Path       string
+	URL        string
+	Token      string
+	EnabledSet bool
 }
 
 const (
@@ -177,6 +244,9 @@ const (
 	CSGHubProvider              = "csghub"
 	DockerProvider              = "docker"
 	BoxLiteProvider             = "boxlite"
+	DefaultHubRegistry          = "builtin"
+	DefaultHubPublishRegistry   = "local"
+	HubRegistryKindBuiltin      = "builtin"
 	BoxLiteCLIHomeDirName       = "boxlite"
 	RuntimeHomeDirName          = BoxLiteCLIHomeDirName
 )
@@ -288,14 +358,27 @@ func Load(path string) (Config, error) {
 	}
 
 	section := ""
+	hubRegistryIndex := -1
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		if strings.HasPrefix(line, "[[") && strings.HasSuffix(line, "]]") {
+			section = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "[["), "]]"))
+			hubRegistryIndex = -1
+			switch section {
+			case "hub.registries":
+				cfg.Hub.Registries = append(cfg.Hub.Registries, HubRegistryConfig{})
+				cfg.raw.hub.Registries = append(cfg.raw.hub.Registries, rawHubRegistryConfig{})
+				hubRegistryIndex = len(cfg.Hub.Registries) - 1
+			}
+			continue
+		}
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.Trim(line, "[]")
+			hubRegistryIndex = -1
 			if isLegacyConfigSection(section) {
 				return Config{}, fmt.Errorf("legacy config section [%s] is no longer supported; migrate to [models] and [models.providers.<name>]", section)
 			}
@@ -369,6 +452,47 @@ func Load(path string) (Config, error) {
 				}
 				cfg.Sandbox.DebianRegistriesOverride = registries
 			}
+		case section == "hub":
+			switch key {
+			case "default_registry":
+				cfg.raw.hub.DefaultRegistry = parseRawStringValue(rawValue)
+				cfg.Hub.DefaultRegistry = value
+			case "default_publish_registry":
+				cfg.raw.hub.DefaultPublishRegistry = parseRawStringValue(rawValue)
+				cfg.Hub.DefaultPublishRegistry = value
+			}
+		case section == "hub.registries":
+			if hubRegistryIndex < 0 || hubRegistryIndex >= len(cfg.Hub.Registries) {
+				return Config{}, fmt.Errorf("hub registry entry found before [[hub.registries]] header")
+			}
+			registry := cfg.Hub.Registries[hubRegistryIndex]
+			rawRegistry := cfg.raw.hub.Registries[hubRegistryIndex]
+			switch key {
+			case "name":
+				rawRegistry.Name = parseRawStringValue(rawValue)
+				registry.Name = value
+			case "kind":
+				rawRegistry.Kind = parseRawStringValue(rawValue)
+				registry.Kind = value
+			case "path":
+				rawRegistry.Path = parseRawStringValue(rawValue)
+				registry.Path = value
+			case "url":
+				rawRegistry.URL = parseRawStringValue(rawValue)
+				registry.URL = value
+			case "token":
+				rawRegistry.Token = parseRawStringValue(rawValue)
+				registry.Token = value
+			case "enabled":
+				enabled, err := parseBoolValue(rawValue)
+				if err != nil {
+					return Config{}, fmt.Errorf("parse hub.registries.enabled: %w", err)
+				}
+				rawRegistry.EnabledSet = true
+				registry.Enabled = enabled
+			}
+			cfg.Hub.Registries[hubRegistryIndex] = registry
+			cfg.raw.hub.Registries[hubRegistryIndex] = rawRegistry
 		default:
 			if name, ok := modelsProviderSectionName(section); ok {
 				provider := modelsCfg.Providers[name]
@@ -414,6 +538,12 @@ func Load(path string) (Config, error) {
 	if err := cfg.Sandbox.Validate(); err != nil {
 		return Config{}, err
 	}
+	for i := range cfg.Hub.Registries {
+		if i >= len(cfg.raw.hub.Registries) || !cfg.raw.hub.Registries[i].EnabledSet {
+			cfg.Hub.Registries[i].Enabled = true
+		}
+	}
+	cfg.Hub = cfg.Hub.Resolved()
 
 	if !modelsCfg.IsZero() {
 		cfg.Models = modelsCfg.Normalized()
@@ -467,6 +597,37 @@ provider = %q
 	overrideRegistries := cfg.rawOrResolvedStringArray(cfg.raw.sandbox.DebianRegistriesOverride, loadedRaw.sandbox.DebianRegistriesOverride, resolvedSandbox.DebianRegistriesOverride)
 	sandboxSection += fmt.Sprintf("debian_registries_override = %s\n", formatStringArray(overrideRegistries))
 	b.WriteString(sandboxSection)
+	resolvedHub := cfg.Hub.Resolved()
+	fmt.Fprintf(&b, `
+[hub]
+default_registry = %q
+default_publish_registry = %q
+`, cfg.rawOrResolvedString(cfg.raw.hub.DefaultRegistry, loadedRaw.hub.DefaultRegistry, resolvedHub.DefaultRegistry), cfg.rawOrResolvedString(cfg.raw.hub.DefaultPublishRegistry, loadedRaw.hub.DefaultPublishRegistry, resolvedHub.DefaultPublishRegistry))
+	for i, registry := range resolvedHub.Registries {
+		var rawRegistry rawHubRegistryConfig
+		var loadedRegistry rawHubRegistryConfig
+		if i < len(cfg.raw.hub.Registries) {
+			rawRegistry = cfg.raw.hub.Registries[i]
+		}
+		if i < len(loadedRaw.hub.Registries) {
+			loadedRegistry = loadedRaw.hub.Registries[i]
+		}
+		fmt.Fprintf(&b, `
+[[hub.registries]]
+name = %q
+kind = %q
+`, cfg.rawOrResolvedString(rawRegistry.Name, loadedRegistry.Name, registry.Name), cfg.rawOrResolvedString(rawRegistry.Kind, loadedRegistry.Kind, registry.Kind))
+		if registry.Path != "" {
+			fmt.Fprintf(&b, "path = %q\n", cfg.rawOrResolvedString(rawRegistry.Path, loadedRegistry.Path, registry.Path))
+		}
+		if registry.URL != "" {
+			fmt.Fprintf(&b, "url = %q\n", cfg.rawOrResolvedString(rawRegistry.URL, loadedRegistry.URL, registry.URL))
+		}
+		if registry.Token != "" {
+			fmt.Fprintf(&b, "token = %q\n", cfg.rawOrResolvedString(rawRegistry.Token, loadedRegistry.Token, registry.Token))
+		}
+		fmt.Fprintf(&b, "enabled = %t\n", registry.Enabled)
+	}
 	if writeModels {
 		llmCfg := cfg.effectiveLLMConfig()
 		defaultSelector := llmCfg.DefaultSelector()
@@ -787,6 +948,37 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	}
 	if len(c.raw.sandbox.DebianRegistriesOverride) > 0 {
 		out.sandbox.DebianRegistriesOverride = append([]string(nil), c.Sandbox.DebianRegistriesOverride...)
+	}
+	if c.raw.hub.DefaultRegistry != "" {
+		out.hub.DefaultRegistry = c.Hub.DefaultRegistry
+	}
+	if c.raw.hub.DefaultPublishRegistry != "" {
+		out.hub.DefaultPublishRegistry = c.Hub.DefaultPublishRegistry
+	}
+	for i, rawRegistry := range c.raw.hub.Registries {
+		if i >= len(c.Hub.Registries) {
+			break
+		}
+		registry := c.Hub.Registries[i]
+		loadedRegistry := rawHubRegistryConfig{
+			EnabledSet: rawRegistry.EnabledSet,
+		}
+		if rawRegistry.Name != "" {
+			loadedRegistry.Name = registry.Name
+		}
+		if rawRegistry.Kind != "" {
+			loadedRegistry.Kind = registry.Kind
+		}
+		if rawRegistry.Path != "" {
+			loadedRegistry.Path = registry.Path
+		}
+		if rawRegistry.URL != "" {
+			loadedRegistry.URL = registry.URL
+		}
+		if rawRegistry.Token != "" {
+			loadedRegistry.Token = registry.Token
+		}
+		out.hub.Registries = append(out.hub.Registries, loadedRegistry)
 	}
 	if c.raw.modelsDefault != "" {
 		out.modelsDefault = c.Models.Default

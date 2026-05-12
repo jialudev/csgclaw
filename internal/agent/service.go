@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"csgclaw/internal/config"
+	"csgclaw/internal/hub"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
 )
@@ -155,6 +156,7 @@ type Service struct {
 	model            config.ModelConfig
 	llm              config.LLMConfig
 	server           config.ServerConfig
+	hub              templateService
 	managerImage     string
 	gatewayRuntime   string
 	state            string
@@ -173,6 +175,36 @@ type Service struct {
 }
 
 type ServiceOption func(*Service) error
+
+type templateService interface {
+	Get(context.Context, string) (hub.Template, error)
+	FetchWorkspace(context.Context, string) (hub.WorkspaceRef, error)
+}
+
+func (s *Service) HubPublishSpec(agentID string) (hub.PublishSpec, error) {
+	if s == nil {
+		return hub.PublishSpec{}, fmt.Errorf("agent service is required")
+	}
+	got, ok := s.agentSnapshot(agentID)
+	if !ok {
+		return hub.PublishSpec{}, fmt.Errorf("agent %q not found", strings.TrimSpace(agentID))
+	}
+	workspaceRoot, err := agentWorkspaceRoot(got.Name)
+	if err != nil {
+		return hub.PublishSpec{}, err
+	}
+	return hub.PublishSpec{
+		ID:          got.Name,
+		Name:        got.Name,
+		Description: got.Description,
+		RuntimeKind: got.RuntimeKind,
+		Image:       got.Image,
+		WorkspaceRef: hub.WorkspaceRef{
+			Kind: hub.WorkspaceKindDir,
+			Path: workspaceRoot,
+		},
+	}, nil
+}
 
 func WithSandboxProvider(provider sandbox.Provider) ServiceOption {
 	return func(s *Service) error {
@@ -197,6 +229,16 @@ func WithRuntime(rt agentruntime.Runtime) ServiceOption {
 			return fmt.Errorf("runtime kind is required")
 		}
 		s.runtimeRegistry[kind] = rt
+		return nil
+	}
+}
+
+func WithHubService(svc *hub.Service) ServiceOption {
+	return func(s *Service) error {
+		if s == nil {
+			return fmt.Errorf("agent service is required")
+		}
+		s.hub = svc
 		return nil
 	}
 }
@@ -617,10 +659,83 @@ func (s *Service) bootstrapManagerLookupKeys() []string {
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) {
+	if req.Replace && strings.TrimSpace(req.Spec.FromTemplate) != "" {
+		return Agent{}, fmt.Errorf("agent create --replace does not support from_template")
+	}
+	if strings.TrimSpace(req.Spec.FromTemplate) != "" {
+		var cleanup func()
+		var err error
+		req.Spec, cleanup, err = s.resolveTemplateCreateSpec(ctx, req.Spec)
+		if err != nil {
+			return Agent{}, err
+		}
+		if cleanup != nil {
+			defer cleanup()
+		}
+	}
 	if req.Replace {
 		return s.replace(ctx, req)
 	}
 	return s.createNew(ctx, req.Spec)
+}
+
+func (s *Service) resolveTemplateCreateSpec(ctx context.Context, spec CreateAgentSpec) (CreateAgentSpec, func(), error) {
+	if s == nil {
+		return CreateAgentSpec{}, nil, fmt.Errorf("agent service is required")
+	}
+	templateRef := strings.TrimSpace(spec.FromTemplate)
+	if templateRef == "" {
+		return spec, nil, nil
+	}
+	if s.hub == nil {
+		return CreateAgentSpec{}, nil, fmt.Errorf("hub service is not configured")
+	}
+
+	item, err := s.hub.Get(ctx, templateRef)
+	if err != nil {
+		return CreateAgentSpec{}, nil, err
+	}
+	workspace, err := s.hub.FetchWorkspace(ctx, templateRef)
+	if err != nil {
+		return CreateAgentSpec{}, nil, err
+	}
+
+	cleanup := templateWorkspaceCleanup(item.Source.Kind, workspace)
+	spec = applyTemplateDefaults(spec, item)
+	spec.FromTemplate = workspace.Path
+	return spec, cleanup, nil
+}
+
+func applyTemplateDefaults(spec CreateAgentSpec, item hub.Template) CreateAgentSpec {
+	if strings.TrimSpace(spec.Name) == "" {
+		spec.Name = item.Name
+	}
+	if strings.TrimSpace(spec.Description) == "" {
+		spec.Description = item.Description
+	}
+	if strings.TrimSpace(spec.Image) == "" {
+		spec.Image = item.Image
+	}
+	if strings.TrimSpace(spec.RuntimeKind) == "" {
+		spec.RuntimeKind = item.RuntimeKind
+	}
+	return spec
+}
+
+func templateWorkspaceCleanup(kind string, workspace hub.WorkspaceRef) func() {
+	if strings.TrimSpace(workspace.Kind) != hub.WorkspaceKindDir {
+		return nil
+	}
+	if strings.TrimSpace(kind) != hub.RegistryKindBuiltin {
+		return nil
+	}
+	path := strings.TrimSpace(workspace.Path)
+	if path == "" {
+		return nil
+	}
+	return func() {
+		_ = os.RemoveAll(path)
+	}
 }
 
 func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, error) {
@@ -721,6 +836,9 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 	defer func() {
 		_ = s.closeBox(box)
 	}()
+	if err := s.overlayTemplateWorkspace(name, spec.FromTemplate); err != nil {
+		return Agent{}, err
+	}
 
 	createdAt := spec.CreatedAt.UTC()
 	if spec.CreatedAt.IsZero() {
@@ -1337,6 +1455,9 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		defer func() {
 			_ = s.closeBox(box)
 		}()
+		if err := s.overlayTemplateWorkspace(name, spec.FromTemplate); err != nil {
+			return Agent{}, err
+		}
 		return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, agentruntime.Info{
 			HandleID:  strings.TrimSpace(info.ID),
 			State:     agentruntime.State(info.State),
@@ -1352,6 +1473,9 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	})
 	if err != nil {
 		return Agent{}, fmt.Errorf("create worker box: %w", err)
+	}
+	if err := s.overlayTemplateWorkspace(name, spec.FromTemplate); err != nil {
+		return Agent{}, err
 	}
 	info := agentruntime.Info{
 		HandleID:  strings.TrimSpace(handle.HandleID),
@@ -1417,6 +1541,21 @@ func (s *Service) persistCreatedWorker(ctx context.Context, id, name, descriptio
 		return Agent{}, err
 	}
 	return created, nil
+}
+
+func (s *Service) overlayTemplateWorkspace(agentName, workspaceRoot string) error {
+	workspaceRoot = strings.TrimSpace(workspaceRoot)
+	if workspaceRoot == "" {
+		return nil
+	}
+	dstRoot, err := agentWorkspaceRoot(agentName)
+	if err != nil {
+		return err
+	}
+	if err := overlayWorkspaceTree(workspaceRoot, dstRoot); err != nil {
+		return fmt.Errorf("overlay template workspace for agent %q: %w", agentName, err)
+	}
+	return nil
 }
 
 func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {

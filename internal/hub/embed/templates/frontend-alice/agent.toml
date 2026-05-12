@@ -1,0 +1,4 @@
+name = "frontend-alice"
+description = "Frontend worker with UI and styling skills"
+runtime_kind = "codex"
+updated_at = "2026-05-12T00:00:00Z"

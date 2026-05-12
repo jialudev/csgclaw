@@ -19,6 +19,7 @@ import (
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
+	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	agentruntime "csgclaw/internal/runtime"
@@ -1712,6 +1713,183 @@ func TestHandleAgentsCreateReplaceFieldMaskMergesInService(t *testing.T) {
 	if got.ID != "u-alice" || got.Name != "alice-v2" || got.Description != "worker" || got.Image != "agent-image:v1" {
 		t.Fatalf("agent = %+v, want masked replace preserving unmasked fields", got)
 	}
+}
+
+func TestAgentCreateRequestFromAPIIncludesFromTemplate(t *testing.T) {
+	got := agentCreateRequestFromAPI(apitypes.CreateAgentRequest{
+		Name:         "alice",
+		RuntimeKind:  agent.RuntimeKindCodex,
+		FromTemplate: "builtin/frontend-alice",
+	})
+
+	if got.Spec.Name != "alice" {
+		t.Fatalf("Spec.Name = %q, want %q", got.Spec.Name, "alice")
+	}
+	if got.Spec.RuntimeKind != agent.RuntimeKindCodex {
+		t.Fatalf("Spec.RuntimeKind = %q, want %q", got.Spec.RuntimeKind, agent.RuntimeKindCodex)
+	}
+	if got.Spec.FromTemplate != "builtin/frontend-alice" {
+		t.Fatalf("Spec.FromTemplate = %q, want %q", got.Spec.FromTemplate, "builtin/frontend-alice")
+	}
+}
+
+func TestHandleHubTemplatesListsAggregatedTemplates(t *testing.T) {
+	hubSvc := mustNewLocalTemplateHubService(t, "review-bot", hub.Template{
+		ID:          "review-bot",
+		Name:        "review-bot",
+		RuntimeKind: agent.RuntimeKindCodex,
+	})
+	srv := &Handler{}
+	srv.SetHubService(hubSvc)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got []apitypes.HubTemplate
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatalf("templates = %#v, want non-empty result", got)
+	}
+	if got[0].Source.Name == "" || got[0].Source.Kind == "" {
+		t.Fatalf("template source = %+v, want populated source", got[0].Source)
+	}
+}
+
+func TestHandleHubTemplateByIDReturnsTemplate(t *testing.T) {
+	hubSvc := mustNewLocalTemplateHubService(t, "review-bot", hub.Template{
+		ID:          "review-bot",
+		Name:        "review-bot",
+		Description: "code review helper",
+		RuntimeKind: agent.RuntimeKindCodex,
+	})
+	srv := &Handler{}
+	srv.SetHubService(hubSvc)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got apitypes.HubTemplate
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "local/review-bot" {
+		t.Fatalf("template id = %q, want %q", got.ID, "local/review-bot")
+	}
+	if got.Source.Name != "local" || got.Source.Kind != "local" {
+		t.Fatalf("template source = %+v, want local/local", got.Source)
+	}
+}
+
+func TestHandleHubTemplatesPublishesAgentSnapshot(t *testing.T) {
+	svc := mustNewService(t)
+	created, err := svc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			ID:          "u-alice",
+			Name:        "alice",
+			Description: "review worker",
+			RuntimeKind: agent.RuntimeKindPicoClawSandbox,
+			Image:       "worker-image:1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	spec, err := svc.HubPublishSpec(created.ID)
+	if err != nil {
+		t.Fatalf("HubPublishSpec() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(spec.WorkspaceRef.Path, "PLAYBOOK.md"), []byte("published workspace\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(PLAYBOOK.md) error = %v", err)
+	}
+
+	registryRoot := t.TempDir()
+	hubSvc, err := hub.NewService(config.HubConfig{
+		DefaultRegistry:        "local",
+		DefaultPublishRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "local", Kind: hub.RegistryKindLocal, Path: registryRoot, Enabled: true},
+		},
+	}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	srv.SetHubService(hubSvc)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/hub/templates", strings.NewReader(`{"agent_id":"u-alice","registry":"local"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got apitypes.HubTemplate
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "local/alice" {
+		t.Fatalf("template id = %q, want %q", got.ID, "local/alice")
+	}
+	if got.Source.Name != "local" || got.Source.Kind != "local" {
+		t.Fatalf("template source = %+v, want local/local", got.Source)
+	}
+	publishedWorkspace := filepath.Join(registryRoot, "templates", "alice", "workspace", "PLAYBOOK.md")
+	if data, err := os.ReadFile(publishedWorkspace); err != nil {
+		t.Fatalf("ReadFile(PLAYBOOK.md) error = %v", err)
+	} else if strings.TrimSpace(string(data)) != "published workspace" {
+		t.Fatalf("PLAYBOOK.md = %q, want %q", strings.TrimSpace(string(data)), "published workspace")
+	}
+}
+
+func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) *hub.Service {
+	t.Helper()
+
+	registryRoot := t.TempDir()
+	workspaceRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "USER.md"), []byte("template user\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(USER.md) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspaceRoot, "skills", "custom"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(skill dir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "skills", "custom", "SKILL.md"), []byte("# Custom\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(SKILL.md) error = %v", err)
+	}
+
+	store := hub.NewLocalStore(registryRoot)
+	if _, err := store.Publish(context.Background(), hub.PublishSpec{
+		ID:           id,
+		Name:         item.Name,
+		Description:  item.Description,
+		RuntimeKind:  item.RuntimeKind,
+		Image:        item.Image,
+		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},
+		UpdatedAt:    time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+
+	svc, err := hub.NewService(config.HubConfig{
+		DefaultRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "local", Kind: hub.RegistryKindLocal, Path: registryRoot, Enabled: true},
+		},
+	}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+	return svc
 }
 
 func TestHandleAgentsCreateReplaceManagerUsesUnifiedServiceEntry(t *testing.T) {

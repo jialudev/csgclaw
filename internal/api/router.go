@@ -19,6 +19,8 @@ func (h *Handler) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/bots/", h.handleBotByID)
 	mux.HandleFunc("/api/v1/agents", h.handleAgents)
 	mux.HandleFunc("/api/v1/agents/", h.handleAgentByID)
+	mux.HandleFunc("/api/v1/hub/templates", h.handleHubTemplates)
+	mux.HandleFunc("/api/v1/hub/templates/", h.handleHubTemplateByID)
 	mux.HandleFunc("/api/v1/cliproxy/auth/status", h.handleCLIProxyAuthStatus)
 	mux.HandleFunc("/api/v1/cliproxy/auth/login", h.handleCLIProxyAuthLogin)
 	mux.HandleFunc("/api/v1/agent-profiles/models", h.handleAgentProfileModels)

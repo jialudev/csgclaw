@@ -206,6 +206,48 @@ docker_cli_path = "/usr/local/bin/docker"
 - macOS amd64 和 Windows amd64 的官方 bundle 不内置 `boxlite`，因此 provider 留空时会解析成 `docker`。
 - Windows 用户需要确保本地 Docker 可用并且能从 `PATH` 找到；如果路径特殊，可以显式设置 `[sandbox].docker_cli_path`。
 
+## Hub 配置
+
+CSGClaw 可以从一个或多个 hub registry 读取 agent 模板。registry 配置是可叠加的：内置、本地和远端 registry 可以同时存在于同一个 `config.toml` 中。
+
+即使省略 `[hub]`，CSGClaw 也会默认启用内置的只读 `builtin` registry。
+
+```toml
+[hub]
+default_registry = "builtin"
+default_publish_registry = "local"
+
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+enabled = true
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "~/.csgclaw/hub"
+enabled = true
+
+[[hub.registries]]
+name = "team"
+kind = "remote"
+url = "https://hub.example.com"
+token = "${CSGCLAW_HUB_TOKEN}"
+enabled = true
+```
+
+字段说明：
+
+- `default_registry`：当某个命令需要一个默认读取源 registry 时，使用这个值。
+- `default_publish_registry`：当发布命令没有显式传入 registry 时，使用这个值作为默认发布目标。
+- `name`：registry 标识符，供 CLI 和 API 使用。
+- `kind`：可选值为 `builtin`、`local` 或 `remote`。
+- `path`：用于 `local` registry。
+- `url` 和 `token`：用于 `remote` registry。
+- `enabled`：控制该 registry 是否参与 hub 相关操作；如果省略，默认值为 `true`。
+
+内置 `builtin` registry 是只读的。发布模板时应选择可写的 `local` 或 `remote` registry。
+
 ## Channel 配置
 
 Channel 集成是可选的。默认情况下，CSGClaw 直接使用内置 Web UI；只有在你需要接入飞书等外部消息平台时，才需要增加 channel 配置。

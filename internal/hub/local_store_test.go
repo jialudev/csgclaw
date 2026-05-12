@@ -1,0 +1,173 @@
+package hub
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"csgclaw/internal/runtime"
+)
+
+func TestLocalStorePublishRoundTrip(t *testing.T) {
+	registryRoot := t.TempDir()
+	workspaceRoot := filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(filepath.Join(workspaceRoot, "skills"), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "AGENTS.md"), []byte("agent"), 0o644); err != nil {
+		t.Fatalf("WriteFile(AGENTS.md) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "skills", "frontend.txt"), []byte("skill"), 0o755); err != nil {
+		t.Fatalf("WriteFile(skill) error = %v", err)
+	}
+
+	store := NewLocalStore(registryRoot)
+	publishedAt := time.Date(2026, 5, 12, 8, 30, 0, 0, time.UTC)
+	published, err := store.Publish(context.Background(), PublishSpec{
+		Name:         "frontend-alice",
+		Description:  "Frontend worker with UI and styling skills",
+		RuntimeKind:  runtime.KindCodex,
+		Image:        "worker:latest",
+		WorkspaceRef: WorkspaceRef{Kind: WorkspaceKindDir, Path: workspaceRoot},
+		UpdatedAt:    publishedAt,
+	})
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if got, want := published.ID, "frontend-alice"; got != want {
+		t.Fatalf("Publish().ID = %q, want %q", got, want)
+	}
+	if got, want := published.WorkspaceRef.Kind, WorkspaceKindDir; got != want {
+		t.Fatalf("Publish().WorkspaceRef.Kind = %q, want %q", got, want)
+	}
+	if got, want := published.UpdatedAt, publishedAt; !got.Equal(want) {
+		t.Fatalf("Publish().UpdatedAt = %v, want %v", got, want)
+	}
+
+	listed, err := store.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if got, want := len(listed), 1; got != want {
+		t.Fatalf("len(List()) = %d, want %d", got, want)
+	}
+	if got, want := listed[0].Name, "frontend-alice"; got != want {
+		t.Fatalf("List()[0].Name = %q, want %q", got, want)
+	}
+
+	got, err := store.Get(context.Background(), "frontend-alice")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.RuntimeKind != runtime.KindCodex {
+		t.Fatalf("Get().RuntimeKind = %q, want %q", got.RuntimeKind, runtime.KindCodex)
+	}
+	if got.Image != "worker:latest" {
+		t.Fatalf("Get().Image = %q, want %q", got.Image, "worker:latest")
+	}
+
+	workspace, err := store.FetchWorkspace(context.Background(), "frontend-alice")
+	if err != nil {
+		t.Fatalf("FetchWorkspace() error = %v", err)
+	}
+	if workspace.Kind != WorkspaceKindDir {
+		t.Fatalf("FetchWorkspace().Kind = %q, want %q", workspace.Kind, WorkspaceKindDir)
+	}
+
+	agentsData, err := os.ReadFile(filepath.Join(workspace.Path, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+	}
+	if string(agentsData) != "agent" {
+		t.Fatalf("AGENTS.md contents = %q, want %q", string(agentsData), "agent")
+	}
+	skillInfo, err := os.Stat(filepath.Join(workspace.Path, "skills", "frontend.txt"))
+	if err != nil {
+		t.Fatalf("Stat(skill) error = %v", err)
+	}
+	if skillInfo.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("skill mode = %o, want executable bit preserved", skillInfo.Mode().Perm())
+	}
+}
+
+func TestLocalStorePublishRejectsUnsafeTemplateID(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+	workspaceRoot := writeWorkspaceFile(t, "workspace", "AGENTS.md", "agent")
+
+	_, err := store.Publish(context.Background(), PublishSpec{
+		ID:           "../escape",
+		Name:         "frontend-alice",
+		RuntimeKind:  runtime.KindCodex,
+		WorkspaceRef: WorkspaceRef{Kind: WorkspaceKindDir, Path: workspaceRoot},
+	})
+	if !errors.Is(err, ErrWorkspacePathUnsafe) {
+		t.Fatalf("Publish() error = %v, want ErrWorkspacePathUnsafe", err)
+	}
+}
+
+func TestLocalStorePublishRejectsEmptyWorkspace(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+	workspaceRoot := filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	_, err := store.Publish(context.Background(), PublishSpec{
+		Name:         "frontend-alice",
+		RuntimeKind:  runtime.KindCodex,
+		WorkspaceRef: WorkspaceRef{Kind: WorkspaceKindDir, Path: workspaceRoot},
+	})
+	if !errors.Is(err, ErrWorkspaceEmpty) {
+		t.Fatalf("Publish() error = %v, want ErrWorkspaceEmpty", err)
+	}
+}
+
+func TestLocalStorePublishRejectsSymlinks(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+	workspaceRoot := filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(target, []byte("outside"), 0o644); err != nil {
+		t.Fatalf("WriteFile(target) error = %v", err)
+	}
+	linkPath := filepath.Join(workspaceRoot, "outside.txt")
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Skipf("Symlink() unsupported: %v", err)
+	}
+
+	_, err := store.Publish(context.Background(), PublishSpec{
+		Name:         "frontend-alice",
+		RuntimeKind:  runtime.KindCodex,
+		WorkspaceRef: WorkspaceRef{Kind: WorkspaceKindDir, Path: workspaceRoot},
+	})
+	if !errors.Is(err, ErrWorkspaceSymlinkDenied) {
+		t.Fatalf("Publish() error = %v, want ErrWorkspaceSymlinkDenied", err)
+	}
+}
+
+func TestLocalStoreGetMissingTemplate(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+
+	_, err := store.Get(context.Background(), "missing")
+	if !errors.Is(err, ErrTemplateNotFound) {
+		t.Fatalf("Get() error = %v, want ErrTemplateNotFound", err)
+	}
+}
+
+func writeWorkspaceFile(t *testing.T, dirName, relPath, contents string) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), dirName)
+	fullPath := filepath.Join(root, filepath.FromSlash(relPath))
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(fullPath), err)
+	}
+	if err := os.WriteFile(fullPath, []byte(contents), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", fullPath, err)
+	}
+	return root
+}

@@ -16,6 +16,7 @@ import (
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
+	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/upgrade"
@@ -31,6 +32,7 @@ type Handler struct {
 	botBridge         *im.BotBridge
 	feishu            *feishu.Service
 	llm               *llm.Service
+	hub               *hub.Service
 	configPath        string
 	serverAccessToken string
 	serverNoAuth      bool
@@ -256,6 +258,10 @@ func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im
 
 func (h *Handler) SetUpgradeManager(manager *upgrade.Manager) {
 	h.upgradeManager = manager
+}
+
+func (h *Handler) SetHubService(svc *hub.Service) {
+	h.hub = svc
 }
 
 func (h *Handler) SetUpgradeConfigPath(configPath string) {
@@ -748,6 +754,7 @@ func agentCreateRequestFromAPI(req apitypes.CreateAgentRequest) agent.CreateRequ
 			Description:  req.Description,
 			Image:        req.Image,
 			RuntimeKind:  req.RuntimeKind,
+			FromTemplate: req.FromTemplate,
 			Role:         req.Role,
 			Status:       req.Status,
 			CreatedAt:    req.CreatedAt,
@@ -757,6 +764,102 @@ func agentCreateRequestFromAPI(req apitypes.CreateAgentRequest) agent.CreateRequ
 		},
 		Replace:   req.Replace,
 		FieldMask: req.FieldMask,
+	}
+}
+
+func (h *Handler) handleHubTemplates(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if h.hub == nil {
+			http.Error(w, "hub service is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		items, err := h.hub.List(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, http.StatusOK, presentHubTemplates(items))
+	case http.MethodPost:
+		if h.hub == nil || h.svc == nil {
+			http.Error(w, "hub service is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		var req apitypes.CreateHubTemplateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+			return
+		}
+		spec, err := h.svc.HubPublishSpec(req.AgentID)
+		if err != nil {
+			status := http.StatusBadRequest
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		spec.Registry = req.Registry
+		item, err := h.hub.Publish(r.Context(), spec)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, http.StatusCreated, presentHubTemplate(item))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) handleHubTemplateByID(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.hub == nil {
+		http.Error(w, "hub service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/hub/templates/"))
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	item, err := h.hub.Get(r.Context(), id)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, http.StatusOK, presentHubTemplate(item))
+}
+
+func presentHubTemplates(items []hub.Template) []apitypes.HubTemplate {
+	out := make([]apitypes.HubTemplate, 0, len(items))
+	for _, item := range items {
+		out = append(out, presentHubTemplate(item))
+	}
+	return out
+}
+
+func presentHubTemplate(item hub.Template) apitypes.HubTemplate {
+	return apitypes.HubTemplate{
+		ID:          item.ID,
+		Name:        item.Name,
+		Description: item.Description,
+		RuntimeKind: item.RuntimeKind,
+		Image:       item.Image,
+		UpdatedAt:   item.UpdatedAt,
+		Source: apitypes.HubTemplateSource{
+			Name: item.Source.Name,
+			Kind: item.Source.Kind,
+		},
+		Workspace: apitypes.HubTemplateWorkspace{
+			Kind: item.WorkspaceRef.Kind,
+		},
 	}
 }
 

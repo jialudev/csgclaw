@@ -7,6 +7,7 @@ require github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/router-for-me/CLIProxyAPI/v6 v6.9.40
+	github.com/pelletier/go-toml/v2 v2.2.2
 	golang.org/x/term v0.37.0
 )
 
@@ -35,7 +36,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/pierrec/xxHash v0.1.5 // indirect
 	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect

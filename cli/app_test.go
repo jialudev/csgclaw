@@ -1003,6 +1003,119 @@ func TestExecuteAgentCreateReplaceManagerSendsImageOverride(t *testing.T) {
 	}
 }
 
+func TestExecuteAgentCreateSendsFromTemplate(t *testing.T) {
+	app := &App{
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/agents" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agents")
+			}
+
+			var payload map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if payload["name"] != "alice" {
+				t.Fatalf("payload[name] = %#v, want %q", payload["name"], "alice")
+			}
+			if payload["from_template"] != "builtin/frontend-alice" {
+				t.Fatalf("payload[from_template] = %#v, want %q", payload["from_template"], "builtin/frontend-alice")
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"u-alice","name":"alice","role":"worker","status":"running","created_at":"2026-04-01T12:00:00Z"}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "agent", "create", "--name", "alice", "--from-template", "builtin/frontend-alice"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestExecuteHubListUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/hub/templates" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/hub/templates")
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"builtin/frontend-alice","name":"frontend-alice","runtime_kind":"codex","source":{"name":"builtin","kind":"builtin"}}]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "hub", "list"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"id": "builtin/frontend-alice"`) {
+		t.Fatalf("stdout = %q, want template id", stdout.String())
+	}
+}
+
+func TestExecuteHubGetUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/hub/templates/local/review-bot" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/hub/templates/local/review-bot")
+			}
+			return jsonResponse(http.StatusOK, `{"id":"local/review-bot","name":"review-bot","runtime_kind":"codex","source":{"name":"local","kind":"local"}}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "hub", "get", "local/review-bot"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"id": "local/review-bot"`) {
+		t.Fatalf("stdout = %q, want template id", stdout.String())
+	}
+}
+
+func TestExecuteHubPublishUsesHTTPClient(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/hub/templates" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/hub/templates")
+			}
+			var payload map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if payload["agent_id"] != "u-alice" {
+				t.Fatalf("payload[agent_id] = %#v, want %q", payload["agent_id"], "u-alice")
+			}
+			if payload["registry"] != "local" {
+				t.Fatalf("payload[registry] = %#v, want %q", payload["registry"], "local")
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"local/alice","name":"alice","runtime_kind":"codex","source":{"name":"local","kind":"local"}}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "--output", "json", "hub", "publish", "--agent", "u-alice", "--registry", "local"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), `"id": "local/alice"`) {
+		t.Fatalf("stdout = %q, want template id", stdout.String())
+	}
+}
+
 func TestExecuteAgentDeleteAllUsesHTTPClient(t *testing.T) {
 	var stdout bytes.Buffer
 	requests := 0
@@ -2144,6 +2257,7 @@ func TestAgentCreateSubcommandHelpShowsReplaceAndForceFlags(t *testing.T) {
 		"--image string          agent image",
 		"--profile string        agent llm profile",
 		"--runtime string        agent runtime kind (for example: picoclaw_sandbox, openclaw_sandbox, codex)",
+		"--from-template string  hub template to use as creation defaults and workspace overlay",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("help = %q, want substring %q", got, want)

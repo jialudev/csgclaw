@@ -14,12 +14,14 @@ import (
 
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
+	"csgclaw/internal/hub"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/runtime/openclawsandbox"
 	"csgclaw/internal/runtime/picoclawsandbox"
 	"csgclaw/internal/runtime/sandboxgateway"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/boxlitecli"
+	"csgclaw/internal/sandbox/sandboxtest"
 )
 
 func init() {
@@ -2487,6 +2489,123 @@ func TestStartConfiguredAgentsRecreatesMissingCompleteWorkerBoxes(t *testing.T) 
 	}
 }
 
+func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubService(t, "frontend-alice", hub.Template{
+		ID:          "frontend-alice",
+		Name:        "frontend-alice",
+		Description: "frontend worker",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			Name:         "alice",
+			FromTemplate: "local/frontend-alice",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if got.Description != "frontend worker" {
+		t.Fatalf("Description = %q, want %q", got.Description, "frontend worker")
+	}
+	if got.Image != "worker-image:1" {
+		t.Fatalf("Image = %q, want %q", got.Image, "worker-image:1")
+	}
+	if got.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
+
+	workspaceRoot, err := agentWorkspaceRoot("alice")
+	if err != nil {
+		t.Fatalf("agentWorkspaceRoot() error = %v", err)
+	}
+	userData, err := os.ReadFile(filepath.Join(workspaceRoot, "USER.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(USER.md) error = %v", err)
+	}
+	if got := strings.TrimSpace(string(userData)); got != "template user" {
+		t.Fatalf("USER.md = %q, want %q", got, "template user")
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "AGENT.md")); err != nil {
+		t.Fatalf("AGENT.md missing after template overlay: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "skills", "custom", "SKILL.md")); err != nil {
+		t.Fatalf("template skill missing after overlay: %v", err)
+	}
+}
+
+func TestHubPublishSpecUsesAgentWorkspaceSnapshot(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:1", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:          "u-alice",
+			Name:        "alice",
+			Description: "review worker",
+			RuntimeKind: RuntimeKindPicoClawSandbox,
+			Image:       "worker-image:1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	workspaceRoot, err := agentWorkspaceRoot(created.Name)
+	if err != nil {
+		t.Fatalf("agentWorkspaceRoot() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "PLAYBOOK.md"), []byte("workspace snapshot\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(PLAYBOOK.md) error = %v", err)
+	}
+
+	spec, err := svc.HubPublishSpec(created.ID)
+	if err != nil {
+		t.Fatalf("HubPublishSpec() error = %v", err)
+	}
+	if spec.ID != "alice" || spec.Name != "alice" {
+		t.Fatalf("publish identity = %q/%q, want alice/alice", spec.ID, spec.Name)
+	}
+	if spec.Description != "review worker" {
+		t.Fatalf("Description = %q, want %q", spec.Description, "review worker")
+	}
+	if spec.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("RuntimeKind = %q, want %q", spec.RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
+	if spec.Image != "worker-image:1" {
+		t.Fatalf("Image = %q, want %q", spec.Image, "worker-image:1")
+	}
+	if spec.WorkspaceRef.Kind != hub.WorkspaceKindDir {
+		t.Fatalf("WorkspaceRef.Kind = %q, want %q", spec.WorkspaceRef.Kind, hub.WorkspaceKindDir)
+	}
+	if spec.WorkspaceRef.Path != workspaceRoot {
+		t.Fatalf("WorkspaceRef.Path = %q, want %q", spec.WorkspaceRef.Path, workspaceRoot)
+	}
+}
+
 func TestStartConfiguredAgentsStartsStoppedCompleteWorkersAndLeavesRunningWorkersUntouched(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	rt := &fakeRuntime{}
@@ -3460,6 +3579,46 @@ func TestOpenClawRuntimeHostBuildsWorkerWorkspaceAndConfig(t *testing.T) {
 	if !strings.Contains(approvalsText, `"security": "full"`) || !strings.Contains(approvalsText, `"ask": "off"`) {
 		t.Fatalf("openclaw exec-approvals should default security=full ask=off, got:\n%s", approvalsText)
 	}
+}
+
+func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) *hub.Service {
+	t.Helper()
+
+	registryRoot := t.TempDir()
+	workspaceRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "USER.md"), []byte("template user\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(USER.md) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspaceRoot, "skills", "custom"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(skill dir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceRoot, "skills", "custom", "SKILL.md"), []byte("# Custom\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(SKILL.md) error = %v", err)
+	}
+
+	store := hub.NewLocalStore(registryRoot)
+	if _, err := store.Publish(context.Background(), hub.PublishSpec{
+		ID:           id,
+		Name:         item.Name,
+		Description:  item.Description,
+		RuntimeKind:  item.RuntimeKind,
+		Image:        item.Image,
+		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},
+		UpdatedAt:    time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+
+	svc, err := hub.NewService(config.HubConfig{
+		DefaultRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "local", Kind: hub.RegistryKindLocal, Path: registryRoot, Enabled: true},
+		},
+	}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+	return svc
 }
 
 func TestWithGatewayRuntimeRejectsOpenClawManagerRuntime(t *testing.T) {

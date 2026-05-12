@@ -1,0 +1,4 @@
+name = "review-bot"
+description = "Code review worker focused on bugs, regressions, and missing tests"
+runtime_kind = "codex"
+updated_at = "2026-05-12T00:00:00Z"

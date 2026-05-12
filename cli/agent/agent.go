@@ -104,6 +104,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	image := fs.String("image", "", "agent image")
 	profile := fs.String("profile", "", "agent llm profile")
 	runtimeKind := fs.String("runtime", "", "agent runtime kind (for example: picoclaw_sandbox, openclaw_sandbox, codex)")
+	fromTemplate := fs.String("from-template", "", "hub template to use as creation defaults and workspace overlay")
 	fs.Usage = func() {
 		fmt.Fprintln(run.Stderr, "Create an agent.")
 		fmt.Fprintln(run.Stderr)
@@ -120,6 +121,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		fmt.Fprintln(run.Stderr, "  --image string          agent image")
 		fmt.Fprintln(run.Stderr, "  --profile string        agent llm profile")
 		fmt.Fprintln(run.Stderr, "  --runtime string        agent runtime kind (for example: picoclaw_sandbox, openclaw_sandbox, codex)")
+		fmt.Fprintln(run.Stderr, "  --from-template string  hub template to use as creation defaults and workspace overlay")
 	}
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -129,13 +131,14 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	}
 
 	req := apitypes.CreateAgentRequest{
-		ID:          *id,
-		Name:        *name,
-		Description: *description,
-		Image:       *image,
-		RuntimeKind: *runtimeKind,
-		Replace:     *replace,
-		Profile:     *profile,
+		ID:           *id,
+		Name:         *name,
+		Description:  *description,
+		Image:        *image,
+		RuntimeKind:  *runtimeKind,
+		FromTemplate: *fromTemplate,
+		Replace:      *replace,
+		Profile:      *profile,
 	}
 	req.ID = normalizeAgentID(req.ID)
 	client := run.APIClient(globals)

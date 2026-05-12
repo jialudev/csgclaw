@@ -30,6 +30,7 @@ import (
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
+	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/modelprovider"
@@ -459,9 +460,14 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	} else if message != "" {
 		upgradeManager.MarkUpgradeFailed(errors.New(message))
 	}
+	hubSvc, err := newAgentTemplateHubService(cfg.Hub)
+	if err != nil {
+		return err
+	}
 	return RunServer(server.Options{
 		ListenAddr:  cfg.Server.ListenAddr,
 		Service:     svc,
+		Hub:         hubSvc,
 		Bot:         botSvc,
 		IM:          imSvc,
 		IMBus:       imBus,
@@ -771,7 +777,31 @@ func newAgentService(cfg config.Config, feishuProvider feishu.BotCredentialProvi
 		runtimewiring.WithCodexRuntime(),
 		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
 	)
+	hubSvc, err := newAgentTemplateHubService(cfg.Hub)
+	if err != nil {
+		return nil, err
+	}
+	if hubSvc != nil {
+		opts = append(opts, agent.WithHubService(hubSvc))
+	}
 	return agent.NewServiceWithLLM(effectiveLLMConfig(cfg), cfg.Server, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
+}
+
+func newAgentTemplateHubService(cfg config.HubConfig) (*hub.Service, error) {
+	resolved := cfg.Resolved()
+	filtered := resolved
+	filtered.Registries = make([]config.HubRegistryConfig, 0, len(resolved.Registries))
+	for _, registry := range resolved.Registries {
+		switch strings.ToLower(strings.TrimSpace(registry.Kind)) {
+		case "", hub.RegistryKindBuiltin, hub.RegistryKindLocal:
+			filtered.Registries = append(filtered.Registries, registry)
+		case hub.RegistryKindRemote:
+			continue
+		default:
+			continue
+		}
+	}
+	return hub.NewService(filtered, hub.DefaultStoreFactory)
 }
 
 type codexBridgeManager interface {

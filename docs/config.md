@@ -206,6 +206,48 @@ Current platform expectations:
 - macOS amd64 and Windows amd64 official bundles do not include `boxlite`, so an empty provider resolves to `docker`.
 - Windows users should have Docker installed and reachable on `PATH`, or set `[sandbox].docker_cli_path` explicitly.
 
+## Hub Configuration
+
+CSGClaw can read agent templates from one or more hub registries. Registry configuration is additive: built-in, local, and remote registries can coexist in the same `config.toml`.
+
+When `[hub]` is omitted, CSGClaw still enables the built-in read-only registry by default.
+
+```toml
+[hub]
+default_registry = "builtin"
+default_publish_registry = "local"
+
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+enabled = true
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "~/.csgclaw/hub"
+enabled = true
+
+[[hub.registries]]
+name = "team"
+kind = "remote"
+url = "https://hub.example.com"
+token = "${CSGCLAW_HUB_TOKEN}"
+enabled = true
+```
+
+Field behavior:
+
+- `default_registry` selects the default source registry when a command needs one registry context.
+- `default_publish_registry` selects the default publish target when a command does not pass a registry explicitly.
+- `name` is the registry identifier used by CLI and API flows.
+- `kind` is `builtin`, `local`, or `remote`.
+- `path` is used by `local` registries.
+- `url` and `token` are used by `remote` registries.
+- `enabled` controls whether the registry participates in hub operations. If omitted, it defaults to `true`.
+
+The built-in registry is read-only. Use a writable `local` or `remote` registry as the publish target.
+
 ## Channel Configuration
 
 Channel integration is optional. CSGClaw works with the built-in Web UI by default, and you only need channel config when you want to connect external messaging platforms such as Feishu.

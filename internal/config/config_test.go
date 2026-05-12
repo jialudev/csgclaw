@@ -162,6 +162,120 @@ models = ["minimax-m2.7"]
 	}
 }
 
+func TestLoadUsesBuiltinHubRegistryWhenSectionMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Hub.DefaultRegistry, DefaultHubRegistry; got != want {
+		t.Fatalf("cfg.Hub.DefaultRegistry = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.DefaultPublishRegistry, DefaultHubPublishRegistry; got != want {
+		t.Fatalf("cfg.Hub.DefaultPublishRegistry = %q, want %q", got, want)
+	}
+	if got, want := len(cfg.Hub.Registries), 1; got != want {
+		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
+	}
+	registry := cfg.Hub.Registries[0]
+	if got, want := registry.Name, DefaultHubRegistry; got != want {
+		t.Fatalf("cfg.Hub.Registries[0].Name = %q, want %q", got, want)
+	}
+	if got, want := registry.Kind, HubRegistryKindBuiltin; got != want {
+		t.Fatalf("cfg.Hub.Registries[0].Kind = %q, want %q", got, want)
+	}
+	if !registry.Enabled {
+		t.Fatal("cfg.Hub.Registries[0].Enabled = false, want true")
+	}
+}
+
+func TestLoadReadsHubConfig(t *testing.T) {
+	t.Setenv("CSGCLAW_HUB_TOKEN", "hub-secret")
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[hub]
+default_registry = "team"
+default_publish_registry = "local"
+
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "/tmp/hub"
+enabled = true
+
+[[hub.registries]]
+name = "team"
+kind = "remote"
+url = "https://hub.example.com/"
+token = "${CSGCLAW_HUB_TOKEN}"
+enabled = false
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := cfg.Hub.DefaultRegistry, "team"; got != want {
+		t.Fatalf("cfg.Hub.DefaultRegistry = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.DefaultPublishRegistry, "local"; got != want {
+		t.Fatalf("cfg.Hub.DefaultPublishRegistry = %q, want %q", got, want)
+	}
+	if got, want := len(cfg.Hub.Registries), 3; got != want {
+		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
+	}
+	if got, want := cfg.Hub.Registries[0].Enabled, true; got != want {
+		t.Fatalf("cfg.Hub.Registries[0].Enabled = %t, want %t", got, want)
+	}
+	if got, want := cfg.Hub.Registries[1].Path, "/tmp/hub"; got != want {
+		t.Fatalf("cfg.Hub.Registries[1].Path = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.Registries[2].URL, "https://hub.example.com"; got != want {
+		t.Fatalf("cfg.Hub.Registries[2].URL = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.Registries[2].Token, "hub-secret"; got != want {
+		t.Fatalf("cfg.Hub.Registries[2].Token = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.Registries[2].Enabled, false; got != want {
+		t.Fatalf("cfg.Hub.Registries[2].Enabled = %t, want %t", got, want)
+	}
+}
+
 func TestLoadRejectsRemovedLegacyBoxLiteProvider(t *testing.T) {
 	restore := stubSandboxProviderExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
 	defer restore()
@@ -676,6 +790,15 @@ runtime_kind = "picoclaw_sandbox"
 provider = "boxlite"
 debian_registries_override = []
 
+[hub]
+default_registry = "builtin"
+default_publish_registry = "local"
+
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+enabled = true
+
 [models]
 default = "default.local.minimax-m2.5"
 
@@ -686,6 +809,56 @@ models = ["local.minimax-m2.5"]
 `
 	if got := string(data); got != want {
 		t.Fatalf("saved config mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestSaveWritesHubConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := Config{
+		Server: ServerConfig{
+			ListenAddr:       "127.0.0.1:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
+		Hub: HubConfig{
+			DefaultRegistry:        "builtin",
+			DefaultPublishRegistry: "team",
+			Registries: []HubRegistryConfig{
+				{Name: "builtin", Kind: "builtin", Enabled: true},
+				{Name: "team", Kind: "remote", URL: "https://hub.example.com", Token: "secret", Enabled: true},
+			},
+		},
+		Models: SingleProfileLLM(ModelConfig{
+			BaseURL: "http://127.0.0.1:4000",
+			APIKey:  "sk",
+			ModelID: "minimax-m2.7",
+		}),
+	}
+
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"[hub]",
+		`default_registry = "builtin"`,
+		`default_publish_registry = "team"`,
+		"[[hub.registries]]",
+		`name = "builtin"`,
+		`kind = "builtin"`,
+		`url = "https://hub.example.com"`,
+		`token = "secret"`,
+		`enabled = true`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("saved config missing %q:\n%s", want, content)
+		}
 	}
 }
 
@@ -919,6 +1092,10 @@ func TestSavePreservesEnvPlaceholdersAfterLoad(t *testing.T) {
 	t.Setenv("ACCESS_TOKEN", "your_access_token")
 	t.Setenv("MANAGER_IMAGE", "picoclaw:test")
 	t.Setenv("SANDBOX_PROVIDER", BoxLiteProvider)
+	t.Setenv("HUB_DEFAULT_REGISTRY", "team")
+	t.Setenv("HUB_PUBLISH_REGISTRY", "local")
+	t.Setenv("HUB_URL", "hub.example.test")
+	t.Setenv("HUB_TOKEN", "hub-secret")
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
 	t.Setenv("MODEL_BASE_HOST", "models.example.test")
 	t.Setenv("MODEL_API_KEY", "sk-env")
@@ -937,6 +1114,17 @@ manager_image_override = "${MANAGER_IMAGE}"
 
 [sandbox]
 provider = "${SANDBOX_PROVIDER}"
+
+[hub]
+default_registry = "${HUB_DEFAULT_REGISTRY}"
+default_publish_registry = "${HUB_PUBLISH_REGISTRY}"
+
+[[hub.registries]]
+name = "team"
+kind = "remote"
+url = "https://${HUB_URL}"
+token = "${HUB_TOKEN}"
+enabled = true
 
 [models]
 default = "${MODEL_SELECTOR}"
@@ -959,6 +1147,8 @@ reasoning_effort = "${REASONING_EFFORT}"
 	t.Setenv("PORT", "19090")
 	t.Setenv("ACCESS_TOKEN", "changed_access_token")
 	t.Setenv("MANAGER_IMAGE", "changed-image")
+	t.Setenv("HUB_URL", "changed-hub.example.test")
+	t.Setenv("HUB_TOKEN", "changed-hub-token")
 	t.Setenv("MODEL_API_KEY", "changed-model-key")
 
 	if err := cfg.Save(path); err != nil {
@@ -976,6 +1166,10 @@ reasoning_effort = "${REASONING_EFFORT}"
 		`access_token = "${ACCESS_TOKEN}"`,
 		`manager_image_override = "${MANAGER_IMAGE}"`,
 		`provider = "${SANDBOX_PROVIDER}"`,
+		`default_registry = "${HUB_DEFAULT_REGISTRY}"`,
+		`default_publish_registry = "${HUB_PUBLISH_REGISTRY}"`,
+		`url = "https://${HUB_URL}"`,
+		`token = "${HUB_TOKEN}"`,
 		`default = "${MODEL_SELECTOR}"`,
 		`base_url = "https://${MODEL_BASE_HOST}/v1"`,
 		`api_key = "${MODEL_API_KEY}"`,

@@ -82,6 +82,7 @@ func FullSpec() CommandSpec {
 				},
 			},
 			agentSpec(),
+			hubSpec(),
 			modelSpec(),
 			userSpec(),
 			botSpec(),
@@ -253,6 +254,25 @@ func agentSpec() CommandSpec {
 				Flags: []FlagSpec{
 					{Name: "follow", Short: "f"},
 					{Short: "n", TakesValue: true},
+				},
+			},
+		},
+	}
+}
+
+func hubSpec() CommandSpec {
+	return CommandSpec{
+		Name:    "hub",
+		Summary: "Discover agent templates.",
+		Children: []CommandSpec{
+			{Name: "list", Summary: "List hub templates"},
+			{Name: "get", Summary: "Show a hub template"},
+			{
+				Name:    "publish",
+				Summary: "Publish an existing agent as a hub template",
+				Flags: []FlagSpec{
+					{Name: "agent", TakesValue: true},
+					{Name: "registry", TakesValue: true},
 				},
 			},
 		},
