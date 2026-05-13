@@ -194,7 +194,7 @@ const messages = {
     profileAPIProvider: "API Provider",
     profileAdvanced: "高级选项",
     templateLabel: "模板",
-    templateNone: "不使用模板",
+    templateNone: "空白",
     profilePreview: "Profile 预览",
     openProfile: "打开 Profile",
     openDM: "打开私信",
@@ -420,7 +420,7 @@ const messages = {
     profileAPIProvider: "API Provider",
     profileAdvanced: "Advanced",
     templateLabel: "Template",
-    templateNone: "No template",
+    templateNone: "Blank",
     profilePreview: "Profile preview",
     openProfile: "Open profile",
     openDM: "Open DM",
@@ -2365,8 +2365,9 @@ function App() {
     setAgentError("");
     setAgentProgress(null);
     setAgentModels([]);
+    const preferredRuntimeKind = normalizeRuntimeKind(bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "");
     const selectedTemplate = template === undefined
-      ? pickDefaultAgentTemplate(hubTemplates)
+      ? pickDefaultAgentTemplate(hubTemplates, preferredRuntimeKind, bootstrapConfig)
       : normalizeTemplateSelection(template);
     try {
       const resp = await fetch("api/v1/agent-profile-defaults");
@@ -3727,11 +3728,17 @@ function App() {
                                 value=${normalizeRuntimeKind(agentDraft.runtime_kind)}
                                 onChange=${(event) => {
                                   const runtimeKind = normalizeRuntimeKind(event.target.value);
-                                  setAgentDraft({
+                                  const currentTemplate = normalizeTemplateSelection(hubTemplates.find((item) => item.id === agentDraft.from_template) || null);
+                                  const nextTemplate = templateMatchesRuntime(currentTemplate, runtimeKind)
+                                    ? currentTemplate
+                                    : pickDefaultAgentTemplate(hubTemplates, runtimeKind, bootstrapConfig);
+                                  let nextDraft = {
                                     ...agentDraft,
                                     runtime_kind: runtimeKind,
                                     image: runtimeImageForKind(runtimeKind, bootstrapConfig, agentDraft.default_image || managerAgent?.image || ""),
-                                  });
+                                  };
+                                  nextDraft = applyTemplateToDraft(nextDraft, nextTemplate, bootstrapConfig, managerAgent?.image || "");
+                                  setAgentDraft(nextDraft);
                                 }}
                               >
                                 ${RUNTIME_KIND_OPTIONS.map((option) => html`
@@ -5319,14 +5326,46 @@ function normalizeTemplateSelection(template) {
   return template && typeof template === "object" ? template : null;
 }
 
-function pickDefaultAgentTemplate(templates) {
+function templateMatchesRuntime(template, runtimeKind) {
+  const requestedRuntime = normalizeRuntimeKind(runtimeKind);
+  if (!template || !requestedRuntime) {
+    return true;
+  }
+  const templateRuntime = normalizeRuntimeKind(template.runtime_kind);
+  return !templateRuntime || templateRuntime === requestedRuntime;
+}
+
+function pickDefaultAgentTemplate(templates, runtimeKind = "", bootstrapConfig = null) {
   if (!Array.isArray(templates) || templates.length === 0) {
     return null;
   }
-  return templates.find((item) => item.id === "builtin/picoclaw-worker")
-    || templates.find((item) => item.name === "picoclaw-worker")
-    || templates.find((item) => String(item.id || "").endsWith("/picoclaw-worker"))
-    || null;
+  const requestedRuntime = normalizeRuntimeKind(runtimeKind || bootstrapConfig?.runtime_kind);
+  const candidates = requestedRuntime
+    ? templates.filter((item) => templateMatchesRuntime(item, requestedRuntime))
+    : templates.slice();
+  if (!candidates.length) {
+    return null;
+  }
+  const configuredDefault = String(bootstrapConfig?.default_worker_template || "").trim();
+  if (configuredDefault) {
+    const configured = candidates.find((item) => item.id === configuredDefault);
+    if (configured) {
+      return configured;
+    }
+  }
+  if (requestedRuntime === "openclaw_sandbox") {
+    return candidates.find((item) => item.id === "builtin/openclaw-worker")
+      || candidates.find((item) => item.name === "openclaw-worker")
+      || candidates.find((item) => String(item.id || "").endsWith("/openclaw-worker"))
+      || candidates[0];
+  }
+  if (requestedRuntime === "picoclaw_sandbox" || !requestedRuntime) {
+    return candidates.find((item) => item.id === "builtin/picoclaw-worker")
+      || candidates.find((item) => item.name === "picoclaw-worker")
+      || candidates.find((item) => String(item.id || "").endsWith("/picoclaw-worker"))
+      || candidates[0];
+  }
+  return candidates[0];
 }
 
 function applyTemplateToDraft(draft, template, bootstrapConfig, fallbackImage = "") {

@@ -2667,9 +2667,7 @@ func TestCreateWorkerRejectsDefaultTemplateRoleMismatch(t *testing.T) {
 	}
 }
 
-func TestCreateWorkerRejectsDefaultTemplateRuntimeMismatch(t *testing.T) {
-	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
-
+func TestCreateWorkerSkipsDefaultTemplateRuntimeMismatch(t *testing.T) {
 	hubSvc := mustNewLocalTemplateHubService(t, "frontend-worker", hub.Template{
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
@@ -2685,20 +2683,32 @@ func TestCreateWorkerRejectsDefaultTemplateRuntimeMismatch(t *testing.T) {
 		"",
 		WithHubService(hubSvc),
 		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				if spec.AgentName != "alice" {
+					t.Fatalf("Create() agent name = %q, want %q", spec.AgentName, "alice")
+				}
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-alice"}, nil
+			},
+		}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
 		Name:        "alice",
-		RuntimeKind: RuntimeKindOpenClawSandbox,
+		RuntimeKind: RuntimeKindCodex,
 	})
-	if err == nil {
-		t.Fatal("CreateWorker() error = nil, want runtime mismatch")
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), `default worker template "local/frontend-worker" uses runtime_kind "picoclaw_sandbox", incompatible with requested runtime_kind "openclaw_sandbox"`) {
-		t.Fatalf("CreateWorker() error = %v, want runtime mismatch", err)
+	if got.RuntimeKind != RuntimeKindCodex {
+		t.Fatalf("CreateWorker().RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindCodex)
+	}
+	if got.BoxID != "codex-session-alice" {
+		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "codex-session-alice")
 	}
 }
 

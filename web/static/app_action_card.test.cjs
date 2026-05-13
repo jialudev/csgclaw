@@ -62,10 +62,18 @@ assert(
   'create-agent modal must expose a template selector label',
 );
 assert(
-  source.includes('pickDefaultAgentTemplate(hubTemplates)'),
-  'normal create-agent flow must preselect the default worker template',
+  source.includes('pickDefaultAgentTemplate(hubTemplates, preferredRuntimeKind, bootstrapConfig)'),
+  'normal create-agent flow must preselect a runtime-compatible default worker template',
 );
 assert(
   source.includes('applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || "")'),
   'changing the template selector must update the draft with template defaults',
+);
+assert(
+  source.includes('function templateMatchesRuntime(template, runtimeKind)'),
+  'frontend must be able to detect whether a template matches the requested runtime',
+);
+assert(
+  source.includes('pickDefaultAgentTemplate(hubTemplates, runtimeKind, bootstrapConfig)'),
+  'changing the runtime must re-pick a compatible default template when needed',
 );

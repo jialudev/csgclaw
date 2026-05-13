@@ -48,6 +48,8 @@ var testDefaultServiceOption ServiceOption
 
 const removeAllRetryAttempts = 5
 
+var errDefaultTemplateRuntimeMismatch = errors.New("default template runtime mismatch")
+
 type unconfiguredSandboxProvider struct{}
 
 func (unconfiguredSandboxProvider) Name() string {
@@ -716,6 +718,9 @@ func (s *Service) resolveTemplateCreateSpec(ctx context.Context, spec CreateAgen
 	}
 	if usedDefault {
 		if err := validateDefaultTemplateCompatibility(expectedRole, spec, item, templateRef); err != nil {
+			if errors.Is(err, errDefaultTemplateRuntimeMismatch) {
+				return spec, nil, nil
+			}
 			return CreateAgentSpec{}, nil, err
 		}
 	}
@@ -775,7 +780,7 @@ func validateDefaultTemplateCompatibility(expectedRole string, spec CreateAgentS
 	requestedRuntime := normalizeRuntimeKind(spec.RuntimeKind)
 	templateRuntime := normalizeRuntimeKind(item.RuntimeKind)
 	if requestedRuntime != "" && templateRuntime != "" && requestedRuntime != templateRuntime {
-		return fmt.Errorf("default %s template %q uses runtime_kind %q, incompatible with requested runtime_kind %q", expectedRole, templateRef, item.RuntimeKind, spec.RuntimeKind)
+		return fmt.Errorf("%w: default %s template %q uses runtime_kind %q, incompatible with requested runtime_kind %q", errDefaultTemplateRuntimeMismatch, expectedRole, templateRef, item.RuntimeKind, spec.RuntimeKind)
 	}
 	return nil
 }
