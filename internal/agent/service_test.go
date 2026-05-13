@@ -2570,7 +2570,7 @@ func TestCreateWorkerUsesConfiguredDefaultTemplate(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -2620,7 +2620,7 @@ func TestCreateWorkerRejectsMissingDefaultTemplate(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/missing"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/missing"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -2652,7 +2652,7 @@ func TestCreateWorkerRejectsDefaultTemplateRoleMismatch(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/review-manager"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/review-manager"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -2684,7 +2684,7 @@ func TestCreateWorkerRejectsDefaultTemplateRuntimeMismatch(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -2719,7 +2719,7 @@ func TestCreateRejectsDefaultManagerTemplateRoleMismatch(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithHubDefaultTemplates(config.HubConfig{DefaultManagerTemplate: "local/review-worker"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultManagerTemplate: "local/review-worker"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

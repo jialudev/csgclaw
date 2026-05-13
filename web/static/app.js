@@ -1577,25 +1577,6 @@ function App() {
     }
   }
 
-  async function saveBootstrapRuntimeKind(runtimeKind) {
-    const resp = await fetch("api/v1/config/bootstrap", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ runtime_kind: normalizeRuntimeKind(runtimeKind) }),
-    });
-    if (!resp.ok) {
-      throw new Error((await resp.text()).trim());
-    }
-    const saved = await resp.json();
-    const normalized = {
-      ...saved,
-      runtime_kind: normalizeRuntimeKind(saved.runtime_kind),
-      runtime_default_images: normalizeRuntimeImageMap(saved.runtime_default_images),
-    };
-    setBootstrapConfig(normalized);
-    return normalized;
-  }
-
   async function sendMessage() {
     if (managerProfileIncomplete) {
       setComposerError(t("profileIncomplete"));
@@ -2115,7 +2096,6 @@ function App() {
     setProfileBusy(true);
     setProfileError("");
     try {
-      await saveBootstrapRuntimeKind(profileDraft.runtime_kind || bootstrapConfig?.runtime_kind || "picoclaw_sandbox");
       const payload = draftToProfile(profileDraft);
       const resp = await fetch("api/v1/agents/u-manager/profile", {
         method: "PUT",

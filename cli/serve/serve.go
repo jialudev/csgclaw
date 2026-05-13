@@ -678,6 +678,7 @@ func printEffectiveConfig(run *command.Context, cfg config.Config, output string
 
 func formatEffectiveConfig(cfg config.Config) string {
 	llmCfg := effectiveLLMConfig(cfg)
+	resolvedHub := cfg.Hub.Resolved()
 	content := fmt.Sprintf(`[server]
 listen_addr = %q
 advertise_base_url = %q
@@ -685,19 +686,38 @@ access_token = %q
 no_auth = %t
 
 [bootstrap]
-manager_image_override = %q
-runtime_kind = %q
+default_manager_template = %q
+default_worker_template = %q
 
 [sandbox]
 provider = %q
-`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ManagerImageOverride, cfg.Bootstrap.ResolvedGatewayRuntimeKind(), cfg.Sandbox.Resolved().Provider)
-	if strings.TrimSpace(cfg.Bootstrap.ManagerImageOverride) == "" {
-		content = strings.Replace(content, "[bootstrap]\nmanager_image_override", fmt.Sprintf("[bootstrap]\n# using default image: %q\nmanager_image_override", cfg.Bootstrap.EffectiveManagerImage()), 1)
-	}
+`, cfg.Server.ListenAddr, cfg.Server.AdvertiseBaseURL, partiallyMaskSecret(cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Bootstrap.ResolvedDefaultManagerTemplate(), cfg.Bootstrap.ResolvedDefaultWorkerTemplate(), cfg.Sandbox.Resolved().Provider)
 	if len(cfg.Sandbox.Resolved().DebianRegistriesOverride) > 0 {
 		content += fmt.Sprintf("debian_registries_override = %s\n", formatModelList(cfg.Sandbox.Resolved().DebianRegistriesOverride))
 	} else {
 		content += fmt.Sprintf("# using default debian registries: %s\ndebian_registries_override = []\n", formatModelList(config.DefaultDebianRegistries))
+	}
+	content += fmt.Sprintf(`
+[hub]
+default_registry = %q
+default_publish_registry = %q
+`, resolvedHub.DefaultRegistry, resolvedHub.DefaultPublishRegistry)
+	for _, registry := range resolvedHub.Registries {
+		content += fmt.Sprintf(`
+[[hub.registries]]
+name = %q
+kind = %q
+`, registry.Name, registry.Kind)
+		if registry.Path != "" {
+			content += fmt.Sprintf("path = %q\n", registry.Path)
+		}
+		if registry.URL != "" {
+			content += fmt.Sprintf("url = %q\n", registry.URL)
+		}
+		if registry.Token != "" {
+			content += fmt.Sprintf("token = %q\n", partiallyMaskSecret(registry.Token))
+		}
+		content += fmt.Sprintf("enabled = %t\n", registry.Enabled)
 	}
 	content += fmt.Sprintf(`
 [models]
@@ -767,6 +787,14 @@ func newAgentService(cfg config.Config, feishuProvider feishu.BotCredentialProvi
 	if err != nil {
 		return nil, err
 	}
+	hubSvc, err := newAgentTemplateHubService(cfg.Hub)
+	if err != nil {
+		return nil, err
+	}
+	bootstrapDefaults, err := hub.ResolveBootstrapDefaults(context.Background(), cfg.Bootstrap, hubSvc)
+	if err != nil {
+		return nil, err
+	}
 	opts, err := sandboxServiceOptions(cfg.Sandbox)
 	if err != nil {
 		return nil, err
@@ -775,17 +803,13 @@ func newAgentService(cfg config.Config, feishuProvider feishu.BotCredentialProvi
 		runtimewiring.WithPicoClawSandboxRuntime(feishuProvider),
 		runtimewiring.WithOpenClawSandboxRuntime(),
 		runtimewiring.WithCodexRuntime(),
-		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
-		agent.WithHubDefaultTemplates(cfg.Hub),
+		agent.WithGatewayRuntime(bootstrapDefaults.ManagerRuntimeKind),
+		agent.WithBootstrapDefaultTemplates(cfg.Bootstrap),
 	)
-	hubSvc, err := newAgentTemplateHubService(cfg.Hub)
-	if err != nil {
-		return nil, err
-	}
 	if hubSvc != nil {
 		opts = append(opts, agent.WithHubService(hubSvc))
 	}
-	return agent.NewServiceWithLLM(effectiveLLMConfig(cfg), cfg.Server, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
+	return agent.NewServiceWithLLM(effectiveLLMConfig(cfg), cfg.Server, bootstrapDefaults.ManagerImage, agentsPath, opts...)
 }
 
 func newAgentTemplateHubService(cfg config.HubConfig) (*hub.Service, error) {

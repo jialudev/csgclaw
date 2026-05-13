@@ -245,14 +245,13 @@ func WithHubService(svc *hub.Service) ServiceOption {
 	}
 }
 
-func WithHubDefaultTemplates(cfg config.HubConfig) ServiceOption {
+func WithBootstrapDefaultTemplates(cfg config.BootstrapConfig) ServiceOption {
 	return func(s *Service) error {
 		if s == nil {
 			return fmt.Errorf("agent service is required")
 		}
-		resolved := cfg.Resolved()
-		s.defaultManagerTemplate = strings.TrimSpace(resolved.DefaultManagerTemplate)
-		s.defaultWorkerTemplate = strings.TrimSpace(resolved.DefaultWorkerTemplate)
+		s.defaultManagerTemplate = strings.TrimSpace(cfg.ResolvedDefaultManagerTemplate())
+		s.defaultWorkerTemplate = strings.TrimSpace(cfg.ResolvedDefaultWorkerTemplate())
 		return nil
 	}
 }

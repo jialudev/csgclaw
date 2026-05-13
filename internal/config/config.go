@@ -49,15 +49,22 @@ type LLMConfig struct {
 }
 
 type BootstrapConfig struct {
-	ManagerImageOverride string
-	RuntimeKind          string
+	DefaultManagerTemplate string
+	DefaultWorkerTemplate  string
 }
 
-func (c BootstrapConfig) EffectiveManagerImage() string {
-	if override := strings.TrimSpace(c.ManagerImageOverride); override != "" {
-		return override
+func (c BootstrapConfig) ResolvedDefaultManagerTemplate() string {
+	if template := strings.TrimSpace(c.DefaultManagerTemplate); template != "" {
+		return template
 	}
-	return DefaultManagerImageForRuntimeKind(c.ResolvedGatewayRuntimeKind())
+	return DefaultBootstrapManagerTemplate
+}
+
+func (c BootstrapConfig) ResolvedDefaultWorkerTemplate() string {
+	if template := strings.TrimSpace(c.DefaultWorkerTemplate); template != "" {
+		return template
+	}
+	return DefaultBootstrapWorkerTemplate
 }
 
 const (
@@ -65,28 +72,12 @@ const (
 	RuntimeKindOpenClawSandbox = "openclaw_sandbox"
 )
 
-// ResolvedGatewayRuntimeKind selects the bootstrap manager runtime.
-func (b BootstrapConfig) ResolvedGatewayRuntimeKind() string {
-	if normalizeGatewayRuntimeKind(b.RuntimeKind) == RuntimeKindPicoClawSandbox {
-		return RuntimeKindPicoClawSandbox
-	}
-	return RuntimeKindPicoClawSandbox
-}
-
 func (b BootstrapConfig) Validate() error {
-	runtimeKind := strings.TrimSpace(b.RuntimeKind)
-	normalized := normalizeGatewayRuntimeKind(runtimeKind)
-	if normalized == RuntimeKindOpenClawSandbox {
-		return fmt.Errorf("bootstrap runtime_kind %q is not supported yet; only %q is supported for the manager runtime; use agent runtime_kind %q for OpenClaw workers", b.RuntimeKind, RuntimeKindPicoClawSandbox, RuntimeKindOpenClawSandbox)
+	if strings.TrimSpace(b.ResolvedDefaultManagerTemplate()) == "" {
+		return fmt.Errorf("bootstrap default_manager_template is required")
 	}
-	if runtimeKind != "" && normalized == "" {
-		return fmt.Errorf("bootstrap runtime_kind %q is not supported (use %q)", b.RuntimeKind, RuntimeKindPicoClawSandbox)
-	}
-	if strings.Contains(strings.ToLower(b.ManagerImageOverride), "opencsghq/openclaw") {
-		return fmt.Errorf("bootstrap manager_image_override uses an OpenClaw manager image, which is not supported yet; use the PicoClaw manager and create OpenClaw workers with runtime_kind %q", RuntimeKindOpenClawSandbox)
-	}
-	if runtimeKind == "" || normalized == RuntimeKindPicoClawSandbox {
-		return nil
+	if strings.TrimSpace(b.ResolvedDefaultWorkerTemplate()) == "" {
+		return fmt.Errorf("bootstrap default_worker_template is required")
 	}
 	return nil
 }
@@ -122,8 +113,6 @@ type SandboxConfig struct {
 type HubConfig struct {
 	DefaultRegistry        string
 	DefaultPublishRegistry string
-	DefaultManagerTemplate string
-	DefaultWorkerTemplate  string
 	Registries             []HubRegistryConfig
 }
 
@@ -144,14 +133,6 @@ func (c HubConfig) Resolved() HubConfig {
 	c.DefaultPublishRegistry = strings.TrimSpace(c.DefaultPublishRegistry)
 	if c.DefaultPublishRegistry == "" {
 		c.DefaultPublishRegistry = DefaultHubPublishRegistry
-	}
-	c.DefaultManagerTemplate = strings.TrimSpace(c.DefaultManagerTemplate)
-	if c.DefaultManagerTemplate == "" {
-		c.DefaultManagerTemplate = DefaultHubManagerTemplate
-	}
-	c.DefaultWorkerTemplate = strings.TrimSpace(c.DefaultWorkerTemplate)
-	if c.DefaultWorkerTemplate == "" {
-		c.DefaultWorkerTemplate = DefaultHubWorkerTemplate
 	}
 	if len(c.Registries) == 0 {
 		c.Registries = []HubRegistryConfig{defaultBuiltinHubRegistry()}
@@ -227,8 +208,6 @@ type rawProviderConfig struct {
 type rawHubConfig struct {
 	DefaultRegistry        string
 	DefaultPublishRegistry string
-	DefaultManagerTemplate string
-	DefaultWorkerTemplate  string
 	Registries             []rawHubRegistryConfig
 }
 
@@ -249,20 +228,20 @@ const (
 	IMDirName       = "im"
 	ChannelsDirName = "channels"
 
-	DefaultHTTPPort             = apiclient.DefaultHTTPPort
-	DefaultAccessToken          = "your_access_token"
-	DefaultManagerImage         = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.5.9"
-	DefaultOpenClawManagerImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260509.1-csgclaw"
-	CSGHubProvider              = "csghub"
-	DockerProvider              = "docker"
-	BoxLiteProvider             = "boxlite"
-	DefaultHubRegistry          = "builtin"
-	DefaultHubPublishRegistry   = "local"
-	DefaultHubManagerTemplate   = "builtin/picoclaw-manager"
-	DefaultHubWorkerTemplate    = "builtin/picoclaw-worker"
-	HubRegistryKindBuiltin      = "builtin"
-	BoxLiteCLIHomeDirName       = "boxlite"
-	RuntimeHomeDirName          = BoxLiteCLIHomeDirName
+	DefaultHTTPPort                 = apiclient.DefaultHTTPPort
+	DefaultAccessToken              = "your_access_token"
+	DefaultManagerImage             = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.5.9"
+	DefaultOpenClawManagerImage     = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260509.1-csgclaw"
+	CSGHubProvider                  = "csghub"
+	DockerProvider                  = "docker"
+	BoxLiteProvider                 = "boxlite"
+	DefaultHubRegistry              = "builtin"
+	DefaultHubPublishRegistry       = "local"
+	DefaultBootstrapManagerTemplate = "builtin/picoclaw-manager"
+	DefaultBootstrapWorkerTemplate  = "builtin/picoclaw-worker"
+	HubRegistryKindBuiltin          = "builtin"
+	BoxLiteCLIHomeDirName           = "boxlite"
+	RuntimeHomeDirName              = BoxLiteCLIHomeDirName
 )
 
 // DefaultDebianRegistries is the default BoxLite Debian registry lookup order when
@@ -435,15 +414,15 @@ func Load(path string) (Config, error) {
 			}
 		case section == "bootstrap":
 			switch key {
-			case "manager_image_override":
-				cfg.raw.bootstrap.ManagerImageOverride = parseRawStringValue(rawValue)
-				cfg.Bootstrap.ManagerImageOverride = value
-			case "manager_image":
-				cfg.raw.bootstrap.ManagerImageOverride = parseRawStringValue(rawValue)
-				cfg.Bootstrap.ManagerImageOverride = value
-			case "runtime_kind":
-				cfg.raw.bootstrap.RuntimeKind = parseRawStringValue(rawValue)
-				cfg.Bootstrap.RuntimeKind = value
+			case "default_manager_template":
+				cfg.raw.bootstrap.DefaultManagerTemplate = parseRawStringValue(rawValue)
+				cfg.Bootstrap.DefaultManagerTemplate = value
+			case "default_worker_template":
+				cfg.raw.bootstrap.DefaultWorkerTemplate = parseRawStringValue(rawValue)
+				cfg.Bootstrap.DefaultWorkerTemplate = value
+			case "manager_image_override", "manager_image", "runtime_kind":
+				// Keep loading legacy bootstrap keys for compatibility, but do not
+				// surface them in the public config model anymore.
 			}
 		case section == "sandbox":
 			switch key {
@@ -474,12 +453,8 @@ func Load(path string) (Config, error) {
 			case "default_publish_registry":
 				cfg.raw.hub.DefaultPublishRegistry = parseRawStringValue(rawValue)
 				cfg.Hub.DefaultPublishRegistry = value
-			case "default_manager_template":
-				cfg.raw.hub.DefaultManagerTemplate = parseRawStringValue(rawValue)
-				cfg.Hub.DefaultManagerTemplate = value
-			case "default_worker_template":
-				cfg.raw.hub.DefaultWorkerTemplate = parseRawStringValue(rawValue)
-				cfg.Hub.DefaultWorkerTemplate = value
+			case "default_manager_template", "default_worker_template":
+				// Bootstrap template defaults now live only under [bootstrap].
 			}
 		case section == "hub.registries":
 			if hubRegistryIndex < 0 || hubRegistryIndex >= len(cfg.Hub.Registries) {
@@ -550,7 +525,6 @@ func Load(path string) (Config, error) {
 	if err := cfg.Bootstrap.Validate(); err != nil {
 		return Config{}, err
 	}
-	cfg.Bootstrap.RuntimeKind = normalizeGatewayRuntimeKind(cfg.Bootstrap.RuntimeKind)
 	if cfg.Server.AccessToken == "" {
 		cfg.Server.AccessToken = DefaultAccessToken
 	}
@@ -588,10 +562,6 @@ func (c Config) Save(path string) error {
 	loadedRaw := cfg.raw.resolvedOrZero()
 
 	var b strings.Builder
-	runtimeKind := strings.TrimSpace(cfg.Bootstrap.RuntimeKind)
-	if runtimeKind == "" {
-		runtimeKind = cfg.Bootstrap.ResolvedGatewayRuntimeKind()
-	}
 	fmt.Fprintf(&b, `# Generated by csgclaw.
 
 [server]
@@ -601,9 +571,9 @@ access_token = %q
 no_auth = %t
 
 [bootstrap]
-manager_image_override = %q
-runtime_kind = %q
-`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.rawOrResolvedString(cfg.raw.bootstrap.ManagerImageOverride, loadedRaw.bootstrap.ManagerImageOverride, cfg.Bootstrap.ManagerImageOverride), runtimeKind)
+default_manager_template = %q
+default_worker_template = %q
+`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.rawOrResolvedString(cfg.raw.bootstrap.DefaultManagerTemplate, loadedRaw.bootstrap.DefaultManagerTemplate, cfg.Bootstrap.ResolvedDefaultManagerTemplate()), cfg.rawOrResolvedString(cfg.raw.bootstrap.DefaultWorkerTemplate, loadedRaw.bootstrap.DefaultWorkerTemplate, cfg.Bootstrap.ResolvedDefaultWorkerTemplate()))
 	sandboxSection := fmt.Sprintf(`
 [sandbox]
 provider = %q
@@ -622,9 +592,7 @@ provider = %q
 [hub]
 default_registry = %q
 default_publish_registry = %q
-default_manager_template = %q
-default_worker_template = %q
-`, cfg.rawOrResolvedString(cfg.raw.hub.DefaultRegistry, loadedRaw.hub.DefaultRegistry, resolvedHub.DefaultRegistry), cfg.rawOrResolvedString(cfg.raw.hub.DefaultPublishRegistry, loadedRaw.hub.DefaultPublishRegistry, resolvedHub.DefaultPublishRegistry), cfg.rawOrResolvedString(cfg.raw.hub.DefaultManagerTemplate, loadedRaw.hub.DefaultManagerTemplate, resolvedHub.DefaultManagerTemplate), cfg.rawOrResolvedString(cfg.raw.hub.DefaultWorkerTemplate, loadedRaw.hub.DefaultWorkerTemplate, resolvedHub.DefaultWorkerTemplate))
+`, cfg.rawOrResolvedString(cfg.raw.hub.DefaultRegistry, loadedRaw.hub.DefaultRegistry, resolvedHub.DefaultRegistry), cfg.rawOrResolvedString(cfg.raw.hub.DefaultPublishRegistry, loadedRaw.hub.DefaultPublishRegistry, resolvedHub.DefaultPublishRegistry))
 	for i, registry := range resolvedHub.Registries {
 		var rawRegistry rawHubRegistryConfig
 		var loadedRegistry rawHubRegistryConfig
@@ -953,11 +921,11 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	if c.raw.server.AccessToken != "" {
 		out.server.AccessToken = c.Server.AccessToken
 	}
-	if c.raw.bootstrap.ManagerImageOverride != "" {
-		out.bootstrap.ManagerImageOverride = c.Bootstrap.ManagerImageOverride
+	if c.raw.bootstrap.DefaultManagerTemplate != "" {
+		out.bootstrap.DefaultManagerTemplate = c.Bootstrap.DefaultManagerTemplate
 	}
-	if c.raw.bootstrap.RuntimeKind != "" {
-		out.bootstrap.RuntimeKind = c.Bootstrap.RuntimeKind
+	if c.raw.bootstrap.DefaultWorkerTemplate != "" {
+		out.bootstrap.DefaultWorkerTemplate = c.Bootstrap.DefaultWorkerTemplate
 	}
 	if c.raw.sandbox.Provider != "" {
 		out.sandbox.Provider = c.Sandbox.Provider
@@ -976,12 +944,6 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	}
 	if c.raw.hub.DefaultPublishRegistry != "" {
 		out.hub.DefaultPublishRegistry = c.Hub.DefaultPublishRegistry
-	}
-	if c.raw.hub.DefaultManagerTemplate != "" {
-		out.hub.DefaultManagerTemplate = c.Hub.DefaultManagerTemplate
-	}
-	if c.raw.hub.DefaultWorkerTemplate != "" {
-		out.hub.DefaultWorkerTemplate = c.Hub.DefaultWorkerTemplate
 	}
 	for i, rawRegistry := range c.raw.hub.Registries {
 		if i >= len(c.Hub.Registries) {

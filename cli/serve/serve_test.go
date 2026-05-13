@@ -89,7 +89,8 @@ func TestServeRunAutoBootstrapsWhenStateIncomplete(t *testing.T) {
 			ConfigPath: configPath,
 			Config: config.Config{
 				Bootstrap: config.BootstrapConfig{
-					ManagerImageOverride: "ghcr.io/example/manager:latest",
+					DefaultManagerTemplate: "builtin/picoclaw-manager",
+					DefaultWorkerTemplate:  "builtin/picoclaw-worker",
 				},
 			},
 		}, nil
@@ -490,13 +491,6 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		if provider == nil {
 			return nil, fmt.Errorf("provider = nil, want configured provider")
 		}
-		app, ok := provider.BotConfig("manager")
-		if !ok {
-			return nil, fmt.Errorf("provider missing manager bot config")
-		}
-		if got, want := app.AppID, "cli_manager"; got != want {
-			return nil, fmt.Errorf("manager app_id = %q, want %q", got, want)
-		}
 		return feishu.NewServiceWithProvider(provider), nil
 	}
 	NewLLMService = func(config.Config, *agent.Service) (*llm.Service, error) {
@@ -570,7 +564,8 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 			ModelID: "model-test",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			ManagerImageOverride: "ghcr.io/example/manager:latest",
+			DefaultManagerTemplate: "builtin/picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
 		},
 	}
 
@@ -896,7 +891,7 @@ func TestShouldStartCodexBridge(t *testing.T) {
 	}
 }
 
-func TestServeForegroundPreservesManagerImageOverride(t *testing.T) {
+func TestServeForegroundPreservesBootstrapDefaultTemplates(t *testing.T) {
 	origRunServer := RunServer
 	origNewAgentService := NewAgentService
 	origStartConfiguredAgents := StartConfiguredAgents
@@ -924,12 +919,16 @@ func TestServeForegroundPreservesManagerImageOverride(t *testing.T) {
 			ModelID: "model-test",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			ManagerImageOverride: "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0",
+			DefaultManagerTemplate: "local/review-manager",
+			DefaultWorkerTemplate:  "local/review-worker",
 		},
 	}
 	NewAgentService = func(got config.Config, _ feishu.BotCredentialProvider) (*agent.Service, error) {
-		if got.Bootstrap.ManagerImageOverride != "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.4.24.0" {
-			t.Fatalf("manager image override = %q, want preserved override", got.Bootstrap.ManagerImageOverride)
+		if got.Bootstrap.DefaultManagerTemplate != "local/review-manager" {
+			t.Fatalf("default manager template = %q, want preserved template", got.Bootstrap.DefaultManagerTemplate)
+		}
+		if got.Bootstrap.DefaultWorkerTemplate != "local/review-worker" {
+			t.Fatalf("default worker template = %q, want preserved template", got.Bootstrap.DefaultWorkerTemplate)
 		}
 		return &agent.Service{}, nil
 	}
@@ -978,7 +977,8 @@ models = ["${MODEL_ID}"]
 		`advertise_base_url = "http://1.2.3.4:18080"`,
 		`access_token = "pc*********et"`,
 		`no_auth = true`,
-		fmt.Sprintf(`# using default image: %q`, config.DefaultManagerImage),
+		`default_manager_template = "builtin/picoclaw-manager"`,
+		`default_worker_template = "builtin/picoclaw-worker"`,
 		`default = "remote.gpt-env"`,
 		`base_url = "https://models.example.test/v1"`,
 		`api_key = "sk*********et"`,
@@ -1015,10 +1015,30 @@ func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T
 			ModelID: "local.minimax-m2.5",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
+			DefaultManagerTemplate: "builtin/picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
 		},
 		Sandbox: config.SandboxConfig{
 			Provider: config.BoxLiteProvider,
+		},
+		Hub: config.HubConfig{
+			DefaultRegistry:        "team",
+			DefaultPublishRegistry: "local",
+			Registries: []config.HubRegistryConfig{
+				{
+					Name:    "team",
+					Kind:    "remote",
+					URL:     "https://hub.example.com",
+					Token:   "hub-secret",
+					Enabled: true,
+				},
+				{
+					Name:    "local",
+					Kind:    "local",
+					Path:    "/tmp/hub",
+					Enabled: false,
+				},
+			},
 		},
 	}
 
@@ -1029,13 +1049,30 @@ access_token = "yo*************en"
 no_auth = true
 
 [bootstrap]
-manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
-runtime_kind = "picoclaw_sandbox"
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/picoclaw-worker"
 
 [sandbox]
 provider = "boxlite"
 # using default debian registries: ["harbor.opencsg.com", "docker.io"]
 debian_registries_override = []
+
+[hub]
+default_registry = "team"
+default_publish_registry = "local"
+
+[[hub.registries]]
+name = "team"
+kind = "remote"
+url = "https://hub.example.com"
+token = "hu******et"
+enabled = true
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "/tmp/hub"
+enabled = false
 
 [models]
 default = "default.local.minimax-m2.5"
@@ -1140,7 +1177,8 @@ func csgHubLiteServeConfig(baseURL string) config.Config {
 			},
 		},
 		Bootstrap: config.BootstrapConfig{
-			ManagerImageOverride: "ghcr.io/example/manager:latest",
+			DefaultManagerTemplate: "builtin/picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
 		},
 	}
 }

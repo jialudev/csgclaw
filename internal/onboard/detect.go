@@ -20,11 +20,12 @@ var (
 		return agent.NewServiceWithLLM(
 			effectiveLLMConfig(cfg),
 			cfg.Server,
-			cfg.Bootstrap.EffectiveManagerImage(),
+			config.DefaultManagerImage,
 			path,
 			runtimewiring.WithPicoClawSandboxRuntime(nil),
 			runtimewiring.WithOpenClawSandboxRuntime(),
-			agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
+			agent.WithGatewayRuntime(config.RuntimeKindPicoClawSandbox),
+			agent.WithBootstrapDefaultTemplates(cfg.Bootstrap),
 		)
 	}
 )

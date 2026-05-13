@@ -11,6 +11,7 @@ import (
 	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/config"
+	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/sandboxproviders"
 )
@@ -106,6 +107,14 @@ func bootstrapPaths() (agentsPath, imStatePath string, err error) {
 }
 
 func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg config.Config) (bot.Bot, error) {
+	hubSvc, err := hub.NewService(cfg.Hub, hub.DefaultStoreFactory)
+	if err != nil {
+		return bot.Bot{}, err
+	}
+	bootstrapDefaults, err := hub.ResolveBootstrapDefaults(ctx, cfg.Bootstrap, hubSvc)
+	if err != nil {
+		return bot.Bot{}, err
+	}
 	opts, err := sandboxproviders.ServiceOptions(cfg.Sandbox)
 	if err != nil {
 		return bot.Bot{}, err
@@ -113,9 +122,11 @@ func createManagerBot(ctx context.Context, agentsPath, imStatePath string, cfg c
 	opts = append(opts,
 		runtimewiring.WithPicoClawSandboxRuntime(nil),
 		runtimewiring.WithOpenClawSandboxRuntime(),
-		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
+		agent.WithGatewayRuntime(bootstrapDefaults.ManagerRuntimeKind),
+		agent.WithBootstrapDefaultTemplates(cfg.Bootstrap),
+		agent.WithHubService(hubSvc),
 	)
-	agentSvc, err := agent.NewServiceWithLLM(effectiveLLMConfig(cfg), cfg.Server, cfg.Bootstrap.EffectiveManagerImage(), agentsPath, opts...)
+	agentSvc, err := agent.NewServiceWithLLM(effectiveLLMConfig(cfg), cfg.Server, bootstrapDefaults.ManagerImage, agentsPath, opts...)
 	if err != nil {
 		return bot.Bot{}, err
 	}
@@ -193,8 +204,6 @@ func configNeedsCompletion(content string) bool {
 		`advertise_base_url = `,
 		`access_token = `,
 		`no_auth = `,
-		"[bootstrap]",
-		`manager_image_override = `,
 		"[sandbox]",
 		`provider = `,
 		`debian_registries_override = `,
@@ -203,6 +212,23 @@ func configNeedsCompletion(content string) bool {
 		if !strings.Contains(content, snippet) {
 			return true
 		}
+	}
+	if !strings.Contains(content, "[bootstrap]") {
+		return true
+	}
+	hasBootstrapTemplates := strings.Contains(content, `default_manager_template = `) && strings.Contains(content, `default_worker_template = `)
+	hasLegacyBootstrapImage := strings.Contains(content, `manager_image_override = `)
+	if !hasBootstrapTemplates && !hasLegacyBootstrapImage {
+		return true
+	}
+	if !strings.Contains(content, "[hub]") {
+		return true
+	}
+	if !strings.Contains(content, `default_registry = `) {
+		return true
+	}
+	if !strings.Contains(content, `default_publish_registry = `) {
+		return true
 	}
 	return false
 }

@@ -77,14 +77,17 @@ type imAgentJoinResponse struct {
 }
 
 type bootstrapConfigResponse struct {
-	RuntimeKind           string            `json:"runtime_kind"`
-	EffectiveManagerImage string            `json:"effective_manager_image"`
-	SupportedRuntimeKinds []string          `json:"supported_runtime_kinds"`
-	RuntimeDefaultImages  map[string]string `json:"runtime_default_images,omitempty"`
+	DefaultManagerTemplate string            `json:"default_manager_template"`
+	DefaultWorkerTemplate  string            `json:"default_worker_template"`
+	RuntimeKind            string            `json:"runtime_kind"`
+	EffectiveManagerImage  string            `json:"effective_manager_image"`
+	SupportedRuntimeKinds  []string          `json:"supported_runtime_kinds"`
+	RuntimeDefaultImages   map[string]string `json:"runtime_default_images,omitempty"`
 }
 
 type updateBootstrapConfigRequest struct {
-	RuntimeKind *string `json:"runtime_kind,omitempty"`
+	DefaultManagerTemplate *string `json:"default_manager_template,omitempty"`
+	DefaultWorkerTemplate  *string `json:"default_worker_template,omitempty"`
 }
 
 type agentResponse struct {
@@ -116,7 +119,7 @@ func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, bootstrapConfigView(cfg))
+		writeJSON(w, http.StatusOK, bootstrapConfigView(r.Context(), cfg, h.hub))
 	case http.MethodPut:
 		var req updateBootstrapConfigRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -128,8 +131,11 @@ func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if req.RuntimeKind != nil {
-			cfg.Bootstrap.RuntimeKind = *req.RuntimeKind
+		if req.DefaultManagerTemplate != nil {
+			cfg.Bootstrap.DefaultManagerTemplate = *req.DefaultManagerTemplate
+		}
+		if req.DefaultWorkerTemplate != nil {
+			cfg.Bootstrap.DefaultWorkerTemplate = *req.DefaultWorkerTemplate
 		}
 		if err := cfg.Bootstrap.Validate(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -140,14 +146,19 @@ func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if h.svc != nil {
-			if req.RuntimeKind != nil {
-				if err := h.svc.SetGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind(), cfg.Bootstrap.EffectiveManagerImage()); err != nil {
+			if req.DefaultManagerTemplate != nil || req.DefaultWorkerTemplate != nil {
+				defaults, err := hub.ResolveBootstrapDefaults(r.Context(), cfg.Bootstrap, h.hub)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				if err := h.svc.SetGatewayRuntime(defaults.ManagerRuntimeKind, defaults.ManagerImage); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
 			}
 		}
-		writeJSON(w, http.StatusOK, bootstrapConfigView(cfg))
+		writeJSON(w, http.StatusOK, bootstrapConfigView(r.Context(), cfg, h.hub))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -186,10 +197,10 @@ func (h *Handler) loadBootstrapConfig() (config.Config, string, error) {
 	return cfg, path, nil
 }
 
-func bootstrapConfigView(cfg config.Config) bootstrapConfigResponse {
-	return bootstrapConfigResponse{
-		RuntimeKind:           bootstrapRuntimeKind(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
-		EffectiveManagerImage: cfg.Bootstrap.EffectiveManagerImage(),
+func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Service) bootstrapConfigResponse {
+	resp := bootstrapConfigResponse{
+		DefaultManagerTemplate: cfg.Bootstrap.ResolvedDefaultManagerTemplate(),
+		DefaultWorkerTemplate:  cfg.Bootstrap.ResolvedDefaultWorkerTemplate(),
 		SupportedRuntimeKinds: []string{
 			agent.RuntimeKindPicoClawSandbox,
 		},
@@ -198,6 +209,17 @@ func bootstrapConfigView(cfg config.Config) bootstrapConfigResponse {
 			agent.RuntimeKindOpenClawSandbox: config.DefaultManagerImageForRuntimeKind(agent.RuntimeKindOpenClawSandbox),
 		},
 	}
+	defaults, err := hub.ResolveBootstrapDefaults(ctx, cfg.Bootstrap, hubSvc)
+	if err != nil {
+		resp.RuntimeKind = bootstrapRuntimeKind("")
+		return resp
+	}
+	resp.RuntimeKind = bootstrapRuntimeKind(defaults.ManagerRuntimeKind)
+	resp.EffectiveManagerImage = defaults.ManagerImage
+	if defaults.WorkerRuntimeKind != "" && defaults.WorkerImage != "" {
+		resp.RuntimeDefaultImages[defaults.WorkerRuntimeKind] = defaults.WorkerImage
+	}
+	return resp
 }
 
 func bootstrapRuntimeKind(runtime string) string {

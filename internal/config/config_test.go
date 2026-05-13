@@ -46,7 +46,7 @@ func TestDefaultIMStatePathUsesDomainSubdirectory(t *testing.T) {
 	}
 }
 
-func TestLoadUsesDefaultManagerImageWhenOverrideIsEmpty(t *testing.T) {
+func TestLoadUsesDefaultBootstrapTemplatesWhenSectionIsEmpty(t *testing.T) {
 	restore := stubSandboxProviderExecutablePath(t, filepath.Join(t.TempDir(), "bin", "csgclaw"))
 	defer restore()
 
@@ -72,11 +72,11 @@ models = ["minimax-m2.7"]
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if got := cfg.Bootstrap.ManagerImageOverride; got != "" {
-		t.Fatalf("cfg.Bootstrap.ManagerImageOverride = %q, want empty", got)
+	if got, want := cfg.Bootstrap.ResolvedDefaultManagerTemplate(), DefaultBootstrapManagerTemplate; got != want {
+		t.Fatalf("cfg.Bootstrap.ResolvedDefaultManagerTemplate() = %q, want %q", got, want)
 	}
-	if got, want := cfg.Bootstrap.EffectiveManagerImage(), DefaultManagerImage; got != want {
-		t.Fatalf("cfg.Bootstrap.EffectiveManagerImage() = %q, want %q", got, want)
+	if got, want := cfg.Bootstrap.ResolvedDefaultWorkerTemplate(), DefaultBootstrapWorkerTemplate; got != want {
+		t.Fatalf("cfg.Bootstrap.ResolvedDefaultWorkerTemplate() = %q, want %q", got, want)
 	}
 	if got, want := cfg.Server.AccessToken, DefaultAccessToken; got != want {
 		t.Fatalf("cfg.Server.AccessToken = %q, want %q", got, want)
@@ -98,25 +98,28 @@ models = ["minimax-m2.7"]
 	}
 }
 
-func TestBootstrapValidateRejectsOpenClawManagerRuntime(t *testing.T) {
+func TestBootstrapValidateUsesDefaultTemplatesWhenUnset(t *testing.T) {
 	cfg := BootstrapConfig{
-		RuntimeKind: RuntimeKindOpenClawSandbox,
+		DefaultManagerTemplate: "",
+		DefaultWorkerTemplate:  "",
 	}
 
 	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "not supported yet") {
-		t.Fatalf("Validate() error = %v, want not supported yet", err)
+	if err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
 	}
 }
 
-func TestBootstrapValidateRejectsOpenClawManagerImage(t *testing.T) {
+func TestBootstrapResolvedDefaults(t *testing.T) {
 	cfg := BootstrapConfig{
-		ManagerImageOverride: "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260509.1-csgclaw",
+		DefaultManagerTemplate: "local/review-manager",
+		DefaultWorkerTemplate:  "local/review-worker",
 	}
-
-	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "OpenClaw manager image") {
-		t.Fatalf("Validate() error = %v, want OpenClaw manager image", err)
+	if got, want := cfg.ResolvedDefaultManagerTemplate(), "local/review-manager"; got != want {
+		t.Fatalf("ResolvedDefaultManagerTemplate() = %q, want %q", got, want)
+	}
+	if got, want := cfg.ResolvedDefaultWorkerTemplate(), "local/review-worker"; got != want {
+		t.Fatalf("ResolvedDefaultWorkerTemplate() = %q, want %q", got, want)
 	}
 }
 
@@ -190,11 +193,11 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Hub.DefaultPublishRegistry, DefaultHubPublishRegistry; got != want {
 		t.Fatalf("cfg.Hub.DefaultPublishRegistry = %q, want %q", got, want)
 	}
-	if got, want := cfg.Hub.DefaultManagerTemplate, DefaultHubManagerTemplate; got != want {
-		t.Fatalf("cfg.Hub.DefaultManagerTemplate = %q, want %q", got, want)
+	if got, want := cfg.Bootstrap.ResolvedDefaultManagerTemplate(), DefaultBootstrapManagerTemplate; got != want {
+		t.Fatalf("cfg.Bootstrap.ResolvedDefaultManagerTemplate() = %q, want %q", got, want)
 	}
-	if got, want := cfg.Hub.DefaultWorkerTemplate, DefaultHubWorkerTemplate; got != want {
-		t.Fatalf("cfg.Hub.DefaultWorkerTemplate = %q, want %q", got, want)
+	if got, want := cfg.Bootstrap.ResolvedDefaultWorkerTemplate(), DefaultBootstrapWorkerTemplate; got != want {
+		t.Fatalf("cfg.Bootstrap.ResolvedDefaultWorkerTemplate() = %q, want %q", got, want)
 	}
 	if got, want := len(cfg.Hub.Registries), 1; got != want {
 		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
@@ -222,6 +225,8 @@ listen_addr = "127.0.0.1:18080"
 [hub]
 default_registry = "team"
 default_publish_registry = "local"
+
+[bootstrap]
 default_manager_template = "builtin/picoclaw-manager"
 default_worker_template = "builtin/openclaw-worker"
 
@@ -264,11 +269,11 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Hub.DefaultPublishRegistry, "local"; got != want {
 		t.Fatalf("cfg.Hub.DefaultPublishRegistry = %q, want %q", got, want)
 	}
-	if got, want := cfg.Hub.DefaultManagerTemplate, "builtin/picoclaw-manager"; got != want {
-		t.Fatalf("cfg.Hub.DefaultManagerTemplate = %q, want %q", got, want)
+	if got, want := cfg.Bootstrap.ResolvedDefaultManagerTemplate(), "builtin/picoclaw-manager"; got != want {
+		t.Fatalf("cfg.Bootstrap.ResolvedDefaultManagerTemplate() = %q, want %q", got, want)
 	}
-	if got, want := cfg.Hub.DefaultWorkerTemplate, "builtin/openclaw-worker"; got != want {
-		t.Fatalf("cfg.Hub.DefaultWorkerTemplate = %q, want %q", got, want)
+	if got, want := cfg.Bootstrap.ResolvedDefaultWorkerTemplate(), "builtin/openclaw-worker"; got != want {
+		t.Fatalf("cfg.Bootstrap.ResolvedDefaultWorkerTemplate() = %q, want %q", got, want)
 	}
 	if got, want := len(cfg.Hub.Registries), 3; got != want {
 		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
@@ -649,7 +654,8 @@ func TestSaveWritesModelsSection(t *testing.T) {
 			DebianRegistriesOverride: []string{"registry.a", "docker.io"},
 		},
 		Bootstrap: BootstrapConfig{
-			ManagerImageOverride: "img",
+			DefaultManagerTemplate: "local/review-manager",
+			DefaultWorkerTemplate:  "local/review-worker",
 		},
 	}
 
@@ -728,7 +734,8 @@ func TestSaveWritesCSGHubLiteProvider(t *testing.T) {
 		Models: models,
 		LLM:    models,
 		Bootstrap: BootstrapConfig{
-			ManagerImageOverride: "img",
+			DefaultManagerTemplate: "local/review-manager",
+			DefaultWorkerTemplate:  "local/review-worker",
 		},
 	}
 
@@ -772,7 +779,8 @@ func TestSaveFormatsTopLevelSectionsWithoutExtraWhitespace(t *testing.T) {
 		Models: models,
 		LLM:    models,
 		Bootstrap: BootstrapConfig{
-			ManagerImageOverride: "ghcr.io/russellluo/picoclaw:2026.4.25",
+			DefaultManagerTemplate: "builtin/picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
 		},
 		Sandbox: SandboxConfig{
 			Provider: BoxLiteProvider,
@@ -797,8 +805,8 @@ access_token = "your_access_token"
 no_auth = true
 
 [bootstrap]
-manager_image_override = "ghcr.io/russellluo/picoclaw:2026.4.25"
-runtime_kind = "picoclaw_sandbox"
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/picoclaw-worker"
 
 [sandbox]
 provider = "boxlite"
@@ -807,8 +815,6 @@ debian_registries_override = []
 [hub]
 default_registry = "builtin"
 default_publish_registry = "local"
-default_manager_template = "builtin/picoclaw-manager"
-default_worker_template = "builtin/picoclaw-worker"
 
 [[hub.registries]]
 name = "builtin"
@@ -840,12 +846,14 @@ func TestSaveWritesHubConfig(t *testing.T) {
 		Hub: HubConfig{
 			DefaultRegistry:        "builtin",
 			DefaultPublishRegistry: "team",
-			DefaultManagerTemplate: "builtin/picoclaw-manager",
-			DefaultWorkerTemplate:  "builtin/openclaw-worker",
 			Registries: []HubRegistryConfig{
 				{Name: "builtin", Kind: "builtin", Enabled: true},
 				{Name: "team", Kind: "remote", URL: "https://hub.example.com", Token: "secret", Enabled: true},
 			},
+		},
+		Bootstrap: BootstrapConfig{
+			DefaultManagerTemplate: "builtin/picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin/openclaw-worker",
 		},
 		Models: SingleProfileLLM(ModelConfig{
 			BaseURL: "http://127.0.0.1:4000",
@@ -864,11 +872,12 @@ func TestSaveWritesHubConfig(t *testing.T) {
 	}
 	content := string(data)
 	for _, want := range []string{
+		"[bootstrap]",
+		`default_manager_template = "builtin/picoclaw-manager"`,
+		`default_worker_template = "builtin/openclaw-worker"`,
 		"[hub]",
 		`default_registry = "builtin"`,
 		`default_publish_registry = "team"`,
-		`default_manager_template = "builtin/picoclaw-manager"`,
-		`default_worker_template = "builtin/openclaw-worker"`,
 		"[[hub.registries]]",
 		`name = "builtin"`,
 		`kind = "builtin"`,
@@ -1043,7 +1052,8 @@ models = ["gpt-test"]
 }
 
 func TestLoadExpandsNonServerEnvValues(t *testing.T) {
-	t.Setenv("MANAGER_IMAGE", "picoclaw:test")
+	t.Setenv("MANAGER_TEMPLATE", "local/review-manager")
+	t.Setenv("WORKER_TEMPLATE", "local/review-worker")
 	t.Setenv("SANDBOX_PROVIDER", BoxLiteProvider)
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
 	t.Setenv("MODEL_BASE_HOST", "models.example.test")
@@ -1057,7 +1067,8 @@ func TestLoadExpandsNonServerEnvValues(t *testing.T) {
 listen_addr = "127.0.0.1:18080"
 
 [bootstrap]
-manager_image_override = "${MANAGER_IMAGE}"
+default_manager_template = "${MANAGER_TEMPLATE}"
+default_worker_template = "${WORKER_TEMPLATE}"
 
 [sandbox]
 provider = "${SANDBOX_PROVIDER}"
@@ -1080,8 +1091,11 @@ reasoning_effort = "${REASONING_EFFORT}"
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if got, want := cfg.Bootstrap.ManagerImageOverride, "picoclaw:test"; got != want {
-		t.Fatalf("cfg.Bootstrap.ManagerImageOverride = %q, want %q", got, want)
+	if got, want := cfg.Bootstrap.DefaultManagerTemplate, "local/review-manager"; got != want {
+		t.Fatalf("cfg.Bootstrap.DefaultManagerTemplate = %q, want %q", got, want)
+	}
+	if got, want := cfg.Bootstrap.DefaultWorkerTemplate, "local/review-worker"; got != want {
+		t.Fatalf("cfg.Bootstrap.DefaultWorkerTemplate = %q, want %q", got, want)
 	}
 	if got, want := cfg.Sandbox.Provider, BoxLiteProvider; got != want {
 		t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
@@ -1110,12 +1124,11 @@ func TestSavePreservesEnvPlaceholdersAfterLoad(t *testing.T) {
 	t.Setenv("IP", "1.2.3.4")
 	t.Setenv("PORT", "18080")
 	t.Setenv("ACCESS_TOKEN", "your_access_token")
-	t.Setenv("MANAGER_IMAGE", "picoclaw:test")
+	t.Setenv("MANAGER_TEMPLATE", "builtin/picoclaw-manager")
+	t.Setenv("WORKER_TEMPLATE", "builtin/openclaw-worker")
 	t.Setenv("SANDBOX_PROVIDER", BoxLiteProvider)
 	t.Setenv("HUB_DEFAULT_REGISTRY", "team")
 	t.Setenv("HUB_PUBLISH_REGISTRY", "local")
-	t.Setenv("HUB_DEFAULT_MANAGER_TEMPLATE", "builtin/picoclaw-manager")
-	t.Setenv("HUB_DEFAULT_WORKER_TEMPLATE", "builtin/openclaw-worker")
 	t.Setenv("HUB_URL", "hub.example.test")
 	t.Setenv("HUB_TOKEN", "hub-secret")
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
@@ -1132,7 +1145,8 @@ advertise_base_url = "http://${IP}:${PORT}"
 access_token = "${ACCESS_TOKEN}"
 
 [bootstrap]
-manager_image_override = "${MANAGER_IMAGE}"
+default_manager_template = "${MANAGER_TEMPLATE}"
+default_worker_template = "${WORKER_TEMPLATE}"
 
 [sandbox]
 provider = "${SANDBOX_PROVIDER}"
@@ -1140,8 +1154,6 @@ provider = "${SANDBOX_PROVIDER}"
 [hub]
 default_registry = "${HUB_DEFAULT_REGISTRY}"
 default_publish_registry = "${HUB_PUBLISH_REGISTRY}"
-default_manager_template = "${HUB_DEFAULT_MANAGER_TEMPLATE}"
-default_worker_template = "${HUB_DEFAULT_WORKER_TEMPLATE}"
 
 [[hub.registries]]
 name = "team"
@@ -1170,7 +1182,8 @@ reasoning_effort = "${REASONING_EFFORT}"
 	t.Setenv("IP", "5.6.7.8")
 	t.Setenv("PORT", "19090")
 	t.Setenv("ACCESS_TOKEN", "changed_access_token")
-	t.Setenv("MANAGER_IMAGE", "changed-image")
+	t.Setenv("MANAGER_TEMPLATE", "changed-manager-template")
+	t.Setenv("WORKER_TEMPLATE", "changed-worker-template")
 	t.Setenv("HUB_URL", "changed-hub.example.test")
 	t.Setenv("HUB_TOKEN", "changed-hub-token")
 	t.Setenv("MODEL_API_KEY", "changed-model-key")
@@ -1188,12 +1201,11 @@ reasoning_effort = "${REASONING_EFFORT}"
 		`listen_addr = "0.0.0.0:${PORT}"`,
 		`advertise_base_url = "http://${IP}:${PORT}"`,
 		`access_token = "${ACCESS_TOKEN}"`,
-		`manager_image_override = "${MANAGER_IMAGE}"`,
+		`default_manager_template = "${MANAGER_TEMPLATE}"`,
+		`default_worker_template = "${WORKER_TEMPLATE}"`,
 		`provider = "${SANDBOX_PROVIDER}"`,
 		`default_registry = "${HUB_DEFAULT_REGISTRY}"`,
 		`default_publish_registry = "${HUB_PUBLISH_REGISTRY}"`,
-		`default_manager_template = "${HUB_DEFAULT_MANAGER_TEMPLATE}"`,
-		`default_worker_template = "${HUB_DEFAULT_WORKER_TEMPLATE}"`,
 		`url = "https://${HUB_URL}"`,
 		`token = "${HUB_TOKEN}"`,
 		`default = "${MODEL_SELECTOR}"`,
