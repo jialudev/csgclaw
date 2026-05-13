@@ -298,6 +298,10 @@ func (s *Service) CreateManager(ctx context.Context, req CreateRequest, forceRec
 }
 
 func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (Bot, error) {
+	if existing, ok := s.findByChannelName(normalized.Channel, normalized.Name); ok {
+		return Bot{}, fmt.Errorf("bot name %q already exists in channel %q with id %q", normalized.Name, normalized.Channel, existing.ID)
+	}
+
 	created, ok := s.agents.Agent(workerAgentID(normalized))
 	if ok {
 		if strings.ToLower(strings.TrimSpace(created.Role)) != agent.RoleWorker {
@@ -432,6 +436,20 @@ func workerAgentID(req CreateRequest) string {
 		return id
 	}
 	return fmt.Sprintf("u-%s", strings.TrimSpace(req.Name))
+}
+
+func (s *Service) findByChannelName(channel, name string) (Bot, bool) {
+	channel = strings.TrimSpace(channel)
+	name = strings.TrimSpace(name)
+	for _, existing := range s.store.List() {
+		if !strings.EqualFold(strings.TrimSpace(existing.Channel), channel) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(existing.Name), name) {
+			return existing, true
+		}
+	}
+	return Bot{}, false
 }
 
 func (s *Service) ensureChannelUser(ctx context.Context, channelName string, created agent.Agent) (string, time.Time, error) {

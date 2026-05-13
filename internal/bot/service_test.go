@@ -892,6 +892,55 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	}
 }
 
+func TestServiceCreateWorkerRejectsDuplicateNameInSameChannel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	provider := sandboxtest.NewProvider()
+	t.Cleanup(agent.TestOnlySetSandboxProvider(provider))
+	resetFakeBotRuntimeStates()
+	t.Cleanup(resetFakeBotRuntimeStates)
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindPicoClawSandbox})(s); err != nil {
+			return err
+		}
+		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindOpenClawSandbox})(s); err != nil {
+			return err
+		}
+		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
+	})
+	t.Cleanup(restoreDefault)
+
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
+	if err != nil {
+		t.Fatalf("agent.NewService() error = %v", err)
+	}
+	imSvc := im.NewService()
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	if _, err := svc.Create(context.Background(), CreateRequest{
+		Name:    "alice",
+		Role:    string(RoleWorker),
+		Channel: string(ChannelCSGClaw),
+	}); err != nil {
+		t.Fatalf("first Create(worker) error = %v", err)
+	}
+
+	_, err = svc.Create(context.Background(), CreateRequest{
+		Name:    "alice",
+		Role:    string(RoleWorker),
+		Channel: string(ChannelCSGClaw),
+	})
+	if err == nil || !strings.Contains(err.Error(), `bot name "alice" already exists in channel "csgclaw"`) {
+		t.Fatalf("second Create(worker) error = %v, want duplicate name error", err)
+	}
+}
+
 func TestServiceCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
 	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
 		{

@@ -720,6 +720,44 @@ func TestHandleBotsCreateFeishuWorker(t *testing.T) {
 	}
 }
 
+func TestHandleBotsCreateRejectsDuplicateWorkerNameInSameChannel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	agentSvc, _ := mustNewSeededServiceWithPath(t, nil)
+	imSvc := im.NewService()
+	store, err := bot.NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("bot.NewMemoryStore() error = %v", err)
+	}
+	botSvc, err := bot.NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("bot.NewServiceWithDependencies() error = %v", err)
+	}
+	srv := &Handler{
+		svc:    agentSvc,
+		botSvc: botSvc,
+		im:     imSvc,
+	}
+
+	first := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw"}`))
+	firstRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(firstRec, first)
+	if firstRec.Code != http.StatusCreated {
+		t.Fatalf("first status = %d, want %d; body=%s", firstRec.Code, http.StatusCreated, firstRec.Body.String())
+	}
+
+	second := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw"}`))
+	secondRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(secondRec, second)
+	if secondRec.Code != http.StatusBadRequest {
+		t.Fatalf("second status = %d, want %d; body=%s", secondRec.Code, http.StatusBadRequest, secondRec.Body.String())
+	}
+	if !strings.Contains(secondRec.Body.String(), `bot name "alice" already exists in channel "csgclaw"`) {
+		t.Fatalf("second body = %q, want duplicate name error", secondRec.Body.String())
+	}
+}
+
 func TestHandleBotsCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
 	agentSvc := mustNewSeededService(t, []agent.Agent{
 		{
