@@ -1937,6 +1937,62 @@ func TestHandleHubTemplatesPublishesAgentSnapshot(t *testing.T) {
 	}
 }
 
+func TestHandleHubTemplatesPublishesAgentSnapshotToDefaultRegistryWhenOmitted(t *testing.T) {
+	svc := mustNewService(t)
+	created, err := svc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			ID:          "u-alice",
+			Name:        "alice",
+			Description: "review worker",
+			RuntimeKind: agent.RuntimeKindPicoClawSandbox,
+			Image:       "worker-image:1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	spec, err := svc.HubPublishSpec(created.ID)
+	if err != nil {
+		t.Fatalf("HubPublishSpec() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(spec.WorkspaceRef.Path, "PLAYBOOK.md"), []byte("published workspace\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(PLAYBOOK.md) error = %v", err)
+	}
+
+	registryRoot := t.TempDir()
+	hubSvc, err := hub.NewService(config.HubConfig{
+		DefaultRegistry:        "local",
+		DefaultPublishRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "local", Kind: hub.RegistryKindLocal, Path: registryRoot, Enabled: true},
+		},
+	}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	srv.SetHubService(hubSvc)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/hub/templates", strings.NewReader(`{"agent_id":"u-alice"}`))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var got apitypes.HubTemplate
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.ID != "local/alice" {
+		t.Fatalf("template id = %q, want %q", got.ID, "local/alice")
+	}
+	if got.Source.Name != "local" || got.Source.Kind != "local" {
+		t.Fatalf("template source = %+v, want local/local", got.Source)
+	}
+}
+
 func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) *hub.Service {
 	t.Helper()
 

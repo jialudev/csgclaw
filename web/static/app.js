@@ -225,6 +225,8 @@ const messages = {
     inviteToRoom: "加入当前房间",
     agentCreateSave: "创建并启动",
     agentUpdateSave: "保存",
+    agentPublish: "发布",
+    agentPublishing: "发布中...",
     agentCreateProgressPreparing: "准备创建",
     agentCreateProgressSandboxConfig: "写入沙箱配置",
     agentCreateProgressImage: "准备镜像",
@@ -449,6 +451,8 @@ const messages = {
     inviteToRoom: "Add to current room",
     agentCreateSave: "Create and start",
     agentUpdateSave: "Save",
+    agentPublish: "Publish",
+    agentPublishing: "Publishing...",
     agentCreateProgressPreparing: "Preparing",
     agentCreateProgressSandboxConfig: "Writing sandbox config",
     agentCreateProgressImage: "Preparing image",
@@ -989,6 +993,7 @@ function App() {
   const [agentPageDraft, setAgentPageDraft] = useState(null);
   const [agentPageModels, setAgentPageModels] = useState([]);
   const [agentPageBusy, setAgentPageBusy] = useState(false);
+  const [agentPagePublishBusy, setAgentPagePublishBusy] = useState(false);
   const [agentPageModelBusy, setAgentPageModelBusy] = useState(false);
   const [agentPageError, setAgentPageError] = useState("");
   const [profilePreview, setProfilePreview] = useState(null);
@@ -1393,6 +1398,7 @@ function App() {
       setAgentPageDraft(null);
       setAgentPageModels([]);
       setAgentPageError("");
+      setAgentPagePublishBusy(false);
       return;
     }
     loadAgentPageDraft(selectedAgentForPage);
@@ -2566,6 +2572,36 @@ function App() {
     }
   }
 
+  async function publishAgentPage() {
+    if (!selectedAgentForPage?.id || agentPagePublishBusy) {
+      return;
+    }
+    setAgentPagePublishBusy(true);
+    setAgentPageError("");
+    try {
+      const resp = await fetch("/api/v1/hub/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_id: selectedAgentForPage.id,
+        }),
+      });
+      if (!resp.ok) {
+        throw new Error((await readErrorMessage(resp)) || t("agentActionFailed"));
+      }
+      const published = await resp.json();
+      await refreshHubTemplates();
+      if (published?.id) {
+        setSelectedHubTemplateId(published.id);
+      }
+      selectHub();
+    } catch (err) {
+      setAgentPageError(err.message || t("agentActionFailed"));
+    } finally {
+      setAgentPagePublishBusy(false);
+    }
+  }
+
   async function saveAgent() {
     if (!agentDraft) {
       return;
@@ -3156,11 +3192,13 @@ function App() {
                   models=${agentPageModels}
                   modelBusy=${agentPageModelBusy}
                   saving=${agentPageBusy}
+                  publishBusy=${agentPagePublishBusy}
                   saveError=${agentPageError}
                   authStatuses=${cliproxyAuthStatuses}
                   authBusyProvider=${cliproxyAuthBusy}
                   onDraftChange=${setAgentPageDraft}
                   onSave=${saveAgentPage}
+                  onPublish=${publishAgentPage}
                   onProviderLogin=${loginCLIProxyProvider}
                   onStart=${(item) => runAgentAction(item, "start")}
                   onStop=${(item) => runAgentAction(item, "stop")}
@@ -4449,13 +4487,15 @@ function HubDetailPane({
   `;
 }
 
-function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, modelBusy, saving, saveError, authStatuses, authBusyProvider, onDraftChange, onSave, onProviderLogin, onStart, onStop, onRecreate, onDelete, onInvite, onOpenDM }) {
+function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, modelBusy, saving, publishBusy, saveError, authStatuses, authBusyProvider, onDraftChange, onSave, onPublish, onProviderLogin, onStart, onStop, onRecreate, onDelete, onInvite, onOpenDM }) {
   const isManager = item.role === "manager" || item.id === "u-manager";
   const running = isAgentRunning(item);
   const incomplete = isAgentIncomplete(item);
   const restartNeeded = isAgentRestartNeeded(item);
   const busyPrefix = `${item.id}:`;
   const provider = item.provider || item.agent_profile?.provider;
+  const runtimeKind = normalizeRuntimeKind(item.runtime_kind);
+  const canPublish = runtimeKind === "picoclaw_sandbox" || runtimeKind === "openclaw_sandbox";
   const updateDraft = (patch) => onDraftChange?.({ ...(draft || agentToDraft(item)), ...patch });
   return html`
     <section className="entity-pane agent-detail-pane">
@@ -4487,6 +4527,17 @@ function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, m
         <button className="btn btn-secondary-gray btn-sm preview-action-button" onClick=${() => onOpenDM(item)}>${t("openDM")}</button>
         ${!isManager
           ? html`<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onDelete(item)}>${t("agentDelete")}</button>`
+          : null}
+        ${canPublish
+          ? html`
+              <button
+                className="btn btn-primary btn-sm preview-action-button preview-action-button-primary entity-toolbar-publish"
+                disabled=${publishBusy}
+                onClick=${onPublish}
+              >
+                ${publishBusy ? t("agentPublishing") : t("agentPublish")}
+              </button>
+            `
           : null}
       </div>
       ${error ? html`<div className="form-error">${error}</div>` : null}

@@ -135,7 +135,7 @@ func (c HubConfig) Resolved() HubConfig {
 		c.DefaultPublishRegistry = DefaultHubPublishRegistry
 	}
 	if len(c.Registries) == 0 {
-		c.Registries = []HubRegistryConfig{defaultBuiltinHubRegistry()}
+		c.Registries = defaultHubRegistries()
 		return c
 	}
 
@@ -148,6 +148,9 @@ func (c HubConfig) Resolved() HubConfig {
 		registry.Token = strings.TrimSpace(registry.Token)
 		out = append(out, registry)
 	}
+	if c.DefaultPublishRegistry == DefaultHubPublishRegistry && !hasHubRegistry(out, DefaultHubPublishRegistry) {
+		out = append(out, defaultLocalHubRegistry())
+	}
 	c.Registries = out
 	return c
 }
@@ -158,6 +161,32 @@ func defaultBuiltinHubRegistry() HubRegistryConfig {
 		Kind:    HubRegistryKindBuiltin,
 		Enabled: true,
 	}
+}
+
+func defaultLocalHubRegistry() HubRegistryConfig {
+	return HubRegistryConfig{
+		Name:    DefaultHubPublishRegistry,
+		Kind:    HubRegistryKindLocal,
+		Path:    DefaultHubRegistryPath(),
+		Enabled: true,
+	}
+}
+
+func defaultHubRegistries() []HubRegistryConfig {
+	return []HubRegistryConfig{
+		defaultBuiltinHubRegistry(),
+		defaultLocalHubRegistry(),
+	}
+}
+
+func hasHubRegistry(registries []HubRegistryConfig, name string) bool {
+	name = strings.TrimSpace(name)
+	for _, registry := range registries {
+		if strings.TrimSpace(registry.Name) == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (c SandboxConfig) Resolved() SandboxConfig {
@@ -225,6 +254,7 @@ const (
 	ConfigFileName  = "config.toml"
 	StateFileName   = "state.json"
 	AgentsDirName   = "agents"
+	HubDirName      = "hub"
 	IMDirName       = "im"
 	ChannelsDirName = "channels"
 
@@ -240,6 +270,8 @@ const (
 	DefaultBootstrapManagerTemplate = "builtin/picoclaw-manager"
 	DefaultBootstrapWorkerTemplate  = "builtin/picoclaw-worker"
 	HubRegistryKindBuiltin          = "builtin"
+	HubRegistryKindLocal            = "local"
+	HubRegistryKindRemote           = "remote"
 	BoxLiteCLIHomeDirName           = "boxlite"
 	RuntimeHomeDirName              = BoxLiteCLIHomeDirName
 )
@@ -298,6 +330,14 @@ func DefaultAgentsDir() (string, error) {
 
 func DefaultIMDir() (string, error) {
 	return DefaultDomainDir(IMDirName)
+}
+
+func DefaultHubRegistryPath() string {
+	dir, err := DefaultDomainDir(HubDirName)
+	if err != nil {
+		return filepath.Join(string(filepath.Separator), AppDirName, HubDirName)
+	}
+	return dir
 }
 
 func DefaultAgentsPath() (string, error) {

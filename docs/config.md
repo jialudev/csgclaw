@@ -210,7 +210,7 @@ Current platform expectations:
 
 CSGClaw can read agent templates from one or more hub registries. Registry configuration is additive: built-in, local, and remote registries can coexist in the same `config.toml`.
 
-When `[hub]` is omitted, CSGClaw still enables the built-in read-only registry by default.
+When `[hub]` is omitted, CSGClaw enables the built-in read-only registry and a writable local registry at `~/.csgclaw/hub` by default.
 
 ```toml
 [hub]

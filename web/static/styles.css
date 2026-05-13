@@ -2857,6 +2857,10 @@ body::after {
   gap: 8px;
 }
 
+.entity-toolbar-publish {
+  margin-left: auto;
+}
+
 .entity-grid,
 .metric-row {
   display: grid;

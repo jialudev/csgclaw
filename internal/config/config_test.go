@@ -167,6 +167,7 @@ models = ["minimax-m2.7"]
 
 func TestLoadUsesBuiltinHubRegistryWhenSectionMissing(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	path := filepath.Join(dir, "config.toml")
 	content := `[server]
 listen_addr = "127.0.0.1:18080"
@@ -199,7 +200,7 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Bootstrap.ResolvedDefaultWorkerTemplate(), DefaultBootstrapWorkerTemplate; got != want {
 		t.Fatalf("cfg.Bootstrap.ResolvedDefaultWorkerTemplate() = %q, want %q", got, want)
 	}
-	if got, want := len(cfg.Hub.Registries), 1; got != want {
+	if got, want := len(cfg.Hub.Registries), 2; got != want {
 		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
 	}
 	registry := cfg.Hub.Registries[0]
@@ -211,6 +212,19 @@ models = ["minimax-m2.7"]
 	}
 	if !registry.Enabled {
 		t.Fatal("cfg.Hub.Registries[0].Enabled = false, want true")
+	}
+	localRegistry := cfg.Hub.Registries[1]
+	if got, want := localRegistry.Name, DefaultHubPublishRegistry; got != want {
+		t.Fatalf("cfg.Hub.Registries[1].Name = %q, want %q", got, want)
+	}
+	if got, want := localRegistry.Kind, HubRegistryKindLocal; got != want {
+		t.Fatalf("cfg.Hub.Registries[1].Kind = %q, want %q", got, want)
+	}
+	if got, want := localRegistry.Path, filepath.Join(dir, AppDirName, HubDirName); got != want {
+		t.Fatalf("cfg.Hub.Registries[1].Path = %q, want %q", got, want)
+	}
+	if !localRegistry.Enabled {
+		t.Fatal("cfg.Hub.Registries[1].Enabled = false, want true")
 	}
 }
 
@@ -292,6 +306,56 @@ models = ["minimax-m2.7"]
 	}
 	if got, want := cfg.Hub.Registries[2].Enabled, false; got != want {
 		t.Fatalf("cfg.Hub.Registries[2].Enabled = %t, want %t", got, want)
+	}
+}
+
+func TestLoadAddsDefaultLocalPublishRegistryWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[hub]
+default_registry = "builtin"
+default_publish_registry = "local"
+
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+enabled = true
+
+[models]
+default = "default.minimax-m2.7"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["minimax-m2.7"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got, want := len(cfg.Hub.Registries), 2; got != want {
+		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
+	}
+	localRegistry := cfg.Hub.Registries[1]
+	if got, want := localRegistry.Name, "local"; got != want {
+		t.Fatalf("cfg.Hub.Registries[1].Name = %q, want %q", got, want)
+	}
+	if got, want := localRegistry.Kind, HubRegistryKindLocal; got != want {
+		t.Fatalf("cfg.Hub.Registries[1].Kind = %q, want %q", got, want)
+	}
+	if got, want := localRegistry.Path, filepath.Join(dir, AppDirName, HubDirName); got != want {
+		t.Fatalf("cfg.Hub.Registries[1].Path = %q, want %q", got, want)
+	}
+	if !localRegistry.Enabled {
+		t.Fatal("cfg.Hub.Registries[1].Enabled = false, want true")
 	}
 }
 
@@ -763,6 +827,7 @@ func TestSaveWritesCSGHubLiteProvider(t *testing.T) {
 
 func TestSaveFormatsTopLevelSectionsWithoutExtraWhitespace(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	path := filepath.Join(dir, "config.toml")
 	models := SingleProfileLLM(ModelConfig{
 		BaseURL: "http://127.0.0.1:4000",
@@ -819,6 +884,12 @@ default_publish_registry = "local"
 [[hub.registries]]
 name = "builtin"
 kind = "builtin"
+enabled = true
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "` + filepath.Join(dir, AppDirName, HubDirName) + `"
 enabled = true
 
 [models]
