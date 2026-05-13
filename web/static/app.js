@@ -116,6 +116,7 @@ const messages = {
     messagesTab: "消息",
     agentsTab: "Agents",
     hubTab: "Hub",
+    newBadge: "NEW",
     computersSection: "电脑",
     localComputer: "本机",
     computerOverview: "电脑概览",
@@ -342,6 +343,7 @@ const messages = {
     messagesTab: "Messages",
     agentsTab: "Agents",
     hubTab: "Hub",
+    newBadge: "NEW",
     computersSection: "Computers",
     localComputer: "Local computer",
     computerOverview: "Computer overview",
@@ -2128,11 +2130,6 @@ function App() {
       }
       const payload = await resp.json();
       setHubTemplateDetail(payload);
-      const firstFile = (payload?.workspace?.entries || []).find((entry) => entry?.type === "file" && entry?.path);
-      if (firstFile?.path) {
-        setSelectedHubWorkspacePath(firstFile.path);
-        loadHubWorkspaceFile(templateID, firstFile.path);
-      }
     } catch (err) {
       setHubTemplateDetail(null);
       setHubTemplateDetailError(err.message || t("hubWorkspaceLoadFailed"));
@@ -2975,7 +2972,7 @@ function App() {
                   <span className="workspace-tab-icon" aria-hidden="true"><${HubIcon} /></span>
                   <span className="workspace-tab-copy">
                     <strong>${t("hubTab")}</strong>
-                    <small>${hubTemplates.length}</small>
+                    <span className="workspace-tab-badge">${t("newBadge")}</span>
                   </span>
                 </button>
               </div>
@@ -3053,7 +3050,7 @@ function App() {
                                       <span className="workspace-row-title truncate">${item.name || item.id}</span>
                                       <span className="workspace-row-meta truncate">${item.description || item.source?.name || item.id}</span>
                                     </span>
-                                    <span className="mini-badge">${item.source?.name || "-"}</span>
+                                    <span className="mini-badge template-source-badge">${localizeTemplateSourceTag(item.source?.name, locale)}</span>
                                   </button>
                                 `)}
                         <//>
@@ -4317,6 +4314,45 @@ function WorkspaceConversationRow({ conversation, active, currentUserID, usersBy
   `;
 }
 
+function hubWorkspaceAncestorDirs(path) {
+  const normalized = typeof path === "string" ? path.trim() : "";
+  if (!normalized) {
+    return [];
+  }
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length <= 1) {
+    return [];
+  }
+  const ancestors = [];
+  for (let index = 1; index < segments.length; index += 1) {
+    ancestors.push(segments.slice(0, index).join("/"));
+  }
+  return ancestors;
+}
+
+function buildVisibleHubWorkspaceEntries(entries, collapsedDirs) {
+  const hiddenParents = [];
+  return entries.filter((entry) => {
+    while (hiddenParents.length && !entry.path.startsWith(`${hiddenParents[hiddenParents.length - 1]}/`)) {
+      hiddenParents.pop();
+    }
+    const visible = hiddenParents.length === 0;
+    if (entry.type === "dir" && collapsedDirs[entry.path]) {
+      hiddenParents.push(entry.path);
+    }
+    return visible;
+  });
+}
+
+function buildInitialCollapsedHubWorkspaceDirs(entries) {
+  return (entries || []).reduce((acc, entry) => {
+    if (entry?.type === "dir" && entry.path) {
+      acc[entry.path] = true;
+    }
+    return acc;
+  }, {});
+}
+
 function HubDetailPane({
   t,
   locale,
@@ -4336,6 +4372,43 @@ function HubDetailPane({
   onCreateFromTemplate,
 }) {
   const workspaceEntries = selectedTemplate?.workspace?.entries || [];
+  const [collapsedWorkspaceDirs, setCollapsedWorkspaceDirs] = useState({});
+  const visibleWorkspaceEntries = useMemo(
+    () => buildVisibleHubWorkspaceEntries(workspaceEntries, collapsedWorkspaceDirs),
+    [workspaceEntries, collapsedWorkspaceDirs],
+  );
+
+  useEffect(() => {
+    setCollapsedWorkspaceDirs(buildInitialCollapsedHubWorkspaceDirs(workspaceEntries));
+  }, [selectedTemplate?.id, workspaceEntries]);
+
+  useEffect(() => {
+    if (!selectedWorkspacePath) {
+      return;
+    }
+    const ancestors = hubWorkspaceAncestorDirs(selectedWorkspacePath);
+    if (!ancestors.length) {
+      return;
+    }
+    setCollapsedWorkspaceDirs((current) => {
+      let changed = false;
+      const next = { ...current };
+      ancestors.forEach((path) => {
+        if (next[path]) {
+          delete next[path];
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [selectedWorkspacePath]);
+
+  function toggleWorkspaceDir(path) {
+    setCollapsedWorkspaceDirs((current) => ({
+      ...current,
+      [path]: !current[path],
+    }));
+  }
 
   return html`
     <section className="entity-pane hub-detail-pane">
@@ -4379,6 +4452,7 @@ function HubDetailPane({
                           <p>${item.description || item.id}</p>
                           <div className="hub-template-card-meta">
                             <span className="mini-badge">${item.runtime_kind || item.workspace?.kind || "-"}</span>
+                            <span className="mini-badge template-source-badge">${localizeTemplateSourceTag(item.source?.name, locale)}</span>
                             <span className="hub-template-card-updated">${t("hubUpdatedAtLabel")} ${formatHubDate(item.updated_at, locale)}</span>
                           </div>
                         </div>
@@ -4398,6 +4472,7 @@ function HubDetailPane({
                             <h2>${selectedTemplate.name || selectedTemplate.id}</h2>
                             <p>${selectedTemplate.description || selectedTemplate.id}</p>
                             <span className="mini-badge">${selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
+                            <span className="mini-badge template-source-badge">${localizeTemplateSourceTag(selectedTemplate.source?.name, locale)}</span>
                           </div>
                         </div>
                         <div className="hub-template-actions">
@@ -4413,6 +4488,10 @@ function HubDetailPane({
                     </div>
 
                     <div className="hub-inspector-grid">
+                      <div className="hub-inspector-field">
+                        <span>${t("hubSourceLabel")}</span>
+                        <strong>${localizeTemplateSourceTag(selectedTemplate.source?.name, locale)}</strong>
+                      </div>
                       <div className="hub-inspector-field">
                         <span>${t("hubRuntimeLabel")}</span>
                         <strong>${selectedTemplate.runtime_kind || "-"}</strong>
@@ -4440,19 +4519,25 @@ function HubDetailPane({
                             ? html`<div className="workspace-empty">${t("hubWorkspaceLoading")}</div>`
                             : workspaceEntries.length === 0
                               ? html`<div className="workspace-empty">${t("hubWorkspacePreviewHint")}</div>`
-                              : workspaceEntries.map((entry) => html`
-                                  <button
-                                    key=${entry.path}
-                                    type="button"
-                                    className=${`hub-tree-row ${entry.type} ${entry.type === "file" && selectedWorkspacePath === entry.path ? "active" : ""}`}
-                                    style=${{ "--hub-tree-depth": entry.depth }}
-                                    disabled=${entry.type !== "file"}
-                                    onClick=${() => entry.type === "file" ? onSelectWorkspaceFile?.(entry.path) : null}
-                                  >
-                                    <span className="hub-tree-glyph" aria-hidden="true"></span>
-                                    <span className="hub-tree-label">${entry.name}</span>
-                                  </button>
-                                `)}
+                              : visibleWorkspaceEntries.map((entry) => {
+                                  const collapsed = entry.type === "dir" && Boolean(collapsedWorkspaceDirs[entry.path]);
+                                  return html`
+                                    <button
+                                      key=${entry.path}
+                                      type="button"
+                                      className=${`hub-tree-row ${entry.type} ${entry.type === "dir" ? "toggleable" : ""} ${entry.type === "file" && selectedWorkspacePath === entry.path ? "active" : ""}`.trim()}
+                                      style=${{ "--hub-tree-depth": entry.depth }}
+                                      onClick=${() => entry.type === "dir"
+                                        ? toggleWorkspaceDir(entry.path)
+                                        : onSelectWorkspaceFile?.(entry.path)}
+                                      aria-expanded=${entry.type === "dir" ? String(!collapsed) : undefined}
+                                    >
+                                      <span className=${`hub-tree-toggle ${entry.type === "file" ? "spacer" : ""} ${collapsed ? "collapsed" : ""}`.trim()} aria-hidden="true"></span>
+                                      <span className="hub-tree-glyph" aria-hidden="true"></span>
+                                      <span className="hub-tree-label">${entry.name}</span>
+                                    </button>
+                                  `;
+                                })}
                         </div>
                         <div className="hub-workspace-preview">
                           ${workspaceFileError
@@ -4945,6 +5030,22 @@ function resolveTranslation(locale, key) {
 
 function localizeRole(role, t) {
   return t(`roles.${role}`) === `roles.${role}` ? role : t(`roles.${role}`);
+}
+
+function localizeTemplateSourceTag(source, locale) {
+  const value = String(source ?? "").trim();
+  if (!value) {
+    return "-";
+  }
+  if (locale === "zh") {
+    if (value === "builtin") {
+      return "内建";
+    }
+    if (value === "local") {
+      return "本地";
+    }
+  }
+  return value;
 }
 
 function localizeError(raw, t) {

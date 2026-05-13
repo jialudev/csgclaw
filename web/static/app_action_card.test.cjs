@@ -62,6 +62,22 @@ assert(
   'create-agent modal must expose a template selector label',
 );
 assert(
+  source.includes('function localizeTemplateSourceTag(source, locale)'),
+  'frontend must define a locale-aware template source tag formatter',
+);
+assert(
+  source.includes('if (value === "builtin")') &&
+    source.includes('return "内建";') &&
+    source.includes('if (value === "local")') &&
+    source.includes('return "本地";'),
+  'frontend must localize builtin/local template source tags in Chinese',
+);
+assert(
+  source.includes('localizeTemplateSourceTag(item.source?.name, locale)') &&
+    source.includes('localizeTemplateSourceTag(selectedTemplate.source?.name, locale)'),
+  'frontend must use localized template source tags in both hub list and hub detail views',
+);
+assert(
   source.includes('pickDefaultAgentTemplate(hubTemplates, preferredRuntimeKind, bootstrapConfig)'),
   'normal create-agent flow must preselect a runtime-compatible default worker template',
 );
