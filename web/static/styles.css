@@ -3082,11 +3082,44 @@ body::after {
   padding-bottom: 10px;
 }
 
+.hub-inspector-hero-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .hub-inspector-brand {
   display: grid;
   grid-template-columns: 62px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+}
+
+.hub-template-actions {
+  flex-shrink: 0;
+}
+
+.hub-template-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-template-menu-chevron {
+  display: inline-flex;
+  align-items: center;
+}
+
+.hub-template-menu-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hub-template-popover {
+  left: auto;
+  right: 0;
+  min-width: 180px;
 }
 
 .hub-inspector-icon {
@@ -5012,6 +5045,14 @@ body::after {
 
   .hub-workspace-panels {
     grid-template-columns: 1fr;
+  }
+
+  .hub-inspector-hero-row {
+    flex-direction: column;
+  }
+
+  .hub-template-actions {
+    width: 100%;
   }
 }
 

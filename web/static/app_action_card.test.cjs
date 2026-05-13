@@ -45,3 +45,27 @@ assert(
   source.includes('link.setAttribute("rel", "noopener noreferrer");'),
   'markdown links must use a safe rel attribute when opening a new tab',
 );
+assert(
+  source.includes('hubUseTemplate: "使用此模板"'),
+  'hub detail must expose a localized "use this template" action',
+);
+assert(
+  source.includes('onCreateFromTemplate=${openCreateAgentModal}'),
+  'hub detail must wire the template action into the existing create-agent modal',
+);
+assert(
+  source.includes('from_template: agentDraft.from_template || ""'),
+  'creating an agent from hub detail must pass from_template to the create API',
+);
+assert(
+  source.includes('templateLabel: "模板"'),
+  'create-agent modal must expose a template selector label',
+);
+assert(
+  source.includes('pickDefaultAgentTemplate(hubTemplates)'),
+  'normal create-agent flow must preselect the default worker template',
+);
+assert(
+  source.includes('applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || "")'),
+  'changing the template selector must update the draft with template defaults',
+);

@@ -145,6 +145,8 @@ const messages = {
     hubOpenHint: "左侧保留为全局入口，可继续扩展推荐、已安装和社区模板。",
     hubLoading: "正在加载 Hub 模板...",
     hubRefresh: "刷新模板",
+    hubUseTemplate: "使用此模板",
+    hubTemplateSourceLabel: "模板来源",
     hubEmpty: "还没有可用模板。",
     hubLoadFailed: "Hub 模板加载失败，请稍后重试。",
     yourView: "你的视图",
@@ -191,6 +193,8 @@ const messages = {
     profileModelSection: "模型",
     profileAPIProvider: "API Provider",
     profileAdvanced: "高级选项",
+    templateLabel: "模板",
+    templateNone: "不使用模板",
     profilePreview: "Profile 预览",
     openProfile: "打开 Profile",
     openDM: "打开私信",
@@ -367,6 +371,8 @@ const messages = {
     hubOpenHint: "The sidebar entry is ready for future recommended, installed, and community views.",
     hubLoading: "Loading Hub templates...",
     hubRefresh: "Refresh templates",
+    hubUseTemplate: "Use this template",
+    hubTemplateSourceLabel: "Template source",
     hubEmpty: "No templates available yet.",
     hubLoadFailed: "Failed to load Hub templates. Please try again later.",
     yourView: "Your view",
@@ -413,6 +419,8 @@ const messages = {
     profileModelSection: "Model",
     profileAPIProvider: "API Provider",
     profileAdvanced: "Advanced",
+    templateLabel: "Template",
+    templateNone: "No template",
     profilePreview: "Profile preview",
     openProfile: "Open profile",
     openDM: "Open DM",
@@ -2351,31 +2359,36 @@ function App() {
     }, 120);
   }
 
-  async function openCreateAgentModal() {
+  async function openCreateAgentModal(template = undefined) {
     setAgentModalMode("create");
     setEditingAgent(null);
     setAgentError("");
     setAgentProgress(null);
     setAgentModels([]);
+    const selectedTemplate = template === undefined
+      ? pickDefaultAgentTemplate(hubTemplates)
+      : normalizeTemplateSelection(template);
     try {
       const resp = await fetch("api/v1/agent-profile-defaults");
       const defaults = resp.ok ? await resp.json() : managerProfile;
-      const runtimeKind = normalizeRuntimeKind(bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "");
-      const draft = agentToDraft({
+      const runtimeKind = normalizeRuntimeKind(selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "");
+      let draft = agentToDraft({
         image: runtimeImageForKind(runtimeKind, bootstrapConfig, managerAgent?.image || ""),
         runtime_kind: runtimeKind,
         agent_profile: defaults,
       });
+      draft = applyTemplateToDraft(draft, selectedTemplate, bootstrapConfig, managerAgent?.image || "");
       setAgentDraft(draft);
       setShowAgentModal(true);
       loadAgentModels(draft, { silent: true });
     } catch (_) {
-      const runtimeKind = normalizeRuntimeKind(bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "");
-      const draft = agentToDraft({
+      const runtimeKind = normalizeRuntimeKind(selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "");
+      let draft = agentToDraft({
         image: runtimeImageForKind(runtimeKind, bootstrapConfig, managerAgent?.image || ""),
         runtime_kind: runtimeKind,
         agent_profile: managerProfile,
       });
+      draft = applyTemplateToDraft(draft, selectedTemplate, bootstrapConfig, managerAgent?.image || "");
       setAgentDraft(draft);
       setShowAgentModal(true);
       loadAgentModels(draft, { silent: true });
@@ -2576,6 +2589,7 @@ function App() {
         description: agentDraft.description,
         image: agentDraft.image,
         runtime_kind: runtimeKind,
+        from_template: agentDraft.from_template || "",
         agent_profile: profile,
       };
       const url = isCreate ? "api/v1/bots" : `api/v1/agents/${encodeURIComponent(editingAgent.id)}`;
@@ -3138,6 +3152,7 @@ function App() {
                     setSelectedHubWorkspacePath(workspacePath);
                     loadHubWorkspaceFile(selectedHubTemplateId, workspacePath);
                   }}
+                  onCreateFromTemplate=${openCreateAgentModal}
                 />
               `
             : activePane.type === "agent" && selectedAgent
@@ -3666,6 +3681,25 @@ function App() {
                   <section className="profile-section">
                     <div className="profile-section-title">${t("profileBasics")}</div>
                     <div className="profile-grid profile-grid-compact">
+                      ${agentModalMode === "create"
+                        ? html`
+                            <label className="field span-2">
+                              <span>${t("templateLabel")}</span>
+                              <select
+                                value=${agentDraft.from_template || ""}
+                                onChange=${(event) => {
+                                  const nextTemplate = normalizeTemplateSelection(hubTemplates.find((item) => item.id === event.target.value) || null);
+                                  setAgentDraft((current) => applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || ""));
+                                }}
+                              >
+                                <option value="">${t("templateNone")}</option>
+                                ${hubTemplates.map((item) => html`
+                                  <option key=${item.id} value=${item.id}>${item.name || item.id}</option>
+                                `)}
+                              </select>
+                            </label>
+                          `
+                        : null}
                       <label className="field">
                         ${requiredFieldLabel(t("agentName"))}
                         <input
@@ -4266,8 +4300,33 @@ function HubDetailPane({
   onRetry,
   onSelectTemplate,
   onSelectWorkspaceFile,
+  onCreateFromTemplate,
 }) {
   const workspaceEntries = selectedTemplate?.workspace?.entries || [];
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const templateMenuRef = useRef(null);
+
+  useEffect(() => {
+    setShowTemplateMenu(false);
+  }, [selectedTemplateId]);
+
+  useEffect(() => {
+    if (!showTemplateMenu) {
+      return undefined;
+    }
+
+    function handlePointerDown(event) {
+      const menu = templateMenuRef.current;
+      if (!menu || menu.contains(event.target)) {
+        return;
+      }
+      setShowTemplateMenu(false);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [showTemplateMenu]);
+
   return html`
     <section className="entity-pane hub-detail-pane">
       <header className="hub-page-header">
@@ -4322,12 +4381,41 @@ function HubDetailPane({
                 <div className="hub-inspector-panel">
                   ${selectedTemplate ? html`
                     <div className="hub-inspector-hero">
-                      <div className="hub-inspector-brand">
-                        <div className="hub-inspector-icon"><${HubIcon} /></div>
-                        <div className="hub-inspector-copy">
-                          <h2>${selectedTemplate.name || selectedTemplate.id}</h2>
-                          <p>${selectedTemplate.description || selectedTemplate.id}</p>
-                          <span className="mini-badge">${selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
+                      <div className="hub-inspector-hero-row">
+                        <div className="hub-inspector-brand">
+                          <div className="hub-inspector-icon"><${HubIcon} /></div>
+                          <div className="hub-inspector-copy">
+                            <h2>${selectedTemplate.name || selectedTemplate.id}</h2>
+                            <p>${selectedTemplate.description || selectedTemplate.id}</p>
+                            <span className="mini-badge">${selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
+                          </div>
+                        </div>
+                        <div ref=${templateMenuRef} className="header-menu hub-template-actions">
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm preview-action-button preview-action-button-primary hub-template-menu-button"
+                            aria-expanded=${showTemplateMenu}
+                            onClick=${() => setShowTemplateMenu((value) => !value)}
+                          >
+                            <span>${t("hubUseTemplate")}</span>
+                            <span className="hub-template-menu-chevron" aria-hidden="true"><${ChevronIcon} /></span>
+                          </button>
+                          ${showTemplateMenu
+                            ? html`
+                                <div className="header-popover tools-popover hub-template-popover">
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary-gray btn-sm tool-menu-row"
+                                    onClick=${() => {
+                                      setShowTemplateMenu(false);
+                                      onCreateFromTemplate?.(selectedTemplate);
+                                    }}
+                                  >
+                                    <span>${t("createAgent")}</span>
+                                  </button>
+                                </div>
+                              `
+                            : null}
                         </div>
                       </div>
                     </div>
@@ -5220,8 +5308,46 @@ function agentToDraft(agent) {
     description: agent?.description || profile.description || "",
     default_image: agent?.image || "",
     image: agent?.image || "",
+    from_template: agent?.from_template || "",
+    template_name: agent?.template_name || "",
     ...profileToDraft(profile),
     runtime_kind: normalizeRuntimeKind(agent?.runtime_kind || profile.runtime_kind),
+  };
+}
+
+function normalizeTemplateSelection(template) {
+  return template && typeof template === "object" ? template : null;
+}
+
+function pickDefaultAgentTemplate(templates) {
+  if (!Array.isArray(templates) || templates.length === 0) {
+    return null;
+  }
+  return templates.find((item) => item.id === "builtin/picoclaw-worker")
+    || templates.find((item) => item.name === "picoclaw-worker")
+    || templates.find((item) => String(item.id || "").endsWith("/picoclaw-worker"))
+    || null;
+}
+
+function applyTemplateToDraft(draft, template, bootstrapConfig, fallbackImage = "") {
+  if (!draft) {
+    return draft;
+  }
+  if (!template) {
+    return {
+      ...draft,
+      from_template: "",
+      template_name: "",
+    };
+  }
+  const runtimeKind = normalizeRuntimeKind(template.runtime_kind || draft.runtime_kind || bootstrapConfig?.runtime_kind);
+  return {
+    ...draft,
+    from_template: template.id || "",
+    template_name: template.name || template.id || "",
+    runtime_kind: runtimeKind,
+    image: template.image || runtimeImageForKind(runtimeKind, bootstrapConfig, fallbackImage || draft.default_image || ""),
+    description: template.description || draft.description || "",
   };
 }
 
