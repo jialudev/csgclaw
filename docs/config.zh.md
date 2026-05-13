@@ -216,6 +216,8 @@ CSGClaw 可以从一个或多个 hub registry 读取 agent 模板。registry 配
 [hub]
 default_registry = "builtin"
 default_publish_registry = "local"
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/picoclaw-worker"
 
 [[hub.registries]]
 name = "builtin"
@@ -240,6 +242,8 @@ enabled = true
 
 - `default_registry`：当某个命令需要一个默认读取源 registry 时，使用这个值。
 - `default_publish_registry`：当发布命令没有显式传入 registry 时，使用这个值作为默认发布目标。
+- `default_manager_template`：当某个流程需要隐式选择 manager 模板时，使用这个值。
+- `default_worker_template`：当某个流程需要隐式选择 worker 模板时，使用这个值。
 - `name`：registry 标识符，供 CLI 和 API 使用。
 - `kind`：可选值为 `builtin`、`local` 或 `remote`。
 - `path`：用于 `local` registry。

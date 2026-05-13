@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"csgclaw/internal/templates"
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -182,9 +183,5 @@ func loadManifestFS(srcFS fs.FS, manifestPath, label string) (string, localTempl
 }
 
 func templateIDFromManifestPath(path string) string {
-	path = filepath.ToSlash(strings.TrimSpace(path))
-	if path == "" {
-		return ""
-	}
-	return filepath.Base(filepath.Dir(path))
+	return templates.TemplateIDFromManifestPath(filepath.ToSlash(strings.TrimSpace(path)))
 }

@@ -8,11 +8,8 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"strings"
-)
 
-const (
-	workspaceTemplateManagerPicoclaw = "embed/runtimes/picoclaw/manager/workspace"
-	workspaceTemplateWorkerPicoclaw  = "embed/runtimes/picoclaw/worker/workspace"
+	"csgclaw/internal/templates"
 )
 
 var (
@@ -27,12 +24,24 @@ func managerGatewayMatch(name, botID string) bool {
 	return strings.EqualFold(strings.TrimSpace(name), ManagerName) || strings.TrimSpace(botID) == ManagerUserID
 }
 
-func workspaceTemplateForAgent(name, botID string) string {
-	isManager := managerGatewayMatch(name, botID)
-	if isManager {
-		return workspaceTemplateManagerPicoclaw
+func workspaceTemplateForAgent(name, botID string) (string, error) {
+	role := RoleWorker
+	if managerGatewayMatch(name, botID) {
+		role = RoleManager
 	}
-	return workspaceTemplateWorkerPicoclaw
+	return templates.Resolve(RuntimeKindPicoClawSandbox, role)
+}
+
+func resolveRuntimeTemplateRoot(runtimeKind, role string) (string, error) {
+	return templates.Resolve(runtimeKind, role)
+}
+
+func runtimeTemplateManifestPath(templateRoot string) string {
+	return templates.ManifestPath(templateRoot)
+}
+
+func runtimeTemplateWorkspacePath(templateRoot string) string {
+	return templates.WorkspacePath(templateRoot)
 }
 
 func ensureAgentWorkspace(agentName, template string) (string, error) {
@@ -64,12 +73,15 @@ func agentWorkspaceRoot(agentName string) (string, error) {
 	return filepath.Join(agentHome, hostWorkspaceDir), nil
 }
 
-func copyEmbeddedTree(template, dstRoot string) error {
-	template = strings.Trim(strings.TrimSpace(template), "/")
-	if template == "" {
-		return fmt.Errorf("workspace template is required")
+func copyEmbeddedTree(templateRoot, dstRoot string) error {
+	templateRoot = strings.Trim(strings.TrimSpace(templateRoot), "/")
+	if templateRoot == "" {
+		return fmt.Errorf("runtime template root is required")
 	}
-	return copyWorkspaceFS(workspaceTemplateFS, template, dstRoot, "embedded workspace")
+	if _, err := fs.Stat(templates.FS(), runtimeTemplateManifestPath(templateRoot)); err != nil {
+		return fmt.Errorf("stat embedded runtime template manifest %q: %w", templateRoot, err)
+	}
+	return copyWorkspaceFS(templates.FS(), runtimeTemplateWorkspacePath(templateRoot), dstRoot, "embedded workspace")
 }
 
 func overlayWorkspaceTree(srcRoot, dstRoot string) error {

@@ -16,7 +16,7 @@ func New(deps Dependencies) *Runtime {
 	deps.ProjectsGuestPath = BoxProjectsDir
 	deps.GatewayLogPath = BoxGatewayLogPath
 	if deps.WorkspaceTemplate == nil {
-		deps.WorkspaceTemplate = func(_, _ string) string { return WorkspaceTemplateWorker }
+		deps.WorkspaceTemplate = func(_, _ string) (string, error) { return WorkspaceTemplateWorker, nil }
 	}
 	if deps.GatewayCommand == nil {
 		deps.GatewayCommand = GatewayRunCommand

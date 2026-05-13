@@ -20,7 +20,7 @@ const (
 	HostExecApproval        = "exec-approvals.json"
 	HostLogs                = "logs"
 	HostWorkspaceDir        = "workspace"
-	WorkspaceTemplateWorker = "embed/runtimes/openclaw/worker/workspace"
+	WorkspaceTemplateWorker = "embed/runtimes/openclaw/worker"
 	BoxUserHome             = "/home/node"
 	BoxDir                  = "/home/node/.openclaw"
 	BoxWorkspaceDir         = BoxDir + "/workspace"

@@ -776,6 +776,7 @@ func newAgentService(cfg config.Config, feishuProvider feishu.BotCredentialProvi
 		runtimewiring.WithOpenClawSandboxRuntime(),
 		runtimewiring.WithCodexRuntime(),
 		agent.WithGatewayRuntime(cfg.Bootstrap.ResolvedGatewayRuntimeKind()),
+		agent.WithHubDefaultTemplates(cfg.Hub),
 	)
 	hubSvc, err := newAgentTemplateHubService(cfg.Hub)
 	if err != nil {

@@ -18,40 +18,54 @@ func TestBuiltinStoreListGetAndFetchWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if got, want := len(items), 2; got != want {
+	if got, want := len(items), 3; got != want {
 		t.Fatalf("len(List()) = %d, want %d", got, want)
 	}
-	if got, want := items[0].ID, "frontend-alice"; got != want {
+	if got, want := items[0].ID, "openclaw-worker"; got != want {
 		t.Fatalf("List()[0].ID = %q, want %q", got, want)
 	}
-	if got, want := items[1].ID, "review-bot"; got != want {
+	if got, want := items[1].ID, "picoclaw-manager"; got != want {
 		t.Fatalf("List()[1].ID = %q, want %q", got, want)
 	}
+	if got, want := items[2].ID, "picoclaw-worker"; got != want {
+		t.Fatalf("List()[2].ID = %q, want %q", got, want)
+	}
 
-	item, err := store.Get(context.Background(), "frontend-alice")
+	item, err := store.Get(context.Background(), "picoclaw-worker")
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
 	}
-	if got, want := item.RuntimeKind, runtime.KindCodex; got != want {
+	if got, want := item.RuntimeKind, runtime.KindPicoClawSandbox; got != want {
 		t.Fatalf("Get().RuntimeKind = %q, want %q", got, want)
+	}
+	if got, want := item.Image, config.DefaultManagerImage; got != want {
+		t.Fatalf("Get().Image = %q, want %q", got, want)
 	}
 	if got, want := item.WorkspaceRef.Kind, WorkspaceKindDir; got != want {
 		t.Fatalf("Get().WorkspaceRef.Kind = %q, want %q", got, want)
 	}
 
-	workspace, err := store.FetchWorkspace(context.Background(), "frontend-alice")
+	openclawItem, err := store.Get(context.Background(), "openclaw-worker")
+	if err != nil {
+		t.Fatalf("Get(openclaw-worker) error = %v", err)
+	}
+	if got, want := openclawItem.Image, config.DefaultOpenClawManagerImage; got != want {
+		t.Fatalf("Get(openclaw-worker).Image = %q, want %q", got, want)
+	}
+
+	workspace, err := store.FetchWorkspace(context.Background(), "picoclaw-worker")
 	if err != nil {
 		t.Fatalf("FetchWorkspace() error = %v", err)
 	}
 	if got, want := workspace.Kind, WorkspaceKindDir; got != want {
 		t.Fatalf("FetchWorkspace().Kind = %q, want %q", got, want)
 	}
-	data, err := os.ReadFile(filepath.Join(workspace.Path, "AGENTS.md"))
+	data, err := os.ReadFile(filepath.Join(workspace.Path, "AGENT.md"))
 	if err != nil {
-		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+		t.Fatalf("ReadFile(AGENT.md) error = %v", err)
 	}
 	if len(data) == 0 {
-		t.Fatal("FetchWorkspace() copied empty AGENTS.md")
+		t.Fatal("FetchWorkspace() copied empty AGENT.md")
 	}
 }
 
@@ -92,16 +106,19 @@ func TestServiceListAggregatesBuiltinAndLocalWithDefaultStoreFactory(t *testing.
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if got, want := len(items), 3; got != want {
+	if got, want := len(items), 4; got != want {
 		t.Fatalf("len(List()) = %d, want %d", got, want)
 	}
-	if got, want := items[0].ID, "builtin/frontend-alice"; got != want {
+	if got, want := items[0].ID, "builtin/openclaw-worker"; got != want {
 		t.Fatalf("List()[0].ID = %q, want %q", got, want)
 	}
-	if got, want := items[1].ID, "builtin/review-bot"; got != want {
+	if got, want := items[1].ID, "builtin/picoclaw-manager"; got != want {
 		t.Fatalf("List()[1].ID = %q, want %q", got, want)
 	}
-	if got, want := items[2].ID, "local/team-helper"; got != want {
+	if got, want := items[2].ID, "builtin/picoclaw-worker"; got != want {
 		t.Fatalf("List()[2].ID = %q, want %q", got, want)
+	}
+	if got, want := items[3].ID, "local/team-helper"; got != want {
+		t.Fatalf("List()[3].ID = %q, want %q", got, want)
 	}
 }

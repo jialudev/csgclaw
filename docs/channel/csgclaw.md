@@ -58,4 +58,4 @@ Do not call `POST /api/v1/agents/u-manager/recreate` for this flow.
 
 - Frontend parser/renderer: `web/static/app.js`
 - Action-card test coverage: `web/static/app_action_card.test.cjs`
-- Feishu setup command output: `runtimes/picoclaw/manager/workspace/skills/feishu/scripts/feishu_setup/csgclaw.py`
+- Feishu setup command output: `internal/templates/embed/runtimes/picoclaw/manager/workspace/skills/feishu/scripts/feishu_setup/csgclaw.py`

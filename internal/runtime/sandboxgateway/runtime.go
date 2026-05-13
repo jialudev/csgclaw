@@ -46,7 +46,7 @@ type Dependencies struct {
 	SyncHandle          func(h agentruntime.Handle) error
 	EnsureGatewayConfig func(agentName, botID string, profile agentruntime.Profile) error
 	EnsureWorkspace     func(agentName, template string) (string, error)
-	WorkspaceTemplate   func(name, botID string) string
+	WorkspaceTemplate   func(name, botID string) (string, error)
 	EnsureProjectsRoot  func() (string, error)
 	BuildRuntimeEnv     func(baseURL, accessToken, botID, llmBaseURL, modelID string, feishuProvider feishu.BotCredentialProvider) map[string]string
 	AddProfileEnv       func(envVars map[string]string, profileEnv map[string]string)
@@ -307,7 +307,11 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	if err := r.deps.EnsureGatewayConfig(name, botID, profile); err != nil {
 		return sandbox.CreateSpec{}, err
 	}
-	hostWorkspaceRoot, err := r.deps.EnsureWorkspace(name, r.deps.WorkspaceTemplate(name, botID))
+	templateRoot, err := r.deps.WorkspaceTemplate(name, botID)
+	if err != nil {
+		return sandbox.CreateSpec{}, err
+	}
+	hostWorkspaceRoot, err := r.deps.EnsureWorkspace(name, templateRoot)
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}

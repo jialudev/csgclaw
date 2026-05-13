@@ -10,6 +10,7 @@ import (
 
 	"csgclaw/internal/config"
 	"csgclaw/internal/runtime/picoclawsandbox"
+	"csgclaw/internal/templates"
 )
 
 func TestRenderManagerSecurityConfig(t *testing.T) {
@@ -133,7 +134,7 @@ func TestEnsureAgentWorkspaceCopiesEmbeddedTemplate(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	root, err := ensureAgentWorkspace("alice", workspaceTemplateWorkerPicoclaw)
+	root, err := ensureAgentWorkspace("alice", templates.PicoClawWorkerRoot)
 	if err != nil {
 		t.Fatalf("ensureAgentWorkspace(worker) error = %v", err)
 	}
@@ -152,7 +153,11 @@ func TestEnsureAgentWorkspaceCopiesEmbeddedTemplate(t *testing.T) {
 		}
 	}
 
-	managerRoot, err := ensureAgentWorkspace("manager", workspaceTemplateForAgent(ManagerName, ManagerUserID))
+	managerTemplate, err := resolveRuntimeTemplateRoot(RuntimeKindPicoClawSandbox, RoleManager)
+	if err != nil {
+		t.Fatalf("resolveRuntimeTemplateRoot(manager) error = %v", err)
+	}
+	managerRoot, err := ensureAgentWorkspace("manager", managerTemplate)
 	if err != nil {
 		t.Fatalf("ensureAgentWorkspace(manager) error = %v", err)
 	}

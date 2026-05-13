@@ -153,22 +153,24 @@ func TestOnlySetDefaultServiceOption(opt ServiceOption) func() {
 }
 
 type Service struct {
-	model            config.ModelConfig
-	llm              config.LLMConfig
-	server           config.ServerConfig
-	hub              templateService
-	managerImage     string
-	gatewayRuntime   string
-	state            string
-	sandbox          sandbox.Provider
-	mu               sync.RWMutex
-	runtimes         map[string]sandbox.Runtime
-	agents           map[string]Agent
-	runtimeRecords   map[string]RuntimeRecord
-	runtimeRegistry  map[string]agentruntime.Runtime
-	lifecycle        LifecycleObserver
-	profileDefaults  AgentProfile
-	detectionResults []ProfileDetectionResult
+	model                  config.ModelConfig
+	llm                    config.LLMConfig
+	server                 config.ServerConfig
+	hub                    templateService
+	defaultManagerTemplate string
+	defaultWorkerTemplate  string
+	managerImage           string
+	gatewayRuntime         string
+	state                  string
+	sandbox                sandbox.Provider
+	mu                     sync.RWMutex
+	runtimes               map[string]sandbox.Runtime
+	agents                 map[string]Agent
+	runtimeRecords         map[string]RuntimeRecord
+	runtimeRegistry        map[string]agentruntime.Runtime
+	lifecycle              LifecycleObserver
+	profileDefaults        AgentProfile
+	detectionResults       []ProfileDetectionResult
 
 	// gatewayWorkPhase is set by createGatewayBox for bootstrap progress logs (best-effort if concurrent).
 	gatewayWorkPhase atomic.Uint32
@@ -239,6 +241,18 @@ func WithHubService(svc *hub.Service) ServiceOption {
 			return fmt.Errorf("agent service is required")
 		}
 		s.hub = svc
+		return nil
+	}
+}
+
+func WithHubDefaultTemplates(cfg config.HubConfig) ServiceOption {
+	return func(s *Service) error {
+		if s == nil {
+			return fmt.Errorf("agent service is required")
+		}
+		resolved := cfg.Resolved()
+		s.defaultManagerTemplate = strings.TrimSpace(resolved.DefaultManagerTemplate)
+		s.defaultWorkerTemplate = strings.TrimSpace(resolved.DefaultWorkerTemplate)
 		return nil
 	}
 }
@@ -662,7 +676,10 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 	if req.Replace && strings.TrimSpace(req.Spec.FromTemplate) != "" {
 		return Agent{}, fmt.Errorf("agent create --replace does not support from_template")
 	}
-	if strings.TrimSpace(req.Spec.FromTemplate) != "" {
+	if req.Replace {
+		return s.replace(ctx, req)
+	}
+	if shouldResolveTemplateCreateSpec(req.Spec) {
 		var cleanup func()
 		var err error
 		req.Spec, cleanup, err = s.resolveTemplateCreateSpec(ctx, req.Spec)
@@ -673,9 +690,6 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Agent, error) 
 			defer cleanup()
 		}
 	}
-	if req.Replace {
-		return s.replace(ctx, req)
-	}
 	return s.createNew(ctx, req.Spec)
 }
 
@@ -683,20 +697,34 @@ func (s *Service) resolveTemplateCreateSpec(ctx context.Context, spec CreateAgen
 	if s == nil {
 		return CreateAgentSpec{}, nil, fmt.Errorf("agent service is required")
 	}
-	templateRef := strings.TrimSpace(spec.FromTemplate)
+	templateRef, expectedRole, usedDefault := s.templateRefForCreateSpec(spec)
 	if templateRef == "" {
 		return spec, nil, nil
 	}
 	if s.hub == nil {
+		if usedDefault {
+			return CreateAgentSpec{}, nil, fmt.Errorf("default %s template %q requires hub service, but hub service is not configured", expectedRole, templateRef)
+		}
 		return CreateAgentSpec{}, nil, fmt.Errorf("hub service is not configured")
 	}
 
 	item, err := s.hub.Get(ctx, templateRef)
 	if err != nil {
+		if usedDefault {
+			return CreateAgentSpec{}, nil, fmt.Errorf("resolve default %s template %q: %w", expectedRole, templateRef, err)
+		}
 		return CreateAgentSpec{}, nil, err
+	}
+	if usedDefault {
+		if err := validateDefaultTemplateCompatibility(expectedRole, spec, item, templateRef); err != nil {
+			return CreateAgentSpec{}, nil, err
+		}
 	}
 	workspace, err := s.hub.FetchWorkspace(ctx, templateRef)
 	if err != nil {
+		if usedDefault {
+			return CreateAgentSpec{}, nil, fmt.Errorf("fetch default %s template workspace %q: %w", expectedRole, templateRef, err)
+		}
 		return CreateAgentSpec{}, nil, err
 	}
 
@@ -704,6 +732,66 @@ func (s *Service) resolveTemplateCreateSpec(ctx context.Context, spec CreateAgen
 	spec = applyTemplateDefaults(spec, item)
 	spec.FromTemplate = workspace.Path
 	return spec, cleanup, nil
+}
+
+func shouldResolveTemplateCreateSpec(spec CreateAgentSpec) bool {
+	if strings.TrimSpace(spec.FromTemplate) != "" {
+		return true
+	}
+	return isManagerCreateSpec(spec) || shouldCreateWorkerSpec(spec)
+}
+
+func (s *Service) templateRefForCreateSpec(spec CreateAgentSpec) (templateRef, role string, usedDefault bool) {
+	if explicit := strings.TrimSpace(spec.FromTemplate); explicit != "" {
+		return explicit, createTemplateRole(spec), false
+	}
+	role = createTemplateRole(spec)
+	switch role {
+	case RoleManager:
+		return strings.TrimSpace(s.defaultManagerTemplate), role, true
+	case RoleWorker:
+		return strings.TrimSpace(s.defaultWorkerTemplate), role, true
+	default:
+		return "", role, false
+	}
+}
+
+func createTemplateRole(spec CreateAgentSpec) string {
+	if isManagerCreateSpec(spec) {
+		return RoleManager
+	}
+	if shouldCreateWorkerSpec(spec) {
+		return RoleWorker
+	}
+	return ""
+}
+
+func validateDefaultTemplateCompatibility(expectedRole string, spec CreateAgentSpec, item hub.Template, templateRef string) error {
+	if actualRole := inferTemplateRole(item); actualRole != expectedRole {
+		if actualRole == "" {
+			return fmt.Errorf("default %s template %q does not identify itself as a %s template", expectedRole, templateRef, expectedRole)
+		}
+		return fmt.Errorf("default %s template %q points to a %s template", expectedRole, templateRef, actualRole)
+	}
+	requestedRuntime := normalizeRuntimeKind(spec.RuntimeKind)
+	templateRuntime := normalizeRuntimeKind(item.RuntimeKind)
+	if requestedRuntime != "" && templateRuntime != "" && requestedRuntime != templateRuntime {
+		return fmt.Errorf("default %s template %q uses runtime_kind %q, incompatible with requested runtime_kind %q", expectedRole, templateRef, item.RuntimeKind, spec.RuntimeKind)
+	}
+	return nil
+}
+
+func inferTemplateRole(item hub.Template) string {
+	for _, candidate := range []string{item.ID, item.Name} {
+		candidate = strings.ToLower(strings.TrimSpace(candidate))
+		switch {
+		case strings.HasSuffix(candidate, "-manager"), strings.HasSuffix(candidate, "/manager"):
+			return RoleManager
+		case strings.HasSuffix(candidate, "-worker"), strings.HasSuffix(candidate, "/worker"):
+			return RoleWorker
+		}
+	}
+	return ""
 }
 
 func applyTemplateDefaults(spec CreateAgentSpec, item hub.Template) CreateAgentSpec {
@@ -1384,6 +1472,17 @@ func isRuntimeRunning(a Agent) bool {
 }
 
 func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent, error) {
+	if shouldResolveTemplateCreateSpec(spec) && !isResolvedWorkspacePath(spec.FromTemplate) {
+		var cleanup func()
+		var err error
+		spec, cleanup, err = s.resolveTemplateCreateSpec(ctx, spec)
+		if err != nil {
+			return Agent{}, err
+		}
+		if cleanup != nil {
+			defer cleanup()
+		}
+	}
 	id := strings.TrimSpace(spec.ID)
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
@@ -1541,6 +1640,15 @@ func (s *Service) persistCreatedWorker(ctx context.Context, id, name, descriptio
 		return Agent{}, err
 	}
 	return created, nil
+}
+
+func isResolvedWorkspacePath(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func (s *Service) overlayTemplateWorkspace(agentName, workspaceRoot string) error {

@@ -190,6 +190,12 @@ models = ["minimax-m2.7"]
 	if got, want := cfg.Hub.DefaultPublishRegistry, DefaultHubPublishRegistry; got != want {
 		t.Fatalf("cfg.Hub.DefaultPublishRegistry = %q, want %q", got, want)
 	}
+	if got, want := cfg.Hub.DefaultManagerTemplate, DefaultHubManagerTemplate; got != want {
+		t.Fatalf("cfg.Hub.DefaultManagerTemplate = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.DefaultWorkerTemplate, DefaultHubWorkerTemplate; got != want {
+		t.Fatalf("cfg.Hub.DefaultWorkerTemplate = %q, want %q", got, want)
+	}
 	if got, want := len(cfg.Hub.Registries), 1; got != want {
 		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
 	}
@@ -216,6 +222,8 @@ listen_addr = "127.0.0.1:18080"
 [hub]
 default_registry = "team"
 default_publish_registry = "local"
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/openclaw-worker"
 
 [[hub.registries]]
 name = "builtin"
@@ -255,6 +263,12 @@ models = ["minimax-m2.7"]
 	}
 	if got, want := cfg.Hub.DefaultPublishRegistry, "local"; got != want {
 		t.Fatalf("cfg.Hub.DefaultPublishRegistry = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.DefaultManagerTemplate, "builtin/picoclaw-manager"; got != want {
+		t.Fatalf("cfg.Hub.DefaultManagerTemplate = %q, want %q", got, want)
+	}
+	if got, want := cfg.Hub.DefaultWorkerTemplate, "builtin/openclaw-worker"; got != want {
+		t.Fatalf("cfg.Hub.DefaultWorkerTemplate = %q, want %q", got, want)
 	}
 	if got, want := len(cfg.Hub.Registries), 3; got != want {
 		t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
@@ -793,6 +807,8 @@ debian_registries_override = []
 [hub]
 default_registry = "builtin"
 default_publish_registry = "local"
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/picoclaw-worker"
 
 [[hub.registries]]
 name = "builtin"
@@ -824,6 +840,8 @@ func TestSaveWritesHubConfig(t *testing.T) {
 		Hub: HubConfig{
 			DefaultRegistry:        "builtin",
 			DefaultPublishRegistry: "team",
+			DefaultManagerTemplate: "builtin/picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin/openclaw-worker",
 			Registries: []HubRegistryConfig{
 				{Name: "builtin", Kind: "builtin", Enabled: true},
 				{Name: "team", Kind: "remote", URL: "https://hub.example.com", Token: "secret", Enabled: true},
@@ -849,6 +867,8 @@ func TestSaveWritesHubConfig(t *testing.T) {
 		"[hub]",
 		`default_registry = "builtin"`,
 		`default_publish_registry = "team"`,
+		`default_manager_template = "builtin/picoclaw-manager"`,
+		`default_worker_template = "builtin/openclaw-worker"`,
 		"[[hub.registries]]",
 		`name = "builtin"`,
 		`kind = "builtin"`,
@@ -1094,6 +1114,8 @@ func TestSavePreservesEnvPlaceholdersAfterLoad(t *testing.T) {
 	t.Setenv("SANDBOX_PROVIDER", BoxLiteProvider)
 	t.Setenv("HUB_DEFAULT_REGISTRY", "team")
 	t.Setenv("HUB_PUBLISH_REGISTRY", "local")
+	t.Setenv("HUB_DEFAULT_MANAGER_TEMPLATE", "builtin/picoclaw-manager")
+	t.Setenv("HUB_DEFAULT_WORKER_TEMPLATE", "builtin/openclaw-worker")
 	t.Setenv("HUB_URL", "hub.example.test")
 	t.Setenv("HUB_TOKEN", "hub-secret")
 	t.Setenv("MODEL_SELECTOR", "remote.gpt-env")
@@ -1118,6 +1140,8 @@ provider = "${SANDBOX_PROVIDER}"
 [hub]
 default_registry = "${HUB_DEFAULT_REGISTRY}"
 default_publish_registry = "${HUB_PUBLISH_REGISTRY}"
+default_manager_template = "${HUB_DEFAULT_MANAGER_TEMPLATE}"
+default_worker_template = "${HUB_DEFAULT_WORKER_TEMPLATE}"
 
 [[hub.registries]]
 name = "team"
@@ -1168,6 +1192,8 @@ reasoning_effort = "${REASONING_EFFORT}"
 		`provider = "${SANDBOX_PROVIDER}"`,
 		`default_registry = "${HUB_DEFAULT_REGISTRY}"`,
 		`default_publish_registry = "${HUB_PUBLISH_REGISTRY}"`,
+		`default_manager_template = "${HUB_DEFAULT_MANAGER_TEMPLATE}"`,
+		`default_worker_template = "${HUB_DEFAULT_WORKER_TEMPLATE}"`,
 		`url = "https://${HUB_URL}"`,
 		`token = "${HUB_TOKEN}"`,
 		`default = "${MODEL_SELECTOR}"`,

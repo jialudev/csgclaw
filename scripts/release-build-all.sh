@@ -31,7 +31,7 @@ GOCACHE="${GOCACHE:-${ROOT}/.gocache}"
 mkdir -p "${DIST_DIR}" "${GOCACHE}"
 export GOCACHE
 
-chmod +x scripts/package-release.sh scripts/sync-agent-runtimes.sh scripts/fetch-boxlite-cli.sh
+chmod +x scripts/package-release.sh scripts/fetch-boxlite-cli.sh
 
 build_pair() {
   local goos="$1" goarch="$2"

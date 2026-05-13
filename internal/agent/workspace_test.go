@@ -2,15 +2,102 @@ package agent
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"csgclaw/internal/templates"
 )
+
+func TestRuntimeTemplateFSEmbedsCompleteTemplateUnits(t *testing.T) {
+	tests := []struct {
+		name         string
+		manifestPath string
+		workspaceDoc string
+	}{
+		{
+			name:         "picoclaw manager",
+			manifestPath: "embed/runtimes/picoclaw/manager/agent.toml",
+			workspaceDoc: "embed/runtimes/picoclaw/manager/workspace/AGENT.md",
+		},
+		{
+			name:         "picoclaw worker",
+			manifestPath: "embed/runtimes/picoclaw/worker/agent.toml",
+			workspaceDoc: "embed/runtimes/picoclaw/worker/workspace/AGENT.md",
+		},
+		{
+			name:         "openclaw worker",
+			manifestPath: "embed/runtimes/openclaw/worker/agent.toml",
+			workspaceDoc: "embed/runtimes/openclaw/worker/workspace/AGENT.md",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest, err := fs.ReadFile(templates.FS(), tt.manifestPath)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) error = %v", tt.manifestPath, err)
+			}
+			if len(manifest) == 0 {
+				t.Fatalf("ReadFile(%q) returned empty data", tt.manifestPath)
+			}
+
+			doc, err := fs.ReadFile(templates.FS(), tt.workspaceDoc)
+			if err != nil {
+				t.Fatalf("ReadFile(%q) error = %v", tt.workspaceDoc, err)
+			}
+			if len(doc) == 0 {
+				t.Fatalf("ReadFile(%q) returned empty data", tt.workspaceDoc)
+			}
+		})
+	}
+}
+
+func TestResolveRuntimeTemplateRoot(t *testing.T) {
+	tests := []struct {
+		name        string
+		runtimeKind string
+		role        string
+		want        string
+		wantErr     bool
+	}{
+		{name: "picoclaw manager", runtimeKind: RuntimeKindPicoClawSandbox, role: RoleManager, want: templates.PicoClawManagerRoot},
+		{name: "picoclaw worker", runtimeKind: RuntimeKindPicoClawSandbox, role: RoleWorker, want: templates.PicoClawWorkerRoot},
+		{name: "openclaw worker", runtimeKind: RuntimeKindOpenClawSandbox, role: RoleWorker, want: templates.OpenClawWorkerRoot},
+		{name: "openclaw manager unsupported", runtimeKind: RuntimeKindOpenClawSandbox, role: RoleManager, wantErr: true},
+		{name: "unknown runtime", runtimeKind: "missing", role: RoleWorker, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveRuntimeTemplateRoot(tt.runtimeKind, tt.role)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("resolveRuntimeTemplateRoot(%q, %q) error = nil, want non-nil", tt.runtimeKind, tt.role)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveRuntimeTemplateRoot(%q, %q) error = %v", tt.runtimeKind, tt.role, err)
+			}
+			if got != tt.want {
+				t.Fatalf("resolveRuntimeTemplateRoot(%q, %q) = %q, want %q", tt.runtimeKind, tt.role, got, tt.want)
+			}
+			if workspace := runtimeTemplateWorkspacePath(got); workspace == got {
+				t.Fatalf("runtimeTemplateWorkspacePath(%q) should append workspace dir", got)
+			}
+			if manifest := runtimeTemplateManifestPath(got); manifest == got {
+				t.Fatalf("runtimeTemplateManifestPath(%q) should append manifest file", got)
+			}
+		})
+	}
+}
 
 func TestEnsureWorkspaceAtRootOverlay(t *testing.T) {
 	hostRoot := t.TempDir()
 
-	gotRoot, err := ensureWorkspaceAtRoot(hostRoot, workspaceTemplateWorkerPicoclaw)
+	gotRoot, err := ensureWorkspaceAtRoot(hostRoot, templates.PicoClawWorkerRoot)
 	if err != nil {
 		t.Fatalf("ensureWorkspaceAtRoot() error = %v", err)
 	}

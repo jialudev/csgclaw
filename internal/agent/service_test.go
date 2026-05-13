@@ -2494,9 +2494,9 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 	t.Setenv("HOME", homeDir)
 	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
-	hubSvc := mustNewLocalTemplateHubService(t, "frontend-alice", hub.Template{
-		ID:          "frontend-alice",
-		Name:        "frontend-alice",
+	hubSvc := mustNewLocalTemplateHubService(t, "frontend-worker", hub.Template{
+		ID:          "frontend-worker",
+		Name:        "frontend-worker",
 		Description: "frontend worker",
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
@@ -2516,7 +2516,7 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 	got, err := svc.Create(context.Background(), CreateRequest{
 		Spec: CreateAgentSpec{
 			Name:         "alice",
-			FromTemplate: "local/frontend-alice",
+			FromTemplate: "local/frontend-worker",
 		},
 	})
 	if err != nil {
@@ -2548,6 +2548,191 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 	}
 	if _, err := os.Stat(filepath.Join(workspaceRoot, "skills", "custom", "SKILL.md")); err != nil {
 		t.Fatalf("template skill missing after overlay: %v", err)
+	}
+}
+
+func TestCreateWorkerUsesConfiguredDefaultTemplate(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubService(t, "frontend-worker", hub.Template{
+		ID:          "frontend-worker",
+		Name:        "frontend-worker",
+		Description: "frontend worker",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.Description != "frontend worker" {
+		t.Fatalf("Description = %q, want %q", got.Description, "frontend worker")
+	}
+	if got.Image != "worker-image:1" {
+		t.Fatalf("Image = %q, want %q", got.Image, "worker-image:1")
+	}
+	if got.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
+	}
+
+	workspaceRoot, err := agentWorkspaceRoot("alice")
+	if err != nil {
+		t.Fatalf("agentWorkspaceRoot() error = %v", err)
+	}
+	userData, err := os.ReadFile(filepath.Join(workspaceRoot, "USER.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(USER.md) error = %v", err)
+	}
+	if got := strings.TrimSpace(string(userData)); got != "template user" {
+		t.Fatalf("USER.md = %q, want %q", got, "template user")
+	}
+}
+
+func TestCreateWorkerRejectsMissingDefaultTemplate(t *testing.T) {
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubService(t, "frontend-worker", hub.Template{
+		ID:          "frontend-worker",
+		Name:        "frontend-worker",
+		Description: "frontend worker",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/missing"}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	if err == nil {
+		t.Fatal("CreateWorker() error = nil, want missing default template")
+	}
+	if !strings.Contains(err.Error(), `resolve default worker template "local/missing"`) {
+		t.Fatalf("CreateWorker() error = %v, want default worker template context", err)
+	}
+}
+
+func TestCreateWorkerRejectsDefaultTemplateRoleMismatch(t *testing.T) {
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubService(t, "review-manager", hub.Template{
+		ID:          "review-manager",
+		Name:        "review-manager",
+		Description: "manager template",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "manager-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/review-manager"}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	if err == nil {
+		t.Fatal("CreateWorker() error = nil, want role mismatch")
+	}
+	if !strings.Contains(err.Error(), `default worker template "local/review-manager" points to a manager template`) {
+		t.Fatalf("CreateWorker() error = %v, want worker/manager mismatch", err)
+	}
+}
+
+func TestCreateWorkerRejectsDefaultTemplateRuntimeMismatch(t *testing.T) {
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubService(t, "frontend-worker", hub.Template{
+		ID:          "frontend-worker",
+		Name:        "frontend-worker",
+		Description: "frontend worker",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+		WithHubDefaultTemplates(config.HubConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{
+		Name:        "alice",
+		RuntimeKind: RuntimeKindOpenClawSandbox,
+	})
+	if err == nil {
+		t.Fatal("CreateWorker() error = nil, want runtime mismatch")
+	}
+	if !strings.Contains(err.Error(), `default worker template "local/frontend-worker" uses runtime_kind "picoclaw_sandbox", incompatible with requested runtime_kind "openclaw_sandbox"`) {
+		t.Fatalf("CreateWorker() error = %v, want runtime mismatch", err)
+	}
+}
+
+func TestCreateRejectsDefaultManagerTemplateRoleMismatch(t *testing.T) {
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubService(t, "review-worker", hub.Template{
+		ID:          "review-worker",
+		Name:        "review-worker",
+		Description: "worker template",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+		WithHubDefaultTemplates(config.HubConfig{DefaultManagerTemplate: "local/review-worker"}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{Name: ManagerName},
+	})
+	if err == nil {
+		t.Fatal("Create() error = nil, want role mismatch")
+	}
+	if !strings.Contains(err.Error(), `default manager template "local/review-worker" points to a worker template`) {
+		t.Fatalf("Create() error = %v, want manager/worker mismatch", err)
 	}
 }
 
@@ -3548,7 +3733,11 @@ func TestOpenClawRuntimeHostBuildsWorkerWorkspaceAndConfig(t *testing.T) {
 	}
 	wantAgentHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice")
 	wantOpenClawRoot := openclawsandbox.Root(wantAgentHome)
-	if got, err := host.EnsureWorkspace("alice", host.WorkspaceTemplate("alice", "u-worker-1")); err != nil {
+	templateRoot, err := host.WorkspaceTemplate("alice", "u-worker-1")
+	if err != nil {
+		t.Fatalf("WorkspaceTemplate() error = %v", err)
+	}
+	if got, err := host.EnsureWorkspace("alice", templateRoot); err != nil {
 		t.Fatalf("EnsureWorkspace() error = %v", err)
 	} else if got != wantOpenClawRoot {
 		t.Fatalf("EnsureWorkspace() root = %q, want %q", got, wantOpenClawRoot)

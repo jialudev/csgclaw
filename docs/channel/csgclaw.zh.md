@@ -58,4 +58,4 @@ Content-Type: application/json
 
 - 前端解析与渲染：`web/static/app.js`
 - Action card 单测：`web/static/app_action_card.test.cjs`
-- Feishu setup 命令输出：`runtimes/picoclaw/manager/workspace/skills/feishu/scripts/feishu_setup/csgclaw.py`
+- Feishu setup 命令输出：`internal/templates/embed/runtimes/picoclaw/manager/workspace/skills/feishu/scripts/feishu_setup/csgclaw.py`

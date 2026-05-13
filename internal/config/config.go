@@ -122,6 +122,8 @@ type SandboxConfig struct {
 type HubConfig struct {
 	DefaultRegistry        string
 	DefaultPublishRegistry string
+	DefaultManagerTemplate string
+	DefaultWorkerTemplate  string
 	Registries             []HubRegistryConfig
 }
 
@@ -142,6 +144,14 @@ func (c HubConfig) Resolved() HubConfig {
 	c.DefaultPublishRegistry = strings.TrimSpace(c.DefaultPublishRegistry)
 	if c.DefaultPublishRegistry == "" {
 		c.DefaultPublishRegistry = DefaultHubPublishRegistry
+	}
+	c.DefaultManagerTemplate = strings.TrimSpace(c.DefaultManagerTemplate)
+	if c.DefaultManagerTemplate == "" {
+		c.DefaultManagerTemplate = DefaultHubManagerTemplate
+	}
+	c.DefaultWorkerTemplate = strings.TrimSpace(c.DefaultWorkerTemplate)
+	if c.DefaultWorkerTemplate == "" {
+		c.DefaultWorkerTemplate = DefaultHubWorkerTemplate
 	}
 	if len(c.Registries) == 0 {
 		c.Registries = []HubRegistryConfig{defaultBuiltinHubRegistry()}
@@ -217,6 +227,8 @@ type rawProviderConfig struct {
 type rawHubConfig struct {
 	DefaultRegistry        string
 	DefaultPublishRegistry string
+	DefaultManagerTemplate string
+	DefaultWorkerTemplate  string
 	Registries             []rawHubRegistryConfig
 }
 
@@ -246,6 +258,8 @@ const (
 	BoxLiteProvider             = "boxlite"
 	DefaultHubRegistry          = "builtin"
 	DefaultHubPublishRegistry   = "local"
+	DefaultHubManagerTemplate   = "builtin/picoclaw-manager"
+	DefaultHubWorkerTemplate    = "builtin/picoclaw-worker"
 	HubRegistryKindBuiltin      = "builtin"
 	BoxLiteCLIHomeDirName       = "boxlite"
 	RuntimeHomeDirName          = BoxLiteCLIHomeDirName
@@ -460,6 +474,12 @@ func Load(path string) (Config, error) {
 			case "default_publish_registry":
 				cfg.raw.hub.DefaultPublishRegistry = parseRawStringValue(rawValue)
 				cfg.Hub.DefaultPublishRegistry = value
+			case "default_manager_template":
+				cfg.raw.hub.DefaultManagerTemplate = parseRawStringValue(rawValue)
+				cfg.Hub.DefaultManagerTemplate = value
+			case "default_worker_template":
+				cfg.raw.hub.DefaultWorkerTemplate = parseRawStringValue(rawValue)
+				cfg.Hub.DefaultWorkerTemplate = value
 			}
 		case section == "hub.registries":
 			if hubRegistryIndex < 0 || hubRegistryIndex >= len(cfg.Hub.Registries) {
@@ -602,7 +622,9 @@ provider = %q
 [hub]
 default_registry = %q
 default_publish_registry = %q
-`, cfg.rawOrResolvedString(cfg.raw.hub.DefaultRegistry, loadedRaw.hub.DefaultRegistry, resolvedHub.DefaultRegistry), cfg.rawOrResolvedString(cfg.raw.hub.DefaultPublishRegistry, loadedRaw.hub.DefaultPublishRegistry, resolvedHub.DefaultPublishRegistry))
+default_manager_template = %q
+default_worker_template = %q
+`, cfg.rawOrResolvedString(cfg.raw.hub.DefaultRegistry, loadedRaw.hub.DefaultRegistry, resolvedHub.DefaultRegistry), cfg.rawOrResolvedString(cfg.raw.hub.DefaultPublishRegistry, loadedRaw.hub.DefaultPublishRegistry, resolvedHub.DefaultPublishRegistry), cfg.rawOrResolvedString(cfg.raw.hub.DefaultManagerTemplate, loadedRaw.hub.DefaultManagerTemplate, resolvedHub.DefaultManagerTemplate), cfg.rawOrResolvedString(cfg.raw.hub.DefaultWorkerTemplate, loadedRaw.hub.DefaultWorkerTemplate, resolvedHub.DefaultWorkerTemplate))
 	for i, registry := range resolvedHub.Registries {
 		var rawRegistry rawHubRegistryConfig
 		var loadedRegistry rawHubRegistryConfig
@@ -954,6 +976,12 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	}
 	if c.raw.hub.DefaultPublishRegistry != "" {
 		out.hub.DefaultPublishRegistry = c.Hub.DefaultPublishRegistry
+	}
+	if c.raw.hub.DefaultManagerTemplate != "" {
+		out.hub.DefaultManagerTemplate = c.Hub.DefaultManagerTemplate
+	}
+	if c.raw.hub.DefaultWorkerTemplate != "" {
+		out.hub.DefaultWorkerTemplate = c.Hub.DefaultWorkerTemplate
 	}
 	for i, rawRegistry := range c.raw.hub.Registries {
 		if i >= len(c.Hub.Registries) {

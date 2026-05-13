@@ -2,21 +2,22 @@ package hub
 
 import (
 	"context"
-	"embed"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"csgclaw/internal/templates"
+	toml "github.com/pelletier/go-toml/v2"
 )
 
-const (
-	builtinTemplatesRoot = "embed/templates"
-)
-
-//go:embed embed/templates
-var builtinTemplateFS embed.FS
+var builtinRuntimeTemplates = map[string]string{
+	"openclaw-worker":  templates.OpenClawWorkerRoot,
+	"picoclaw-manager": templates.PicoClawManagerRoot,
+	"picoclaw-worker":  templates.PicoClawWorkerRoot,
+}
 
 type BuiltinStore struct{}
 
@@ -25,17 +26,9 @@ func NewBuiltinStore() *BuiltinStore {
 }
 
 func (s *BuiltinStore) List(context.Context) ([]Template, error) {
-	entries, err := fs.ReadDir(builtinTemplateFS, builtinTemplatesRoot)
-	if err != nil {
-		return nil, fmt.Errorf("read builtin hub templates: %w", err)
-	}
-
-	ids := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		id := strings.TrimSpace(entry.Name())
+	ids := make([]string, 0, len(builtinRuntimeTemplates))
+	for id := range builtinRuntimeTemplates {
+		id = strings.TrimSpace(id)
 		if err := validateLocalTemplateID(id); err != nil {
 			return nil, fmt.Errorf("invalid builtin hub template %q: %w", id, err)
 		}
@@ -55,7 +48,8 @@ func (s *BuiltinStore) List(context.Context) ([]Template, error) {
 }
 
 func (s *BuiltinStore) Get(_ context.Context, id string) (Template, error) {
-	id, manifest, err := loadManifestFS(builtinTemplateFS, s.manifestPath(id), "builtin")
+	id = strings.TrimSpace(id)
+	manifest, err := s.loadManifest(id)
 	if err != nil {
 		return Template{}, err
 	}
@@ -82,7 +76,7 @@ func (s *BuiltinStore) FetchWorkspace(_ context.Context, id string) (WorkspaceRe
 	if err := validateLocalTemplateID(id); err != nil {
 		return WorkspaceRef{}, err
 	}
-	if _, _, err := loadManifestFS(builtinTemplateFS, s.manifestPath(id), "builtin"); err != nil {
+	if _, err := s.loadManifest(id); err != nil {
 		return WorkspaceRef{}, err
 	}
 	root := s.workspacePath(id)
@@ -90,7 +84,7 @@ func (s *BuiltinStore) FetchWorkspace(_ context.Context, id string) (WorkspaceRe
 	if err != nil {
 		return WorkspaceRef{}, fmt.Errorf("create builtin hub workspace temp dir: %w", err)
 	}
-	if err := copyWorkspaceTreeFS(builtinTemplateFS, root, tmpDir, "builtin hub workspace"); err != nil {
+	if err := copyWorkspaceTreeFS(templates.FS(), root, tmpDir, "builtin hub workspace"); err != nil {
 		_ = os.RemoveAll(tmpDir)
 		return WorkspaceRef{}, err
 	}
@@ -101,10 +95,40 @@ func (s *BuiltinStore) Publish(context.Context, PublishSpec) (Template, error) {
 	return Template{}, ErrRegistryNotWritable
 }
 
+func (s *BuiltinStore) loadManifest(id string) (localTemplateManifest, error) {
+	if err := validateLocalTemplateID(id); err != nil {
+		return localTemplateManifest{}, err
+	}
+	manifestPath := s.manifestPath(id)
+	data, err := fs.ReadFile(templates.FS(), manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return localTemplateManifest{}, fmt.Errorf("%w: %s", ErrTemplateNotFound, id)
+		}
+		return localTemplateManifest{}, fmt.Errorf("read builtin manifest %q: %w", id, err)
+	}
+	var manifest localTemplateManifest
+	if err := toml.Unmarshal(data, &manifest); err != nil {
+		return localTemplateManifest{}, fmt.Errorf("decode builtin manifest %q: %w", id, err)
+	}
+	if err := validateManifest(manifest); err != nil {
+		return localTemplateManifest{}, fmt.Errorf("validate builtin manifest %q: %w", id, err)
+	}
+	return manifest, nil
+}
+
 func (s *BuiltinStore) manifestPath(id string) string {
-	return filepath.ToSlash(filepath.Join(builtinTemplatesRoot, id, localManifestFileName))
+	root, ok := builtinRuntimeTemplates[strings.TrimSpace(id)]
+	if !ok {
+		return filepath.ToSlash(filepath.Join("builtin", id, localManifestFileName))
+	}
+	return templates.ManifestPath(root)
 }
 
 func (s *BuiltinStore) workspacePath(id string) string {
-	return filepath.ToSlash(filepath.Join(builtinTemplatesRoot, id, localWorkspaceDirName))
+	root, ok := builtinRuntimeTemplates[strings.TrimSpace(id)]
+	if !ok {
+		return filepath.ToSlash(filepath.Join("builtin", id, localWorkspaceDirName))
+	}
+	return templates.WorkspacePath(root)
 }

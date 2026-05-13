@@ -27,7 +27,6 @@ if [ "$APP" = "csgclaw-cli" ]; then
 fi
 
 mkdir -p "$DIST_DIR"
-"$(dirname "$0")/sync-agent-runtimes.sh"
 
 supports_boxlite_bundle() {
   case "$1/$2" in

@@ -54,7 +54,7 @@ type PicoClawRuntimeHost struct {
 	SyncHandle            func(h agentruntime.Handle) error
 	EnsureGatewayConfig   func(agentName, botID string, profile agentruntime.Profile) error
 	EnsureWorkspace       func(agentName, template string) (string, error)
-	WorkspaceTemplate     func(name, botID string) string
+	WorkspaceTemplate     func(name, botID string) (string, error)
 	EnsureProjectsRoot    func() (string, error)
 	HomeEnv               string
 	WorkspaceGuestPath    string
@@ -136,7 +136,9 @@ func (s *Service) OpenClawRuntimeHost() PicoClawRuntimeHost {
 		}
 		return openclawsandbox.Root(agentHome), nil
 	}
-	host.WorkspaceTemplate = func(name, botID string) string { return openclawsandbox.WorkspaceTemplateWorker }
+	host.WorkspaceTemplate = func(name, botID string) (string, error) {
+		return resolveRuntimeTemplateRoot(RuntimeKindOpenClawSandbox, RoleWorker)
+	}
 	host.HomeEnv = openclawsandbox.BoxUserHome
 	host.WorkspaceGuestPath = openclawsandbox.BoxDir
 	host.ProjectsGuestPath = openclawsandbox.BoxProjectsDir

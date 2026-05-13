@@ -216,6 +216,8 @@ When `[hub]` is omitted, CSGClaw still enables the built-in read-only registry b
 [hub]
 default_registry = "builtin"
 default_publish_registry = "local"
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/picoclaw-worker"
 
 [[hub.registries]]
 name = "builtin"
@@ -240,6 +242,8 @@ Field behavior:
 
 - `default_registry` selects the default source registry when a command needs one registry context.
 - `default_publish_registry` selects the default publish target when a command does not pass a registry explicitly.
+- `default_manager_template` selects the default manager template when a flow needs a manager template implicitly.
+- `default_worker_template` selects the default worker template when a flow needs a worker template implicitly.
 - `name` is the registry identifier used by CLI and API flows.
 - `kind` is `builtin`, `local`, or `remote`.
 - `path` is used by `local` registries.
