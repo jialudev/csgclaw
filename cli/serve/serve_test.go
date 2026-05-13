@@ -1087,6 +1087,41 @@ models = ["local.minimax-m2.5"]
 	}
 }
 
+func TestFormatEffectiveConfigIncludesDefaultHubRegistriesWhenOmitted(t *testing.T) {
+	cfg := config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:       "127.0.0.1:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "your_access_token",
+		},
+		Bootstrap: config.BootstrapConfig{
+			DefaultManagerTemplate: "builtin/picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
+		},
+		Sandbox: config.SandboxConfig{
+			Provider: config.BoxLiteProvider,
+		},
+		Hub: config.HubConfig{
+			DefaultRegistry:        "builtin",
+			DefaultPublishRegistry: "local",
+		},
+	}
+
+	got := formatEffectiveConfig(cfg)
+	for _, want := range []string{
+		`[[hub.registries]]`,
+		`name = "builtin"`,
+		`kind = "builtin"`,
+		`name = "local"`,
+		`kind = "local"`,
+		`enabled = true`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatEffectiveConfig() missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestSandboxServiceOptionsSupportsConfiguredProvider(t *testing.T) {
 	opts, err := sandboxServiceOptions(config.SandboxConfig{
 		Provider:                 config.BoxLiteProvider,

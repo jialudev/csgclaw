@@ -116,6 +116,17 @@ debian_registries_override = []
 default_registry = "builtin"
 default_publish_registry = "local"
 
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+enabled = true
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "/tmp/hub"
+enabled = true
+
 [models]
 default = "default.gpt-test"
 
@@ -179,6 +190,17 @@ debian_registries_override = []
 default_registry = "builtin"
 default_publish_registry = "local"
 
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+enabled = true
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "/tmp/hub"
+enabled = true
+
 [models]
 default = "default.gpt-test"
 
@@ -237,6 +259,17 @@ debian_registries_override = []
 [hub]
 default_registry = "builtin"
 default_publish_registry = "local"
+
+[[hub.registries]]
+name = "builtin"
+kind = "builtin"
+enabled = true
+
+[[hub.registries]]
+name = "local"
+kind = "local"
+path = "/tmp/hub"
+enabled = true
 
 [models]
 default = "default.gpt-test"
@@ -386,6 +419,74 @@ models = ["gpt-test"]
 		`[[hub.registries]]`,
 		`name = "builtin"`,
 		`kind = "builtin"`,
+		`enabled = true`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("completed config missing %q:\n%s", want, content)
+		}
+	}
+}
+
+func TestEnsureStateCompletesExistingConfigMissingHubRegistries(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	original := `# custom config header
+
+[server]
+listen_addr = "127.0.0.1:19090"
+advertise_base_url = "http://example.test"
+access_token = "custom-token"
+no_auth = false
+
+[bootstrap]
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/picoclaw-worker"
+
+[sandbox]
+provider = "boxlite"
+debian_registries_override = []
+
+[hub]
+default_registry = "builtin"
+default_publish_registry = "local"
+
+[models]
+default = "default.gpt-test"
+
+[models.providers.default]
+base_url = "http://llm.test/v1"
+api_key = "secret"
+models = ["gpt-test"]
+`
+	if err := os.WriteFile(configPath, []byte(original), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	restore := stubEnsureStateDeps(t)
+	defer restore()
+	EnsureIMBootstrapState = func(string) error { return nil }
+	CreateManagerBot = func(_ context.Context, _, _ string, cfg config.Config) (bot.Bot, error) {
+		if got, want := len(cfg.Hub.Registries), 2; got != want {
+			t.Fatalf("len(cfg.Hub.Registries) = %d, want %d", got, want)
+		}
+		return bot.Bot{}, nil
+	}
+
+	if _, err := EnsureState(context.Background(), EnsureStateOptions{ConfigPath: configPath}); err != nil {
+		t.Fatalf("EnsureState() error = %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		`[[hub.registries]]`,
+		`name = "builtin"`,
+		`name = "local"`,
+		`kind = "local"`,
 		`enabled = true`,
 	} {
 		if !strings.Contains(content, want) {

@@ -230,5 +230,8 @@ func configNeedsCompletion(content string) bool {
 	if !strings.Contains(content, `default_publish_registry = `) {
 		return true
 	}
+	if !strings.Contains(content, `[[hub.registries]]`) {
+		return true
+	}
 	return false
 }
