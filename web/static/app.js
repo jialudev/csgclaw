@@ -142,10 +142,8 @@ const messages = {
     hubWorkspaceBinary: "该文件是二进制文件，暂不支持预览。",
     hubWorkspaceEmptyFile: "该文件为空。",
     hubListEnd: "没有更多了",
-    hubOpenHint: "左侧保留为全局入口，可继续扩展推荐、已安装和社区模板。",
     hubLoading: "正在加载 Hub 模板...",
     hubRefresh: "刷新模板",
-    hubUseTemplate: "使用此模板",
     hubTemplateSourceLabel: "模板来源",
     hubEmpty: "还没有可用模板。",
     hubLoadFailed: "Hub 模板加载失败，请稍后重试。",
@@ -368,10 +366,8 @@ const messages = {
     hubWorkspaceBinary: "This file is binary and cannot be previewed here.",
     hubWorkspaceEmptyFile: "This file is empty.",
     hubListEnd: "No more templates",
-    hubOpenHint: "The sidebar entry is ready for future recommended, installed, and community views.",
     hubLoading: "Loading Hub templates...",
     hubRefresh: "Refresh templates",
-    hubUseTemplate: "Use this template",
     hubTemplateSourceLabel: "Template source",
     hubEmpty: "No templates available yet.",
     hubLoadFailed: "Failed to load Hub templates. Please try again later.",
@@ -3010,14 +3006,6 @@ function App() {
                           collapsed=${Boolean(collapsedWorkspaceGroups.hub)}
                           onToggle=${() => toggleWorkspaceGroup("hub")}
                         >
-                          <button className=${`workspace-row hub-nav-row ${activePane.type === "hub" ? "active" : ""}`} onClick=${() => selectHub()}>
-                            <span className="workspace-row-icon"><${HubIcon} /></span>
-                            <span className="workspace-row-main">
-                              <span className="workspace-row-title truncate">${t("hubTitle")}</span>
-                              <span className="workspace-row-meta truncate">${t("hubOpenHint")}</span>
-                            </span>
-                            <span className="workspace-row-time">${hubTemplates.length}</span>
-                          </button>
                           ${hubError
                             ? html`<div className="workspace-empty">${hubError}</div>`
                             : hubLoaded && hubTemplates.length === 0
@@ -4310,29 +4298,6 @@ function HubDetailPane({
   onCreateFromTemplate,
 }) {
   const workspaceEntries = selectedTemplate?.workspace?.entries || [];
-  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
-  const templateMenuRef = useRef(null);
-
-  useEffect(() => {
-    setShowTemplateMenu(false);
-  }, [selectedTemplateId]);
-
-  useEffect(() => {
-    if (!showTemplateMenu) {
-      return undefined;
-    }
-
-    function handlePointerDown(event) {
-      const menu = templateMenuRef.current;
-      if (!menu || menu.contains(event.target)) {
-        return;
-      }
-      setShowTemplateMenu(false);
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [showTemplateMenu]);
 
   return html`
     <section className="entity-pane hub-detail-pane">
@@ -4397,32 +4362,14 @@ function HubDetailPane({
                             <span className="mini-badge">${selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
                           </div>
                         </div>
-                        <div ref=${templateMenuRef} className="header-menu hub-template-actions">
+                        <div className="hub-template-actions">
                           <button
                             type="button"
-                            className="btn btn-primary btn-sm preview-action-button preview-action-button-primary hub-template-menu-button"
-                            aria-expanded=${showTemplateMenu}
-                            onClick=${() => setShowTemplateMenu((value) => !value)}
+                            className="btn btn-primary btn-sm preview-action-button preview-action-button-primary"
+                            onClick=${() => onCreateFromTemplate?.(selectedTemplate)}
                           >
-                            <span>${t("hubUseTemplate")}</span>
-                            <span className="hub-template-menu-chevron" aria-hidden="true"><${ChevronIcon} /></span>
+                            <span>${t("createAgent")}</span>
                           </button>
-                          ${showTemplateMenu
-                            ? html`
-                                <div className="header-popover tools-popover hub-template-popover">
-                                  <button
-                                    type="button"
-                                    className="btn btn-secondary-gray btn-sm tool-menu-row"
-                                    onClick=${() => {
-                                      setShowTemplateMenu(false);
-                                      onCreateFromTemplate?.(selectedTemplate);
-                                    }}
-                                  >
-                                    <span>${t("createAgent")}</span>
-                                  </button>
-                                </div>
-                              `
-                            : null}
                         </div>
                       </div>
                     </div>

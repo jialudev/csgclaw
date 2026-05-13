@@ -3100,28 +3100,6 @@ body::after {
   flex-shrink: 0;
 }
 
-.hub-template-menu-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.hub-template-menu-chevron {
-  display: inline-flex;
-  align-items: center;
-}
-
-.hub-template-menu-chevron svg {
-  width: 14px;
-  height: 14px;
-}
-
-.hub-template-popover {
-  left: auto;
-  right: 0;
-  min-width: 180px;
-}
-
 .hub-inspector-icon {
   width: 62px;
   height: 62px;
