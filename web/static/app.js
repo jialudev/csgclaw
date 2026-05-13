@@ -28,6 +28,7 @@ const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
 const WORKSPACE_TAB_MESSAGES = "messages";
 const WORKSPACE_TAB_AGENTS = "agents";
+const WORKSPACE_TAB_HUB = "hub";
 const CSGCLAW_ACTION_CARD_TYPE = "csgclaw.action_card";
 const ACTION_REBUILD_MANAGER = "rebuild-manager";
 
@@ -114,10 +115,38 @@ const messages = {
     directMessagesSection: "私信",
     messagesTab: "消息",
     agentsTab: "Agents",
+    hubTab: "Hub",
     computersSection: "电脑",
     localComputer: "本机",
     computerOverview: "电脑概览",
     agentOverview: "Agent 概览",
+    hubOverview: "Hub 概览",
+    hubTitle: "Hub",
+    hubSubtitle: "发现可复用的 Agent 模板，并作为全局入口浏览模板市场。",
+    hubTemplatesSection: "模板",
+    hubAllTab: "全部",
+    hubTemplateCountSuffix: "个 Agent 模板",
+    hubSourceLabel: "来源",
+    hubRuntimeLabel: "运行时",
+    hubImageLabel: "镜像",
+    hubWorkspaceLabel: "工作区",
+    hubUpdatedAtLabel: "更新时间",
+    hubDescriptionLabel: "描述",
+    hubWorkspaceTemplateLabel: "Workspace（模板文件目录）",
+    hubWorkspacePreviewTitle: "选择一个文件查看内容",
+    hubWorkspacePreviewHint: "在左侧文件树中选择文件以查看其内容",
+    hubWorkspaceLoading: "正在加载模板工作区...",
+    hubWorkspaceLoadFailed: "模板工作区加载失败，请稍后重试。",
+    hubWorkspaceFileLoading: "正在加载文件内容...",
+    hubWorkspaceFileLoadFailed: "文件内容加载失败，请稍后重试。",
+    hubWorkspaceBinary: "该文件是二进制文件，暂不支持预览。",
+    hubWorkspaceEmptyFile: "该文件为空。",
+    hubListEnd: "没有更多了",
+    hubOpenHint: "左侧保留为全局入口，可继续扩展推荐、已安装和社区模板。",
+    hubLoading: "正在加载 Hub 模板...",
+    hubRefresh: "刷新模板",
+    hubEmpty: "还没有可用模板。",
+    hubLoadFailed: "Hub 模板加载失败，请稍后重试。",
     yourView: "你的视图",
     activeNow: "当前在线",
     totalThreads: "房间总数",
@@ -308,10 +337,38 @@ const messages = {
     directMessagesSection: "Direct Messages",
     messagesTab: "Messages",
     agentsTab: "Agents",
+    hubTab: "Hub",
     computersSection: "Computers",
     localComputer: "Local computer",
     computerOverview: "Computer overview",
     agentOverview: "Agent overview",
+    hubOverview: "Hub overview",
+    hubTitle: "Hub",
+    hubSubtitle: "Browse reusable agent templates from a global entry point.",
+    hubTemplatesSection: "Templates",
+    hubAllTab: "All",
+    hubTemplateCountSuffix: "Agent templates",
+    hubSourceLabel: "Source",
+    hubRuntimeLabel: "Runtime",
+    hubImageLabel: "Image",
+    hubWorkspaceLabel: "Workspace",
+    hubUpdatedAtLabel: "Updated",
+    hubDescriptionLabel: "Description",
+    hubWorkspaceTemplateLabel: "Workspace (template directory)",
+    hubWorkspacePreviewTitle: "Select a file to preview",
+    hubWorkspacePreviewHint: "Choose a file from the tree on the left to view its content",
+    hubWorkspaceLoading: "Loading template workspace...",
+    hubWorkspaceLoadFailed: "Failed to load the template workspace. Please try again later.",
+    hubWorkspaceFileLoading: "Loading file content...",
+    hubWorkspaceFileLoadFailed: "Failed to load the file content. Please try again later.",
+    hubWorkspaceBinary: "This file is binary and cannot be previewed here.",
+    hubWorkspaceEmptyFile: "This file is empty.",
+    hubListEnd: "No more templates",
+    hubOpenHint: "The sidebar entry is ready for future recommended, installed, and community views.",
+    hubLoading: "Loading Hub templates...",
+    hubRefresh: "Refresh templates",
+    hubEmpty: "No templates available yet.",
+    hubLoadFailed: "Failed to load Hub templates. Please try again later.",
     yourView: "Your view",
     activeNow: "Active now",
     totalThreads: "Rooms",
@@ -716,6 +773,10 @@ function ComputerIcon() {
   return IconImage("computer");
 }
 
+function HubIcon() {
+  return IconImage("hub");
+}
+
 function PlayIcon() {
   return IconImage("play");
 }
@@ -734,6 +795,8 @@ function paneFromLocation(pathname = window.location.pathname) {
     case "agents":
     case "agent":
       return id ? { type: "agent", id } : { type: "computer", id: "local" };
+    case "hub":
+      return { type: "hub", id: "hub" };
     case "channels":
     case "channel":
     case "dms":
@@ -754,6 +817,9 @@ function pathForPane(pane, rooms = []) {
   }
   if (pane.type === "agent" && pane.id) {
     return `/agents/${encodeURIComponent(pane.id)}`;
+  }
+  if (pane.type === "hub") {
+    return "/hub";
   }
   if (pane.type === "conversation" && pane.id) {
     const room = rooms.find((item) => item.id === pane.id);
@@ -785,6 +851,9 @@ function decodePathSegment(value) {
 }
 
 function workspaceTabForPane(pane) {
+  if (pane?.type === "hub") {
+    return WORKSPACE_TAB_HUB;
+  }
   if (pane?.type === "agent" || pane?.type === "computer") {
     return WORKSPACE_TAB_AGENTS;
   }
@@ -890,6 +959,17 @@ function App() {
   const [agents, setAgents] = useState([]);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
   const [agentsError, setAgentsError] = useState("");
+  const [hubTemplates, setHubTemplates] = useState([]);
+  const [hubLoaded, setHubLoaded] = useState(false);
+  const [hubError, setHubError] = useState("");
+  const [selectedHubTemplateId, setSelectedHubTemplateId] = useState("");
+  const [hubTemplateDetail, setHubTemplateDetail] = useState(null);
+  const [hubTemplateDetailLoading, setHubTemplateDetailLoading] = useState(false);
+  const [hubTemplateDetailError, setHubTemplateDetailError] = useState("");
+  const [hubWorkspaceFile, setHubWorkspaceFile] = useState(null);
+  const [hubWorkspaceFileLoading, setHubWorkspaceFileLoading] = useState(false);
+  const [hubWorkspaceFileError, setHubWorkspaceFileError] = useState("");
+  const [selectedHubWorkspacePath, setSelectedHubWorkspacePath] = useState("");
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [agentModalMode, setAgentModalMode] = useState("create");
   const [editingAgent, setEditingAgent] = useState(null);
@@ -952,6 +1032,7 @@ function App() {
     refreshManagerProfile();
     refreshAgents();
     refreshBootstrapConfig();
+    refreshHubTemplates();
   }, []);
 
   useEffect(() => {
@@ -1312,6 +1393,39 @@ function App() {
     }
     loadAgentPageDraft(selectedAgentForPage);
   }, [selectedAgentForPage?.id]);
+
+  useEffect(() => {
+    if (activePane.type === "hub" && !hubLoaded && !hubError) {
+      refreshHubTemplates();
+    }
+  }, [activePane.type, hubLoaded, hubError]);
+
+  useEffect(() => {
+    if (!hubTemplates.length) {
+      setSelectedHubTemplateId("");
+      setHubTemplateDetail(null);
+      setHubTemplateDetailError("");
+      setSelectedHubWorkspacePath("");
+      setHubWorkspaceFile(null);
+      setHubWorkspaceFileError("");
+      return;
+    }
+    setSelectedHubTemplateId((current) => hubTemplates.some((item) => item.id === current) ? current : hubTemplates[0].id);
+  }, [hubTemplates]);
+
+  useEffect(() => {
+    if (!selectedHubTemplateId) {
+      setHubTemplateDetail(null);
+      setHubTemplateDetailLoading(false);
+      setHubTemplateDetailError("");
+      setSelectedHubWorkspacePath("");
+      setHubWorkspaceFile(null);
+      setHubWorkspaceFileLoading(false);
+      setHubWorkspaceFileError("");
+      return;
+    }
+    loadHubTemplateDetail(selectedHubTemplateId);
+  }, [selectedHubTemplateId]);
 
   useEffect(() => {
     if (activePane.type !== "agent" || !agentPageDraft?.provider) {
@@ -1677,6 +1791,26 @@ function App() {
     }
   }
 
+  function selectHub(options = {}) {
+    const next = { type: "hub", id: "hub" };
+    setActivePane(next);
+    setWorkspaceTab(WORKSPACE_TAB_HUB);
+    setShowMemberList(false);
+    setShowChannelTools(false);
+    if (options.updateURL !== false) {
+      syncBrowserPath(next, rooms, options.replace ? "replace" : "push");
+    }
+  }
+
+  function selectHubTemplate(item) {
+    if (!item?.id) {
+      selectHub();
+      return;
+    }
+    setSelectedHubTemplateId(item.id);
+    selectHub();
+  }
+
   function toggleWorkspaceGroup(id) {
     setCollapsedWorkspaceGroups((current) => ({
       ...current,
@@ -1856,6 +1990,12 @@ function App() {
     setComposerMentionState(null);
   }
 
+  const selectedHubTemplate = useMemo(
+    () => hubTemplates.find((item) => item.id === selectedHubTemplateId) || hubTemplates[0] || null,
+    [hubTemplates, selectedHubTemplateId],
+  );
+  const selectedHubTemplateView = hubTemplateDetail?.id === selectedHubTemplateId ? hubTemplateDetail : selectedHubTemplate;
+
   if (!data) {
     return html`<div className="empty-state">${loadingError || t("loading")}</div>`;
   }
@@ -1890,6 +2030,8 @@ function App() {
     ? t("agentOverview")
     : activePane.type === "computer"
       ? t("computerOverview")
+      : activePane.type === "hub"
+        ? t("hubOverview")
       : t("conversationOverview");
   const previewUser = profilePreview?.type === "user"
     ? usersById.get(profilePreview.id) ?? null
@@ -1940,6 +2082,72 @@ function App() {
           message: err.message || t("authMissing"),
         },
       }));
+    }
+  }
+
+  async function refreshHubTemplates() {
+    try {
+      const resp = await fetch("/api/v1/hub/templates");
+      if (!resp.ok) {
+        throw new Error("hub templates failed");
+      }
+      const payload = await resp.json();
+      setHubTemplates(Array.isArray(payload) ? payload : []);
+      setHubError("");
+      setHubLoaded(true);
+    } catch (_) {
+      setHubTemplates([]);
+      setHubError(t("hubLoadFailed"));
+      setHubLoaded(true);
+    }
+  }
+
+  async function loadHubTemplateDetail(templateID) {
+    if (!templateID) {
+      return;
+    }
+    setHubTemplateDetailLoading(true);
+    setHubTemplateDetailError("");
+    setSelectedHubWorkspacePath("");
+    setHubWorkspaceFile(null);
+    setHubWorkspaceFileError("");
+    try {
+      const resp = await fetch(`/api/v1/hub/templates/${encodeURIComponent(templateID)}`);
+      if (!resp.ok) {
+        throw new Error((await resp.text()).trim() || t("hubWorkspaceLoadFailed"));
+      }
+      const payload = await resp.json();
+      setHubTemplateDetail(payload);
+      const firstFile = (payload?.workspace?.entries || []).find((entry) => entry?.type === "file" && entry?.path);
+      if (firstFile?.path) {
+        setSelectedHubWorkspacePath(firstFile.path);
+        loadHubWorkspaceFile(templateID, firstFile.path);
+      }
+    } catch (err) {
+      setHubTemplateDetail(null);
+      setHubTemplateDetailError(err.message || t("hubWorkspaceLoadFailed"));
+    } finally {
+      setHubTemplateDetailLoading(false);
+    }
+  }
+
+  async function loadHubWorkspaceFile(templateID, workspacePath) {
+    if (!templateID || !workspacePath) {
+      return;
+    }
+    setHubWorkspaceFileLoading(true);
+    setHubWorkspaceFileError("");
+    try {
+      const resp = await fetch(`/api/v1/hub/templates/${encodeURIComponent(templateID)}/workspace/file?path=${encodeURIComponent(workspacePath)}`);
+      if (!resp.ok) {
+        throw new Error((await resp.text()).trim() || t("hubWorkspaceFileLoadFailed"));
+      }
+      setHubWorkspaceFile(await resp.json());
+    } catch (err) {
+      setHubWorkspaceFile(null);
+      setHubWorkspaceFileError(err.message || t("hubWorkspaceFileLoadFailed"));
+    } finally {
+      setHubWorkspaceFileLoading(false);
     }
   }
 
@@ -2709,6 +2917,20 @@ function App() {
                     <small>${agentItems.length}</small>
                   </span>
                 </button>
+                <button
+                  className=${`btn btn-secondary-gray btn-sm workspace-tab ${workspaceTab === WORKSPACE_TAB_HUB ? "active" : ""}`}
+                  role="tab"
+                  aria-selected=${workspaceTab === WORKSPACE_TAB_HUB}
+                  aria-label=${t("hubTab")}
+                  title=${t("hubTab")}
+                  onClick=${() => selectHub()}
+                >
+                  <span className="workspace-tab-icon" aria-hidden="true"><${HubIcon} /></span>
+                  <span className="workspace-tab-copy">
+                    <strong>${t("hubTab")}</strong>
+                    <small>${hubTemplates.length}</small>
+                  </span>
+                </button>
               </div>
               ${workspaceTab === WORKSPACE_TAB_MESSAGES
                 ? html`
@@ -2763,6 +2985,41 @@ function App() {
                       <//>
                     </div>
                   `
+                : workspaceTab === WORKSPACE_TAB_HUB
+                  ? html`
+                      <div className="workspace-tab-panel" role="tabpanel" aria-label=${t("hubTab")}>
+                        <${WorkspaceGroup}
+                          id="hub"
+                          title=${t("hubTemplatesSection")}
+                          count=${hubTemplates.length}
+                          collapsed=${Boolean(collapsedWorkspaceGroups.hub)}
+                          onToggle=${() => toggleWorkspaceGroup("hub")}
+                        >
+                          <button className=${`workspace-row hub-nav-row ${activePane.type === "hub" ? "active" : ""}`} onClick=${() => selectHub()}>
+                            <span className="workspace-row-icon"><${HubIcon} /></span>
+                            <span className="workspace-row-main">
+                              <span className="workspace-row-title truncate">${t("hubTitle")}</span>
+                              <span className="workspace-row-meta truncate">${t("hubOpenHint")}</span>
+                            </span>
+                            <span className="workspace-row-time">${hubTemplates.length}</span>
+                          </button>
+                          ${hubError
+                            ? html`<div className="workspace-empty">${hubError}</div>`
+                            : hubLoaded && hubTemplates.length === 0
+                              ? html`<div className="workspace-empty">${t("hubEmpty")}</div>`
+                              : hubTemplates.slice(0, 6).map((item) => html`
+                                  <button key=${item.id} className=${`workspace-row hub-template-row ${selectedHubTemplateId === item.id ? "active" : ""}`} onClick=${() => selectHubTemplate(item)}>
+                                    <span className="workspace-row-icon"><${HubIcon} /></span>
+                                    <span className="workspace-row-main">
+                                      <span className="workspace-row-title truncate">${item.name || item.id}</span>
+                                      <span className="workspace-row-meta truncate">${item.description || item.source?.name || item.id}</span>
+                                    </span>
+                                    <span className="mini-badge">${item.source?.name || "-"}</span>
+                                  </button>
+                                `)}
+                        <//>
+                      </div>
+                    `
                 : html`
                     <div className="workspace-tab-panel" role="tabpanel" aria-label=${t("agentsTab")}>
                       <${WorkspaceGroup}
@@ -2838,11 +3095,14 @@ function App() {
               <span className="sidebar-toggle-mark"><${SidebarToggleIcon} /></span>
             </button>
             <nav className="sidebar-rail-nav" aria-label="Workspace">
-              <button className=${`btn btn-ghost btn-sm sidebar-rail-button ${activePane.type === "computer" ? "active" : ""}`} aria-label=${t("localComputer")} title=${t("localComputer")} onClick=${selectComputer}>
-                <span className="sidebar-rail-icon" aria-hidden="true"><${ComputerIcon} /></span>
+              <button className=${`btn btn-ghost btn-sm sidebar-rail-button ${workspaceTab === WORKSPACE_TAB_MESSAGES ? "active" : ""}`} aria-label=${t("messagesTab")} title=${t("messagesTab")} onClick=${() => setWorkspaceTab(WORKSPACE_TAB_MESSAGES)}>
+                <span className="sidebar-rail-icon" aria-hidden="true"><${RoomsIcon} /></span>
               </button>
-              <button type="button" className="btn btn-ghost btn-sm sidebar-rail-button" aria-label=${t("createAgent")} title=${t("createAgent")} onClick=${openCreateAgentModal}>
-                <span className="sidebar-rail-icon" aria-hidden="true"><${AgentIcon} /></span>
+              <button type="button" className=${`btn btn-ghost btn-sm sidebar-rail-button ${workspaceTab === WORKSPACE_TAB_AGENTS ? "active" : ""}`} aria-label=${t("agentsTab")} title=${t("agentsTab")} onClick=${() => setWorkspaceTab(WORKSPACE_TAB_AGENTS)}>
+                <span className="sidebar-rail-icon" aria-hidden="true"><${UsersIcon} /></span>
+              </button>
+              <button type="button" className=${`btn btn-ghost btn-sm sidebar-rail-button ${workspaceTab === WORKSPACE_TAB_HUB ? "active" : ""}`} aria-label=${t("hubTab")} title=${t("hubTab")} onClick=${() => selectHub()}>
+                <span className="sidebar-rail-icon" aria-hidden="true"><${HubIcon} /></span>
               </button>
               <button type="button" className="btn btn-ghost btn-sm sidebar-rail-button" aria-label=${t("createRoom")} title=${t("createRoom")} onClick=${() => openCreateRoomModal()}>
                 <span className="sidebar-rail-icon" aria-hidden="true"><${RoomPlusIcon} /></span>
@@ -2852,7 +3112,35 @@ function App() {
         </div>
 
         <main className="chat-panel">
-          ${activePane.type === "agent" && selectedAgent
+          ${activePane.type === "hub"
+            ? html`
+                <${HubDetailPane}
+                  t=${t}
+                  locale=${locale}
+                  templates=${hubTemplates}
+                  selectedTemplate=${selectedHubTemplateView}
+                  selectedTemplateId=${selectedHubTemplateId}
+                  loaded=${hubLoaded}
+                  error=${hubError || hubTemplateDetailError}
+                  detailLoading=${hubTemplateDetailLoading}
+                  selectedWorkspacePath=${selectedHubWorkspacePath}
+                  workspaceFile=${hubWorkspaceFile}
+                  workspaceFileLoading=${hubWorkspaceFileLoading}
+                  workspaceFileError=${hubWorkspaceFileError}
+                  onRetry=${async () => {
+                    await refreshHubTemplates();
+                    if (selectedHubTemplateId) {
+                      await loadHubTemplateDetail(selectedHubTemplateId);
+                    }
+                  }}
+                  onSelectTemplate=${selectHubTemplate}
+                  onSelectWorkspaceFile=${(workspacePath) => {
+                    setSelectedHubWorkspacePath(workspacePath);
+                    loadHubWorkspaceFile(selectedHubTemplateId, workspacePath);
+                  }}
+                />
+              `
+            : activePane.type === "agent" && selectedAgent
             ? html`
                 <${AgentDetailPane}
                   item=${selectedAgent}
@@ -3962,6 +4250,163 @@ function WorkspaceConversationRow({ conversation, active, currentUserID, usersBy
   `;
 }
 
+function HubDetailPane({
+  t,
+  locale,
+  templates,
+  selectedTemplate,
+  selectedTemplateId,
+  loaded,
+  error,
+  detailLoading,
+  selectedWorkspacePath,
+  workspaceFile,
+  workspaceFileLoading,
+  workspaceFileError,
+  onRetry,
+  onSelectTemplate,
+  onSelectWorkspaceFile,
+}) {
+  const workspaceEntries = selectedTemplate?.workspace?.entries || [];
+  return html`
+    <section className="entity-pane hub-detail-pane">
+      <header className="hub-page-header">
+        <div className="hub-page-heading">
+          <h1>${t("hubTitle")}</h1>
+          <p>${t("hubSubtitle")}</p>
+        </div>
+        <button className="btn btn-secondary-gray btn-sm preview-action-button" onClick=${onRetry}>${loaded ? t("hubRefresh") : t("hubLoading")}</button>
+      </header>
+      ${error ? html`<div className="form-error">${error}</div>` : null}
+      ${!loaded && !error
+        ? html`<div className="workspace-empty">${t("hubLoading")}</div>`
+        : templates.length === 0
+          ? html`
+              <div className="empty-state shell-empty-state hub-empty-state">
+                <span className="rich-empty-mark" aria-hidden="true">*</span>
+                <strong>${t("hubEmpty")}</strong>
+              </div>
+            `
+          : html`
+              <div className="hub-workbench">
+                <div className="hub-catalog-panel">
+                  <div className="hub-filter-tabs">
+                    <button type="button" className="hub-filter-tab active">${t("hubAllTab")}</button>
+                  </div>
+                  <div className="hub-catalog-meta">${formatHubTemplateCount(templates.length, locale, t)}</div>
+                  <div className="hub-template-list">
+                    ${templates.map((item) => html`
+                      <button
+                        key=${item.id}
+                        type="button"
+                        className=${`hub-template-card ${selectedTemplateId === item.id ? "active" : ""}`}
+                        onClick=${() => onSelectTemplate?.(item)}
+                      >
+                        <div className="hub-template-card-icon"><${HubIcon} /></div>
+                        <div className="hub-template-card-body">
+                          <div className="hub-template-card-title-row">
+                            <h2>${item.name || item.id}</h2>
+                          </div>
+                          <p>${item.description || item.id}</p>
+                          <div className="hub-template-card-meta">
+                            <span className="mini-badge">${item.runtime_kind || item.workspace?.kind || "-"}</span>
+                            <span className="hub-template-card-updated">${t("hubUpdatedAtLabel")} ${formatHubDate(item.updated_at, locale)}</span>
+                          </div>
+                        </div>
+                      </button>
+                    `)}
+                  </div>
+                  <div className="hub-catalog-end">${t("hubListEnd")}</div>
+                </div>
+
+                <div className="hub-inspector-panel">
+                  ${selectedTemplate ? html`
+                    <div className="hub-inspector-hero">
+                      <div className="hub-inspector-brand">
+                        <div className="hub-inspector-icon"><${HubIcon} /></div>
+                        <div className="hub-inspector-copy">
+                          <h2>${selectedTemplate.name || selectedTemplate.id}</h2>
+                          <p>${selectedTemplate.description || selectedTemplate.id}</p>
+                          <span className="mini-badge">${selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="hub-inspector-grid">
+                      <div className="hub-inspector-field">
+                        <span>${t("hubRuntimeLabel")}</span>
+                        <strong>${selectedTemplate.runtime_kind || "-"}</strong>
+                      </div>
+                      <div className="hub-inspector-field">
+                        <span>${t("hubImageLabel")}</span>
+                        <strong className="hub-field-value-multiline">${selectedTemplate.image || "-"}</strong>
+                      </div>
+                      <div className="hub-inspector-field">
+                        <span>${t("hubUpdatedAtLabel")}</span>
+                        <strong>${formatHubDateTime(selectedTemplate.updated_at, locale)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="hub-description-block">
+                      <span className="hub-section-label">${t("hubDescriptionLabel")}</span>
+                      <p>${selectedTemplate.description || selectedTemplate.id}</p>
+                    </div>
+
+                    <div className="hub-workspace-block">
+                      <span className="hub-section-label">${t("hubWorkspaceTemplateLabel")}</span>
+                      <div className="hub-workspace-panels">
+                        <div className="hub-workspace-tree">
+                          ${detailLoading
+                            ? html`<div className="workspace-empty">${t("hubWorkspaceLoading")}</div>`
+                            : workspaceEntries.length === 0
+                              ? html`<div className="workspace-empty">${t("hubWorkspacePreviewHint")}</div>`
+                              : workspaceEntries.map((entry) => html`
+                                  <button
+                                    key=${entry.path}
+                                    type="button"
+                                    className=${`hub-tree-row ${entry.type} ${entry.type === "file" && selectedWorkspacePath === entry.path ? "active" : ""}`}
+                                    style=${{ "--hub-tree-depth": entry.depth }}
+                                    disabled=${entry.type !== "file"}
+                                    onClick=${() => entry.type === "file" ? onSelectWorkspaceFile?.(entry.path) : null}
+                                  >
+                                    <span className="hub-tree-glyph" aria-hidden="true"></span>
+                                    <span className="hub-tree-label">${entry.name}</span>
+                                  </button>
+                                `)}
+                        </div>
+                        <div className="hub-workspace-preview">
+                          ${workspaceFileError
+                            ? html`<div className="workspace-empty">${workspaceFileError}</div>`
+                            : workspaceFileLoading
+                              ? html`<div className="workspace-empty">${t("hubWorkspaceFileLoading")}</div>`
+                              : !workspaceFile
+                                ? html`
+                                    <div className="hub-preview-empty-icon" aria-hidden="true"></div>
+                                    <strong>${t("hubWorkspacePreviewTitle")}</strong>
+                                    <p>${t("hubWorkspacePreviewHint")}</p>
+                                  `
+                                : html`
+                                    <div className="hub-preview-file-header">
+                                      <strong>${workspaceFile.path}</strong>
+                                      <span>${workspaceFile.binary ? t("hubWorkspaceBinary") : `${workspaceFile.size || 0} B`}</span>
+                                    </div>
+                                    <div className="hub-preview-body">
+                                      ${workspaceFile.binary
+                                        ? html`<div className="workspace-empty">${t("hubWorkspaceBinary")}</div>`
+                                        : html`<pre className="hub-preview-code">${workspaceFile.content || t("hubWorkspaceEmptyFile")}</pre>`}
+                                    </div>
+                                  `}
+                        </div>
+                      </div>
+                    </div>
+                  ` : null}
+                </div>
+              </div>
+            `}
+    </section>
+  `;
+}
+
 function AgentDetailPane({ item, t, activeRoom, busyKey, error, draft, models, modelBusy, saving, saveError, authStatuses, authBusyProvider, onDraftChange, onSave, onProviderLogin, onStart, onStop, onRecreate, onDelete, onInvite, onOpenDM }) {
   const isManager = item.role === "manager" || item.id === "u-manager";
   const running = isAgentRunning(item);
@@ -4575,6 +5020,41 @@ function formatTime(value, locale) {
     minute: "2-digit",
     timeZone: locale === "zh" ? "Asia/Shanghai" : "UTC",
   });
+}
+
+function formatHubDate(value, locale) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
+
+function formatHubDateTime(value, locale) {
+  if (!value) {
+    return "-";
+  }
+  return `${new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  }).format(new Date(value))} (UTC)`;
+}
+
+function formatHubTemplateCount(count, locale, t) {
+  if (locale === "zh") {
+    return `共 ${count} ${t("hubTemplateCountSuffix")}`;
+  }
+  return `${count} ${t("hubTemplateCountSuffix")}`;
 }
 
 function latestAt(conversation) {

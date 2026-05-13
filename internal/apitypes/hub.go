@@ -24,5 +24,22 @@ type HubTemplateSource struct {
 }
 
 type HubTemplateWorkspace struct {
-	Kind string `json:"kind"`
+	Kind    string                      `json:"kind"`
+	Entries []HubTemplateWorkspaceEntry `json:"entries,omitempty"`
+}
+
+type HubTemplateWorkspaceEntry struct {
+	Path  string `json:"path"`
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Depth int    `json:"depth,omitempty"`
+	Size  int64  `json:"size,omitempty"`
+}
+
+type HubTemplateWorkspaceFile struct {
+	Path      string `json:"path"`
+	Content   string `json:"content,omitempty"`
+	Size      int64  `json:"size,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+	Binary    bool   `json:"binary,omitempty"`
 }

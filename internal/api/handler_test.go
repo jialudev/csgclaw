@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1787,6 +1788,54 @@ func TestHandleHubTemplateByIDReturnsTemplate(t *testing.T) {
 	}
 	if got.Source.Name != "local" || got.Source.Kind != "local" {
 		t.Fatalf("template source = %+v, want local/local", got.Source)
+	}
+	if len(got.Workspace.Entries) == 0 {
+		t.Fatalf("workspace entries = %#v, want non-empty result", got.Workspace.Entries)
+	}
+	paths := make([]string, 0, len(got.Workspace.Entries))
+	for _, entry := range got.Workspace.Entries {
+		paths = append(paths, entry.Path)
+	}
+	if !slices.Contains(paths, "USER.md") || !slices.Contains(paths, "skills/custom/SKILL.md") {
+		t.Fatalf("workspace paths = %#v, want USER.md and skills/custom/SKILL.md", paths)
+	}
+	if got, want := slices.Index(paths, "skills"), 1; got != want {
+		t.Fatalf("workspace entry index for %q = %d, want %d; paths=%#v", "skills", got, want, paths)
+	}
+	if got, want := slices.Index(paths, "skills/custom"), 2; got != want {
+		t.Fatalf("workspace entry index for %q = %d, want %d; paths=%#v", "skills/custom", got, want, paths)
+	}
+	if got, want := slices.Index(paths, "skills/custom/SKILL.md"), 3; got != want {
+		t.Fatalf("workspace entry index for %q = %d, want %d; paths=%#v", "skills/custom/SKILL.md", got, want, paths)
+	}
+}
+
+func TestHandleHubTemplateWorkspaceFileReturnsContent(t *testing.T) {
+	hubSvc := mustNewLocalTemplateHubService(t, "review-bot", hub.Template{
+		ID:          "review-bot",
+		Name:        "review-bot",
+		Description: "code review helper",
+		RuntimeKind: agent.RuntimeKindCodex,
+	})
+	srv := &Handler{}
+	srv.SetHubService(hubSvc)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot/workspace/file?path=skills/custom/SKILL.md", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got apitypes.HubTemplateWorkspaceFile
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Path != "skills/custom/SKILL.md" {
+		t.Fatalf("path = %q, want %q", got.Path, "skills/custom/SKILL.md")
+	}
+	if strings.TrimSpace(got.Content) != "# Custom" {
+		t.Fatalf("content = %q, want %q", strings.TrimSpace(got.Content), "# Custom")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -834,6 +835,12 @@ func (h *Handler) handleHubTemplates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleHubTemplateByID(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/hub/templates/")
+	id, remainder := splitHubTemplatePath(path)
+	if remainder == "workspace/file" {
+		h.handleHubTemplateWorkspaceFile(w, r, id)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -842,7 +849,6 @@ func (h *Handler) handleHubTemplateByID(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "hub service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/hub/templates/"))
 	if id == "" {
 		http.NotFound(w, r)
 		return
@@ -856,7 +862,16 @@ func (h *Handler) handleHubTemplateByID(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, http.StatusOK, presentHubTemplate(item))
+	presented, err := h.presentHubTemplateDetail(r.Context(), item)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, os.ErrNotExist) {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, http.StatusOK, presented)
 }
 
 func presentHubTemplates(items []hub.Template) []apitypes.HubTemplate {
@@ -883,6 +898,22 @@ func presentHubTemplate(item hub.Template) apitypes.HubTemplate {
 			Kind: item.WorkspaceRef.Kind,
 		},
 	}
+}
+
+func splitHubTemplatePath(path string) (string, string) {
+	path = strings.Trim(path, "/")
+	if path == "" {
+		return "", ""
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		return path, ""
+	}
+	id := strings.Join(parts[:2], "/")
+	if len(parts) == 2 {
+		return id, ""
+	}
+	return id, strings.Join(parts[2:], "/")
 }
 
 func agentProfileFromAPI(req apitypes.CreateAgentProfile) agent.AgentProfile {
