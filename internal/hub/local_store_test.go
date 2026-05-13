@@ -108,20 +108,61 @@ func TestLocalStorePublishRejectsUnsafeTemplateID(t *testing.T) {
 	}
 }
 
-func TestLocalStorePublishRejectsEmptyWorkspace(t *testing.T) {
+func TestLocalStorePublishAllowsEmptyWorkspace(t *testing.T) {
 	store := NewLocalStore(t.TempDir())
 	workspaceRoot := filepath.Join(t.TempDir(), "workspace")
 	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
 
-	_, err := store.Publish(context.Background(), PublishSpec{
+	published, err := store.Publish(context.Background(), PublishSpec{
 		Name:         "frontend-alice",
 		RuntimeKind:  runtime.KindCodex,
 		WorkspaceRef: WorkspaceRef{Kind: WorkspaceKindDir, Path: workspaceRoot},
 	})
-	if !errors.Is(err, ErrWorkspaceEmpty) {
-		t.Fatalf("Publish() error = %v, want ErrWorkspaceEmpty", err)
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if got, want := published.WorkspaceRef.Kind, WorkspaceKindDir; got != want {
+		t.Fatalf("Publish().WorkspaceRef.Kind = %q, want %q", got, want)
+	}
+	entries, err := os.ReadDir(filepath.Join(store.templatesRoot(), "frontend-alice", "workspace"))
+	if err != nil {
+		t.Fatalf("ReadDir(workspace) error = %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("workspace entries = %d, want 0", len(entries))
+	}
+}
+
+func TestLocalStorePublishAllowsMissingWorkspace(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+
+	published, err := store.Publish(context.Background(), PublishSpec{
+		Name:        "frontend-alice",
+		RuntimeKind: runtime.KindCodex,
+	})
+	if err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if published.WorkspaceRef != (WorkspaceRef{}) {
+		t.Fatalf("Publish().WorkspaceRef = %#v, want empty", published.WorkspaceRef)
+	}
+
+	got, err := store.Get(context.Background(), "frontend-alice")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.WorkspaceRef != (WorkspaceRef{}) {
+		t.Fatalf("Get().WorkspaceRef = %#v, want empty", got.WorkspaceRef)
+	}
+
+	workspace, err := store.FetchWorkspace(context.Background(), "frontend-alice")
+	if err != nil {
+		t.Fatalf("FetchWorkspace() error = %v", err)
+	}
+	if workspace != (WorkspaceRef{}) {
+		t.Fatalf("FetchWorkspace() = %#v, want empty", workspace)
 	}
 }
 

@@ -734,7 +734,9 @@ func (s *Service) resolveTemplateCreateSpec(ctx context.Context, spec CreateAgen
 
 	cleanup := templateWorkspaceCleanup(item.Source.Kind, workspace)
 	spec = applyTemplateDefaults(spec, item)
-	spec.FromTemplate = workspace.Path
+	if strings.TrimSpace(workspace.Kind) == hub.WorkspaceKindDir {
+		spec.FromTemplate = strings.TrimSpace(workspace.Path)
+	}
 	return spec, cleanup, nil
 }
 

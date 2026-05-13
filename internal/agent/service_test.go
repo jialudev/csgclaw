@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -2712,6 +2713,49 @@ func TestCreateWorkerSkipsDefaultTemplateRuntimeMismatch(t *testing.T) {
 	}
 }
 
+func TestCreateWorkerAppliesTemplateDefaultsWithoutWorkspace(t *testing.T) {
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubServiceWithoutWorkspace(t, "frontend-worker", hub.Template{
+		ID:          "frontend-worker",
+		Name:        "frontend-worker",
+		Description: "frontend worker",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.Description != "frontend worker" {
+		t.Fatalf("Description = %q, want %q", got.Description, "frontend worker")
+	}
+	if got.Image != "worker-image:1" {
+		t.Fatalf("Image = %q, want %q", got.Image, "worker-image:1")
+	}
+
+	workspaceRoot, err := agentWorkspaceRoot("alice")
+	if err != nil {
+		t.Fatalf("agentWorkspaceRoot() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "skills", "custom", "SKILL.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Stat(skills/custom/SKILL.md) error = %v, want not exist", err)
+	}
+}
+
 func TestCreateRejectsDefaultManagerTemplateRoleMismatch(t *testing.T) {
 	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
@@ -3804,6 +3848,34 @@ func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) 
 		Image:        item.Image,
 		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},
 		UpdatedAt:    time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+
+	svc, err := hub.NewService(config.HubConfig{
+		DefaultRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "local", Kind: hub.RegistryKindLocal, Path: registryRoot, Enabled: true},
+		},
+	}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+	return svc
+}
+
+func mustNewLocalTemplateHubServiceWithoutWorkspace(t *testing.T, id string, item hub.Template) *hub.Service {
+	t.Helper()
+
+	registryRoot := t.TempDir()
+	store := hub.NewLocalStore(registryRoot)
+	if _, err := store.Publish(context.Background(), hub.PublishSpec{
+		ID:          id,
+		Name:        item.Name,
+		Description: item.Description,
+		RuntimeKind: item.RuntimeKind,
+		Image:       item.Image,
+		UpdatedAt:   time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}

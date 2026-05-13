@@ -58,16 +58,13 @@ func (s *BuiltinStore) Get(_ context.Context, id string) (Template, error) {
 		return Template{}, fmt.Errorf("validate builtin hub manifest %q: %w", id, err)
 	}
 	return Template{
-		ID:          id,
-		Name:        manifest.Name,
-		Description: manifest.Description,
-		RuntimeKind: manifest.RuntimeKind,
-		Image:       manifest.Image,
-		WorkspaceRef: WorkspaceRef{
-			Kind: WorkspaceKindDir,
-			Path: s.workspacePath(id),
-		},
-		UpdatedAt: updatedAt,
+		ID:           id,
+		Name:         manifest.Name,
+		Description:  manifest.Description,
+		RuntimeKind:  manifest.RuntimeKind,
+		Image:        manifest.Image,
+		WorkspaceRef: s.workspaceRef(id),
+		UpdatedAt:    updatedAt,
 	}, nil
 }
 
@@ -78,6 +75,9 @@ func (s *BuiltinStore) FetchWorkspace(_ context.Context, id string) (WorkspaceRe
 	}
 	if _, err := s.loadManifest(id); err != nil {
 		return WorkspaceRef{}, err
+	}
+	if ref := s.workspaceRef(id); strings.TrimSpace(ref.Path) == "" {
+		return WorkspaceRef{}, nil
 	}
 	root := s.workspacePath(id)
 	tmpDir, err := os.MkdirTemp("", "csgclaw-hub-builtin-*")
@@ -131,4 +131,13 @@ func (s *BuiltinStore) workspacePath(id string) string {
 		return filepath.ToSlash(filepath.Join("builtin", id, localWorkspaceDirName))
 	}
 	return templates.WorkspacePath(root)
+}
+
+func (s *BuiltinStore) workspaceRef(id string) WorkspaceRef {
+	path := s.workspacePath(id)
+	info, err := fs.Stat(templates.FS(), path)
+	if err != nil || !info.IsDir() {
+		return WorkspaceRef{}
+	}
+	return WorkspaceRef{Kind: WorkspaceKindDir, Path: path}
 }

@@ -27,9 +27,7 @@ var (
 	ErrTemplateIDRequired     = errors.New("hub template id is required")
 	ErrTemplateNameRequired   = errors.New("hub template name is required")
 	ErrRuntimeKindRequired    = errors.New("hub runtime kind is required")
-	ErrWorkspaceRefRequired   = errors.New("hub workspace reference is required")
 	ErrWorkspaceDirRequired   = errors.New("hub workspace directory is required")
-	ErrWorkspaceEmpty         = errors.New("hub workspace must contain at least one file")
 	ErrWorkspacePathUnsafe    = errors.New("hub workspace path is unsafe")
 	ErrWorkspaceSymlinkDenied = errors.New("hub workspace symlinks are not supported")
 )
@@ -93,16 +91,13 @@ func (s *LocalStore) Get(_ context.Context, id string) (Template, error) {
 		return Template{}, fmt.Errorf("validate local hub manifest %q: %w", id, err)
 	}
 	return Template{
-		ID:          id,
-		Name:        manifest.Name,
-		Description: manifest.Description,
-		RuntimeKind: manifest.RuntimeKind,
-		Image:       manifest.Image,
-		WorkspaceRef: WorkspaceRef{
-			Kind: WorkspaceKindDir,
-			Path: s.workspaceRoot(id),
-		},
-		UpdatedAt: updatedAt,
+		ID:           id,
+		Name:         manifest.Name,
+		Description:  manifest.Description,
+		RuntimeKind:  manifest.RuntimeKind,
+		Image:        manifest.Image,
+		WorkspaceRef: s.workspaceRef(id),
+		UpdatedAt:    updatedAt,
 	}, nil
 }
 
@@ -115,7 +110,7 @@ func (s *LocalStore) FetchWorkspace(_ context.Context, id string) (WorkspaceRef,
 	info, err := os.Stat(workspace)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return WorkspaceRef{}, fmt.Errorf("%w: %s", ErrTemplateNotFound, id)
+			return WorkspaceRef{}, nil
 		}
 		return WorkspaceRef{}, fmt.Errorf("stat local hub workspace %q: %w", workspace, err)
 	}
@@ -146,14 +141,16 @@ func (s *LocalStore) Publish(_ context.Context, spec PublishSpec) (Template, err
 		}
 	}()
 
-	if err := os.MkdirAll(filepath.Join(tmpDir, localWorkspaceDirName), 0o755); err != nil {
-		return Template{}, fmt.Errorf("create local hub temp workspace dir: %w", err)
-	}
 	if err := s.writeManifest(filepath.Join(tmpDir, localManifestFileName), normalized); err != nil {
 		return Template{}, err
 	}
-	if err := copyWorkspaceTree(normalized.WorkspaceRef.Path, filepath.Join(tmpDir, localWorkspaceDirName)); err != nil {
-		return Template{}, err
+	if normalized.WorkspaceRef.Kind == WorkspaceKindDir {
+		if err := os.MkdirAll(filepath.Join(tmpDir, localWorkspaceDirName), 0o755); err != nil {
+			return Template{}, fmt.Errorf("create local hub temp workspace dir: %w", err)
+		}
+		if err := copyWorkspaceTree(normalized.WorkspaceRef.Path, filepath.Join(tmpDir, localWorkspaceDirName)); err != nil {
+			return Template{}, err
+		}
 	}
 
 	targetDir := s.templateRoot(normalized.ID)
@@ -182,6 +179,15 @@ func (s *LocalStore) manifestPath(id string) string {
 
 func (s *LocalStore) workspaceRoot(id string) string {
 	return filepath.Join(s.templateRoot(id), localWorkspaceDirName)
+}
+
+func (s *LocalStore) workspaceRef(id string) WorkspaceRef {
+	workspace := s.workspaceRoot(id)
+	info, err := os.Stat(workspace)
+	if err != nil || !info.IsDir() {
+		return WorkspaceRef{}
+	}
+	return WorkspaceRef{Kind: WorkspaceKindDir, Path: workspace}
 }
 
 func (s *LocalStore) loadTemplate(id string) (string, localTemplateManifest, error) {
@@ -228,20 +234,29 @@ func normalizePublishSpec(spec PublishSpec) (PublishSpec, error) {
 	if spec.RuntimeKind == "" {
 		return PublishSpec{}, ErrRuntimeKindRequired
 	}
+	spec.WorkspaceRef.Kind = strings.TrimSpace(spec.WorkspaceRef.Kind)
+	spec.WorkspaceRef.Path = strings.TrimSpace(spec.WorkspaceRef.Path)
+	if spec.WorkspaceRef.Kind == "" && spec.WorkspaceRef.Path == "" {
+		if spec.UpdatedAt.IsZero() {
+			spec.UpdatedAt = time.Now().UTC()
+		} else {
+			spec.UpdatedAt = spec.UpdatedAt.UTC()
+		}
+		return spec, nil
+	}
 	if spec.WorkspaceRef.Kind == "" {
 		spec.WorkspaceRef.Kind = WorkspaceKindDir
 	}
 	if spec.WorkspaceRef.Kind != WorkspaceKindDir {
 		return PublishSpec{}, ErrWorkspaceDirRequired
 	}
-	spec.WorkspaceRef.Path = strings.TrimSpace(spec.WorkspaceRef.Path)
 	if spec.WorkspaceRef.Path == "" {
-		return PublishSpec{}, ErrWorkspaceRefRequired
+		return PublishSpec{}, ErrWorkspaceDirRequired
 	}
 	info, err := os.Stat(spec.WorkspaceRef.Path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return PublishSpec{}, fmt.Errorf("%w: %s", ErrWorkspaceRefRequired, spec.WorkspaceRef.Path)
+			return PublishSpec{}, fmt.Errorf("%w: %s", ErrWorkspaceDirRequired, spec.WorkspaceRef.Path)
 		}
 		return PublishSpec{}, fmt.Errorf("stat hub workspace: %w", err)
 	}

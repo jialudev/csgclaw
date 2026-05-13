@@ -15,12 +15,12 @@ import (
 func copyWorkspaceTree(srcRoot, dstRoot string) error {
 	srcRoot = strings.TrimSpace(srcRoot)
 	if srcRoot == "" {
-		return ErrWorkspaceRefRequired
+		return ErrWorkspaceDirRequired
 	}
 	info, err := os.Lstat(srcRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("%w: %s", ErrWorkspaceRefRequired, srcRoot)
+			return fmt.Errorf("%w: %s", ErrWorkspaceDirRequired, srcRoot)
 		}
 		return fmt.Errorf("stat hub workspace: %w", err)
 	}
@@ -36,10 +36,9 @@ func copyWorkspaceTree(srcRoot, dstRoot string) error {
 func copyWorkspaceTreeFS(srcFS fs.FS, root, dstRoot, label string) error {
 	dstRoot = strings.TrimSpace(dstRoot)
 	if dstRoot == "" {
-		return ErrWorkspaceRefRequired
+		return ErrWorkspaceDirRequired
 	}
 	root = strings.TrimSpace(root)
-	fileCount := 0
 	err := fs.WalkDir(srcFS, root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return fmt.Errorf("walk %s %q: %w", label, root, walkErr)
@@ -90,16 +89,9 @@ func copyWorkspaceTreeFS(srcFS fs.FS, root, dstRoot, label string) error {
 		if err := os.WriteFile(dstPath, data, mode); err != nil {
 			return fmt.Errorf("write workspace file %q: %w", dstPath, err)
 		}
-		fileCount++
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if fileCount == 0 {
-		return ErrWorkspaceEmpty
-	}
-	return nil
+	return err
 }
 
 func workspaceFSRelativePath(root, current string) (string, error) {

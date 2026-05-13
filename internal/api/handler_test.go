@@ -1839,6 +1839,42 @@ func TestHandleHubTemplateWorkspaceFileReturnsContent(t *testing.T) {
 	}
 }
 
+func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.T) {
+	hubSvc := mustNewLocalTemplateHubServiceWithoutWorkspace(t, "review-bot", hub.Template{
+		ID:          "review-bot",
+		Name:        "review-bot",
+		Description: "code review helper",
+		RuntimeKind: agent.RuntimeKindCodex,
+	})
+	srv := &Handler{}
+	srv.SetHubService(hubSvc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var detail apitypes.HubTemplate
+	if err := json.NewDecoder(rec.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode detail response: %v", err)
+	}
+	if len(detail.Workspace.Entries) != 0 {
+		t.Fatalf("workspace entries = %#v, want empty", detail.Workspace.Entries)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot/workspace/file?path=USER.md", nil)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("file status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "hub workspace is not available") {
+		t.Fatalf("file response body = %q, want unavailable workspace error", rec.Body.String())
+	}
+}
+
 func TestHandleHubTemplatesPublishesAgentSnapshot(t *testing.T) {
 	svc := mustNewService(t)
 	created, err := svc.Create(context.Background(), agent.CreateRequest{
@@ -1925,6 +1961,34 @@ func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) 
 		Image:        item.Image,
 		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},
 		UpdatedAt:    time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+
+	svc, err := hub.NewService(config.HubConfig{
+		DefaultRegistry: "local",
+		Registries: []config.HubRegistryConfig{
+			{Name: "local", Kind: hub.RegistryKindLocal, Path: registryRoot, Enabled: true},
+		},
+	}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+	return svc
+}
+
+func mustNewLocalTemplateHubServiceWithoutWorkspace(t *testing.T, id string, item hub.Template) *hub.Service {
+	t.Helper()
+
+	registryRoot := t.TempDir()
+	store := hub.NewLocalStore(registryRoot)
+	if _, err := store.Publish(context.Background(), hub.PublishSpec{
+		ID:          id,
+		Name:        item.Name,
+		Description: item.Description,
+		RuntimeKind: item.RuntimeKind,
+		Image:       item.Image,
+		UpdatedAt:   time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
