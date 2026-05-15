@@ -11,6 +11,8 @@ import (
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/runtime/openclawsandbox"
+	"csgclaw/internal/runtime/picoclawsandbox"
+	"csgclaw/internal/runtime/sandboxgateway"
 	"csgclaw/internal/sandbox"
 )
 
@@ -53,10 +55,12 @@ type PicoClawRuntimeHost struct {
 	ResolveRuntimeProfile func(h agentruntime.Handle) (agentruntime.Profile, error)
 	SyncHandle            func(h agentruntime.Handle) error
 	EnsureGatewayConfig   func(agentName, botID string, profile agentruntime.Profile) error
-	EnsureWorkspace       func(agentName, template string) (string, error)
+	EnsureWorkspace       func(agentName, template string) (sandboxgateway.WorkspaceLayout, error)
+	WorkspaceLayout       func(agentName string) (sandboxgateway.WorkspaceLayout, error)
 	WorkspaceTemplate     func(name, botID string) (string, error)
 	EnsureProjectsRoot    func() (string, error)
 	HomeEnv               string
+	MountGuestPath        string
 	WorkspaceGuestPath    string
 	ProjectsGuestPath     string
 	GatewayLogPath        string
@@ -100,9 +104,14 @@ func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
 			_, err := ensureAgentPicoClawConfig(agentName, botID, s.server, config.ModelConfig{ModelID: profile.ModelID})
 			return err
 		},
-		EnsureWorkspace:    ensureAgentWorkspace,
+		EnsureWorkspace:    ensurePicoClawWorkspace,
+		WorkspaceLayout:    picoClawWorkspaceLayout,
 		WorkspaceTemplate:  workspaceTemplateForAgent,
 		EnsureProjectsRoot: ensureAgentProjectsRoot,
+		MountGuestPath:     picoclawsandbox.BoxWorkspaceDir,
+		WorkspaceGuestPath: picoclawsandbox.BoxWorkspaceDir,
+		ProjectsGuestPath:  picoclawsandbox.BoxProjectsDir,
+		GatewayLogPath:     picoclawsandbox.BoxGatewayLogPath,
 		StreamLogs:         s.streamRuntimeHostLogs,
 	}
 }
@@ -126,25 +135,70 @@ func (s *Service) OpenClawRuntimeHost() PicoClawRuntimeHost {
 		}
 		return nil
 	}
-	host.EnsureWorkspace = func(agentName, template string) (string, error) {
-		agentHome, err := agentHomeDir(agentName)
-		if err != nil {
-			return "", err
-		}
-		if _, err := ensureWorkspaceAtRoot(openclawsandbox.WorkspaceRoot(agentHome), template); err != nil {
-			return "", err
-		}
-		return openclawsandbox.Root(agentHome), nil
-	}
+	host.EnsureWorkspace = ensureOpenClawWorkspace
+	host.WorkspaceLayout = openClawWorkspaceLayout
 	host.WorkspaceTemplate = func(name, botID string) (string, error) {
-		return resolveRuntimeTemplateRoot(RuntimeKindOpenClawSandbox, RoleWorker)
+		role := RoleWorker
+		if managerGatewayMatch(name, botID) {
+			role = RoleManager
+		}
+		return resolveRuntimeTemplateRoot(RuntimeKindOpenClawSandbox, role)
 	}
 	host.HomeEnv = openclawsandbox.BoxUserHome
-	host.WorkspaceGuestPath = openclawsandbox.BoxDir
+	host.MountGuestPath = openclawsandbox.BoxDir
+	host.WorkspaceGuestPath = openclawsandbox.BoxWorkspaceDir
 	host.ProjectsGuestPath = openclawsandbox.BoxProjectsDir
 	host.GatewayLogPath = openclawsandbox.BoxGatewayLogPath
 	host.GatewayCommand = openclawsandbox.GatewayRunCommand
 	return host
+}
+
+func ensurePicoClawWorkspace(agentName, template string) (sandboxgateway.WorkspaceLayout, error) {
+	layout, err := picoClawWorkspaceLayout(agentName)
+	if err != nil {
+		return sandboxgateway.WorkspaceLayout{}, err
+	}
+	if _, err := ensureWorkspaceAtRoot(layout.WorkspaceHostPath, template); err != nil {
+		return sandboxgateway.WorkspaceLayout{}, err
+	}
+	return layout, nil
+}
+
+func picoClawWorkspaceLayout(agentName string) (sandboxgateway.WorkspaceLayout, error) {
+	workspaceRoot, err := agentWorkspaceRoot(agentName)
+	if err != nil {
+		return sandboxgateway.WorkspaceLayout{}, err
+	}
+	return sandboxgateway.WorkspaceLayout{
+		MountHostPath:      workspaceRoot,
+		MountGuestPath:     picoclawsandbox.BoxWorkspaceDir,
+		WorkspaceHostPath:  workspaceRoot,
+		WorkspaceGuestPath: picoclawsandbox.BoxWorkspaceDir,
+	}, nil
+}
+
+func ensureOpenClawWorkspace(agentName, template string) (sandboxgateway.WorkspaceLayout, error) {
+	layout, err := openClawWorkspaceLayout(agentName)
+	if err != nil {
+		return sandboxgateway.WorkspaceLayout{}, err
+	}
+	if _, err := ensureWorkspaceAtRoot(layout.WorkspaceHostPath, template); err != nil {
+		return sandboxgateway.WorkspaceLayout{}, err
+	}
+	return layout, nil
+}
+
+func openClawWorkspaceLayout(agentName string) (sandboxgateway.WorkspaceLayout, error) {
+	agentHome, err := agentHomeDir(agentName)
+	if err != nil {
+		return sandboxgateway.WorkspaceLayout{}, err
+	}
+	return sandboxgateway.WorkspaceLayout{
+		MountHostPath:      openclawsandbox.Root(agentHome),
+		MountGuestPath:     openclawsandbox.BoxDir,
+		WorkspaceHostPath:  openclawsandbox.WorkspaceRoot(agentHome),
+		WorkspaceGuestPath: openclawsandbox.BoxWorkspaceDir,
+	}, nil
 }
 
 func (s *Service) setGatewayWorkPhase(p uint32) {

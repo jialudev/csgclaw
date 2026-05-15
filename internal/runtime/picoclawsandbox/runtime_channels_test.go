@@ -24,10 +24,11 @@ func TestRuntimeSetFeishuProviderUpdatesGatewayCreateSpecEnv(t *testing.T) {
 			return server.AdvertiseBaseURL
 		},
 		EnsureGatewayConfig: func(_, _ string, _ agentruntime.Profile) error { return nil },
-		EnsureWorkspace: func(_, _ string) (string, error) {
-			return t.TempDir(), nil
+		EnsureWorkspace: func(_, _ string) (WorkspaceLayout, error) {
+			root := t.TempDir()
+			return WorkspaceLayout{MountHostPath: root, WorkspaceHostPath: root}, nil
 		},
-		WorkspaceTemplate: func(_, _ string) string { return "" },
+		WorkspaceTemplate: func(_, _ string) (string, error) { return "", nil },
 		EnsureProjectsRoot: func() (string, error) {
 			return t.TempDir(), nil
 		},

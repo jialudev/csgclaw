@@ -19,6 +19,7 @@ import (
 	"csgclaw/internal/config"
 	"csgclaw/internal/hub"
 	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/runtime/sandboxgateway"
 	"csgclaw/internal/sandbox"
 )
 
@@ -961,7 +962,7 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 	defer func() {
 		_ = s.closeBox(box)
 	}()
-	if err := s.overlayTemplateWorkspace(name, spec.FromTemplate); err != nil {
+	if err := s.overlayTemplateWorkspace(name, "", spec.FromTemplate); err != nil {
 		return Agent{}, err
 	}
 
@@ -1591,7 +1592,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		defer func() {
 			_ = s.closeBox(box)
 		}()
-		if err := s.overlayTemplateWorkspace(name, spec.FromTemplate); err != nil {
+		if err := s.overlayTemplateWorkspace(name, runtimeKind, spec.FromTemplate); err != nil {
 			return Agent{}, err
 		}
 		return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, agentruntime.Info{
@@ -1610,7 +1611,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	if err != nil {
 		return Agent{}, fmt.Errorf("create worker box: %w", err)
 	}
-	if err := s.overlayTemplateWorkspace(name, spec.FromTemplate); err != nil {
+	if err := s.overlayTemplateWorkspace(name, runtimeKind, spec.FromTemplate); err != nil {
 		return Agent{}, err
 	}
 	info := agentruntime.Info{
@@ -1688,19 +1689,39 @@ func isResolvedWorkspacePath(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func (s *Service) overlayTemplateWorkspace(agentName, workspaceRoot string) error {
+func (s *Service) overlayTemplateWorkspace(agentName, runtimeKind, workspaceRoot string) error {
 	workspaceRoot = strings.TrimSpace(workspaceRoot)
 	if workspaceRoot == "" {
 		return nil
 	}
-	dstRoot, err := agentWorkspaceRoot(agentName)
+	layout, err := s.workspaceLayoutForOverlay(agentName, runtimeKind)
 	if err != nil {
 		return err
 	}
-	if err := overlayWorkspaceTree(workspaceRoot, dstRoot); err != nil {
+	if err := overlayWorkspaceTree(workspaceRoot, layout.WorkspaceHostPath); err != nil {
 		return fmt.Errorf("overlay template workspace for agent %q: %w", agentName, err)
 	}
 	return nil
+}
+
+func (s *Service) workspaceLayoutForOverlay(agentName, runtimeKind string) (sandboxgateway.WorkspaceLayout, error) {
+	switch normalizeRuntimeKind(runtimeKind) {
+	case RuntimeKindOpenClawSandbox:
+		return s.OpenClawRuntimeHost().WorkspaceLayout(agentName)
+	case "", RuntimeKindPicoClawSandbox:
+		return s.PicoClawRuntimeHost().WorkspaceLayout(agentName)
+	default:
+		workspaceRoot, err := agentWorkspaceRoot(agentName)
+		if err != nil {
+			return sandboxgateway.WorkspaceLayout{}, err
+		}
+		return sandboxgateway.WorkspaceLayout{
+			MountHostPath:      workspaceRoot,
+			MountGuestPath:     workspaceRoot,
+			WorkspaceHostPath:  workspaceRoot,
+			WorkspaceGuestPath: workspaceRoot,
+		}, nil
+	}
 }
 
 func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {

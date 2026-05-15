@@ -21,10 +21,12 @@ const (
 type AgentRef = sandboxgateway.AgentRef
 type Dependencies = sandboxgateway.Dependencies
 type Runtime = sandboxgateway.Runtime
+type WorkspaceLayout = sandboxgateway.WorkspaceLayout
 
 func New(deps Dependencies) *Runtime {
 	deps.RuntimeKind = agentruntime.KindPicoClawSandbox
 	deps.HomeEnv = "/home/picoclaw"
+	deps.MountGuestPath = BoxWorkspaceDir
 	deps.WorkspaceGuestPath = BoxWorkspaceDir
 	deps.ProjectsGuestPath = BoxProjectsDir
 	deps.GatewayLogPath = BoxGatewayLogPath

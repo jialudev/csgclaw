@@ -27,6 +27,7 @@ type CreateBotRequest struct {
 	Channel      string             `json:"channel,omitempty"`
 	ModelID      string             `json:"model_id,omitempty"`
 	RuntimeKind  string             `json:"runtime_kind,omitempty"`
+	FromTemplate string             `json:"from_template,omitempty"`
 	AgentProfile CreateAgentProfile `json:"agent_profile,omitempty"`
 }
 
