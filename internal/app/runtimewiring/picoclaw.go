@@ -90,6 +90,7 @@ func withSandboxRuntimeHost(host agent.PicoClawRuntimeHost, feishuProvider feish
 			},
 			AddProfileEnv:      agentAddProfileEnv,
 			HomeEnv:            host.HomeEnv,
+			MountGuestPath:     host.MountGuestPath,
 			WorkspaceGuestPath: host.WorkspaceGuestPath,
 			ProjectsGuestPath:  host.ProjectsGuestPath,
 			GatewayLogPath:     host.GatewayLogPath,

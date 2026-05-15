@@ -24,6 +24,7 @@ import (
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/boxlitecli"
 	"csgclaw/internal/sandbox/sandboxtest"
+	"csgclaw/internal/templates"
 )
 
 func init() {
@@ -2709,6 +2710,52 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 	}
 }
 
+func TestCreateOpenClawWorkerFromTemplateOverlaysOpenClawWorkspace(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Cleanup(TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc := mustNewLocalTemplateHubService(t, "openclaw-manager", hub.Template{
+		ID:          "openclaw-manager",
+		Name:        "openclaw-manager",
+		Description: "openclaw manager",
+		RuntimeKind: RuntimeKindOpenClawSandbox,
+		Image:       "openclaw-image:1",
+	})
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithHubService(hubSvc),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		Name:         "alice",
+		RuntimeKind:  RuntimeKindOpenClawSandbox,
+		FromTemplate: "local/openclaw-manager",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got.RuntimeKind != RuntimeKindOpenClawSandbox {
+		t.Fatalf("RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindOpenClawSandbox)
+	}
+
+	agentHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice")
+	openclawWorkspace := openclawsandbox.WorkspaceRoot(agentHome)
+	if _, err := os.Stat(filepath.Join(openclawWorkspace, "skills", "custom", "SKILL.md")); err != nil {
+		t.Fatalf("template skill missing from OpenClaw workspace after overlay: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(agentHome, hostWorkspaceDir, "skills", "custom", "SKILL.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("template skill should not be written to legacy workspace path for OpenClaw, stat error = %v", err)
+	}
+}
+
 func TestCreateWorkerUsesConfiguredDefaultTemplate(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
@@ -3967,7 +4014,10 @@ func TestOpenClawRuntimeHostBuildsWorkerWorkspaceAndConfig(t *testing.T) {
 	if got, want := host.HomeEnv, openclawsandbox.BoxUserHome; got != want {
 		t.Fatalf("HomeEnv = %q, want %q", got, want)
 	}
-	if got, want := host.WorkspaceGuestPath, openclawsandbox.BoxDir; got != want {
+	if got, want := host.MountGuestPath, openclawsandbox.BoxDir; got != want {
+		t.Fatalf("MountGuestPath = %q, want %q", got, want)
+	}
+	if got, want := host.WorkspaceGuestPath, openclawsandbox.BoxWorkspaceDir; got != want {
 		t.Fatalf("WorkspaceGuestPath = %q, want %q", got, want)
 	}
 	if got, want := host.ProjectsGuestPath, openclawsandbox.BoxProjectsDir; got != want {
@@ -3990,10 +4040,31 @@ func TestOpenClawRuntimeHostBuildsWorkerWorkspaceAndConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WorkspaceTemplate() error = %v", err)
 	}
+	if templateRoot != templates.OpenClawWorkerRoot {
+		t.Fatalf("WorkspaceTemplate(worker) = %q, want %q", templateRoot, templates.OpenClawWorkerRoot)
+	}
+	managerTemplateRoot, err := host.WorkspaceTemplate(ManagerName, ManagerUserID)
+	if err != nil {
+		t.Fatalf("WorkspaceTemplate(manager) error = %v", err)
+	}
+	if managerTemplateRoot != templates.OpenClawManagerRoot {
+		t.Fatalf("WorkspaceTemplate(manager) = %q, want %q", managerTemplateRoot, templates.OpenClawManagerRoot)
+	}
 	if got, err := host.EnsureWorkspace("alice", templateRoot); err != nil {
 		t.Fatalf("EnsureWorkspace() error = %v", err)
-	} else if got != wantOpenClawRoot {
-		t.Fatalf("EnsureWorkspace() root = %q, want %q", got, wantOpenClawRoot)
+	} else {
+		if got.MountHostPath != wantOpenClawRoot {
+			t.Fatalf("EnsureWorkspace().MountHostPath = %q, want %q", got.MountHostPath, wantOpenClawRoot)
+		}
+		if got.MountGuestPath != openclawsandbox.BoxDir {
+			t.Fatalf("EnsureWorkspace().MountGuestPath = %q, want %q", got.MountGuestPath, openclawsandbox.BoxDir)
+		}
+		if got.WorkspaceHostPath != openclawsandbox.WorkspaceRoot(wantAgentHome) {
+			t.Fatalf("EnsureWorkspace().WorkspaceHostPath = %q, want %q", got.WorkspaceHostPath, openclawsandbox.WorkspaceRoot(wantAgentHome))
+		}
+		if got.WorkspaceGuestPath != openclawsandbox.BoxWorkspaceDir {
+			t.Fatalf("EnsureWorkspace().WorkspaceGuestPath = %q, want %q", got.WorkspaceGuestPath, openclawsandbox.BoxWorkspaceDir)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(wantOpenClawRoot, openclawsandbox.HostWorkspaceDir, "AGENTS.md")); err != nil {
 		t.Fatalf("expected openclaw workspace template under openclaw root: %v", err)
@@ -4434,6 +4505,7 @@ func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, provider feishu.BotCre
 			},
 			AddProfileEnv:      addProfileEnvVars,
 			HomeEnv:            host.HomeEnv,
+			MountGuestPath:     host.MountGuestPath,
 			WorkspaceGuestPath: host.WorkspaceGuestPath,
 			ProjectsGuestPath:  host.ProjectsGuestPath,
 			GatewayLogPath:     host.GatewayLogPath,
