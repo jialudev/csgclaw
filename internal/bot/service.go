@@ -318,6 +318,7 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 			Role:           agent.RoleWorker,
 			ModelID:        normalized.ModelID,
 			RuntimeKind:    normalized.RuntimeKind,
+			FromTemplate:   normalized.FromTemplate,
 			RuntimeOptions: utils.CloneAnyMap(normalized.RuntimeOptions),
 			AgentProfile:   agentProfileFromBotRequest(normalized.AgentProfile),
 		})

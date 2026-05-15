@@ -8,11 +8,13 @@ import (
 type AgentRef = sandboxgateway.AgentRef
 type Dependencies = sandboxgateway.Dependencies
 type Runtime = sandboxgateway.Runtime
+type WorkspaceLayout = sandboxgateway.WorkspaceLayout
 
 func New(deps Dependencies) *Runtime {
 	deps.RuntimeKind = agentruntime.KindOpenClawSandbox
 	deps.HomeEnv = BoxUserHome
-	deps.WorkspaceGuestPath = BoxDir
+	deps.MountGuestPath = BoxDir
+	deps.WorkspaceGuestPath = BoxWorkspaceDir
 	deps.ProjectsGuestPath = BoxProjectsDir
 	deps.GatewayLogPath = BoxGatewayLogPath
 	if deps.WorkspaceTemplate == nil {

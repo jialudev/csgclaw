@@ -22,6 +22,13 @@ type AgentRef struct {
 	BoxID     string
 }
 
+type WorkspaceLayout struct {
+	MountHostPath      string
+	MountGuestPath     string
+	WorkspaceHostPath  string
+	WorkspaceGuestPath string
+}
+
 type Dependencies struct {
 	RuntimeKind    string
 	ModelFallback  string
@@ -45,12 +52,13 @@ type Dependencies struct {
 	ResolveAgent        func(h agentruntime.Handle) (AgentRef, error)
 	SyncHandle          func(h agentruntime.Handle) error
 	EnsureGatewayConfig func(agentName, botID string, profile agentruntime.Profile) error
-	EnsureWorkspace     func(agentName, template string) (string, error)
+	EnsureWorkspace     func(agentName, template string) (WorkspaceLayout, error)
 	WorkspaceTemplate   func(name, botID string) (string, error)
 	EnsureProjectsRoot  func() (string, error)
 	BuildRuntimeEnv     func(baseURL, accessToken, botID, llmBaseURL, modelID string, feishuProvider feishu.BotCredentialProvider) map[string]string
 	AddProfileEnv       func(envVars map[string]string, profileEnv map[string]string)
 	HomeEnv             string
+	MountGuestPath      string
 	WorkspaceGuestPath  string
 	ProjectsGuestPath   string
 	GatewayLogPath      string
@@ -311,10 +319,11 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
-	hostWorkspaceRoot, err := r.deps.EnsureWorkspace(name, templateRoot)
+	workspaceLayout, err := r.deps.EnsureWorkspace(name, templateRoot)
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
+	workspaceLayout = r.normalizeWorkspaceLayout(workspaceLayout)
 	projectsRoot, err := r.deps.EnsureProjectsRoot()
 	if err != nil {
 		return sandbox.CreateSpec{}, err
@@ -322,13 +331,21 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	envVars := r.deps.BuildRuntimeEnv(managerBaseURL, r.deps.Server.AccessToken, botID, llmBaseURL, modelID, r.feishuProvider())
 	r.deps.AddProfileEnv(envVars, profile.Env)
 	homeEnv := r.homeEnv()
-	workspaceGuestPath := r.workspaceGuestPath()
 	projectsGuestPath := r.projectsGuestPath()
 	gatewayCommand := r.gatewayCommand()
 	if homeEnv == "" {
 		return sandbox.CreateSpec{}, fmt.Errorf("runtime HOME env is required")
 	}
-	if workspaceGuestPath == "" {
+	if workspaceLayout.MountHostPath == "" {
+		return sandbox.CreateSpec{}, fmt.Errorf("workspace mount host path is required")
+	}
+	if workspaceLayout.MountGuestPath == "" {
+		return sandbox.CreateSpec{}, fmt.Errorf("workspace mount guest path is required")
+	}
+	if workspaceLayout.WorkspaceHostPath == "" {
+		return sandbox.CreateSpec{}, fmt.Errorf("workspace host path is required")
+	}
+	if workspaceLayout.WorkspaceGuestPath == "" {
 		return sandbox.CreateSpec{}, fmt.Errorf("workspace guest path is required")
 	}
 	if projectsGuestPath == "" {
@@ -347,7 +364,7 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 		Cmd:        []string{"/bin/sh", "-c", gatewayCommand},
 	}
 	spec.Mounts = append(spec.Mounts,
-		sandbox.Mount{HostPath: hostWorkspaceRoot, GuestPath: workspaceGuestPath},
+		sandbox.Mount{HostPath: workspaceLayout.MountHostPath, GuestPath: workspaceLayout.MountGuestPath},
 		sandbox.Mount{HostPath: projectsRoot, GuestPath: projectsGuestPath},
 	)
 	return spec, nil
@@ -369,6 +386,10 @@ func (r *Runtime) homeEnv() string {
 	return strings.TrimSpace(r.deps.HomeEnv)
 }
 
+func (r *Runtime) mountGuestPath() string {
+	return strings.TrimSpace(r.deps.MountGuestPath)
+}
+
 func (r *Runtime) workspaceGuestPath() string {
 	return strings.TrimSpace(r.deps.WorkspaceGuestPath)
 }
@@ -386,6 +407,23 @@ func (r *Runtime) gatewayCommand() string {
 		return strings.TrimSpace(r.deps.GatewayCommand())
 	}
 	return ""
+}
+
+func (r *Runtime) normalizeWorkspaceLayout(layout WorkspaceLayout) WorkspaceLayout {
+	layout.MountHostPath = strings.TrimSpace(layout.MountHostPath)
+	layout.MountGuestPath = strings.TrimSpace(layout.MountGuestPath)
+	layout.WorkspaceHostPath = strings.TrimSpace(layout.WorkspaceHostPath)
+	layout.WorkspaceGuestPath = strings.TrimSpace(layout.WorkspaceGuestPath)
+	if layout.WorkspaceHostPath == "" {
+		layout.WorkspaceHostPath = layout.MountHostPath
+	}
+	if layout.MountGuestPath == "" {
+		layout.MountGuestPath = r.mountGuestPath()
+	}
+	if layout.WorkspaceGuestPath == "" {
+		layout.WorkspaceGuestPath = r.workspaceGuestPath()
+	}
+	return layout
 }
 
 func (r *Runtime) openSandboxRuntime(agentName string) (sandbox.Runtime, string, error) {
