@@ -20,7 +20,9 @@ import (
 	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	"csgclaw/internal/runtime/notifier"
 	"csgclaw/internal/upgrade"
+	"csgclaw/internal/utils"
 	"csgclaw/internal/version"
 )
 
@@ -106,6 +108,7 @@ type agentResponse struct {
 	Provider         string                         `json:"provider,omitempty"`
 	ModelID          string                         `json:"model_id,omitempty"`
 	ReasoningEffort  string                         `json:"reasoning_effort,omitempty"`
+	RuntimeOptions   map[string]any                 `json:"runtime_options,omitempty"`
 	AgentProfile     agent.AgentProfileView         `json:"agent_profile,omitempty"`
 	ProfileComplete  bool                           `json:"profile_complete"`
 	DetectionResults []agent.ProfileDetectionResult `json:"detection_results,omitempty"`
@@ -205,6 +208,7 @@ func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Ser
 		SupportedRuntimeKinds: []string{
 			agent.RuntimeKindPicoClawSandbox,
 			agent.RuntimeKindOpenClawSandbox,
+			agent.RuntimeKindNotifier,
 		},
 		RuntimeDefaultImages: map[string]string{
 			agent.RuntimeKindPicoClawSandbox: config.DefaultManagerImageForRuntimeKind(agent.RuntimeKindPicoClawSandbox),
@@ -771,20 +775,22 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 }
 
 func agentCreateRequestFromAPI(req apitypes.CreateAgentRequest) agent.CreateRequest {
+	prof := agentProfileFromAPI(req.AgentProfile)
 	return agent.CreateRequest{
 		Spec: agent.CreateAgentSpec{
-			ID:           req.ID,
-			Name:         req.Name,
-			Description:  req.Description,
-			Image:        req.Image,
-			RuntimeKind:  req.RuntimeKind,
-			FromTemplate: req.FromTemplate,
-			Role:         req.Role,
-			Status:       req.Status,
-			CreatedAt:    req.CreatedAt,
-			Profile:      req.Profile,
-			ModelID:      req.ModelID,
-			AgentProfile: agentProfileFromAPI(req.AgentProfile),
+			ID:             req.ID,
+			Name:           req.Name,
+			Description:    req.Description,
+			Image:          req.Image,
+			RuntimeKind:    req.RuntimeKind,
+			FromTemplate:   req.FromTemplate,
+			Role:           req.Role,
+			Status:         req.Status,
+			CreatedAt:      req.CreatedAt,
+			Profile:        req.Profile,
+			ModelID:        req.ModelID,
+			RuntimeOptions: utils.CloneAnyMapShallowNestedStringMaps(req.RuntimeOptions),
+			AgentProfile:   prof,
 		},
 		Replace:   req.Replace,
 		FieldMask: req.FieldMask,
@@ -1485,6 +1491,14 @@ func presentAgents(items []agent.Agent) []agentResponse {
 }
 
 func presentAgent(item agent.Agent) agentResponse {
+	av := agent.RedactedProfileViewForAgent(item)
+	if strings.TrimSpace(av.Name) == strings.TrimSpace(item.Name) {
+		av.Name = ""
+	}
+	if strings.TrimSpace(av.Description) == strings.TrimSpace(item.Description) {
+		av.Description = ""
+	}
+	rx := notifier.ViewRuntimeOptionsForAPI(item.RuntimeOptions)
 	return agentResponse{
 		ID:               item.ID,
 		Name:             item.Name,
@@ -1500,7 +1514,8 @@ func presentAgent(item agent.Agent) agentResponse {
 		Provider:         item.Provider,
 		ModelID:          item.ModelID,
 		ReasoningEffort:  item.ReasoningEffort,
-		AgentProfile:     agent.RedactedProfileView(item.AgentProfile, item.DetectionResults),
+		RuntimeOptions:   rx,
+		AgentProfile:     av,
 		ProfileComplete:  item.ProfileComplete,
 		DetectionResults: append([]agent.ProfileDetectionResult(nil), item.DetectionResults...),
 	}

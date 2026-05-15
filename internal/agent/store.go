@@ -8,7 +8,10 @@ import (
 	"strings"
 	"time"
 
+	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/runtime/notifier"
 	"csgclaw/internal/sandbox"
+	"csgclaw/internal/utils"
 )
 
 type persistedState struct {
@@ -40,6 +43,7 @@ type persistedAgent struct {
 	RuntimeKind      string                   `json:"runtime_kind,omitempty"`
 	Image            string                   `json:"image,omitempty"`
 	BoxID            string                   `json:"box_id,omitempty"`
+	RuntimeOptions   map[string]any           `json:"runtime_options,omitempty"`
 	Role             string                   `json:"role"`
 	Status           string                   `json:"status,omitempty"`
 	CreatedAt        time.Time                `json:"created_at"`
@@ -53,6 +57,19 @@ type persistedAgent struct {
 }
 
 func newPersistedAgent(a Agent) persistedAgent {
+	ap := cloneProfile(a.AgentProfile)
+	if strings.TrimSpace(ap.Name) == strings.TrimSpace(a.Name) {
+		ap.Name = ""
+	}
+	if strings.TrimSpace(ap.Description) == strings.TrimSpace(a.Description) {
+		ap.Description = ""
+	}
+	pol := agentruntime.RuntimeOptionsPolicyForKind(normalizeRuntimeKind(a.RuntimeKind))
+	var topRX map[string]any
+	if len(a.RuntimeOptions) > 0 {
+		topRX = utils.CloneAnyMap(a.RuntimeOptions)
+	}
+	ap.BaseURL, ap.ModelID = pol.StripProfileLLMFields(a.RuntimeKind, ap.BaseURL, ap.ModelID)
 	return persistedAgent{
 		ID:               a.ID,
 		Name:             a.Name,
@@ -61,6 +78,7 @@ func newPersistedAgent(a Agent) persistedAgent {
 		RuntimeKind:      a.RuntimeKind,
 		Image:            a.Image,
 		BoxID:            a.BoxID,
+		RuntimeOptions:   topRX,
 		Role:             a.Role,
 		Status:           a.Status,
 		CreatedAt:        a.CreatedAt,
@@ -68,14 +86,22 @@ func newPersistedAgent(a Agent) persistedAgent {
 		Provider:         a.Provider,
 		ModelID:          a.ModelID,
 		ReasoningEffort:  a.ReasoningEffort,
-		AgentProfile:     cloneProfile(a.AgentProfile),
+		AgentProfile:     ap,
 		ProfileComplete:  a.ProfileComplete,
 		DetectionResults: append([]ProfileDetectionResult(nil), a.DetectionResults...),
 	}
 }
 
 func (a persistedAgent) toAgent() Agent {
-	return Agent{
+	ap := cloneProfile(a.AgentProfile)
+	rx := utils.CloneAnyMap(a.RuntimeOptions)
+	if strings.TrimSpace(ap.Name) == "" {
+		ap.Name = a.Name
+	}
+	if strings.TrimSpace(ap.Description) == "" {
+		ap.Description = a.Description
+	}
+	ag := Agent{
 		ID:               a.ID,
 		Name:             a.Name,
 		Description:      a.Description,
@@ -83,6 +109,7 @@ func (a persistedAgent) toAgent() Agent {
 		RuntimeKind:      a.RuntimeKind,
 		Image:            a.Image,
 		BoxID:            a.BoxID,
+		RuntimeOptions:   rx,
 		Role:             a.Role,
 		Status:           a.Status,
 		CreatedAt:        a.CreatedAt,
@@ -90,10 +117,11 @@ func (a persistedAgent) toAgent() Agent {
 		Provider:         a.Provider,
 		ModelID:          a.ModelID,
 		ReasoningEffort:  a.ReasoningEffort,
-		AgentProfile:     cloneProfile(a.AgentProfile),
+		AgentProfile:     ap,
 		ProfileComplete:  a.ProfileComplete,
 		DetectionResults: append([]ProfileDetectionResult(nil), a.DetectionResults...),
 	}
+	return ag
 }
 
 func (w legacyWorker) toAgent() Agent {
@@ -227,25 +255,39 @@ func (s *Service) saveLocked() error {
 
 func (s *Service) normalizeLoadedAgent(a Agent) Agent {
 	a = *cloneAgent(&a)
-	a.Role = normalizeRole(a.Role)
+	// Old agent.json used role "notifier" before runtime_kind; collapse to worker + notifier runtime.
+	if strings.EqualFold(strings.TrimSpace(a.Role), "notifier") {
+		a.Role = RoleWorker
+		a.RuntimeKind = RuntimeKindNotifier
+		a.BoxID = ""
+		a.Image = ""
+	} else {
+		a.Role = normalizeRole(a.Role)
+	}
 	a.RuntimeID = normalizeRuntimeID(a.RuntimeID, a.ID)
 	if a.RuntimeKind == "" {
 		a.RuntimeKind = runtimeKindForAgent(a)
 	}
 	a.AgentProfile = normalizeProfile(a.AgentProfile, a.Name, a.Description)
 	if !a.AgentProfile.ProfileComplete && (strings.TrimSpace(a.Provider) != "" || strings.TrimSpace(a.ModelID) != "") {
-		legacyProfile := profileFromLegacy(a.Name, a.Description, a.Provider, a.ModelID, a.ReasoningEffort)
-		if strings.TrimSpace(legacyProfile.BaseURL) == "" {
-			legacyProfile.BaseURL = s.profileDefaults.BaseURL
+		// Do not replace agent_profile with legacy LLM-only reconstruction when the agent already
+		// carries notifier-shaped runtime_options, or when the runtime is non-gateway (notifier
+		// workers have no LLM fields to reconstruct from legacy top-level provider/model).
+		if !notifier.IsNotifierFlatRoot(a.RuntimeOptions) && isGatewayRuntimeKind(normalizeRuntimeKind(a.RuntimeKind)) {
+			legacyProfile := profileFromLegacy(a.Name, a.Description, a.Provider, a.ModelID, a.ReasoningEffort)
+			if strings.TrimSpace(legacyProfile.BaseURL) == "" {
+				legacyProfile.BaseURL = s.profileDefaults.BaseURL
+			}
+			if strings.TrimSpace(legacyProfile.APIKey) == "" {
+				legacyProfile.APIKey = s.profileDefaults.APIKey
+			}
+			if len(legacyProfile.Headers) == 0 {
+				legacyProfile.Headers = s.profileDefaults.Headers
+			}
+			a.AgentProfile = normalizeProfile(legacyProfile, a.Name, a.Description)
 		}
-		if strings.TrimSpace(legacyProfile.APIKey) == "" {
-			legacyProfile.APIKey = s.profileDefaults.APIKey
-		}
-		if len(legacyProfile.Headers) == 0 {
-			legacyProfile.Headers = s.profileDefaults.Headers
-		}
-		a.AgentProfile = normalizeProfile(legacyProfile, a.Name, a.Description)
 	}
+	a.AgentProfile = normalizeProfileForAgentRuntime(a.AgentProfile, a.RuntimeOptions, a.Name, a.Description, a.RuntimeKind, nil)
 	a.ProfileComplete = a.AgentProfile.ProfileComplete
 	a.Provider = a.AgentProfile.Provider
 	a.ModelID = a.AgentProfile.ModelID

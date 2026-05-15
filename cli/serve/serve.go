@@ -23,6 +23,7 @@ import (
 
 	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
+	"csgclaw/internal/api"
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
@@ -479,7 +480,8 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		AccessToken: cfg.Server.AccessToken,
 		NoAuth:      cfg.Server.NoAuth,
 		Context:     ctx,
-		OnReady: func() {
+		OnReady: func(handler *api.Handler, mux *http.ServeMux) {
+			runtimewiring.WireNotifierDelivery(ctx, mux, svc, imSvc, apiURL, cfg.Server.AccessToken)
 			if output != "json" && run != nil {
 				go func() {
 					if err := WaitForHealthy(apiURL, 5*time.Second); err != nil {
@@ -803,6 +805,7 @@ func newAgentService(cfg config.Config, feishuProvider feishu.BotCredentialProvi
 		runtimewiring.WithPicoClawSandboxRuntime(feishuProvider),
 		runtimewiring.WithOpenClawSandboxRuntime(),
 		runtimewiring.WithCodexRuntime(),
+		runtimewiring.WithNotifierRuntime(),
 		agent.WithGatewayRuntime(bootstrapDefaults.ManagerRuntimeKind),
 		agent.WithBootstrapDefaultTemplates(cfg.Bootstrap),
 	)

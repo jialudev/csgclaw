@@ -1,6 +1,8 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+)
 
 func (h *Handler) Routes() *http.ServeMux {
 	mux := http.NewServeMux()

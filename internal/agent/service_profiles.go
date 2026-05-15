@@ -8,6 +8,7 @@ import (
 
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
+	"csgclaw/internal/utils"
 )
 
 func (s *Service) AgentProfileView(id string) (AgentProfileView, error) {
@@ -19,7 +20,7 @@ func (s *Service) AgentProfileView(id string) (AgentProfileView, error) {
 	if !ok {
 		return AgentProfileView{}, fmt.Errorf("agent %q not found", id)
 	}
-	return profileView(got.AgentProfile, got.DetectionResults), nil
+	return profileViewWithAgentRuntimeOptions(got.AgentProfile, got.RuntimeOptions, got.RuntimeKind, got.DetectionResults), nil
 }
 
 func (s *Service) ProfileDefaultsView() AgentProfileView {
@@ -50,7 +51,7 @@ func (s *Service) UpdateAgentProfile(id string, profile AgentProfile) (AgentProf
 	if strings.TrimSpace(profile.APIKey) == "" {
 		profile.APIKey = current.AgentProfile.APIKey
 	}
-	normalized := normalizeProfile(profile, current.Name, current.Description)
+	normalized := normalizeProfileForAgentRuntime(profile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, nil)
 	normalized.EnvRestartRequired = !profilesEqualEnv(current.AgentProfile, normalized)
 	current.AgentProfile = normalized
 	current.ProfileComplete = normalized.ProfileComplete
@@ -67,7 +68,7 @@ func (s *Service) UpdateAgentProfile(id string, profile AgentProfile) (AgentProf
 	if err := s.saveLocked(); err != nil {
 		return AgentProfileView{}, err
 	}
-	return profileView(normalized, current.DetectionResults), nil
+	return profileViewWithAgentRuntimeOptions(normalized, current.RuntimeOptions, current.RuntimeKind, current.DetectionResults), nil
 }
 
 func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Agent, error) {
@@ -109,12 +110,23 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 	if req.Image != nil {
 		current.Image = strings.TrimSpace(*req.Image)
 	}
-	if req.AgentProfile != nil {
-		profile := *req.AgentProfile
-		if strings.TrimSpace(profile.APIKey) == "" {
-			profile.APIKey = current.AgentProfile.APIKey
+	if req.AgentProfile != nil || req.RuntimeOptions != nil {
+		profile := current.AgentProfile
+		if req.AgentProfile != nil {
+			profile = *req.AgentProfile
+			if strings.TrimSpace(profile.APIKey) == "" {
+				profile.APIKey = current.AgentProfile.APIKey
+			}
 		}
-		normalized := normalizeProfile(profile, current.Name, current.Description)
+		pol := agentruntime.RuntimeOptionsPolicyForKind(normalizeRuntimeKind(current.RuntimeKind))
+		var patch map[string]any
+		if req.RuntimeOptions != nil {
+			patch = *req.RuntimeOptions
+		}
+		mergedFlat := pol.MergeFlatForAgentPatch(current.RuntimeOptions, patch)
+		normalized := normalizeProfileForAgentRuntime(profile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, mergedFlat)
+		_, nextRO := pol.ApplyFlatPersistence(&current.RuntimeOptions, nil, normalized.RequestOptions, mergedFlat)
+		normalized.RequestOptions = nextRO
 		normalized.EnvRestartRequired = !profilesEqualEnv(current.AgentProfile, normalized)
 		current.AgentProfile = normalized
 		current.ProfileComplete = normalized.ProfileComplete
@@ -189,7 +201,7 @@ func (s *Service) ResolvedAgentProfile(agentID string) (AgentProfile, error) {
 	if !ok {
 		return AgentProfile{}, fmt.Errorf("agent %q not found", strings.TrimSpace(agentID))
 	}
-	profile := normalizeProfile(got.AgentProfile, got.Name, got.Description)
+	profile := normalizeProfileForAgentRuntime(got.AgentProfile, got.RuntimeOptions, got.Name, got.Description, got.RuntimeKind, nil)
 	if !profile.ProfileComplete {
 		return AgentProfile{}, fmt.Errorf("agent %q profile is incomplete", strings.TrimSpace(agentID))
 	}
@@ -205,7 +217,7 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 	if !ok {
 		return Agent{}, fmt.Errorf("agent %q not found", id)
 	}
-	profile := normalizeProfile(got.AgentProfile, got.Name, got.Description)
+	profile := normalizeProfileForAgentRuntime(got.AgentProfile, got.RuntimeOptions, got.Name, got.Description, got.RuntimeKind, nil)
 	if !profile.ProfileComplete {
 		return Agent{}, fmt.Errorf("agent %q profile is incomplete", id)
 	}
@@ -215,8 +227,10 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 		return Agent{}, err
 	}
 	image := strings.TrimSpace(got.Image)
-	if image == "" {
-		image = s.managerImage
+	if isGatewayRuntimeKind(runtimeKindForAgent(got)) {
+		if image == "" {
+			image = s.managerImage
+		}
 	}
 
 	if testCreateGatewayBoxHook != nil {
@@ -320,60 +334,74 @@ func (s *Service) persistRecreatedAgent(ctx context.Context, id string, info age
 	return recreated, nil
 }
 
-func (s *Service) profileForCreateRequest(ctx context.Context, req CreateAgentSpec) (AgentProfile, error) {
-	profile := req.AgentProfile
-	if strings.TrimSpace(profile.ModelID) == "" && strings.TrimSpace(req.ModelID) != "" {
-		profile.ModelID = strings.TrimSpace(req.ModelID)
+func (s *Service) profileForCreateRequest(ctx context.Context, spec *CreateAgentSpec) (AgentProfile, error) {
+	if spec == nil {
+		return AgentProfile{}, fmt.Errorf("create spec is required")
 	}
-	if strings.TrimSpace(profile.Provider) == "" && strings.TrimSpace(req.Profile) != "" {
-		if _, cfg, err := s.llm.Resolve(req.Profile); err == nil {
-			profile = profileFromConfigModel(req.Name, req.Description, cfg)
-		} else if provider, modelID, ok := splitProfileSelector(req.Profile); ok {
-			profile.Provider = provider
+
+	profile := spec.AgentProfile
+	rk := normalizeRuntimeKind(spec.RuntimeKind)
+	if rk == "" || isGatewayRuntimeKind(rk) {
+		if strings.TrimSpace(profile.ModelID) == "" && strings.TrimSpace(spec.ModelID) != "" {
+			profile.ModelID = strings.TrimSpace(spec.ModelID)
+		}
+		if strings.TrimSpace(profile.Provider) == "" && strings.TrimSpace(spec.Profile) != "" {
+			if _, cfg, err := s.llm.Resolve(spec.Profile); err == nil {
+				profile = profileFromConfigModel(spec.Name, spec.Description, cfg)
+			} else if provider, modelID, ok := splitProfileSelector(spec.Profile); ok {
+				profile.Provider = provider
+				if strings.TrimSpace(profile.ModelID) == "" {
+					profile.ModelID = modelID
+				}
+			}
+		}
+		if strings.TrimSpace(profile.Provider) == "" || strings.TrimSpace(profile.ModelID) == "" {
+			s.mu.RLock()
+			defaultProfile := cloneProfile(s.profileDefaults)
+			s.mu.RUnlock()
+			if strings.TrimSpace(profile.Provider) == "" {
+				profile.Provider = defaultProfile.Provider
+			}
 			if strings.TrimSpace(profile.ModelID) == "" {
-				profile.ModelID = modelID
+				profile.ModelID = defaultProfile.ModelID
+			}
+			if strings.TrimSpace(profile.BaseURL) == "" {
+				profile.BaseURL = defaultProfile.BaseURL
+			}
+			if strings.TrimSpace(profile.APIKey) == "" {
+				profile.APIKey = defaultProfile.APIKey
+			}
+			if len(profile.Headers) == 0 {
+				profile.Headers = defaultProfile.Headers
+			}
+			if strings.TrimSpace(profile.ReasoningEffort) == "" {
+				profile.ReasoningEffort = defaultProfile.ReasoningEffort
+			}
+			profile.EnableFastMode = profile.EnableFastMode || defaultProfile.EnableFastMode
+			if len(profile.RequestOptions) == 0 {
+				profile.RequestOptions = defaultProfile.RequestOptions
+			}
+			if len(profile.Env) == 0 {
+				profile.Env = defaultProfile.Env
 			}
 		}
 	}
-	if strings.TrimSpace(profile.Provider) == "" || strings.TrimSpace(profile.ModelID) == "" {
-		s.mu.RLock()
-		defaultProfile := cloneProfile(s.profileDefaults)
-		s.mu.RUnlock()
-		if strings.TrimSpace(profile.Provider) == "" {
-			profile.Provider = defaultProfile.Provider
-		}
-		if strings.TrimSpace(profile.ModelID) == "" {
-			profile.ModelID = defaultProfile.ModelID
-		}
-		if strings.TrimSpace(profile.BaseURL) == "" {
-			profile.BaseURL = defaultProfile.BaseURL
-		}
-		if strings.TrimSpace(profile.APIKey) == "" {
-			profile.APIKey = defaultProfile.APIKey
-		}
-		if len(profile.Headers) == 0 {
-			profile.Headers = defaultProfile.Headers
-		}
-		if strings.TrimSpace(profile.ReasoningEffort) == "" {
-			profile.ReasoningEffort = defaultProfile.ReasoningEffort
-		}
-		profile.EnableFastMode = profile.EnableFastMode || defaultProfile.EnableFastMode
-		if len(profile.RequestOptions) == 0 {
-			profile.RequestOptions = defaultProfile.RequestOptions
-		}
-		if len(profile.Env) == 0 {
-			profile.Env = defaultProfile.Env
-		}
-	}
-	profile = normalizeProfile(profile, req.Name, req.Description)
+
+	pol := agentruntime.RuntimeOptionsPolicyForKind(rk)
+	runtimeOptionsAfterPatch := pol.MergeFlatForAgentPatch(nil, spec.RuntimeOptions)
+	profile = normalizeProfileForAgentRuntime(profile, nil, spec.Name, spec.Description, spec.RuntimeKind, runtimeOptionsAfterPatch)
 	if !profile.ProfileComplete {
 		detected, _ := s.DetectDefaultProfile(ctx)
 		if detected.ProfileComplete {
-			detected.Name = strings.TrimSpace(req.Name)
-			detected.Description = strings.TrimSpace(req.Description)
-			return normalizeProfile(detected, req.Name, req.Description), nil
+			detected.Name = strings.TrimSpace(spec.Name)
+			detected.Description = strings.TrimSpace(spec.Description)
+			det := normalizeProfileForAgentRuntime(detected, nil, spec.Name, spec.Description, spec.RuntimeKind, nil)
+			return det, nil
 		}
 		return AgentProfile{}, fmt.Errorf("agent profile is incomplete")
+	}
+	if len(runtimeOptionsAfterPatch) > 0 {
+		spec.RuntimeOptions = utils.CloneAnyMap(runtimeOptionsAfterPatch)
 	}
 	return profile, nil
 }

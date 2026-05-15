@@ -20,6 +20,7 @@ import (
 	"csgclaw/internal/hub"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
+	"csgclaw/internal/utils"
 )
 
 const (
@@ -926,7 +927,7 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 		_ = s.closeRuntime(runtimeHome, rt)
 	}()
 
-	resolvedProfile, err := s.profileForCreateRequest(ctx, spec)
+	resolvedProfile, err := s.profileForCreateRequest(ctx, &spec)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -1071,17 +1072,18 @@ func replaceImageOverride(req CreateRequest) string {
 
 func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) (CreateAgentSpec, error) {
 	merged := CreateAgentSpec{
-		ID:           existing.ID,
-		Name:         existing.Name,
-		Description:  existing.Description,
-		Image:        existing.Image,
-		RuntimeKind:  existing.RuntimeKind,
-		Role:         existing.Role,
-		Status:       existing.Status,
-		CreatedAt:    existing.CreatedAt,
-		Profile:      existing.Profile,
-		ModelID:      existing.ModelID,
-		AgentProfile: cloneProfile(existing.AgentProfile),
+		ID:             existing.ID,
+		Name:           existing.Name,
+		Description:    existing.Description,
+		Image:          existing.Image,
+		RuntimeKind:    existing.RuntimeKind,
+		Role:           existing.Role,
+		Status:         existing.Status,
+		CreatedAt:      existing.CreatedAt,
+		Profile:        existing.Profile,
+		ModelID:        existing.ModelID,
+		RuntimeOptions: utils.CloneAnyMap(existing.RuntimeOptions),
+		AgentProfile:   cloneProfile(existing.AgentProfile),
 	}
 	for _, field := range fieldMask {
 		switch strings.ToLower(strings.TrimSpace(field)) {
@@ -1115,6 +1117,8 @@ func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) 
 			merged.AgentProfile = cloneProfile(next.AgentProfile)
 			merged.Profile = ""
 			merged.ModelID = ""
+		case "runtime_options":
+			merged.RuntimeOptions = utils.CloneAnyMap(next.RuntimeOptions)
 		default:
 			return CreateAgentSpec{}, fmt.Errorf("unsupported agent field mask path %q", field)
 		}
@@ -1273,7 +1277,8 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 }
 
 func (s *Service) ensureWorkerGatewayConfig(got Agent) error {
-	if s == nil || !strings.EqualFold(normalizeRole(got.Role), RoleWorker) {
+	r := normalizeRole(got.Role)
+	if s == nil || r != RoleWorker || !isAgentProfileComplete(got) {
 		return nil
 	}
 	return s.ensureGatewayConfigForAgent(got)
@@ -1339,7 +1344,8 @@ func (s *Service) Stop(ctx context.Context, id string) (Agent, error) {
 	if err != nil {
 		return Agent{}, fmt.Errorf("read agent runtime info: %w", err)
 	}
-	if info.State == "" {
+	// Prefer Stop()'s reported state over Info when Stop returns a concrete terminal state.
+	if state != "" {
 		info.State = state
 	}
 	updated, err := s.updateRuntimeState(id, info)
@@ -1495,6 +1501,10 @@ func (s *Service) startupAgentCandidates() []Agent {
 		if isManagerAgent(a) || !isAgentProfileComplete(a) {
 			continue
 		}
+		rk := normalizeRuntimeKind(a.RuntimeKind)
+		if strings.EqualFold(normalizeRole(a.Role), RoleWorker) && rk != "" && !isGatewayRuntimeKind(rk) {
+			continue
+		}
 		candidates = append(candidates, a)
 	}
 	return candidates
@@ -1525,15 +1535,20 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
 	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
+	explicitRuntime := strings.TrimSpace(spec.RuntimeKind) != ""
+
 	if runtimeKind == "" {
 		runtimeKind = s.gatewayRuntimeKind()
 	}
-	if image == "" {
-		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && strings.TrimSpace(spec.RuntimeKind) != "" {
-			image = defaultImage
-		}
+
+	if isGatewayRuntimeKind(runtimeKind) {
 		if image == "" {
-			image = s.managerImage
+			if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && explicitRuntime {
+				image = defaultImage
+			}
+			if image == "" {
+				image = s.managerImage
+			}
 		}
 	}
 	switch {
@@ -1561,14 +1576,11 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
 	}
 
-	if runtimeKind == "" {
-		runtimeKind = s.gatewayRuntimeKind()
-	}
 	runtimeImpl, err := s.runtimeForKind(runtimeKind)
 	if err != nil {
 		return Agent{}, err
 	}
-	resolvedProfile, err := s.profileForCreateRequest(ctx, spec)
+	resolvedProfile, err := s.profileForCreateRequest(ctx, &spec)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -1594,7 +1606,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		if err := s.overlayTemplateWorkspace(name, spec.FromTemplate); err != nil {
 			return Agent{}, err
 		}
-		return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, agentruntime.Info{
+		return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, spec.RuntimeOptions, agentruntime.Info{
 			HandleID:  strings.TrimSpace(info.ID),
 			State:     agentruntime.State(info.State),
 			CreatedAt: info.CreatedAt.UTC(),
@@ -1619,10 +1631,10 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		CreatedAt: time.Now().UTC(),
 	}
 
-	return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, info)
+	return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, spec.RuntimeOptions, info)
 }
 
-func (s *Service) persistCreatedWorker(ctx context.Context, id, name, description, image, runtimeKind string, profile AgentProfile, info agentruntime.Info) (Agent, error) {
+func (s *Service) persistCreatedWorker(ctx context.Context, id, name, description, image, runtimeKind string, profile AgentProfile, createRuntimeExt map[string]any, info agentruntime.Info) (Agent, error) {
 	s.mu.Lock()
 
 	if _, ok := s.agents[id]; ok {
@@ -1642,6 +1654,11 @@ func (s *Service) persistCreatedWorker(ctx context.Context, id, name, descriptio
 	if state == "" {
 		state = agentruntime.StateRunning
 	}
+	prof := cloneProfile(profile)
+	var agentRX map[string]any
+	if len(createRuntimeExt) > 0 {
+		agentRX = utils.CloneAnyMap(createRuntimeExt)
+	}
 	worker := Agent{
 		ID:              id,
 		Name:            name,
@@ -1652,18 +1669,19 @@ func (s *Service) persistCreatedWorker(ctx context.Context, id, name, descriptio
 		Description:     description,
 		Status:          string(state),
 		CreatedAt:       createdAt,
-		Profile:         profileSelector(profile),
-		Provider:        profile.Provider,
-		ModelID:         profile.ModelID,
-		ReasoningEffort: profile.ReasoningEffort,
-		AgentProfile:    profile,
-		ProfileComplete: profile.ProfileComplete,
+		RuntimeOptions:  agentRX,
+		Profile:         profileSelector(prof),
+		Provider:        prof.Provider,
+		ModelID:         prof.ModelID,
+		ReasoningEffort: prof.ReasoningEffort,
+		AgentProfile:    prof,
+		ProfileComplete: prof.ProfileComplete,
 		Role:            RoleWorker,
 	}
 	s.agents[worker.ID] = worker
 	s.syncRuntimeRecordLocked(worker)
-	if profile.ProfileComplete {
-		s.profileDefaults = cloneProfile(profile)
+	if prof.ProfileComplete {
+		s.profileDefaults = cloneProfile(prof)
 	}
 	if err := s.saveLocked(); err != nil {
 		delete(s.agents, worker.ID)
@@ -1944,6 +1962,13 @@ func (s *Service) hydrateAgentStatus(ctx context.Context, a Agent) Agent {
 	info, err := s.runtimeInfo(ctx, runtimeImpl, runtimeHandleForAgent(a))
 	if err != nil {
 		return statusAfterHydrateFailure(a, "read_runtime_info", err)
+	}
+	if agentruntime.HydrateTrustPersistedStopped(runtimeImpl) && strings.EqualFold(strings.TrimSpace(a.Status), string(sandbox.StateStopped)) {
+		if strings.TrimSpace(info.HandleID) != "" {
+			a.BoxID = info.HandleID
+		}
+		a.RuntimeID = normalizeRuntimeID(a.RuntimeID, a.ID)
+		return a
 	}
 	if strings.TrimSpace(info.HandleID) != "" {
 		a.BoxID = info.HandleID

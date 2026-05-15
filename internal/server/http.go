@@ -32,18 +32,23 @@ type Options struct {
 	AccessToken string
 	NoAuth      bool
 	Context     context.Context
-	OnReady     func()
+	OnReady     func(h *api.Handler, mux *http.ServeMux)
+}
+
+func newHandler(opts Options) *api.Handler {
+	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	handler.SetHubService(opts.Hub)
+	handler.SetUpgradeManager(opts.Upgrade)
+	handler.SetUpgradeConfigPath(opts.ConfigPath)
+	handler.SetConfigPath(opts.ConfigPath)
+	return handler
 }
 
 func Run(opts Options) error {
 	if opts.Context == nil {
 		opts.Context = context.Background()
 	}
-	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
-	handler.SetHubService(opts.Hub)
-	handler.SetUpgradeManager(opts.Upgrade)
-	handler.SetUpgradeConfigPath(opts.ConfigPath)
-	handler.SetConfigPath(opts.ConfigPath)
+	handler := newHandler(opts)
 	mux := handler.Routes()
 	mux.Handle("/", uiHandler())
 
@@ -89,7 +94,7 @@ func Run(opts Options) error {
 		return err
 	}
 	if opts.OnReady != nil {
-		go opts.OnReady()
+		go opts.OnReady(handler, mux)
 	}
 
 	if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
