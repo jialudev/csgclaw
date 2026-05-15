@@ -15,6 +15,10 @@ BOXLITE_CLI_BASE_URL ?= https://github.com/boxlite-ai/boxlite/releases/download
 
 GO ?= go
 GOFMT ?= gofmt
+PNPM ?= pnpm
+WEB_APP_DIR ?= web/app
+WEB_STATIC_DIST_DIR ?= web/static-dist
+WEB_PACKAGE_MANAGER ?= $(shell if command -v $(PNPM) >/dev/null 2>&1; then printf '%s' '$(PNPM)'; elif command -v corepack >/dev/null 2>&1; then printf '%s' 'corepack $(PNPM)'; fi)
 TARGET_OS ?= $(shell $(GO) env GOOS)
 TARGET_ARCH ?= $(shell $(GO) env GOARCH)
 CLI_BIN ?= $(BIN_DIR)/csgclaw-cli
@@ -25,16 +29,21 @@ LOCAL_IMAGE ?= picoclaw:local
 
 .DEFAULT_GOAL := build-all
 
-.PHONY: help fmt test build build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run clean package package-all release tag push publish
+.PHONY: help fmt test check-web-toolchain web-install web-dev build-web build build-server build-csgclaw build-csgclaw-cli build-csgclaw-cli-for-picoclaw build-all run clean package package-all release tag push publish
 
 help:
 	@printf '%s\n' \
 		'make fmt       - format Go files' \
 		'make test      - run Go tests' \
-		'make build     - build $(BIN)' \
+		'make web-install - install Web UI dependencies' \
+		'make web-dev   - run Vite Web UI dev server' \
+		'make build-web - build Web UI app into web/static-dist' \
+		'make build     - build Web UI, then $(BIN)' \
+		'make build-server - build $(BIN) without rebuilding Web UI' \
+		'make build-csgclaw - alias for build-server' \
 		'make build-csgclaw-cli - build $(CLI_BIN) for TARGET_OS/TARGET_ARCH (defaults to current platform)' \
 		'make build-csgclaw-cli-for-picoclaw - build PicoClaw CLI binaries for linux/amd64 and linux/arm64' \
-		'make build-all - build bin/csgclaw and bin/csgclaw-cli' \
+		'make build-all - build Web UI, bin/csgclaw, and bin/csgclaw-cli' \
 		'make run       - run the server in foreground' \
 		'make package   - package APP binary into dist/' \
 		'make package-all - package csgclaw and csgclaw-cli for current platform' \
@@ -45,17 +54,46 @@ help:
 		'make publish   - tag and push manager image'
 
 fmt:
-	$(GOFMT) -w $(shell find cli cmd internal -name '*.go')
+	$(GOFMT) -w $(shell find cli cmd internal web -name '*.go')
 
 test:
 	env GOCACHE=$(GOCACHE) $(GO) test ./...
 
-build:
+check-web-toolchain:
+	@command -v node >/dev/null 2>&1 || { \
+		printf '%s\n' 'Node.js is required to build the Web UI.'; \
+		printf '%s\n' 'Install Node.js, then run make build again.'; \
+		exit 1; \
+	}
+	@if [ -z "$(WEB_PACKAGE_MANAGER)" ]; then \
+		printf '%s\n' 'pnpm is required to build the Web UI.'; \
+		printf '%s\n' 'This repo uses pnpm-lock.yaml and packageManager=pnpm, so npm is not used automatically.'; \
+		if command -v npm >/dev/null 2>&1; then \
+			printf '%s\n' 'You can install pnpm with: npm install -g pnpm@9.15.4'; \
+		fi; \
+		printf '%s\n' 'If your Node.js ships Corepack, you can also run: corepack enable'; \
+		exit 1; \
+	fi
+
+web-install: check-web-toolchain
+	$(WEB_PACKAGE_MANAGER) --dir $(WEB_APP_DIR) install --frozen-lockfile
+
+web-dev: check-web-toolchain
+	$(WEB_PACKAGE_MANAGER) --dir $(WEB_APP_DIR) dev
+
+build-web: check-web-toolchain
+	$(WEB_PACKAGE_MANAGER) --dir $(WEB_APP_DIR) build
+	test -f $(WEB_STATIC_DIST_DIR)/index.html
+
+build: build-web
+	$(MAKE) build-server
+
+build-server:
 	mkdir -p $(BIN_DIR)
 	env GOCACHE=$(GOCACHE) $(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_PATH)
 
 build-csgclaw:
-	$(MAKE) build APP=csgclaw
+	$(MAKE) build-server APP=csgclaw
 
 build-csgclaw-cli:
 	mkdir -p $(BIN_DIR)
@@ -65,9 +103,11 @@ build-csgclaw-cli-for-picoclaw:
 	$(MAKE) build-csgclaw-cli TARGET_OS=linux TARGET_ARCH=amd64 CLI_BIN=$(BIN_DIR)/csgclaw-cli_linux_amd64
 	$(MAKE) build-csgclaw-cli TARGET_OS=linux TARGET_ARCH=arm64 CLI_BIN=$(BIN_DIR)/csgclaw-cli_linux_arm64
 
-build-all: build-csgclaw build-csgclaw-cli
+build-all: build-web
+	$(MAKE) build-server APP=csgclaw
+	$(MAKE) build-csgclaw-cli
 
-run: build-csgclaw
+run: build-server
 	$(BIN) serve
 
 package:
