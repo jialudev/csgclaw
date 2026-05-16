@@ -21,21 +21,6 @@ When available, load the CSGClaw API settings from `~/.picoclaw/config.json`:
 
 ## Expected Endpoints
 
-### Join worker to room
-
-- Method: `POST`
-- Path: `/api/v1/im/agents/join`
-- Request body:
-
-```json
-{
-  "agent_id": "u-alex",
-  "room_id": "room-123",
-  "inviter_id": "u-admin",
-  "locale": "zh-CN"
-}
-```
-
 ### Dispatch task by bot message
 
 - Method: `POST`

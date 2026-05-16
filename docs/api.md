@@ -382,29 +382,6 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
 
 发送消息。请求体与 `POST /api/v1/im/messages` 一致，响应：`201 Created`。
 
-### `POST /api/v1/im/agents/join`
-
-把 agent 加入指定会话。该接口会先确保 agent 在 IM 中拥有对应用户身份。
-
-请求体：
-
-```json
-{
-  "agent_id": "u-alice",
-  "room_id": "room-1",
-  "inviter_id": "u-admin",
-  "locale": "zh-CN"
-}
-```
-
-响应：`200 OK`，返回更新后的会话对象。
-
-说明：
-
-- `agent_id`、`room_id` 必填
-- `inviter_id` 为空时，服务端默认使用 `u-admin`
-- 若 `agent_id` 不存在，返回 `404 Not Found`
-
 ## 5. Feishu Channel 接口
 
 ### `GET /api/v1/channels/feishu/bots/{id}/events`

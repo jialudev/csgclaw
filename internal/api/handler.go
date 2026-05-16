@@ -75,12 +75,6 @@ type imEventResponse struct {
 	Upgrade *apitypes.UpgradeStatus `json:"upgrade,omitempty"`
 }
 
-type imAgentJoinResponse struct {
-	Message string `json:"message"`
-	RoomID  string `json:"room_id,omitempty"`
-	AgentID string `json:"agent_id,omitempty"`
-}
-
 type bootstrapConfigResponse struct {
 	DefaultManagerTemplate string            `json:"default_manager_template"`
 	DefaultWorkerTemplate  string            `json:"default_worker_template"`
@@ -947,58 +941,6 @@ func (h *Handler) workerIMProvisioner() *im.Provisioner {
 		h.imProvisioner = im.NewProvisioner(h.im, h.imBus)
 	}
 	return h.imProvisioner
-}
-
-func (h *Handler) handleIMAgentJoin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if h.svc == nil {
-		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if h.im == nil {
-		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	var req im.AddAgentToConversationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	joinedAgent, ok := h.svc.Agent(req.AgentID)
-	if !ok {
-		http.Error(w, "agent not found", http.StatusNotFound)
-		return
-	}
-
-	if _, _, err := h.im.EnsureAgentUser(im.EnsureAgentUserRequest{
-		ID:     joinedAgent.ID,
-		Name:   joinedAgent.Name,
-		Handle: deriveAgentHandle(joinedAgent),
-		Role:   displayRole(joinedAgent.Role),
-	}); err != nil {
-		http.Error(w, fmt.Sprintf("ensure agent im user: %v", err), http.StatusBadGateway)
-		return
-	}
-
-	if strings.TrimSpace(req.InviterID) == "" {
-		req.InviterID = "u-admin"
-	}
-	room, err := h.im.AddAgentToRoom(req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	h.publishRoomEvent(im.EventTypeRoomMembersAdded, room)
-	writeJSON(w, http.StatusOK, imAgentJoinResponse{
-		Message: "agent joined successfully",
-		RoomID:  room.ID,
-		AgentID: joinedAgent.ID,
-	})
 }
 
 func (h *Handler) handleIMBootstrap(w http.ResponseWriter, r *http.Request) {

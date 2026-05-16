@@ -61,14 +61,11 @@ func (h *Handler) addRoomMembers(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createIMRoomMembersInvite(w http.ResponseWriter, r *http.Request) {
 	h.handleIMRoomMembers(w, r)
 }
-func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request)     { h.handleUsers(w, r) }
-func (h *Handler) createUser(w http.ResponseWriter, r *http.Request)    { h.handleCreateUser(w, r) }
-func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request)    { h.handleUserByID(w, r) }
-func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request)  { h.handleMessages(w, r) }
-func (h *Handler) createMessage(w http.ResponseWriter, r *http.Request) { h.handleCreateMessage(w, r) }
-func (h *Handler) createIMAgentJoin(w http.ResponseWriter, r *http.Request) {
-	h.handleIMAgentJoin(w, r)
-}
+func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request)            { h.handleUsers(w, r) }
+func (h *Handler) createUser(w http.ResponseWriter, r *http.Request)           { h.handleCreateUser(w, r) }
+func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request)           { h.handleUserByID(w, r) }
+func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request)         { h.handleMessages(w, r) }
+func (h *Handler) createMessage(w http.ResponseWriter, r *http.Request)        { h.handleCreateMessage(w, r) }
 func (h *Handler) listIMMessages(w http.ResponseWriter, r *http.Request)       { h.handleIMMessages(w, r) }
 func (h *Handler) createIMMessage(w http.ResponseWriter, r *http.Request)      { h.handleIMMessages(w, r) }
 func (h *Handler) listIMConversations(w http.ResponseWriter, r *http.Request)  { h.handleIMRooms(w, r) }

@@ -80,7 +80,6 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Post("/", h.createMessage)
 		})
 		r.Route("/im", func(r chi.Router) {
-			r.Post("/agents/join", h.createIMAgentJoin)
 			r.Get("/bootstrap", h.getIMBootstrap)
 			r.Get("/events", h.getIMEvents)
 			r.Get("/messages", h.listIMMessages)

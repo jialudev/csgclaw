@@ -283,7 +283,6 @@ const messages = {
     agentRecreate: "重建",
     agentDelete: "删除",
     editProfile: "编辑",
-    inviteToRoom: "加入当前房间",
     agentCreateSave: "创建并启动",
     agentUpdateSave: "保存",
     agentPublish: "发布",
@@ -564,7 +563,6 @@ const messages = {
     agentRecreate: "Recreate",
     agentDelete: "Delete",
     editProfile: "Edit",
-    inviteToRoom: "Add to current room",
     agentCreateSave: "Create and start",
     agentUpdateSave: "Save",
     agentPublish: "Publish",
@@ -3042,35 +3040,6 @@ function App() {
     }
   }
 
-  async function inviteAgentToRoom(item, options = {}) {
-    if (!activeConversation || isDirectConversation(activeConversation) || !data?.current_user_id || !item?.id) {
-      return;
-    }
-    if (!options.silent) {
-      setAgentsError("");
-    }
-    try {
-      const resp = await fetch("api/v1/im/agents/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          agent_id: item.id,
-          room_id: activeConversation.id,
-          inviter_id: data.current_user_id,
-          locale,
-        }),
-      });
-      if (!resp.ok) {
-        throw new Error((await resp.text()).trim());
-      }
-      await refreshBootstrap();
-    } catch (err) {
-      if (!options.silent) {
-        setAgentsError(err.message || t("agentActionFailed"));
-      }
-    }
-  }
-
   function directConversationForUser(userID, roomList = rooms, currentUserID = data?.current_user_id) {
     if (!userID || !currentUserID) {
       return null;
@@ -3506,7 +3475,6 @@ function App() {
                 <${AgentDetailPane}
                   item=${selectedAgent}
                   t=${t}
-                  activeRoom=${activeChannel}
                   busyKey=${agentActionBusy}
                   error=${agentsError}
                   draft=${agentPageDraft}
@@ -3527,7 +3495,6 @@ function App() {
                   onStop=${(item) => runAgentAction(item, "stop")}
                   onRecreate=${(item) => runAgentAction(item, "recreate")}
                   onDelete=${(item) => runAgentAction(item, "delete")}
-                  onInvite=${inviteAgentToRoom}
                   onOpenDM=${openAgentDirectMessage}
                 />
               `
@@ -4619,7 +4586,7 @@ function ConversationSection({ title, items, activeConversationId, currentUserID
   `;
 }
 
-function AgentSection({ title, manager, workers, t, activeRoom, busyKey, error, onCreate, onEdit, onStart, onStop, onRecreate, onDelete, onInvite }) {
+function AgentSection({ title, manager, workers, t, busyKey, error, onCreate, onEdit, onStart, onStop, onRecreate, onDelete }) {
   const items = [manager, ...workers].filter(Boolean);
   return html`
     <section className="agent-section">
@@ -4638,14 +4605,12 @@ function AgentSection({ title, manager, workers, t, activeRoom, busyKey, error, 
                 key=${item.id}
                 item=${item}
                 t=${t}
-                activeRoom=${activeRoom}
                 busyKey=${busyKey}
                 onEdit=${onEdit}
                 onStart=${onStart}
                 onStop=${onStop}
                 onRecreate=${onRecreate}
                 onDelete=${onDelete}
-                onInvite=${onInvite}
               />
             `)
           : html`<div className="agent-empty">${t("noAgents")}</div>`}
@@ -4655,7 +4620,7 @@ function AgentSection({ title, manager, workers, t, activeRoom, busyKey, error, 
   `;
 }
 
-function AgentRow({ item, t, activeRoom, busyKey, onEdit, onStart, onStop, onRecreate, onDelete, onInvite }) {
+function AgentRow({ item, t, busyKey, onEdit, onStart, onStop, onRecreate, onDelete }) {
   const isManager = item.role === "manager" || item.id === "u-manager";
   const status = String(item.status || "").toLowerCase();
   const running = status === "running" || status === "online";
@@ -4687,9 +4652,6 @@ function AgentRow({ item, t, activeRoom, busyKey, onEdit, onStart, onStop, onRec
               </button>
               <button className="btn btn-secondary-gray btn-sm agent-action-text" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>
             `
-          : null}
-        ${activeRoom && !isManager
-          ? html`<button className="btn btn-secondary-gray btn-sm agent-action-text" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onInvite(item)}>${t("inviteToRoom")}</button>`
           : null}
         ${!isManager
           ? html`
@@ -5147,7 +5109,6 @@ function HubDetailPane({
 function AgentDetailPane({
   item,
   t,
-  activeRoom,
   busyKey,
   error,
   draft,
@@ -5168,7 +5129,6 @@ function AgentDetailPane({
   onStop,
   onRecreate,
   onDelete,
-  onInvite,
   onOpenDM,
 }) {
   const isManager = item.role === "manager" || item.id === "u-manager";
@@ -5216,9 +5176,6 @@ function AgentDetailPane({
                 ${running ? t("agentStop") : t("agentStart")}
               </button>
             `
-          : null}
-        ${activeRoom && !isManager
-          ? html`<button className="btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onInvite(item)}>${t("inviteToRoom")}</button>`
           : null}
         <button className="btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onOpenDM(item)}>${t("openDM")}</button>
         ${SHOW_AGENT_LIFECYCLE_ACTIONS
