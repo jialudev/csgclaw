@@ -106,36 +106,3 @@ func TestProfileDeliveryComplete(t *testing.T) {
 		t.Fatal("notifier: want incomplete with no runtime_options")
 	}
 }
-
-func TestPersistNotifierFlatToProfileNoOpWhenEmpty(t *testing.T) {
-	profileRuntimeOptions := map[string]any{"other": 1}
-	requestOptions := map[string]any{"foo": "bar"}
-	outProfileRuntimeOptions, outRequestOptions := PersistNotifierFlatToProfile(profileRuntimeOptions, requestOptions, map[string]any{})
-	if len(outProfileRuntimeOptions) != len(profileRuntimeOptions) || outProfileRuntimeOptions["other"] != profileRuntimeOptions["other"] {
-		t.Fatalf("profile runtime_options changed: %#v", outProfileRuntimeOptions)
-	}
-	if len(outRequestOptions) != len(requestOptions) || outRequestOptions["foo"] != requestOptions["foo"] {
-		t.Fatalf("request_options changed: %#v", outRequestOptions)
-	}
-}
-
-func TestApplyNotifierFlatPersistenceMergesOntoAgentRuntimeOptionsPreservesOtherKeys(t *testing.T) {
-	agentRuntimeOptions := map[string]any{
-		"keep":                   "yes",
-		RuntimeOptionKeyNotifier: map[string]any{"delivery_mode": "webhook", "webhook_token": "old"},
-	}
-	flat := map[string]any{"delivery_mode": "webhook", "webhook_token": "new"}
-	nextProfileRuntimeOptions, _ := ApplyNotifierFlatPersistence(&agentRuntimeOptions, nil, nil, flat)
-	if nextProfileRuntimeOptions != nil {
-		t.Fatalf("nextProfileRuntimeOptions = %#v", nextProfileRuntimeOptions)
-	}
-	if agentRuntimeOptions["keep"] != "yes" {
-		t.Fatalf("lost sibling key: %#v", agentRuntimeOptions)
-	}
-	if _, nested := agentRuntimeOptions[RuntimeOptionKeyNotifier]; nested {
-		t.Fatal("legacy nested notifier key should be stripped on persist")
-	}
-	if agentRuntimeOptions["webhook_token"] != "new" {
-		t.Fatalf("webhook_token = %v", agentRuntimeOptions["webhook_token"])
-	}
-}

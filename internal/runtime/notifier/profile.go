@@ -7,52 +7,9 @@ import (
 	"csgclaw/internal/utils"
 )
 
-// RuntimeOptionKeyNotifier names the legacy nested bucket under runtime_options; it is
-// stripped on persist and omitted from API responses. Notifier delivery fields live as flat keys
-// on the same map (see NotifierStorageKeys).
-const RuntimeOptionKeyNotifier = "notifier"
-
-// NestedRuntimeOptionsMap returns a shallow copy of runtimeOptions[key] when it is a non-empty map[string]any.
-func NestedRuntimeOptionsMap(runtimeOptions map[string]any, key string) map[string]any {
-	if len(runtimeOptions) == 0 {
-		return nil
-	}
-	raw, ok := runtimeOptions[key]
-	if !ok || raw == nil {
-		return nil
-	}
-	m, ok := raw.(map[string]any)
-	if !ok || len(m) == 0 {
-		return nil
-	}
-	return utils.CloneAnyMap(m)
-}
-
 // ConfigFromRuntimeOptions parses Config from a runtime_options map (e.g. create payload before agent exists).
 func ConfigFromRuntimeOptions(runtimeOptions map[string]any) Config {
 	return ConfigFromStored(NotifierFlatFromRuntimeOptionsMap(runtimeOptions))
-}
-
-// WithRuntimeOption returns a copy of runtimeOptions with key set to flat (or deleted when flat is empty).
-func WithRuntimeOption(runtimeOptions map[string]any, key string, flat map[string]any) map[string]any {
-	out := utils.CloneAnyMap(runtimeOptions)
-	if out == nil {
-		out = make(map[string]any)
-	}
-	if len(flat) == 0 {
-		delete(out, key)
-	} else {
-		out[key] = utils.CloneAnyMap(flat)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-// WithNestedNotifierRuntimeOption sets legacy nested runtime_options["notifier"] (prefer flat root keys on the map instead).
-func WithNestedNotifierRuntimeOption(runtimeOptions map[string]any, flat map[string]any) map[string]any {
-	return WithRuntimeOption(runtimeOptions, RuntimeOptionKeyNotifier, flat)
 }
 
 // RedactRuntimeOptionsForAPI returns a shallow copy of runtime_options with known secret-bearing subtrees redacted.
@@ -75,7 +32,6 @@ func RedactRuntimeOptionsForAPI(runtimeOptions map[string]any) map[string]any {
 			out[k] = v
 		}
 	}
-	delete(out, RuntimeOptionKeyNotifier)
 	if len(out) == 0 {
 		return nil
 	}
@@ -101,12 +57,6 @@ func MergeFlatRuntimeOptionsForProfilePatch(baseRuntimeOptions, patchRuntimeOpti
 	base := NotifierFlatFromRuntimeOptionsMap(baseRuntimeOptions)
 	incoming := NotifierFlatFromRuntimeOptionsMap(patchRuntimeOptions)
 	return MergeNotifierFlatPatch(base, incoming)
-}
-
-// PersistNotifierFlatToProfile merges flat notifier keys at the root of profileRuntimeOptions (no nested "notifier" map)
-// and strips nested notifier from requestOptions. When mergedFlat is empty, inputs are unchanged.
-func PersistNotifierFlatToProfile(profileRuntimeOptions, requestOptions, mergedFlat map[string]any) (map[string]any, map[string]any) {
-	return ApplyNotifierFlatPersistence(nil, profileRuntimeOptions, requestOptions, mergedFlat)
 }
 
 // ProfileDeliveryComplete reports whether notifier delivery is sufficiently configured from flat runtime storage.
@@ -173,9 +123,9 @@ func ViewRuntimeOptionsForAPI(agentRuntimeOptions map[string]any) map[string]any
 }
 
 // ViewRuntimeOptionsForAPIUnified merges agent-level and profile-level runtime_options before redacting and summarizing.
-// Profile-level notifier payload is not merged (agent runtime_options is the only source of truth for delivery config).
+// Agent runtime_options is the only source of truth for delivery config.
 func ViewRuntimeOptionsForAPIUnified(agentRuntimeOptions, profileRuntimeOptions map[string]any) map[string]any {
-	profileRuntimeOptions = ProfileRuntimeOptionsWithoutNotifierPayload(profileRuntimeOptions)
+	profileRuntimeOptions = StripNotifierKeysForProfileRuntimeOptions(profileRuntimeOptions)
 	merged := MergeRuntimeOptionMapsForView(agentRuntimeOptions, profileRuntimeOptions)
 	base := RedactRuntimeOptionsForAPI(merged)
 	agentFlat := NotifierFlatFromAgentRuntimeOptions(agentRuntimeOptions)

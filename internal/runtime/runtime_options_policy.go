@@ -1,7 +1,5 @@
 package runtime
 
-import "csgclaw/internal/utils"
-
 // RuntimeOptionsPolicy defines how runtime_options behave for a concrete runtime_kind.
 // Implementations register via RegisterRuntimeOptionsPolicy.
 type RuntimeOptionsPolicy interface {
@@ -10,8 +8,6 @@ type RuntimeOptionsPolicy interface {
 	// IsComplete reports whether the agent profile is complete for this runtime_kind.
 	// runtimeOptionsAfterPatch is merged agent runtime_options + incoming patch before persist (may be nil).
 	IsComplete(llmComplete bool, runtimeOptions, runtimeOptionsAfterPatch map[string]any) bool
-	MergeFlatForAgentPatch(agentRuntimeOptions, patchRuntimeOptions map[string]any) map[string]any
-	ApplyFlatPersistence(agentRuntimeOptions *map[string]any, profileRuntimeOptions, profileRequestOptions map[string]any, mergedFlat map[string]any) (map[string]any, map[string]any)
 }
 
 var (
@@ -44,21 +40,4 @@ func (defaultRuntimeOptionsPolicy) StripProfileLLMFields(_, baseURL, modelID str
 
 func (defaultRuntimeOptionsPolicy) IsComplete(llmComplete bool, _, _ map[string]any) bool {
 	return llmComplete
-}
-
-func (defaultRuntimeOptionsPolicy) MergeFlatForAgentPatch(agentRuntimeOptions, patchRuntimeOptions map[string]any) map[string]any {
-	if len(patchRuntimeOptions) == 0 {
-		return utils.CloneAnyMap(agentRuntimeOptions)
-	}
-	if len(agentRuntimeOptions) == 0 {
-		return utils.CloneAnyMap(patchRuntimeOptions)
-	}
-	return utils.OverlayAnyMap(utils.CloneAnyMap(agentRuntimeOptions), patchRuntimeOptions)
-}
-
-func (defaultRuntimeOptionsPolicy) ApplyFlatPersistence(agentRuntimeOptions *map[string]any, profileRuntimeOptions, profileRequestOptions map[string]any, mergedFlat map[string]any) (map[string]any, map[string]any) {
-	if agentRuntimeOptions != nil && len(mergedFlat) > 0 {
-		*agentRuntimeOptions = utils.CloneAnyMap(mergedFlat)
-	}
-	return profileRuntimeOptions, profileRequestOptions
 }

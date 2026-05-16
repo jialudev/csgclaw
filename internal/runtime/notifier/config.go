@@ -16,7 +16,7 @@ const (
 
 const workerRole = "worker"
 
-// Config is parsed from flat notifier_details or legacy request_options["notifier"].
+// Config is parsed from flat notifier_details stored on runtime_options.
 type Config struct {
 	DeliveryMode         string
 	WebhookToken         string
@@ -43,22 +43,6 @@ func ParseNotifierDetails(m map[string]any) Config {
 		PollInterval:         strings.TrimSpace(toString(m["poll_interval"])),
 		RemoteToken:          strings.TrimSpace(toString(m["remote_token"])),
 	}
-}
-
-// ParseConfigFromRequestOptions parses legacy request_options with a nested "notifier" object.
-func ParseConfigFromRequestOptions(ro map[string]any) Config {
-	if ro == nil {
-		return Config{}
-	}
-	raw, ok := ro["notifier"]
-	if !ok || raw == nil {
-		return Config{}
-	}
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return Config{}
-	}
-	return ParseNotifierDetails(m)
 }
 
 func toString(v any) string {

@@ -49,33 +49,6 @@ func RedactDetailsForAPI(nd map[string]any) map[string]any {
 	return out
 }
 
-// RedactedRequestOptionsForAPIView returns a copy of request_options safe for JSON responses:
-// nested notifier webhook_token and remote_token are removed (use runtime_options.notifier_profile for summaries).
-func RedactedRequestOptionsForAPIView(ro map[string]any) map[string]any {
-	if len(ro) == 0 {
-		return nil
-	}
-	out := utils.CloneAnyMap(ro)
-	raw, ok := out["notifier"]
-	if !ok || raw == nil {
-		return out
-	}
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return out
-	}
-	nm := RedactDetailsForAPI(m)
-	if len(nm) == 0 {
-		delete(out, "notifier")
-	} else {
-		out["notifier"] = nm
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 // MergeRuntimeOptionMapsForView merges agent-level and profile-level option maps for API display (agent keys win).
 func MergeRuntimeOptionMapsForView(agentRuntimeOptions, profileRuntimeOptions map[string]any) map[string]any {
 	out := utils.CloneAnyMap(agentRuntimeOptions)

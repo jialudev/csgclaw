@@ -32,30 +32,6 @@ func IsNotifierFlatRoot(m map[string]any) bool {
 	return false
 }
 
-// NestedMapFromRequestOptions returns a shallow clone of ro["notifier"] when present and a map.
-func NestedMapFromRequestOptions(ro map[string]any) map[string]any {
-	if len(ro) == 0 {
-		return nil
-	}
-	raw, ok := ro["notifier"]
-	if !ok || raw == nil {
-		return nil
-	}
-	m, ok := raw.(map[string]any)
-	if !ok || m == nil {
-		return nil
-	}
-	return utils.CloneAnyMap(m)
-}
-
-// StripNestedNotifier deletes request_options["notifier"] in place.
-func StripNestedNotifier(ro map[string]any) {
-	if len(ro) == 0 {
-		return
-	}
-	delete(ro, "notifier")
-}
-
 // ConfigFromStored parses notifier.Config from flat notifier_details (runtime_options storage).
 func ConfigFromStored(storedFlat map[string]any) Config {
 	if len(storedFlat) == 0 {
@@ -132,20 +108,18 @@ func copyNotifierKeysFromMap(src map[string]any) map[string]any {
 	return out
 }
 
-// StripNotifierKeysFromRootMap removes flat notifier keys and nested "notifier" from a runtime_options map in place.
+// StripNotifierKeysFromRootMap removes flat notifier keys from a runtime_options map in place.
 func StripNotifierKeysFromRootMap(m map[string]any) {
 	if len(m) == 0 {
 		return
 	}
-	delete(m, RuntimeOptionKeyNotifier)
 	for _, k := range NotifierStorageKeys {
 		delete(m, k)
 	}
 }
 
-// ProfileRuntimeOptionsWithoutNotifierPayload returns a copy of profile-level runtime_options
-// with notifier payload removed (nested key and flat keys).
-func ProfileRuntimeOptionsWithoutNotifierPayload(profileRuntimeOptions map[string]any) map[string]any {
+// StripNotifierKeysForProfileRuntimeOptions returns profile-level runtime_options without notifier flat keys.
+func StripNotifierKeysForProfileRuntimeOptions(profileRuntimeOptions map[string]any) map[string]any {
 	if len(profileRuntimeOptions) == 0 {
 		return nil
 	}
@@ -159,8 +133,7 @@ func ProfileRuntimeOptionsWithoutNotifierPayload(profileRuntimeOptions map[strin
 
 // NotifierFlatFromRuntimeOptionsMap returns notifier flat from a single runtime_options map.
 // Storage is flat keys at the map root (delivery_mode, webhook_token, …); runtime_kind identifies
-// notifier agents. View-only keys are ignored. The legacy nested runtime_options["notifier"]
-// object is not read (StripNotifierKeysFromRootMap still removes it on persist).
+// notifier agents. View-only keys are ignored.
 func NotifierFlatFromRuntimeOptionsMap(runtimeOptions map[string]any) map[string]any {
 	if len(runtimeOptions) == 0 {
 		return nil
@@ -190,62 +163,6 @@ func mergeFlatForAgentPatch(agentRuntimeOptions, patchRuntimeOptions map[string]
 	incoming := StripViewOnlyRuntimeOptionKeys(patchRuntimeOptions)
 	return MergeNotifierFlatPatch(base, incoming)
 }
-
-// ApplyNotifierFlatPersistence writes merged notifier flat onto *agentRuntimeOptions when non-nil (agent-level storage),
-// otherwise merges flat keys at the root of profileRuntimeOptions (create path before Agent exists).
-// It always strips nested notifier from a copy of profileRequestOptions and returns updated profile maps.
-func ApplyNotifierFlatPersistence(agentRuntimeOptions *map[string]any, profileRuntimeOptions, profileRequestOptions map[string]any, mergedFlat map[string]any) (nextProfileRuntimeOptions, nextProfileRequestOptions map[string]any) {
-	return applyNotifierFlatPersistence(agentRuntimeOptions, profileRuntimeOptions, profileRequestOptions, mergedFlat)
-}
-
-func applyNotifierFlatPersistence(agentRuntimeOptions *map[string]any, profileRuntimeOptions, profileRequestOptions map[string]any, mergedFlat map[string]any) (nextProfileRuntimeOptions, nextProfileRequestOptions map[string]any) {
-	if len(mergedFlat) == 0 {
-		return profileRuntimeOptions, profileRequestOptions
-	}
-	flat := utils.CloneAnyMap(mergedFlat)
-	flat = EnsurePullRemoteSubscriptionInNotifierDetails(flat)
-	nextRO := utils.CloneAnyMap(profileRequestOptions)
-	StripNestedNotifier(nextRO)
-	if len(nextRO) == 0 {
-		nextRO = nil
-	}
-	if agentRuntimeOptions != nil {
-		base := utils.CloneAnyMap(*agentRuntimeOptions)
-		if base == nil {
-			base = make(map[string]any)
-		}
-		StripNotifierKeysFromRootMap(base)
-		merged := MergeNotifierFlatPatch(base, flat)
-		if len(merged) == 0 {
-			*agentRuntimeOptions = nil
-		} else {
-			*agentRuntimeOptions = merged
-		}
-		return ProfileRuntimeOptionsWithoutNotifierPayload(profileRuntimeOptions), nextRO
-	}
-	base := utils.CloneAnyMap(profileRuntimeOptions)
-	StripNotifierKeysFromRootMap(base)
-	for k, v := range flat {
-		if _, ok := notifierStorageKeySet[k]; ok {
-			if base == nil {
-				base = make(map[string]any)
-			}
-			base[k] = v
-		}
-	}
-	if len(base) == 0 {
-		base = nil
-	}
-	return base, nextRO
-}
-
-var notifierStorageKeySet = func() map[string]struct{} {
-	m := make(map[string]struct{}, len(NotifierStorageKeys))
-	for _, k := range NotifierStorageKeys {
-		m[k] = struct{}{}
-	}
-	return m
-}()
 
 // ConfigFromAgentRuntimeOptions parses notifier.Config from agent-level runtime_options only.
 func ConfigFromAgentRuntimeOptions(agentRuntimeOptions map[string]any) Config {

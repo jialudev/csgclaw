@@ -7,6 +7,7 @@ import (
 	"time"
 
 	agentruntime "csgclaw/internal/runtime"
+	runtimenotifier "csgclaw/internal/runtime/notifier"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/utils"
 )
@@ -115,15 +116,13 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 				profile.APIKey = current.AgentProfile.APIKey
 			}
 		}
-		pol := agentruntime.RuntimeOptionsPolicyForKind(current.RuntimeKind)
 		var patch map[string]any
 		if req.RuntimeOptions != nil {
 			patch = *req.RuntimeOptions
 		}
-		mergedFlat := pol.MergeFlatForAgentPatch(current.RuntimeOptions, patch)
+		mergedFlat := runtimeOptionsAfterPatch(current.RuntimeKind, current.RuntimeOptions, patch)
+		current.RuntimeOptions = nextAgentRuntimeOptions(current.RuntimeKind, current.RuntimeOptions, mergedFlat)
 		normalized := normalizeProfileForAgentRuntime(profile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, mergedFlat)
-		_, nextRO := pol.ApplyFlatPersistence(&current.RuntimeOptions, nil, normalized.RequestOptions, mergedFlat)
-		normalized.RequestOptions = nextRO
 		normalized.EnvRestartRequired = !profilesEqualEnv(current.AgentProfile, normalized)
 		current.AgentProfile = normalized
 		current.ProfileComplete = normalized.ProfileComplete
@@ -368,9 +367,7 @@ func (s *Service) profileForCreateRequest(ctx context.Context, spec *CreateAgent
 			}
 		}
 	}
-
-	pol := agentruntime.RuntimeOptionsPolicyForKind(rk)
-	runtimeOptionsAfterPatch := pol.MergeFlatForAgentPatch(nil, spec.RuntimeOptions)
+	runtimeOptionsAfterPatch := runtimeOptionsAfterPatch(rk, nil, spec.RuntimeOptions)
 	profile = normalizeProfileForAgentRuntime(profile, nil, spec.Name, spec.Description, spec.RuntimeKind, runtimeOptionsAfterPatch)
 	if !profile.ProfileComplete {
 		detected, _ := s.DetectDefaultProfile(ctx)
@@ -386,4 +383,27 @@ func (s *Service) profileForCreateRequest(ctx context.Context, spec *CreateAgent
 		spec.RuntimeOptions = utils.CloneAnyMap(runtimeOptionsAfterPatch)
 	}
 	return profile, nil
+}
+
+func runtimeOptionsAfterPatch(runtimeKind string, currentRuntimeOptions, patchRuntimeOptions map[string]any) map[string]any {
+	if runtimenotifier.MatchesNotifierRuntimeKind(runtimeKind) {
+		return runtimenotifier.MergeFlatForAgentPatch(currentRuntimeOptions, patchRuntimeOptions)
+	}
+	if len(patchRuntimeOptions) == 0 {
+		return utils.CloneAnyMap(currentRuntimeOptions)
+	}
+	if len(currentRuntimeOptions) == 0 {
+		return utils.CloneAnyMap(patchRuntimeOptions)
+	}
+	return utils.OverlayAnyMap(utils.CloneAnyMap(currentRuntimeOptions), patchRuntimeOptions)
+}
+
+func nextAgentRuntimeOptions(runtimeKind string, currentRuntimeOptions, mergedRuntimeOptions map[string]any) map[string]any {
+	if len(mergedRuntimeOptions) == 0 {
+		if runtimenotifier.MatchesNotifierRuntimeKind(runtimeKind) {
+			return nil
+		}
+		return currentRuntimeOptions
+	}
+	return utils.CloneAnyMap(mergedRuntimeOptions)
 }

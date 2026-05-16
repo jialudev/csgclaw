@@ -5,9 +5,8 @@ import "testing"
 func TestRuntimeOptionsPolicyForKind_unknownUsesDefault(t *testing.T) {
 	t.Parallel()
 	p := RuntimeOptionsPolicyForKind("unknown-future-runtime")
-	got := p.MergeFlatForAgentPatch(map[string]any{"a": 1}, map[string]any{"b": 2})
-	if got["a"] != 1 || got["b"] != 2 {
-		t.Fatalf("default merge = %#v", got)
+	if _, ok := any(p).(defaultRuntimeOptionsPolicy); !ok {
+		t.Fatalf("unexpected policy type %T", p)
 	}
 }
 
