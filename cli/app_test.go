@@ -290,8 +290,11 @@ func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
 			if payload.Name != "alice" || payload.Role != "worker" || payload.Channel != "csgclaw" {
 				t.Fatalf("payload = %+v, want alice worker csgclaw", payload)
 			}
-			if payload.Description != "test lead" || payload.ModelID != "gpt-test" {
-				t.Fatalf("payload = %+v, want description/model_id", payload)
+			if payload.Description != "test lead" {
+				t.Fatalf("payload = %+v, want description", payload)
+			}
+			if payload.AgentProfile == nil || payload.AgentProfile.ModelID != "gpt-test" {
+				t.Fatalf("payload.AgentProfile = %+v, want model_id", payload.AgentProfile)
 			}
 			if payload.RuntimeKind != "codex" {
 				t.Fatalf("payload.RuntimeKind = %q, want codex", payload.RuntimeKind)

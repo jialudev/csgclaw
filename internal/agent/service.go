@@ -541,9 +541,6 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		manager.ProfileComplete = false
 		manager.DetectionResults = detectionResults
 		manager.Profile = profileSelector(startProfile)
-		manager.Provider = startProfile.Provider
-		manager.ModelID = startProfile.ModelID
-		manager.ReasoningEffort = startProfile.ReasoningEffort
 		s.agents[ManagerUserID] = manager
 		s.syncRuntimeRecordLocked(manager)
 		s.detectionResults = detectionResults
@@ -611,9 +608,6 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		Status:           string(info.State),
 		CreatedAt:        info.CreatedAt.UTC(),
 		Profile:          profileSelector(startProfile),
-		Provider:         startProfile.Provider,
-		ModelID:          startProfile.ModelID,
-		ReasoningEffort:  startProfile.ReasoningEffort,
 		AgentProfile:     startProfile,
 		ProfileComplete:  true,
 		DetectionResults: detectionResults,
@@ -943,7 +937,6 @@ func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) 
 		Status:         existing.Status,
 		CreatedAt:      existing.CreatedAt,
 		Profile:        existing.Profile,
-		ModelID:        existing.ModelID,
 		RuntimeOptions: utils.CloneAnyMap(existing.RuntimeOptions),
 		AgentProfile:   cloneProfile(existing.AgentProfile),
 	}
@@ -970,15 +963,11 @@ func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) 
 			merged.CreatedAt = next.CreatedAt
 		case "profile":
 			merged.Profile = next.Profile
-			merged.ModelID = ""
-		case "model_id":
-			merged.ModelID = next.ModelID
-			merged.Profile = ""
-			merged.AgentProfile = AgentProfile{}
+			if strings.TrimSpace(next.Profile) != "" {
+				merged.AgentProfile = AgentProfile{}
+			}
 		case "agent_profile":
 			merged.AgentProfile = cloneProfile(next.AgentProfile)
-			merged.Profile = ""
-			merged.ModelID = ""
 		case "runtime_options":
 			merged.RuntimeOptions = utils.CloneAnyMap(next.RuntimeOptions)
 		default:
@@ -1166,9 +1155,6 @@ func (s *Service) ensureGatewayConfigForAgent(got Agent) error {
 	}
 	profile := normalizeProfile(got.AgentProfile, name, got.Description)
 	modelID := strings.TrimSpace(profile.ModelID)
-	if modelID == "" {
-		modelID = strings.TrimSpace(got.ModelID)
-	}
 	if modelID == "" {
 		modelID = s.model.Resolved().ModelID
 	}
@@ -1521,9 +1507,6 @@ func (s *Service) persistCreatedWorker(ctx context.Context, id, name, descriptio
 		CreatedAt:       createdAt,
 		RuntimeOptions:  agentRX,
 		Profile:         profileSelector(prof),
-		Provider:        prof.Provider,
-		ModelID:         prof.ModelID,
-		ReasoningEffort: prof.ReasoningEffort,
 		AgentProfile:    prof,
 		ProfileComplete: prof.ProfileComplete,
 		Role:            RoleWorker,

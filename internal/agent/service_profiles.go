@@ -56,9 +56,6 @@ func (s *Service) UpdateAgentProfile(id string, profile AgentProfile) (AgentProf
 	current.AgentProfile = normalized
 	current.ProfileComplete = normalized.ProfileComplete
 	current.Profile = profileSelector(normalized)
-	current.Provider = normalized.Provider
-	current.ModelID = normalized.ModelID
-	current.ReasoningEffort = normalized.ReasoningEffort
 	current.DetectionResults = nil
 	s.agents[id] = current
 	if normalized.ProfileComplete {
@@ -131,9 +128,6 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		current.AgentProfile = normalized
 		current.ProfileComplete = normalized.ProfileComplete
 		current.Profile = profileSelector(normalized)
-		current.Provider = normalized.Provider
-		current.ModelID = normalized.ModelID
-		current.ReasoningEffort = normalized.ReasoningEffort
 		current.DetectionResults = nil
 		if normalized.ProfileComplete {
 			s.profileDefaults = cloneProfile(normalized)
@@ -343,19 +337,6 @@ func (s *Service) profileForCreateRequest(ctx context.Context, spec *CreateAgent
 	profile := spec.AgentProfile
 	rk := strings.TrimSpace(spec.RuntimeKind)
 	if isGatewayRuntimeKind(rk) {
-		if strings.TrimSpace(profile.ModelID) == "" && strings.TrimSpace(spec.ModelID) != "" {
-			profile.ModelID = strings.TrimSpace(spec.ModelID)
-		}
-		if strings.TrimSpace(profile.Provider) == "" && strings.TrimSpace(spec.Profile) != "" {
-			if _, cfg, err := s.llm.Resolve(spec.Profile); err == nil {
-				profile = profileFromConfigModel(spec.Name, spec.Description, cfg)
-			} else if provider, modelID, ok := splitProfileSelector(spec.Profile); ok {
-				profile.Provider = provider
-				if strings.TrimSpace(profile.ModelID) == "" {
-					profile.ModelID = modelID
-				}
-			}
-		}
 		if strings.TrimSpace(profile.Provider) == "" || strings.TrimSpace(profile.ModelID) == "" {
 			s.mu.RLock()
 			defaultProfile := cloneProfile(s.profileDefaults)
@@ -405,18 +386,4 @@ func (s *Service) profileForCreateRequest(ctx context.Context, spec *CreateAgent
 		spec.RuntimeOptions = utils.CloneAnyMap(runtimeOptionsAfterPatch)
 	}
 	return profile, nil
-}
-
-func splitProfileSelector(selector string) (string, string, bool) {
-	selector = strings.TrimSpace(selector)
-	if selector == "" {
-		return "", "", false
-	}
-	for _, sep := range []string{".", ":"} {
-		provider, modelID, ok := strings.Cut(selector, sep)
-		if ok && strings.TrimSpace(provider) != "" && strings.TrimSpace(modelID) != "" {
-			return normalizeProfileProvider(provider), strings.TrimSpace(modelID), true
-		}
-	}
-	return normalizeProfileProvider(selector), "", true
 }

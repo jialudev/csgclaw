@@ -102,15 +102,18 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		return fmt.Errorf("bot create requires --role")
 	}
 
-	created, err := run.APIClient(globals).CreateBot(ctx, apitypes.CreateBotRequest{
+	req := apitypes.CreateBotRequest{
 		ID:          *id,
 		Name:        *name,
 		Description: *description,
 		Role:        *role,
 		Channel:     *channelName,
-		ModelID:     *modelID,
 		RuntimeKind: *runtimeKind,
-	})
+	}
+	if strings.TrimSpace(*modelID) != "" {
+		req.AgentProfile = &apitypes.CreateAgentProfile{ModelID: *modelID}
+	}
+	created, err := run.APIClient(globals).CreateBot(ctx, req)
 	if err != nil {
 		return err
 	}

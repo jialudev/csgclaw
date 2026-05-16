@@ -978,7 +978,7 @@ func TestEnsureBootstrapManagerStartsAfterSingleSuccessfulDetection(t *testing.T
 	if !ok {
 		t.Fatal("manager agent not saved")
 	}
-	if got.Status != string(sandbox.StateRunning) || got.ModelID != "gpt-auto" || !got.ProfileComplete {
+	if got.Status != string(sandbox.StateRunning) || got.AgentProfile.ModelID != "gpt-auto" || !got.ProfileComplete {
 		t.Fatalf("manager = %+v, want running with detected model", got)
 	}
 	if codexDetections != 1 {
@@ -2153,7 +2153,7 @@ func TestCreateWorkerRejectsMissingImageWhenGatewayRuntimeExplicit(t *testing.T)
 	}
 }
 
-func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
+func TestCreateWorkerUsesDefaultProfileSnapshotForGatewayRuntime(t *testing.T) {
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
 		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ AgentProfile) (sandbox.Instance, sandbox.Info, error) {
@@ -2187,7 +2187,7 @@ func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 		Name:        "alice",
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
-		Profile:     "remote-main",
+		Profile:     "codex",
 	})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
@@ -2195,14 +2195,14 @@ func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 	if got.Profile != "api.gpt-5.4" {
 		t.Fatalf("CreateWorker().Profile = %q, want %q", got.Profile, "api.gpt-5.4")
 	}
-	if got.Provider != ProviderAPI {
-		t.Fatalf("CreateWorker().Provider = %q, want %q", got.Provider, ProviderAPI)
+	if got.AgentProfile.Provider != ProviderAPI {
+		t.Fatalf("CreateWorker().AgentProfile.Provider = %q, want %q", got.AgentProfile.Provider, ProviderAPI)
 	}
-	if got.ModelID != "gpt-5.4" {
-		t.Fatalf("CreateWorker().ModelID = %q, want %q", got.ModelID, "gpt-5.4")
+	if got.AgentProfile.ModelID != "gpt-5.4" {
+		t.Fatalf("CreateWorker().AgentProfile.ModelID = %q, want %q", got.AgentProfile.ModelID, "gpt-5.4")
 	}
-	if got.ReasoningEffort != "medium" {
-		t.Fatalf("CreateWorker().ReasoningEffort = %q, want %q", got.ReasoningEffort, "medium")
+	if got.AgentProfile.ReasoningEffort != "medium" {
+		t.Fatalf("CreateWorker().AgentProfile.ReasoningEffort = %q, want %q", got.AgentProfile.ReasoningEffort, "medium")
 	}
 }
 

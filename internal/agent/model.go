@@ -27,9 +27,6 @@ type Agent struct {
 	Status           string                   `json:"status"`
 	CreatedAt        time.Time                `json:"created_at"`
 	Profile          string                   `json:"profile,omitempty"`
-	Provider         string                   `json:"provider,omitempty"`
-	ModelID          string                   `json:"model_id,omitempty"`
-	ReasoningEffort  string                   `json:"reasoning_effort,omitempty"`
 	AgentProfile     AgentProfile             `json:"agent_profile,omitempty"`
 	ProfileComplete  bool                     `json:"profile_complete"`
 	DetectionResults []ProfileDetectionResult `json:"detection_results,omitempty"`
@@ -46,7 +43,6 @@ type CreateAgentSpec struct {
 	Status         string         `json:"status,omitempty"`
 	CreatedAt      time.Time      `json:"created_at,omitempty"`
 	Profile        string         `json:"profile,omitempty"`
-	ModelID        string         `json:"model_id,omitempty"`
 	RuntimeOptions map[string]any `json:"runtime_options,omitempty"`
 	AgentProfile   AgentProfile   `json:"agent_profile,omitempty"`
 }

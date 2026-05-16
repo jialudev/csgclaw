@@ -316,7 +316,6 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 			Description:    normalized.Description,
 			Image:          normalized.Image,
 			Role:           agent.RoleWorker,
-			ModelID:        normalized.ModelID,
 			RuntimeKind:    normalized.RuntimeKind,
 			FromTemplate:   normalized.FromTemplate,
 			RuntimeOptions: utils.CloneAnyMap(normalized.RuntimeOptions),
@@ -366,7 +365,10 @@ func (s *Service) createWorker(ctx context.Context, normalized CreateRequest) (B
 	return b, nil
 }
 
-func agentProfileFromBotRequest(req apitypes.CreateAgentProfile) agent.AgentProfile {
+func agentProfileFromBotRequest(req *apitypes.CreateAgentProfile) agent.AgentProfile {
+	if req == nil {
+		return agent.AgentProfile{}
+	}
 	return agent.AgentProfile{
 		Name:            req.Name,
 		Description:     req.Description,

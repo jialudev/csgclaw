@@ -107,9 +107,6 @@ type agentResponse struct {
 	Status           string                         `json:"status"`
 	CreatedAt        time.Time                      `json:"created_at"`
 	Profile          string                         `json:"profile,omitempty"`
-	Provider         string                         `json:"provider,omitempty"`
-	ModelID          string                         `json:"model_id,omitempty"`
-	ReasoningEffort  string                         `json:"reasoning_effort,omitempty"`
 	RuntimeOptions   map[string]any                 `json:"runtime_options,omitempty"`
 	AgentProfile     agent.AgentProfileView         `json:"agent_profile,omitempty"`
 	ProfileComplete  bool                           `json:"profile_complete"`
@@ -810,7 +807,6 @@ func agentCreateRequestFromAPI(req apitypes.CreateAgentRequest) agent.CreateRequ
 			Status:         req.Status,
 			CreatedAt:      req.CreatedAt,
 			Profile:        req.Profile,
-			ModelID:        req.ModelID,
 			RuntimeOptions: utils.CloneAnyMapShallowNestedStringMaps(req.RuntimeOptions),
 			AgentProfile:   prof,
 		},
@@ -945,7 +941,10 @@ func splitHubTemplatePath(path string) (string, string) {
 	return id, strings.Join(parts[2:], "/")
 }
 
-func agentProfileFromAPI(req apitypes.CreateAgentProfile) agent.AgentProfile {
+func agentProfileFromAPI(req *apitypes.CreateAgentProfile) agent.AgentProfile {
+	if req == nil {
+		return agent.AgentProfile{}
+	}
 	return agent.AgentProfile{
 		Name:            req.Name,
 		Description:     req.Description,
@@ -1555,9 +1554,6 @@ func presentAgent(item agent.Agent) agentResponse {
 		Status:           item.Status,
 		CreatedAt:        item.CreatedAt,
 		Profile:          item.Profile,
-		Provider:         item.Provider,
-		ModelID:          item.ModelID,
-		ReasoningEffort:  item.ReasoningEffort,
 		RuntimeOptions:   rx,
 		AgentProfile:     av,
 		ProfileComplete:  item.ProfileComplete,

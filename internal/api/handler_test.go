@@ -531,7 +531,7 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 		imBus:  bus,
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","description":"test lead","image":"agent-image:1","role":"worker","channel":"csgclaw","agent_profile":{"provider":"csghub_lite","model_id":"glm-4.5","reasoning_effort":"high"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","description":"test lead","image":"agent-image:1","role":"worker","channel":"csgclaw","runtime_kind":"picoclaw_sandbox","agent_profile":{"provider":"csghub_lite","model_id":"glm-4.5","reasoning_effort":"high"}}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -571,18 +571,19 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list agents status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	var agents []agent.Agent
+	var agents []map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&agents); err != nil {
 		t.Fatalf("decode agents response: %v", err)
 	}
-	if len(agents) != 1 || agents[0].ID != "u-alice" {
+	if len(agents) != 1 || agents[0]["id"] != "u-alice" {
 		t.Fatalf("agents = %+v, want u-alice", agents)
 	}
-	if agents[0].Image != "agent-image:1" {
-		t.Fatalf("agents[0].Image = %q, want agent-image:1", agents[0].Image)
+	if agents[0]["image"] != "agent-image:1" {
+		t.Fatalf("agents[0].image = %#v, want agent-image:1", agents[0]["image"])
 	}
-	if agents[0].Provider != agent.ProviderCSGHubLite || agents[0].ModelID != "glm-4.5" {
-		t.Fatalf("agent profile = %s/%s, want csghub_lite/glm-4.5", agents[0].Provider, agents[0].ModelID)
+	profile, ok := agents[0]["agent_profile"].(map[string]any)
+	if !ok || profile["provider"] != agent.ProviderCSGHubLite || profile["model_id"] != "glm-4.5" {
+		t.Fatalf("agent_profile = %#v, want csghub_lite/glm-4.5", agents[0]["agent_profile"])
 	}
 
 	rec = httptest.NewRecorder()
@@ -695,7 +696,7 @@ func TestHandleBotsCreateFeishuWorker(t *testing.T) {
 		feishu: feishuSvc,
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"feishu"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"feishu","runtime_kind":"picoclaw_sandbox"}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -758,14 +759,14 @@ func TestHandleBotsCreateRejectsDuplicateWorkerNameInSameChannel(t *testing.T) {
 		im:     imSvc,
 	}
 
-	first := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw"}`))
+	first := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"picoclaw_sandbox"}`))
 	firstRec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(firstRec, first)
 	if firstRec.Code != http.StatusCreated {
 		t.Fatalf("first status = %d, want %d; body=%s", firstRec.Code, http.StatusCreated, firstRec.Body.String())
 	}
 
-	second := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw"}`))
+	second := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"picoclaw_sandbox"}`))
 	secondRec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(secondRec, second)
 	if secondRec.Code != http.StatusBadRequest {
@@ -1149,11 +1150,11 @@ func TestHandleAgentsPatchUpdatesMetadataAndProfile(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got["description"] != "new role" || got["model_id"] != "new-model" {
-		t.Fatalf("agent = %#v, want updated description/model", got)
+	if got["description"] != "new role" {
+		t.Fatalf("agent = %#v, want updated description", got)
 	}
 	profile, ok := got["agent_profile"].(map[string]any)
-	if !ok || profile["env_restart_required"] != true {
+	if !ok || profile["env_restart_required"] != true || profile["model_id"] != "new-model" {
 		t.Fatalf("agent_profile = %#v, want env_restart_required true", got["agent_profile"])
 	}
 }
@@ -1777,6 +1778,7 @@ func TestAgentCreateRequestFromAPIIncludesFromTemplate(t *testing.T) {
 		Name:         "alice",
 		RuntimeKind:  agent.RuntimeKindCodex,
 		FromTemplate: "builtin/frontend-alice",
+		Profile:      "codex-fast",
 	})
 
 	if got.Spec.Name != "alice" {
@@ -1787,6 +1789,9 @@ func TestAgentCreateRequestFromAPIIncludesFromTemplate(t *testing.T) {
 	}
 	if got.Spec.FromTemplate != "builtin/frontend-alice" {
 		t.Fatalf("Spec.FromTemplate = %q, want %q", got.Spec.FromTemplate, "builtin/frontend-alice")
+	}
+	if got.Spec.Profile != "codex-fast" {
+		t.Fatalf("Spec.Profile = %q, want %q", got.Spec.Profile, "codex-fast")
 	}
 }
 
@@ -3685,12 +3690,16 @@ func TestHandleBotLLMModelsReturnsBridgeCatalog(t *testing.T) {
 	statePath := filepath.Join(dir, "agents.json")
 	agents := []agent.Agent{
 		{
-			ID:        agent.ManagerUserID,
-			Name:      agent.ManagerName,
-			Role:      agent.RoleManager,
-			Profile:   config.DefaultLLMProfile,
-			Provider:  config.ProviderLLMAPI,
-			ModelID:   "gpt-5.4",
+			ID:      agent.ManagerUserID,
+			Name:    agent.ManagerName,
+			Role:    agent.RoleManager,
+			Profile: config.DefaultLLMProfile,
+			AgentProfile: agent.AgentProfile{
+				Provider:        config.ProviderLLMAPI,
+				ModelID:         "gpt-5.4",
+				ReasoningEffort: agent.DefaultReasoningEffort,
+				ProfileComplete: true,
+			},
 			CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
 		},
 	}
@@ -3738,12 +3747,16 @@ func TestHandleBotLLMModelsLegacyRouteReturnsBridgeCatalog(t *testing.T) {
 	statePath := filepath.Join(dir, "agents.json")
 	agents := []agent.Agent{
 		{
-			ID:        agent.ManagerUserID,
-			Name:      agent.ManagerName,
-			Role:      agent.RoleManager,
-			Profile:   config.DefaultLLMProfile,
-			Provider:  config.ProviderLLMAPI,
-			ModelID:   "gpt-5.4",
+			ID:      agent.ManagerUserID,
+			Name:    agent.ManagerName,
+			Role:    agent.RoleManager,
+			Profile: config.DefaultLLMProfile,
+			AgentProfile: agent.AgentProfile{
+				Provider:        config.ProviderLLMAPI,
+				ModelID:         "gpt-5.4",
+				ReasoningEffort: agent.DefaultReasoningEffort,
+				ProfileComplete: true,
+			},
 			CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
 		},
 	}

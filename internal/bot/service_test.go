@@ -694,7 +694,7 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 		Role:        string(RoleWorker),
 		Channel:     string(ChannelCSGClaw),
 		RuntimeKind: agent.RuntimeKindCodex,
-		AgentProfile: apitypes.CreateAgentProfile{
+		AgentProfile: &apitypes.CreateAgentProfile{
 			Provider:        agent.ProviderCSGHubLite,
 			ModelID:         "glm-4.5",
 			ReasoningEffort: "high",

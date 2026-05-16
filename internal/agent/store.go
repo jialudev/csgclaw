@@ -82,9 +82,6 @@ func newPersistedAgent(a Agent) persistedAgent {
 		Status:           a.Status,
 		CreatedAt:        a.CreatedAt,
 		Profile:          a.Profile,
-		Provider:         a.Provider,
-		ModelID:          a.ModelID,
-		ReasoningEffort:  a.ReasoningEffort,
 		AgentProfile:     ap,
 		ProfileComplete:  a.ProfileComplete,
 		DetectionResults: append([]ProfileDetectionResult(nil), a.DetectionResults...),
@@ -100,6 +97,18 @@ func (a persistedAgent) toAgent() Agent {
 	if strings.TrimSpace(ap.Description) == "" {
 		ap.Description = a.Description
 	}
+	// Backward compatibility for older persisted states: prefer agent_profile,
+	// and only fall back to legacy top-level LLM fields while old snapshots may
+	// still exist. Remove this fallback after the migration window ends.
+	if strings.TrimSpace(ap.Provider) == "" {
+		ap.Provider = strings.TrimSpace(a.Provider)
+	}
+	if strings.TrimSpace(ap.ModelID) == "" {
+		ap.ModelID = strings.TrimSpace(a.ModelID)
+	}
+	if strings.TrimSpace(ap.ReasoningEffort) == "" {
+		ap.ReasoningEffort = strings.TrimSpace(a.ReasoningEffort)
+	}
 	ag := Agent{
 		ID:               a.ID,
 		Name:             a.Name,
@@ -113,9 +122,6 @@ func (a persistedAgent) toAgent() Agent {
 		Status:           a.Status,
 		CreatedAt:        a.CreatedAt,
 		Profile:          a.Profile,
-		Provider:         a.Provider,
-		ModelID:          a.ModelID,
-		ReasoningEffort:  a.ReasoningEffort,
 		AgentProfile:     ap,
 		ProfileComplete:  a.ProfileComplete,
 		DetectionResults: append([]ProfileDetectionResult(nil), a.DetectionResults...),
@@ -134,7 +140,9 @@ func (w legacyWorker) toAgent() Agent {
 		Role:        RoleWorker,
 		Status:      w.Status,
 		CreatedAt:   w.CreatedAt,
-		ModelID:     w.ModelID,
+		AgentProfile: AgentProfile{
+			ModelID: w.ModelID,
+		},
 	}
 }
 
@@ -292,9 +300,6 @@ func (s *Service) normalizeLoadedAgent(a Agent) (Agent, error) {
 	a.AgentProfile = normalizeProfile(a.AgentProfile, a.Name, a.Description)
 	a.AgentProfile = normalizeProfileForAgentRuntime(a.AgentProfile, a.RuntimeOptions, a.Name, a.Description, a.RuntimeKind, nil)
 	a.ProfileComplete = a.AgentProfile.ProfileComplete
-	a.Provider = a.AgentProfile.Provider
-	a.ModelID = a.AgentProfile.ModelID
-	a.ReasoningEffort = a.AgentProfile.ReasoningEffort
 	a.Profile = profileSelector(a.AgentProfile)
 	if strings.TrimSpace(a.Status) == "" && strings.TrimSpace(a.BoxID) != "" {
 		a.Status = string(sandbox.StateRunning)
