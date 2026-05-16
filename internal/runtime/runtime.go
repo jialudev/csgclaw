@@ -15,6 +15,12 @@ const (
 	KindNotifier = "notifier"
 )
 
+// Runtime owns the lightweight execution lifecycle for an agent runtime.
+//
+// New should stay focused on instantiating or reopening the runtime execution
+// object and returning a handle. Host-side preparation such as workspace
+// seeding, config materialization, or runtime directory setup belongs behind
+// the optional Provisioner capability instead of being folded into New.
 type Runtime interface {
 	Kind() string
 

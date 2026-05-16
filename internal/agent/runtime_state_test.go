@@ -2,7 +2,6 @@ package agent
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"csgclaw/internal/config"
@@ -163,29 +162,6 @@ func TestPicoClawRuntimeHostResolveRuntimeProfilePreservesAPIProfile(t *testing.
 	}
 	if got, want := profile.Env["FEATURE_FLAG"], "on"; got != want {
 		t.Fatalf("host.ResolveRuntimeProfile().Env[FEATURE_FLAG] = %q, want %q", got, want)
-	}
-}
-
-func TestGatewayConfigurerForAgentRejectsWorkerWithoutGatewayRuntime(t *testing.T) {
-	svc, err := NewService(
-		config.ModelConfig{},
-		config.ServerConfig{},
-		"",
-		"",
-		WithRuntime(fakeAgentRuntime{kind: RuntimeKindCodex}),
-	)
-	if err != nil {
-		t.Fatalf("NewService() error = %v", err)
-	}
-
-	_, err = svc.gatewayConfigurerForAgent(Agent{
-		ID:          "u-alice",
-		Name:        "alice",
-		Role:        RoleWorker,
-		RuntimeKind: RuntimeKindCodex,
-	})
-	if err == nil || !strings.Contains(err.Error(), `requires gateway runtime_kind`) {
-		t.Fatalf("gatewayConfigurerForAgent() error = %v, want gateway runtime_kind validation error", err)
 	}
 }
 

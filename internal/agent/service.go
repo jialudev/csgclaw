@@ -19,7 +19,6 @@ import (
 	"csgclaw/internal/config"
 	"csgclaw/internal/hub"
 	agentruntime "csgclaw/internal/runtime"
-	"csgclaw/internal/runtime/sandboxgateway"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/utils"
 )
@@ -464,12 +463,17 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 	}
 	startProfile, detectionResults := s.managerStartupProfile(ctx)
 	if startProfile.ProfileComplete {
-		gatewayConfig, err := s.gatewayConfigurer()
+		runtimeImpl, err := s.runtimeForKind(runtimeKind)
 		if err != nil {
 			return Agent{}, err
 		}
-		if err := gatewayConfig.EnsureGatewayConfig(ManagerName, ManagerUserID, startProfile.ModelID); err != nil {
-			return Agent{}, err
+		if err := s.provisionRuntime(ctx, runtimeImpl, agentruntime.ProvisionRequest{
+			RuntimeID: runtimeIDForAgentID(ManagerUserID),
+			AgentID:   ManagerUserID,
+			AgentName: ManagerName,
+			Profile:   s.runtimeProfileForKind(runtimeKind, ManagerUserID, ManagerName, "", startProfile),
+		}); err != nil {
+			return Agent{}, fmt.Errorf("provision bootstrap manager runtime: %w", err)
 		}
 	}
 
@@ -860,6 +864,7 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 		return s.EnsureManager(ctx, false)
 	}
 	if shouldCreateWorkerSpec(spec) {
+		spec = s.applyDefaultWorkerRuntimeSpec(spec)
 		spec.Role = RoleWorker
 		return s.CreateWorker(ctx, spec)
 	}
@@ -889,6 +894,9 @@ func (s *Service) replace(ctx context.Context, req CreateRequest) (Agent, error)
 		}
 	} else {
 		spec.ID = existing.ID
+		if strings.TrimSpace(spec.Image) == "" {
+			spec.Image = existing.Image
+		}
 		if strings.TrimSpace(spec.RuntimeKind) == "" {
 			spec.RuntimeKind = existing.RuntimeKind
 		}
@@ -904,6 +912,7 @@ func (s *Service) replace(ctx context.Context, req CreateRequest) (Agent, error)
 		if err := s.Delete(ctx, existing.ID); err != nil {
 			return Agent{}, err
 		}
+		spec = s.applyDefaultWorkerRuntimeSpec(spec)
 		spec.Role = RoleWorker
 		return s.CreateWorker(ctx, spec)
 	}
@@ -924,6 +933,19 @@ func replaceImageOverride(req CreateRequest) string {
 		}
 	}
 	return ""
+}
+
+func (s *Service) applyDefaultWorkerRuntimeSpec(spec CreateAgentSpec) CreateAgentSpec {
+	if s == nil || strings.TrimSpace(spec.RuntimeKind) != "" {
+		return spec
+	}
+	spec.RuntimeKind = s.gatewayRuntimeKind()
+	if strings.TrimSpace(spec.Image) == "" {
+		s.mu.RLock()
+		spec.Image = strings.TrimSpace(s.managerImage)
+		s.mu.RUnlock()
+	}
+	return spec
 }
 
 func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) (CreateAgentSpec, error) {
@@ -1094,13 +1116,13 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 	if got.AgentProfile.EnvRestartRequired {
 		return s.Recreate(ctx, id)
 	}
-	if err := s.ensureWorkerGatewayConfig(got); err != nil {
-		return Agent{}, err
-	}
 
 	runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(got.RuntimeKind))
 	if err != nil {
 		return Agent{}, err
+	}
+	if err := s.provisionRuntimeForAgent(ctx, runtimeImpl, got, ""); err != nil {
+		return Agent{}, fmt.Errorf("provision agent runtime: %w", err)
 	}
 	handle := runtimeHandleForAgent(got)
 	state, err := runtimeImpl.Start(ctx, handle)
@@ -1125,44 +1147,6 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 		return Agent{}, err
 	}
 	return updated, nil
-}
-
-func (s *Service) ensureWorkerGatewayConfig(got Agent) error {
-	r := normalizeRole(got.Role)
-	if s == nil || r != RoleWorker || !isAgentProfileComplete(got) {
-		return nil
-	}
-	return s.ensureGatewayConfigForAgent(got)
-}
-
-func (s *Service) ensureGatewayConfigForAgent(got Agent) error {
-	if s == nil || !isAgentProfileComplete(got) {
-		return nil
-	}
-	role := normalizeRole(got.Role)
-	if role != RoleManager && role != RoleWorker {
-		return nil
-	}
-	if role == RoleWorker {
-		if kind := got.RuntimeKind; kind != "" && !isGatewayRuntimeKind(kind) {
-			return nil
-		}
-	}
-	name := strings.TrimSpace(got.Name)
-	botID := strings.TrimSpace(got.ID)
-	if name == "" || botID == "" {
-		return fmt.Errorf("agent name and id are required")
-	}
-	profile := normalizeProfile(got.AgentProfile, name, got.Description)
-	modelID := strings.TrimSpace(profile.ModelID)
-	if modelID == "" {
-		modelID = s.model.Resolved().ModelID
-	}
-	gatewayConfig, err := s.gatewayConfigurerForAgent(got)
-	if err != nil {
-		return err
-	}
-	return gatewayConfig.EnsureGatewayConfig(name, botID, modelID)
 }
 
 func (s *Service) Stop(ctx context.Context, id string) (Agent, error) {
@@ -1388,10 +1372,6 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		return Agent{}, fmt.Errorf("name is required")
 	case strings.EqualFold(name, ManagerName):
 		return Agent{}, fmt.Errorf("name %q is reserved", name)
-	case runtimeKind == "":
-		return Agent{}, fmt.Errorf("runtime_kind is required")
-	case isGatewayRuntimeKind(runtimeKind) && image == "":
-		return Agent{}, fmt.Errorf("image is required for runtime_kind %q", runtimeKind)
 	}
 	if id == "" {
 		// id = fmt.Sprintf("%s-%d", RoleWorker, time.Now().UnixNano())
@@ -1411,6 +1391,24 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	if nameExists {
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
 	}
+	if runtimeKind == "" {
+		s.mu.RLock()
+		_, managerExists := s.agents[ManagerUserID]
+		defaultImage := strings.TrimSpace(s.managerImage)
+		s.mu.RUnlock()
+		if managerExists && defaultImage != "" {
+			runtimeKind = s.gatewayRuntimeKind()
+			if image == "" {
+				image = defaultImage
+			}
+		}
+	}
+	switch {
+	case runtimeKind == "":
+		return Agent{}, fmt.Errorf("runtime_kind is required")
+	case isGatewayRuntimeKind(runtimeKind) && image == "":
+		return Agent{}, fmt.Errorf("image is required for runtime_kind %q", runtimeKind)
+	}
 
 	runtimeImpl, err := s.runtimeForKind(runtimeKind)
 	if err != nil {
@@ -1419,6 +1417,16 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	resolvedProfile, err := s.profileForCreateRequest(ctx, &spec)
 	if err != nil {
 		return Agent{}, err
+	}
+	runtimeProfile := s.runtimeProfileForKind(runtimeKind, id, name, description, resolvedProfile)
+	if err := s.provisionRuntime(ctx, runtimeImpl, agentruntime.ProvisionRequest{
+		RuntimeID:        runtimeIDForAgentID(id),
+		AgentID:          id,
+		AgentName:        name,
+		Profile:          runtimeProfile,
+		WorkspaceOverlay: strings.TrimSpace(spec.FromTemplate),
+	}); err != nil {
+		return Agent{}, fmt.Errorf("provision worker runtime: %w", err)
 	}
 	if testCreateGatewayBoxHook != nil && isGatewayRuntimeKind(runtimeKind) {
 		rt, err := s.ensureRuntime(name)
@@ -1439,9 +1447,6 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		defer func() {
 			_ = s.closeBox(box)
 		}()
-		if err := s.overlayTemplateWorkspace(name, runtimeKind, spec.FromTemplate); err != nil {
-			return Agent{}, err
-		}
 		return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, spec.RuntimeOptions, agentruntime.Info{
 			HandleID:  strings.TrimSpace(info.ID),
 			State:     agentruntime.State(info.State),
@@ -1453,13 +1458,10 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		AgentID:   id,
 		AgentName: name,
 		Image:     image,
-		Profile:   s.runtimeProfileForKind(runtimeKind, id, name, description, resolvedProfile),
+		Profile:   runtimeProfile,
 	})
 	if err != nil {
 		return Agent{}, fmt.Errorf("create worker box: %w", err)
-	}
-	if err := s.overlayTemplateWorkspace(name, runtimeKind, spec.FromTemplate); err != nil {
-		return Agent{}, err
 	}
 	info := agentruntime.Info{
 		HandleID:  strings.TrimSpace(handle.HandleID),
@@ -1539,39 +1541,28 @@ func isResolvedWorkspacePath(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func (s *Service) overlayTemplateWorkspace(agentName, runtimeKind, workspaceRoot string) error {
-	workspaceRoot = strings.TrimSpace(workspaceRoot)
-	if workspaceRoot == "" {
+func (s *Service) provisionRuntime(ctx context.Context, rt agentruntime.Runtime, req agentruntime.ProvisionRequest) error {
+	if rt == nil {
+		return fmt.Errorf("runtime is required")
+	}
+	provisioner, ok := rt.(agentruntime.Provisioner)
+	if !ok {
 		return nil
 	}
-	layout, err := s.workspaceLayoutForOverlay(agentName, runtimeKind)
-	if err != nil {
-		return err
-	}
-	if err := overlayWorkspaceTree(workspaceRoot, layout.WorkspaceHostPath); err != nil {
-		return fmt.Errorf("overlay template workspace for agent %q: %w", agentName, err)
-	}
-	return nil
+	return provisioner.Provision(ctx, req)
 }
 
-func (s *Service) workspaceLayoutForOverlay(agentName, runtimeKind string) (sandboxgateway.WorkspaceLayout, error) {
-	switch runtimeKind {
-	case RuntimeKindOpenClawSandbox:
-		return s.OpenClawRuntimeHost().WorkspaceLayout(agentName)
-	case "", RuntimeKindPicoClawSandbox:
-		return s.PicoClawRuntimeHost().WorkspaceLayout(agentName)
-	default:
-		workspaceRoot, err := agentWorkspaceRoot(agentName)
-		if err != nil {
-			return sandboxgateway.WorkspaceLayout{}, err
-		}
-		return sandboxgateway.WorkspaceLayout{
-			MountHostPath:      workspaceRoot,
-			MountGuestPath:     workspaceRoot,
-			WorkspaceHostPath:  workspaceRoot,
-			WorkspaceGuestPath: workspaceRoot,
-		}, nil
+func (s *Service) provisionRuntimeForAgent(ctx context.Context, rt agentruntime.Runtime, got Agent, workspaceOverlay string) error {
+	if s == nil || rt == nil {
+		return nil
 	}
+	return s.provisionRuntime(ctx, rt, agentruntime.ProvisionRequest{
+		RuntimeID:        normalizeRuntimeID(got.RuntimeID, got.ID),
+		AgentID:          strings.TrimSpace(got.ID),
+		AgentName:        strings.TrimSpace(got.Name),
+		Profile:          s.runtimeProfileForAgent(got),
+		WorkspaceOverlay: strings.TrimSpace(workspaceOverlay),
+	})
 }
 
 func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {

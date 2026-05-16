@@ -305,29 +305,20 @@ func (r *Runtime) CreateGatewayBox(ctx context.Context, rt sandbox.Runtime, imag
 }
 
 func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentruntime.Profile) (sandbox.CreateSpec, error) {
-	modelID := strings.TrimSpace(profile.ModelID)
-	if modelID == "" {
-		modelID = strings.TrimSpace(r.deps.ModelFallback)
+	prepared, err := PrepareGatewayProvision(r.deps, agentruntime.ProvisionRequest{
+		AgentID:   botID,
+		AgentName: name,
+		Profile:   profile,
+	})
+	if err != nil {
+		return sandbox.CreateSpec{}, err
 	}
+	modelID := prepared.ModelID
 	managerBaseURL := r.deps.ResolveBaseURL(r.deps.Server)
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, botID)
-	profile.ModelID = modelID
-	if err := r.deps.EnsureGatewayConfig(name, botID, profile); err != nil {
-		return sandbox.CreateSpec{}, err
-	}
-	templateRoot, err := r.deps.WorkspaceTemplate(name, botID)
-	if err != nil {
-		return sandbox.CreateSpec{}, err
-	}
-	workspaceLayout, err := r.deps.EnsureWorkspace(name, templateRoot)
-	if err != nil {
-		return sandbox.CreateSpec{}, err
-	}
-	workspaceLayout = r.normalizeWorkspaceLayout(workspaceLayout)
-	projectsRoot, err := r.deps.EnsureProjectsRoot()
-	if err != nil {
-		return sandbox.CreateSpec{}, err
-	}
+	profile = prepared.Profile
+	workspaceLayout := prepared.WorkspaceLayout
+	projectsRoot := prepared.ProjectsRoot
 	envVars := r.deps.BuildRuntimeEnv(managerBaseURL, r.deps.Server.AccessToken, botID, llmBaseURL, modelID, r.feishuProvider())
 	r.deps.AddProfileEnv(envVars, profile.Env)
 	homeEnv := r.homeEnv()
@@ -370,12 +361,52 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	return spec, nil
 }
 
-func (r *Runtime) EnsureGatewayConfig(agentName, botID, modelID string) error {
-	return r.deps.EnsureGatewayConfig(agentName, botID, agentruntime.Profile{ModelID: strings.TrimSpace(modelID)})
+type PreparedGatewayProvision struct {
+	ModelID         string
+	Profile         agentruntime.Profile
+	WorkspaceLayout WorkspaceLayout
+	ProjectsRoot    string
 }
 
-func (r *Runtime) ProjectsGuestPath() string {
-	return r.projectsGuestPath()
+func PrepareGatewayProvision(deps Dependencies, req agentruntime.ProvisionRequest) (PreparedGatewayProvision, error) {
+	name := strings.TrimSpace(req.AgentName)
+	botID := strings.TrimSpace(req.AgentID)
+	if name == "" || botID == "" {
+		return PreparedGatewayProvision{}, fmt.Errorf("runtime agent name and id are required")
+	}
+	profile := req.Profile.Normalized()
+	modelID := strings.TrimSpace(profile.ModelID)
+	if modelID == "" {
+		modelID = strings.TrimSpace(deps.ModelFallback)
+	}
+	profile.ModelID = modelID
+	if err := deps.EnsureGatewayConfig(name, botID, profile); err != nil {
+		return PreparedGatewayProvision{}, err
+	}
+	templateRoot, err := deps.WorkspaceTemplate(name, botID)
+	if err != nil {
+		return PreparedGatewayProvision{}, err
+	}
+	workspaceLayout, err := deps.EnsureWorkspace(name, templateRoot)
+	if err != nil {
+		return PreparedGatewayProvision{}, err
+	}
+	workspaceLayout = normalizeWorkspaceLayout(deps, workspaceLayout)
+	if overlayRoot := strings.TrimSpace(req.WorkspaceOverlay); overlayRoot != "" {
+		if err := overlayWorkspaceTree(overlayRoot, workspaceLayout.WorkspaceHostPath); err != nil {
+			return PreparedGatewayProvision{}, fmt.Errorf("overlay workspace for agent %q: %w", name, err)
+		}
+	}
+	projectsRoot, err := deps.EnsureProjectsRoot()
+	if err != nil {
+		return PreparedGatewayProvision{}, err
+	}
+	return PreparedGatewayProvision{
+		ModelID:         modelID,
+		Profile:         profile,
+		WorkspaceLayout: workspaceLayout,
+		ProjectsRoot:    strings.TrimSpace(projectsRoot),
+	}, nil
 }
 
 func (r *Runtime) GatewayLogPath() string {
@@ -410,6 +441,10 @@ func (r *Runtime) gatewayCommand() string {
 }
 
 func (r *Runtime) normalizeWorkspaceLayout(layout WorkspaceLayout) WorkspaceLayout {
+	return normalizeWorkspaceLayout(r.deps, layout)
+}
+
+func normalizeWorkspaceLayout(deps Dependencies, layout WorkspaceLayout) WorkspaceLayout {
 	layout.MountHostPath = strings.TrimSpace(layout.MountHostPath)
 	layout.MountGuestPath = strings.TrimSpace(layout.MountGuestPath)
 	layout.WorkspaceHostPath = strings.TrimSpace(layout.WorkspaceHostPath)
@@ -418,10 +453,10 @@ func (r *Runtime) normalizeWorkspaceLayout(layout WorkspaceLayout) WorkspaceLayo
 		layout.WorkspaceHostPath = layout.MountHostPath
 	}
 	if layout.MountGuestPath == "" {
-		layout.MountGuestPath = r.mountGuestPath()
+		layout.MountGuestPath = strings.TrimSpace(deps.MountGuestPath)
 	}
 	if layout.WorkspaceGuestPath == "" {
-		layout.WorkspaceGuestPath = r.workspaceGuestPath()
+		layout.WorkspaceGuestPath = strings.TrimSpace(deps.WorkspaceGuestPath)
 	}
 	return layout
 }

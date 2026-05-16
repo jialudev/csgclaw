@@ -88,6 +88,7 @@ func (f *fakeInstance) Close() error {
 
 type fakeAgentRuntime struct {
 	kind       string
+	provision  func(context.Context, agentruntime.ProvisionRequest) error
 	new        func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
 	stop       func(context.Context, agentruntime.Handle) (agentruntime.State, error)
@@ -99,6 +100,13 @@ type fakeAgentRuntime struct {
 
 func (f fakeAgentRuntime) Kind() string {
 	return f.kind
+}
+
+func (f fakeAgentRuntime) Provision(ctx context.Context, req agentruntime.ProvisionRequest) error {
+	if f.provision != nil {
+		return f.provision(ctx, req)
+	}
+	return nil
 }
 
 func (f fakeAgentRuntime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -598,6 +606,109 @@ func TestCreateWorkerTriggersLifecycleObserver(t *testing.T) {
 	}
 }
 
+func TestCreateWorkerProvisionsRuntimeBeforeNew(t *testing.T) {
+	var callOrder []string
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{
+			ListenAddr:       "0.0.0.0:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
+		"",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			provision: func(_ context.Context, req agentruntime.ProvisionRequest) error {
+				callOrder = append(callOrder, "provision")
+				if req.RuntimeID != "rt-u-alice" {
+					t.Fatalf("Provision() runtime id = %q, want %q", req.RuntimeID, "rt-u-alice")
+				}
+				if req.AgentID != "u-alice" {
+					t.Fatalf("Provision() agent id = %q, want %q", req.AgentID, "u-alice")
+				}
+				if req.AgentName != "alice" {
+					t.Fatalf("Provision() agent name = %q, want %q", req.AgentName, "alice")
+				}
+				if got, want := req.Profile.BaseURL, "http://127.0.0.1:18080/api/bots/u-alice/llm"; got != want {
+					t.Fatalf("Provision() profile base url = %q, want %q", got, want)
+				}
+				if got, want := req.Profile.APIKey, "shared-token"; got != want {
+					t.Fatalf("Provision() profile api key = %q, want %q", got, want)
+				}
+				if req.WorkspaceOverlay != "" {
+					t.Fatalf("Provision() workspace overlay = %q, want empty", req.WorkspaceOverlay)
+				}
+				return nil
+			},
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				callOrder = append(callOrder, "new")
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-alice"}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{
+		ID:          "u-alice",
+		Name:        "alice",
+		RuntimeKind: RuntimeKindCodex,
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderAPI,
+			BaseURL:         "https://api.example/v1",
+			APIKey:          "api-key",
+			ModelID:         "gpt-4.1",
+			ProfileComplete: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if got, want := strings.Join(callOrder, ","), "provision,new"; got != want {
+		t.Fatalf("call order = %q, want %q", got, want)
+	}
+}
+
+func TestCreateWorkerPassesWorkspaceOverlayToProvision(t *testing.T) {
+	overlayRoot := t.TempDir()
+	var gotOverlay string
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			provision: func(_ context.Context, req agentruntime.ProvisionRequest) error {
+				gotOverlay = req.WorkspaceOverlay
+				return nil
+			},
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-alice"}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if _, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		ID:           "u-alice",
+		Name:         "alice",
+		RuntimeKind:  RuntimeKindCodex,
+		FromTemplate: overlayRoot,
+		AgentProfile: AgentProfile{Name: "alice", Provider: ProviderAPI, BaseURL: "https://api.example/v1", APIKey: "api-key", ModelID: "gpt-4.1", ProfileComplete: true},
+	}); err != nil {
+		t.Fatalf("CreateWorker() error = %v", err)
+	}
+	if gotOverlay != overlayRoot {
+		t.Fatalf("Provision() workspace overlay = %q, want %q", gotOverlay, overlayRoot)
+	}
+}
+
 func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
@@ -658,6 +769,85 @@ func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 	}
 	if len(observer.ensureCalls) != 1 || observer.ensureCalls[0].ID != "u-alice" {
 		t.Fatalf("EnsureAgent() calls = %+v, want one call for u-alice", observer.ensureCalls)
+	}
+}
+
+func TestRecreateProvisionsRuntimeBeforeNew(t *testing.T) {
+	var callOrder []string
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{
+			ListenAddr:       "0.0.0.0:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
+		"",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			del: func(context.Context, agentruntime.Handle) error {
+				callOrder = append(callOrder, "delete")
+				return nil
+			},
+			provision: func(_ context.Context, req agentruntime.ProvisionRequest) error {
+				callOrder = append(callOrder, "provision")
+				if req.RuntimeID != "rt-u-alice" {
+					t.Fatalf("Provision() runtime id = %q, want %q", req.RuntimeID, "rt-u-alice")
+				}
+				if req.AgentID != "u-alice" {
+					t.Fatalf("Provision() agent id = %q, want %q", req.AgentID, "u-alice")
+				}
+				if req.AgentName != "alice" {
+					t.Fatalf("Provision() agent name = %q, want %q", req.AgentName, "alice")
+				}
+				if got, want := req.Profile.BaseURL, "http://127.0.0.1:18080/api/bots/u-alice/llm"; got != want {
+					t.Fatalf("Provision() profile base url = %q, want %q", got, want)
+				}
+				if got, want := req.Profile.APIKey, "shared-token"; got != want {
+					t.Fatalf("Provision() profile api key = %q, want %q", got, want)
+				}
+				if req.WorkspaceOverlay != "" {
+					t.Fatalf("Provision() workspace overlay = %q, want empty", req.WorkspaceOverlay)
+				}
+				return nil
+			},
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				callOrder = append(callOrder, "new")
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-alice-new"}, nil
+			},
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:          "u-alice",
+		Name:        "alice",
+		Role:        RoleWorker,
+		RuntimeID:   "rt-u-alice",
+		RuntimeKind: RuntimeKindCodex,
+		BoxID:       "codex-session-alice-old",
+		Status:      string(agentruntime.StateRunning),
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderAPI,
+			BaseURL:         "https://api.example/v1",
+			APIKey:          "api-key",
+			ModelID:         "gpt-4.1",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
+	}
+
+	_, err = svc.Recreate(context.Background(), "u-alice")
+	if err != nil {
+		t.Fatalf("Recreate() error = %v", err)
+	}
+	if got, want := strings.Join(callOrder, ","), "delete,provision,new"; got != want {
+		t.Fatalf("call order = %q, want %q", got, want)
 	}
 }
 
@@ -2534,6 +2724,58 @@ func TestStartTriggersLifecycleObserver(t *testing.T) {
 	}
 	if len(observer.ensureCalls) != 1 || observer.ensureCalls[0].ID != "u-alice" {
 		t.Fatalf("EnsureAgent() calls = %+v, want one call for u-alice", observer.ensureCalls)
+	}
+}
+
+func TestStartProvisionsRuntimeBeforeStart(t *testing.T) {
+	var callOrder []string
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{
+			ListenAddr:       "0.0.0.0:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
+		"",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			provision: func(_ context.Context, req agentruntime.ProvisionRequest) error {
+				callOrder = append(callOrder, "provision")
+				if req.RuntimeID != "rt-u-alice" || req.AgentID != "u-alice" || req.AgentName != "alice" {
+					t.Fatalf("Provision() request = %+v, want alice runtime identity", req)
+				}
+				return nil
+			},
+			start: func(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+				callOrder = append(callOrder, "start")
+				return agentruntime.StateRunning, nil
+			},
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:              "u-alice",
+		Name:            "alice",
+		Role:            RoleWorker,
+		RuntimeID:       "rt-u-alice",
+		RuntimeKind:     RuntimeKindCodex,
+		BoxID:           "box-alice",
+		Status:          string(agentruntime.StateStopped),
+		AgentProfile:    AgentProfile{Name: "alice", Provider: ProviderAPI, BaseURL: "https://api.example/v1", APIKey: "api-key", ModelID: "gpt-4.1", ProfileComplete: true},
+		ProfileComplete: true,
+	}
+
+	if _, err := svc.Start(context.Background(), "u-alice"); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if got, want := strings.Join(callOrder, ","), "provision,start"; got != want {
+		t.Fatalf("call order = %q, want %q", got, want)
 	}
 }
 

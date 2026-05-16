@@ -26,11 +26,6 @@ type RuntimeView struct {
 	LogsSupported bool
 }
 
-type gatewayConfigurer interface {
-	EnsureGatewayConfig(agentName, botID, modelID string) error
-	ProjectsGuestPath() string
-}
-
 type gatewayBoxFactory interface {
 	CreateGatewayBox(ctx context.Context, rt sandbox.Runtime, image, name, botID string, profile agentruntime.Profile) (sandbox.Instance, sandbox.Info, error)
 	GatewayCreateSpec(image, name, botID string, profile agentruntime.Profile) (sandbox.CreateSpec, error)
@@ -101,7 +96,11 @@ func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
 		},
 		SyncHandle: s.syncRuntimeHandle,
 		EnsureGatewayConfig: func(agentName, botID string, profile agentruntime.Profile) error {
-			_, err := ensureAgentPicoClawConfig(agentName, botID, s.server, config.ModelConfig{ModelID: profile.ModelID})
+			agentHome, err := agentHomeDir(agentName)
+			if err != nil {
+				return err
+			}
+			_, err = picoclawsandbox.EnsureConfig(agentHome, botID, s.server, config.ModelConfig{ModelID: profile.ModelID}, resolveManagerBaseURL)
 			return err
 		},
 		EnsureWorkspace:    ensurePicoClawWorkspace,
@@ -271,34 +270,6 @@ func runtimeHandleForAgent(a Agent) agentruntime.Handle {
 		RuntimeID: normalizeRuntimeID(a.RuntimeID, a.ID),
 		HandleID:  strings.TrimSpace(a.BoxID),
 	}
-}
-
-func (s *Service) gatewayConfigurer() (gatewayConfigurer, error) {
-	rt, err := s.runtimeForKind(s.gatewayRuntimeKind())
-	if err != nil {
-		return nil, err
-	}
-	cfg, ok := rt.(gatewayConfigurer)
-	if !ok {
-		return nil, fmt.Errorf("runtime %q does not support gateway configuration", rt.Kind())
-	}
-	return cfg, nil
-}
-
-func (s *Service) gatewayConfigurerForAgent(a Agent) (gatewayConfigurer, error) {
-	kind := strings.TrimSpace(a.RuntimeKind)
-	if !isGatewayRuntimeKind(kind) {
-		return nil, fmt.Errorf("agent %q requires gateway runtime_kind, got %q", a.ID, strings.TrimSpace(a.RuntimeKind))
-	}
-	rt, err := s.runtimeForKind(kind)
-	if err != nil {
-		return nil, err
-	}
-	cfg, ok := rt.(gatewayConfigurer)
-	if !ok {
-		return nil, fmt.Errorf("runtime %q does not support gateway configuration", rt.Kind())
-	}
-	return cfg, nil
 }
 
 func (s *Service) gatewayBoxFactory() (gatewayBoxFactory, error) {

@@ -270,12 +270,21 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 		return Agent{}, fmt.Errorf("remove existing agent box: %w", deleteErr)
 	}
 
+	runtimeProfile := s.runtimeProfileForKind(runtimeKind, got.ID, got.Name, got.Description, profile)
 	createSpec := agentruntime.Spec{
 		RuntimeID: normalizeRuntimeID(got.RuntimeID, got.ID),
 		AgentID:   got.ID,
 		AgentName: got.Name,
 		Image:     image,
-		Profile:   s.runtimeProfileForKind(runtimeKind, got.ID, got.Name, got.Description, profile),
+		Profile:   runtimeProfile,
+	}
+	if err := s.provisionRuntime(ctx, runtimeImpl, agentruntime.ProvisionRequest{
+		RuntimeID: createSpec.RuntimeID,
+		AgentID:   createSpec.AgentID,
+		AgentName: createSpec.AgentName,
+		Profile:   runtimeProfile,
+	}); err != nil {
+		return Agent{}, fmt.Errorf("provision agent runtime: %w", err)
 	}
 	handle, err := runtimeImpl.New(ctx, createSpec)
 	if err != nil {

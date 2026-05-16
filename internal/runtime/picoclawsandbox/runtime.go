@@ -1,6 +1,7 @@
 package picoclawsandbox
 
 import (
+	"context"
 	"path"
 
 	agentruntime "csgclaw/internal/runtime"
@@ -20,8 +21,14 @@ const (
 
 type AgentRef = sandboxgateway.AgentRef
 type Dependencies = sandboxgateway.Dependencies
-type Runtime = sandboxgateway.Runtime
 type WorkspaceLayout = sandboxgateway.WorkspaceLayout
+
+type Runtime struct {
+	*sandboxgateway.Runtime
+	deps Dependencies
+}
+
+var _ agentruntime.Provisioner = (*Runtime)(nil)
 
 func New(deps Dependencies) *Runtime {
 	deps.RuntimeKind = agentruntime.KindPicoClawSandbox
@@ -33,7 +40,18 @@ func New(deps Dependencies) *Runtime {
 	if deps.GatewayCommand == nil {
 		deps.GatewayCommand = GatewayRunCommand
 	}
-	return sandboxgateway.New(deps)
+	return &Runtime{
+		Runtime: sandboxgateway.New(deps),
+		deps:    deps,
+	}
+}
+
+func (r *Runtime) Provision(_ context.Context, req agentruntime.ProvisionRequest) error {
+	if r == nil {
+		return nil
+	}
+	_, err := sandboxgateway.PrepareGatewayProvision(r.deps, req)
+	return err
 }
 
 func GatewayRunCommand() string {
