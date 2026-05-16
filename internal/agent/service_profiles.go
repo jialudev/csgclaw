@@ -118,7 +118,7 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 				profile.APIKey = current.AgentProfile.APIKey
 			}
 		}
-		pol := agentruntime.RuntimeOptionsPolicyForKind(normalizeRuntimeKind(current.RuntimeKind))
+		pol := agentruntime.RuntimeOptionsPolicyForKind(current.RuntimeKind)
 		var patch map[string]any
 		if req.RuntimeOptions != nil {
 			patch = *req.RuntimeOptions
@@ -340,7 +340,7 @@ func (s *Service) profileForCreateRequest(ctx context.Context, spec *CreateAgent
 	}
 
 	profile := spec.AgentProfile
-	rk := normalizeRuntimeKind(spec.RuntimeKind)
+	rk := spec.RuntimeKind
 	if rk == "" || isGatewayRuntimeKind(rk) {
 		if strings.TrimSpace(profile.ModelID) == "" && strings.TrimSpace(spec.ModelID) != "" {
 			profile.ModelID = strings.TrimSpace(spec.ModelID)

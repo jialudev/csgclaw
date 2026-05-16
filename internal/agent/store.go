@@ -9,7 +9,6 @@ import (
 	"time"
 
 	agentruntime "csgclaw/internal/runtime"
-	"csgclaw/internal/runtime/notifier"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/utils"
 )
@@ -64,7 +63,7 @@ func newPersistedAgent(a Agent) persistedAgent {
 	if strings.TrimSpace(ap.Description) == strings.TrimSpace(a.Description) {
 		ap.Description = ""
 	}
-	pol := agentruntime.RuntimeOptionsPolicyForKind(normalizeRuntimeKind(a.RuntimeKind))
+	pol := agentruntime.RuntimeOptionsPolicyForKind(a.RuntimeKind)
 	var topRX map[string]any
 	if len(a.RuntimeOptions) > 0 {
 		topRX = utils.CloneAnyMap(a.RuntimeOptions)
@@ -191,9 +190,12 @@ func (s *Service) readState() (map[string]Agent, error) {
 			runtimes[normalized.ID] = normalized
 		}
 		for _, a := range state.Agents {
-			normalized := s.normalizeLoadedAgent(a.toAgent())
+			normalized, err := s.normalizeLoadedAgent(a.toAgent())
+			if err != nil {
+				return nil, fmt.Errorf("normalize persisted agent %q: %w", strings.TrimSpace(a.ID), err)
+			}
 			if rt, ok := runtimes[normalized.RuntimeID]; ok {
-				normalized.RuntimeKind = normalizeRuntimeKind(rt.Kind)
+				normalized.RuntimeKind = rt.Kind
 			}
 			agents[normalized.ID] = normalized
 			if _, ok := runtimes[normalized.RuntimeID]; !ok {
@@ -201,9 +203,12 @@ func (s *Service) readState() (map[string]Agent, error) {
 			}
 		}
 		for _, w := range state.Workers {
-			normalized := s.normalizeLoadedAgent(w.toAgent())
+			normalized, err := s.normalizeLoadedAgent(w.toAgent())
+			if err != nil {
+				return nil, fmt.Errorf("normalize legacy worker %q: %w", strings.TrimSpace(w.ID), err)
+			}
 			if rt, ok := runtimes[normalized.RuntimeID]; ok {
-				normalized.RuntimeKind = normalizeRuntimeKind(rt.Kind)
+				normalized.RuntimeKind = rt.Kind
 			}
 			agents[normalized.ID] = normalized
 			if _, ok := runtimes[normalized.RuntimeID]; !ok {
@@ -219,7 +224,10 @@ func (s *Service) readState() (map[string]Agent, error) {
 		return nil, fmt.Errorf("decode agent state: %w", err)
 	}
 	for _, a := range decoded {
-		normalized := s.normalizeLoadedAgent(a)
+		normalized, err := s.normalizeLoadedAgent(a)
+		if err != nil {
+			return nil, fmt.Errorf("normalize state agent %q: %w", strings.TrimSpace(a.ID), err)
+		}
 		agents[normalized.ID] = normalized
 	}
 	runtimes := make(map[string]RuntimeRecord, len(agents))
@@ -253,57 +261,40 @@ func (s *Service) saveLocked() error {
 	return nil
 }
 
-func (s *Service) normalizeLoadedAgent(a Agent) Agent {
+func (s *Service) normalizeLoadedAgent(a Agent) (Agent, error) {
 	a = *cloneAgent(&a)
-	// Old agent.json used role "notifier" before runtime_kind; collapse to worker + notifier runtime.
-	if strings.EqualFold(strings.TrimSpace(a.Role), "notifier") {
-		a.Role = RoleWorker
-		a.RuntimeKind = RuntimeKindNotifier
-		a.BoxID = ""
-		a.Image = ""
-	} else {
-		a.Role = normalizeRole(a.Role)
+	a.ID = strings.TrimSpace(a.ID)
+	if a.ID == "" {
+		return Agent{}, fmt.Errorf("id is required")
 	}
+	a.Name = strings.TrimSpace(a.Name)
+	if a.Name == "" {
+		return Agent{}, fmt.Errorf("name is required")
+	}
+	a.Role = normalizeRole(a.Role)
 	a.RuntimeID = normalizeRuntimeID(a.RuntimeID, a.ID)
 	if a.RuntimeKind == "" {
-		a.RuntimeKind = runtimeKindForAgent(a)
+		return Agent{}, fmt.Errorf("runtime_kind is required")
 	}
-	a.AgentProfile = normalizeProfile(a.AgentProfile, a.Name, a.Description)
-	if !a.AgentProfile.ProfileComplete && (strings.TrimSpace(a.Provider) != "" || strings.TrimSpace(a.ModelID) != "") {
-		// Do not replace agent_profile with legacy LLM-only reconstruction when the agent already
-		// carries notifier-shaped runtime_options, or when the runtime is non-gateway (notifier
-		// workers have no LLM fields to reconstruct from legacy top-level provider/model).
-		if !notifier.IsNotifierFlatRoot(a.RuntimeOptions) && isGatewayRuntimeKind(normalizeRuntimeKind(a.RuntimeKind)) {
-			legacyProfile := profileFromLegacy(a.Name, a.Description, a.Provider, a.ModelID, a.ReasoningEffort)
-			if strings.TrimSpace(legacyProfile.BaseURL) == "" {
-				legacyProfile.BaseURL = s.profileDefaults.BaseURL
-			}
-			if strings.TrimSpace(legacyProfile.APIKey) == "" {
-				legacyProfile.APIKey = s.profileDefaults.APIKey
-			}
-			if len(legacyProfile.Headers) == 0 {
-				legacyProfile.Headers = s.profileDefaults.Headers
-			}
-			a.AgentProfile = normalizeProfile(legacyProfile, a.Name, a.Description)
+	if isManagerAgent(a) {
+		switch {
+		case a.ID != ManagerUserID:
+			return Agent{}, fmt.Errorf("manager id must be %q", ManagerUserID)
+		case a.Name != ManagerName:
+			return Agent{}, fmt.Errorf("manager name must be %q", ManagerName)
+		case a.Role != RoleManager:
+			return Agent{}, fmt.Errorf("manager role must be %q", RoleManager)
 		}
 	}
+	a.AgentProfile = normalizeProfile(a.AgentProfile, a.Name, a.Description)
 	a.AgentProfile = normalizeProfileForAgentRuntime(a.AgentProfile, a.RuntimeOptions, a.Name, a.Description, a.RuntimeKind, nil)
 	a.ProfileComplete = a.AgentProfile.ProfileComplete
 	a.Provider = a.AgentProfile.Provider
 	a.ModelID = a.AgentProfile.ModelID
 	a.ReasoningEffort = a.AgentProfile.ReasoningEffort
 	a.Profile = profileSelector(a.AgentProfile)
-	if isManagerAgent(a) {
-		a.ID = ManagerUserID
-		a.Name = ManagerName
-		a.Role = RoleManager
-		a.RuntimeKind = RuntimeKindPicoClawSandbox
-		if strings.TrimSpace(a.Image) == "" {
-			a.Image = s.managerImage
-		}
-	}
 	if strings.TrimSpace(a.Status) == "" && strings.TrimSpace(a.BoxID) != "" {
 		a.Status = string(sandbox.StateRunning)
 	}
-	return a
+	return a, nil
 }

@@ -1525,11 +1525,12 @@ func TestLoadLegacyAgentWithBoxIDInfersRunningUntilHydrated(t *testing.T) {
 	data, err := json.Marshal(persistedState{
 		Agents: []persistedAgent{
 			{
-				ID:        "u-alice",
-				Name:      "alice",
-				Role:      RoleWorker,
-				BoxID:     "box-alice",
-				CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+				ID:          "u-alice",
+				Name:        "alice",
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Role:        RoleWorker,
+				BoxID:       "box-alice",
+				CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 			},
 		},
 	})
@@ -1567,12 +1568,13 @@ func TestLoadLegacyAgentSynthesizesRuntimeRecord(t *testing.T) {
 	data, err := json.Marshal(persistedState{
 		Agents: []persistedAgent{
 			{
-				ID:        "u-alice",
-				Name:      "alice",
-				Role:      RoleWorker,
-				BoxID:     "box-alice",
-				Status:    string(sandbox.StateRunning),
-				CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+				ID:          "u-alice",
+				Name:        "alice",
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Role:        RoleWorker,
+				BoxID:       "box-alice",
+				Status:      string(sandbox.StateRunning),
+				CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 			},
 		},
 	})
@@ -1671,6 +1673,59 @@ func TestLoadAgentPreservesExplicitRuntimeKind(t *testing.T) {
 	}
 	if rt := svc.runtimeRecords[got.RuntimeID]; rt.Kind != RuntimeKindCodex {
 		t.Fatalf("runtime record kind = %q, want %q", rt.Kind, RuntimeKindCodex)
+	}
+}
+
+func TestLoadAgentRequiresRuntimeKind(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(persistedState{
+		Agents: []persistedAgent{
+			{
+				ID:        "u-alice",
+				Name:      "alice",
+				Role:      RoleWorker,
+				CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err == nil || !strings.Contains(err.Error(), "runtime_kind is required") {
+		t.Fatalf("NewService() error = %v, want runtime_kind validation error", err)
+	}
+}
+
+func TestLoadManagerRequiresCanonicalIdentity(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(persistedState{
+		Agents: []persistedAgent{
+			{
+				ID:          "manager",
+				Name:        ManagerName,
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Role:        RoleManager,
+				CreatedAt:   time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err == nil || !strings.Contains(err.Error(), "manager id must be") {
+		t.Fatalf("NewService() error = %v, want canonical manager validation error", err)
 	}
 }
 
@@ -2348,12 +2403,13 @@ func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:        "u-alice",
-		Name:      "alice",
-		BoxID:     "box-stale",
-		Role:      RoleWorker,
-		Status:    "stopped",
-		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		ID:          "u-alice",
+		Name:        "alice",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		BoxID:       "box-stale",
+		Role:        RoleWorker,
+		Status:      "stopped",
+		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 
 	got, err := svc.Start(context.Background(), "u-alice")
@@ -2603,6 +2659,7 @@ func TestStartConfiguredAgentsRecreatesMissingCompleteWorkerBoxes(t *testing.T) 
 	svc.agents["u-alice"] = Agent{
 		ID:              "u-alice",
 		Name:            "alice",
+		RuntimeKind:     RuntimeKindPicoClawSandbox,
 		Role:            RoleWorker,
 		Image:           "worker-image:1",
 		BoxID:           "box-alice-stale",
@@ -3250,12 +3307,13 @@ func TestStopFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:        "u-alice",
-		Name:      "alice",
-		BoxID:     "box-stale",
-		Role:      RoleWorker,
-		Status:    "running",
-		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		ID:          "u-alice",
+		Name:        "alice",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		BoxID:       "box-stale",
+		Role:        RoleWorker,
+		Status:      "running",
+		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 
 	got, err := svc.Stop(context.Background(), "u-alice")
@@ -3478,11 +3536,12 @@ func TestEnsureBootstrapStateForceRecreatePrefersStoredManagerBoxID(t *testing.T
 	data, err := json.Marshal(persistedState{
 		Agents: []persistedAgent{
 			{
-				ID:        ManagerUserID,
-				Name:      ManagerName,
-				Role:      RoleManager,
-				BoxID:     "box-old",
-				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+				ID:          ManagerUserID,
+				Name:        ManagerName,
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Role:        RoleManager,
+				BoxID:       "box-old",
+				CreatedAt:   time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
 			},
 		},
 	})
@@ -3575,11 +3634,12 @@ func TestEnsureBootstrapStateForceRecreateResetsManagerHomeBeforeCreate(t *testi
 	data, err := json.Marshal(persistedState{
 		Agents: []persistedAgent{
 			{
-				ID:        ManagerUserID,
-				Name:      ManagerName,
-				Role:      RoleManager,
-				BoxID:     "box-old",
-				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+				ID:          ManagerUserID,
+				Name:        ManagerName,
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Role:        RoleManager,
+				BoxID:       "box-old",
+				CreatedAt:   time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
 			},
 		},
 	})
@@ -3699,11 +3759,12 @@ func TestEnsureBootstrapStateReusesStoredManagerBoxIDWithoutForce(t *testing.T) 
 	data, err := json.Marshal(persistedState{
 		Agents: []persistedAgent{
 			{
-				ID:        ManagerUserID,
-				Name:      ManagerName,
-				Role:      RoleManager,
-				BoxID:     "box-old",
-				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+				ID:          ManagerUserID,
+				Name:        ManagerName,
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Role:        RoleManager,
+				BoxID:       "box-old",
+				CreatedAt:   time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
 			},
 		},
 	})
@@ -4230,13 +4291,14 @@ func TestRuntimeViewUsesRuntimeInfoAndReportsLogSupport(t *testing.T) {
 	statePath := filepath.Join(dir, "agents.json")
 	if err := writeSeededAgents(statePath, []Agent{
 		{
-			ID:        "u-alice",
-			Name:      "alice",
-			RuntimeID: "rt-u-alice",
-			BoxID:     "box-old",
-			Role:      RoleWorker,
-			Status:    string(agentruntime.StateStopped),
-			CreatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+			ID:          "u-alice",
+			Name:        "alice",
+			RuntimeID:   "rt-u-alice",
+			RuntimeKind: RuntimeKindPicoClawSandbox,
+			BoxID:       "box-old",
+			Role:        RoleWorker,
+			Status:      string(agentruntime.StateStopped),
+			CreatedAt:   time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 		},
 	}); err != nil {
 		t.Fatalf("writeSeededAgents() error = %v", err)
@@ -4284,13 +4346,14 @@ func TestRuntimeViewMapsRuntimeNotFoundToUnknown(t *testing.T) {
 	statePath := filepath.Join(dir, "agents.json")
 	if err := writeSeededAgents(statePath, []Agent{
 		{
-			ID:        "u-alice",
-			Name:      "alice",
-			RuntimeID: "rt-u-alice",
-			BoxID:     "box-old",
-			Role:      RoleWorker,
-			Status:    string(agentruntime.StateRunning),
-			CreatedAt: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+			ID:          "u-alice",
+			Name:        "alice",
+			RuntimeID:   "rt-u-alice",
+			RuntimeKind: RuntimeKindPicoClawSandbox,
+			BoxID:       "box-old",
+			Role:        RoleWorker,
+			Status:      string(agentruntime.StateRunning),
+			CreatedAt:   time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 		},
 	}); err != nil {
 		t.Fatalf("writeSeededAgents() error = %v", err)

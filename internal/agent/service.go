@@ -679,7 +679,7 @@ func (s *Service) syncRuntimeRecordLocked(a Agent) {
 	if s == nil {
 		return
 	}
-	agentRuntimeKind := normalizeRuntimeKind(a.RuntimeKind)
+	agentRuntimeKind := a.RuntimeKind
 	rt := runtimeRecordForAgent(a)
 	if rt.ID == "" {
 		return
@@ -812,8 +812,8 @@ func validateDefaultTemplateCompatibility(expectedRole string, spec CreateAgentS
 		}
 		return fmt.Errorf("default %s template %q points to a %s template", expectedRole, templateRef, actualRole)
 	}
-	requestedRuntime := normalizeRuntimeKind(spec.RuntimeKind)
-	templateRuntime := normalizeRuntimeKind(item.RuntimeKind)
+	requestedRuntime := spec.RuntimeKind
+	templateRuntime := item.RuntimeKind
 	if requestedRuntime != "" && templateRuntime != "" && requestedRuntime != templateRuntime {
 		return fmt.Errorf("%w: default %s template %q uses runtime_kind %q, incompatible with requested runtime_kind %q", errDefaultTemplateRuntimeMismatch, expectedRole, templateRef, item.RuntimeKind, spec.RuntimeKind)
 	}
@@ -879,7 +879,7 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
 	runtimeExplicit := strings.TrimSpace(spec.RuntimeKind) != ""
-	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
+	runtimeKind := spec.RuntimeKind
 	if runtimeKind == "" {
 		runtimeKind = s.gatewayRuntimeKind()
 	}
@@ -1294,7 +1294,7 @@ func (s *Service) ensureGatewayConfigForAgent(got Agent) error {
 		return nil
 	}
 	if role == RoleWorker {
-		if kind := normalizeRuntimeKind(got.RuntimeKind); kind != "" && !isGatewayRuntimeKind(kind) {
+		if kind := got.RuntimeKind; kind != "" && !isGatewayRuntimeKind(kind) {
 			return nil
 		}
 	}
@@ -1502,7 +1502,7 @@ func (s *Service) startupAgentCandidates() []Agent {
 		if isManagerAgent(a) || !isAgentProfileComplete(a) {
 			continue
 		}
-		rk := normalizeRuntimeKind(a.RuntimeKind)
+		rk := a.RuntimeKind
 		if strings.EqualFold(normalizeRole(a.Role), RoleWorker) && rk != "" && !isGatewayRuntimeKind(rk) {
 			continue
 		}
@@ -1535,7 +1535,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
-	runtimeKind := normalizeRuntimeKind(spec.RuntimeKind)
+	runtimeKind := spec.RuntimeKind
 	explicitRuntime := strings.TrimSpace(spec.RuntimeKind) != ""
 
 	if runtimeKind == "" {
@@ -1723,7 +1723,7 @@ func (s *Service) overlayTemplateWorkspace(agentName, runtimeKind, workspaceRoot
 }
 
 func (s *Service) workspaceLayoutForOverlay(agentName, runtimeKind string) (sandboxgateway.WorkspaceLayout, error) {
-	switch normalizeRuntimeKind(runtimeKind) {
+	switch runtimeKind {
 	case RuntimeKindOpenClawSandbox:
 		return s.OpenClawRuntimeHost().WorkspaceLayout(agentName)
 	case "", RuntimeKindPicoClawSandbox:

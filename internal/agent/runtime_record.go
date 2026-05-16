@@ -42,7 +42,8 @@ func runtimeIDForAgentID(agentID string) string {
 }
 
 func runtimeKindForAgent(a Agent) string {
-	if kind := normalizeRuntimeKind(a.RuntimeKind); kind != "" {
+	if a.RuntimeKind != "" {
+		kind := a.RuntimeKind
 		return kind
 	}
 	switch normalizeRole(a.Role) {
@@ -54,7 +55,7 @@ func runtimeKindForAgent(a Agent) string {
 }
 
 func isGatewayRuntimeKind(kind string) bool {
-	switch normalizeRuntimeKind(kind) {
+	switch kind {
 	case RuntimeKindPicoClawSandbox, RuntimeKindOpenClawSandbox:
 		return true
 	default:
@@ -63,35 +64,20 @@ func isGatewayRuntimeKind(kind string) bool {
 }
 
 func runtimeKindForGatewayRuntime(runtime string) string {
-	switch kind := normalizeRuntimeKind(runtime); kind {
+	switch runtime {
 	case RuntimeKindPicoClawSandbox, RuntimeKindOpenClawSandbox:
-		return kind
+		return runtime
 	default:
 		return ""
 	}
 }
 
 func managerImageForRuntimeKind(kind string) string {
-	switch normalizeRuntimeKind(kind) {
+	switch kind {
 	case RuntimeKindOpenClawSandbox, RuntimeKindPicoClawSandbox:
 		return config.DefaultManagerImageForRuntimeKind(kind)
 	default:
 		return ""
-	}
-}
-
-func normalizeRuntimeKind(kind string) string {
-	switch strings.TrimSpace(strings.ToLower(kind)) {
-	case RuntimeKindPicoClawSandbox:
-		return RuntimeKindPicoClawSandbox
-	case RuntimeKindOpenClawSandbox:
-		return RuntimeKindOpenClawSandbox
-	case RuntimeKindCodex:
-		return RuntimeKindCodex
-	case RuntimeKindNotifier:
-		return RuntimeKindNotifier
-	default:
-		return strings.TrimSpace(kind)
 	}
 }
 

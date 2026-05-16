@@ -116,7 +116,7 @@ func normalizeProfile(profile AgentProfile, fallbackName, fallbackDescription st
 // normalizeProfileForAgentRuntime applies profile normalization; ProfileComplete is decided by the runtime_kind policy.
 func normalizeProfileForAgentRuntime(profile AgentProfile, runtimeOptions map[string]any, fallbackName, fallbackDescription, runtimeKind string, runtimeOptionsAfterPatch map[string]any) AgentProfile {
 	out := normalizeProfile(profile, fallbackName, fallbackDescription)
-	rk := agentruntime.NormalizeRuntimeKind(normalizeRuntimeKind(runtimeKind))
+	rk := runtimeKind
 	pol := agentruntime.RuntimeOptionsPolicyForKind(rk)
 	out.ProfileComplete = pol.IsComplete(profileIsComplete(out), runtimeOptions, runtimeOptionsAfterPatch)
 	out.BaseURL, out.ModelID = pol.StripProfileLLMFields(rk, out.BaseURL, out.ModelID)

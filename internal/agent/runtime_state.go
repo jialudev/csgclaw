@@ -234,14 +234,14 @@ func (s *Service) gatewayRuntimeKind() string {
 }
 
 func (s *Service) runtimeKindForGatewayAgent(a Agent) string {
-	if kind := normalizeRuntimeKind(a.RuntimeKind); kind != "" && isGatewayRuntimeKind(kind) {
+	if kind := a.RuntimeKind; kind != "" && isGatewayRuntimeKind(kind) {
 		return kind
 	}
 	return s.gatewayRuntimeKind()
 }
 
 func (s *Service) runtimeForAgent(a Agent) (agentruntime.Runtime, error) {
-	kind := normalizeRuntimeKind(a.RuntimeKind)
+	kind := a.RuntimeKind
 	if strings.EqualFold(normalizeRole(a.Role), RoleManager) {
 		return s.runtimeForKind(s.runtimeKindForGatewayAgent(a))
 	}
@@ -263,7 +263,7 @@ func (s *Service) runtimeProfileForKind(runtimeKind, agentID, fallbackName, fall
 	baseURL := profile.BaseURL
 	apiKey := profile.APIKey
 
-	if normalizeRuntimeKind(runtimeKind) == RuntimeKindCodex {
+	if runtimeKind == RuntimeKindCodex {
 		managerBaseURL := resolveManagerBaseURL(s.server)
 		if managerBaseURL != "" {
 			baseURL = llmBridgeBaseURL(managerBaseURL, agentID)

@@ -2,16 +2,6 @@ package runtime
 
 import "testing"
 
-func TestNormalizeRuntimeKind(t *testing.T) {
-	t.Parallel()
-	if got := NormalizeRuntimeKind("  NOTIFIER "); got != KindNotifier {
-		t.Fatalf("got %q", got)
-	}
-	if got := NormalizeRuntimeKind(""); got != "" {
-		t.Fatalf("empty: got %q", got)
-	}
-}
-
 func TestRuntimeOptionsPolicyForKind_unknownUsesDefault(t *testing.T) {
 	t.Parallel()
 	p := RuntimeOptionsPolicyForKind("unknown-future-runtime")

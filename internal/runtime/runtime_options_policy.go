@@ -1,26 +1,6 @@
 package runtime
 
-import (
-	"strings"
-
-	"csgclaw/internal/utils"
-)
-
-// NormalizeRuntimeKind returns canonical runtime_kind strings used for policy lookup and records.
-func NormalizeRuntimeKind(kind string) string {
-	switch strings.TrimSpace(strings.ToLower(kind)) {
-	case KindPicoClawSandbox:
-		return KindPicoClawSandbox
-	case KindOpenClawSandbox:
-		return KindOpenClawSandbox
-	case KindCodex:
-		return KindCodex
-	case KindNotifier:
-		return KindNotifier
-	default:
-		return strings.TrimSpace(kind)
-	}
-}
+import "csgclaw/internal/utils"
 
 // RuntimeOptionsPolicy defines how runtime_options behave for a concrete runtime_kind.
 // Implementations register via RegisterRuntimeOptionsPolicy.
@@ -41,7 +21,6 @@ var (
 
 // RegisterRuntimeOptionsPolicy binds a policy implementation to a normalized runtime_kind.
 func RegisterRuntimeOptionsPolicy(kind string, p RuntimeOptionsPolicy) {
-	kind = NormalizeRuntimeKind(kind)
 	if kind == "" || p == nil {
 		return
 	}
@@ -50,7 +29,6 @@ func RegisterRuntimeOptionsPolicy(kind string, p RuntimeOptionsPolicy) {
 
 // RuntimeOptionsPolicyForKind returns the registered policy, or a default no-op policy for unknown kinds.
 func RuntimeOptionsPolicyForKind(kind string) RuntimeOptionsPolicy {
-	kind = NormalizeRuntimeKind(kind)
 	p, ok := runtimeOptionsPolicies[kind]
 	if ok {
 		return p
