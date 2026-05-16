@@ -197,7 +197,7 @@ Content-Type: application/json
 
 ## 4. IM 接口
 
-### `GET /api/v1/im/bootstrap`
+### `GET /api/v1/bootstrap`
 
 获取 IM 初始化数据，供 WebUI 首次加载使用。
 响应返回 `rooms`。
@@ -222,7 +222,7 @@ Content-Type: application/json
 }
 ```
 
-### `GET /api/v1/im/events`
+### `GET /api/v1/events`
 
 订阅 IM 事件流，返回 `text/event-stream`。
 
@@ -240,7 +240,7 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
 - `room.created`
 - `room.members_added`
 
-### `POST /api/v1/im/messages`
+### `POST /api/v1/messages`
 
 在 room 中发送消息。
 
@@ -273,7 +273,7 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
 - `room_id`、`sender_id`、`content` 必填
 - `content` 中的 `@handle` 会解析为 `mentions`
 
-### `POST /api/v1/im/conversations`
+### `POST /api/v1/rooms`
 
 创建新 room。
 
@@ -315,7 +315,7 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
 - `member_ids` 会和 `creator_id` 合并去重
 - 返回里的 `subtitle` 会根据人数自动生成
 
-### `POST /api/v1/im/conversations/members`
+### `POST /api/v1/rooms/invite`
 
 向 room 中添加成员。
 
@@ -341,10 +341,6 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
 ### `GET /api/v1/rooms`
 
 获取全部会话列表，按最近消息时间倒序返回。
-
-### `POST /api/v1/rooms`
-
-创建新 room。请求体与 `POST /api/v1/im/conversations` 一致，响应：`201 Created`。
 
 ### `DELETE /api/v1/rooms/{id}`
 
@@ -380,7 +376,7 @@ data: {"type":"message.created","room_id":"room-1","message":{"id":"msg-1","send
 
 ### `POST /api/v1/messages`
 
-发送消息。请求体与 `POST /api/v1/im/messages` 一致，响应：`201 Created`。
+在 room 中发送消息。请求体与上文一致，响应：`201 Created`。
 
 ## 5. Feishu Channel 接口
 
@@ -407,17 +403,7 @@ data: {"type":"message.created","room_id":"oc_f778","message":{"id":"om_x100","s
 - 请求头必须带 `Authorization: Bearer <token>`
 - token 来自 `~/.csgclaw/config.toml` 中的 `[server].access_token`
 
-## 6. 兼容别名接口
-
-当前以下接口是同义路由，行为与上文一致：
-
-- `GET /api/v1/bootstrap` 等价于 `GET /api/v1/im/bootstrap`
-- `GET /api/v1/events` 等价于 `GET /api/v1/im/events`
-- `POST /api/v1/rooms/invite` 等价于 `POST /api/v1/im/conversations/members`
-- `POST /api/v1/im/rooms` 等价于 `POST /api/v1/im/conversations`
-- `POST /api/v1/im/rooms/invite` 等价于 `POST /api/v1/im/conversations/members`
-
-## 7. PicoClaw Bot 接口
+## 6. PicoClaw Bot 接口
 
 这组接口用于 PicoClaw 与 IM 的双向通信，以及 Worker 访问服务端暴露的 OpenAI 兼容 LLM bridge。
 

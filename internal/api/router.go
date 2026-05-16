@@ -79,18 +79,6 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Get("/", h.listMessages)
 			r.Post("/", h.createMessage)
 		})
-		r.Route("/im", func(r chi.Router) {
-			r.Get("/bootstrap", h.getIMBootstrap)
-			r.Get("/events", h.getIMEvents)
-			r.Get("/messages", h.listIMMessages)
-			r.Post("/messages", h.createIMMessage)
-			r.Get("/conversations", h.listIMConversations)
-			r.Post("/conversations", h.createIMConversation)
-			r.Post("/conversations/members", h.createIMConversationMembers)
-			r.Get("/rooms", h.listIMRooms)
-			r.Post("/rooms", h.createIMRoom)
-			r.Post("/rooms/invite", h.createIMRoomMembersInvite)
-		})
 	})
 }
 

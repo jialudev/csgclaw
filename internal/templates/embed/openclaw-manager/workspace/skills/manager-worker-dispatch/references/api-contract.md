@@ -37,7 +37,7 @@ When available, load the CSGClaw API settings from `~/.openclaw/openclaw.json`:
 ### Read IM bootstrap
 
 - Method: `GET`
-- Path: `/api/v1/im/bootstrap`
+- Path: `/api/v1/bootstrap`
 - Purpose: resolve room members and assignee handles for tracker sequencing
 
 ### Read room message history
