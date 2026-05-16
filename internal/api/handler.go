@@ -429,8 +429,8 @@ func (h *Handler) handleBotByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/bots/"))
-	if id == "" || strings.Contains(id, "/") {
+	id := pathValue(r, "id")
+	if id == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -472,59 +472,8 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	path := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/v1/agents/"))
-	if path == "" {
-		http.NotFound(w, r)
-		return
-	}
-	if id, ok := strings.CutSuffix(path, "/start"); ok {
-		id = strings.TrimSpace(id)
-		if id == "" || strings.Contains(id, "/") {
-			http.NotFound(w, r)
-			return
-		}
-		h.handleAgentStart(w, r, id)
-		return
-	}
-	if id, ok := strings.CutSuffix(path, "/stop"); ok {
-		id = strings.TrimSpace(id)
-		if id == "" || strings.Contains(id, "/") {
-			http.NotFound(w, r)
-			return
-		}
-		h.handleAgentStop(w, r, id)
-		return
-	}
-	if id, ok := strings.CutSuffix(path, "/logs"); ok {
-		id = strings.TrimSpace(id)
-		if id == "" || strings.Contains(id, "/") {
-			http.NotFound(w, r)
-			return
-		}
-		h.handleAgentLogs(w, r, id)
-		return
-	}
-	if id, ok := strings.CutSuffix(path, "/profile"); ok {
-		id = strings.TrimSpace(id)
-		if id == "" || strings.Contains(id, "/") {
-			http.NotFound(w, r)
-			return
-		}
-		h.handleAgentProfile(w, r, id)
-		return
-	}
-	if id, ok := strings.CutSuffix(path, "/recreate"); ok {
-		id = strings.TrimSpace(id)
-		if id == "" || strings.Contains(id, "/") {
-			http.NotFound(w, r)
-			return
-		}
-		h.handleAgentRecreate(w, r, id)
-		return
-	}
-
-	id := path
-	if strings.Contains(id, "/") {
+	id := pathValue(r, "id")
+	if id == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -570,6 +519,24 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleAgentProfileByID(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleAgentProfile(w, r, id)
+}
+
+func (h *Handler) handleAgentRecreateByID(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleAgentRecreate(w, r, id)
 }
 
 func (h *Handler) handleAgentProfile(w http.ResponseWriter, r *http.Request, id string) {
@@ -689,6 +656,15 @@ func (h *Handler) handleAgentStart(w http.ResponseWriter, r *http.Request, id st
 	writeJSON(w, http.StatusOK, presentAgent(started))
 }
 
+func (h *Handler) handleAgentStartByID(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleAgentStart(w, r, id)
+}
+
 func (h *Handler) handleAgentStop(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -708,6 +684,15 @@ func (h *Handler) handleAgentStop(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 	writeJSON(w, http.StatusOK, presentAgent(stopped))
+}
+
+func (h *Handler) handleAgentStopByID(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleAgentStop(w, r, id)
 }
 
 func (h *Handler) handleAgentLogs(w http.ResponseWriter, r *http.Request, id string) {
@@ -755,6 +740,15 @@ func (h *Handler) handleAgentLogs(w http.ResponseWriter, r *http.Request, id str
 			return
 		}
 	}
+}
+
+func (h *Handler) handleAgentLogsByID(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleAgentLogs(w, r, id)
 }
 
 type flushWriter struct {
@@ -860,12 +854,7 @@ func (h *Handler) handleHubTemplates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleHubTemplateByID(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/hub/templates/")
-	id, remainder := splitHubTemplatePath(path)
-	if remainder == "workspace/file" {
-		h.handleHubTemplateWorkspaceFile(w, r, id)
-		return
-	}
+	id := hubTemplateIDFromPathValues(r)
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -899,6 +888,11 @@ func (h *Handler) handleHubTemplateByID(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, presented)
 }
 
+func (h *Handler) handleHubTemplateWorkspaceFileByID(w http.ResponseWriter, r *http.Request) {
+	id := hubTemplateIDFromPathValues(r)
+	h.handleHubTemplateWorkspaceFile(w, r, id)
+}
+
 func presentHubTemplates(items []hub.Template) []apitypes.HubTemplate {
 	out := make([]apitypes.HubTemplate, 0, len(items))
 	for _, item := range items {
@@ -923,22 +917,6 @@ func presentHubTemplate(item hub.Template) apitypes.HubTemplate {
 			Kind: item.WorkspaceRef.Kind,
 		},
 	}
-}
-
-func splitHubTemplatePath(path string) (string, string) {
-	path = strings.Trim(path, "/")
-	if path == "" {
-		return "", ""
-	}
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 {
-		return path, ""
-	}
-	id := strings.Join(parts[:2], "/")
-	if len(parts) == 2 {
-		return id, ""
-	}
-	return id, strings.Join(parts[2:], "/")
 }
 
 func agentProfileFromAPI(req *apitypes.CreateAgentProfile) agent.AgentProfile {
@@ -1108,20 +1086,15 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleRoomByID(w http.ResponseWriter, r *http.Request) {
-	id, membersPath := parseRoomMembersPath(r.URL.Path)
+	id := pathValue(r, "id")
 	if id == "" {
 		http.NotFound(w, r)
 		return
 	}
-	h.handleLocalRoomByID(w, r, id, membersPath)
+	h.handleLocalRoomByID(w, r, id)
 }
 
-func (h *Handler) handleLocalRoomByID(w http.ResponseWriter, r *http.Request, id string, membersPath bool) {
-	if membersPath {
-		h.handleRoomMembersByID(w, r, id)
-		return
-	}
-
+func (h *Handler) handleLocalRoomByID(w http.ResponseWriter, r *http.Request, id string) {
 	channel, ok := h.requireLocalChannel(w)
 	if !ok {
 		return
@@ -1141,6 +1114,15 @@ func (h *Handler) handleLocalRoomByID(w http.ResponseWriter, r *http.Request, id
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) handleRoomMembersByIDPath(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleRoomMembersByID(w, r, id)
 }
 
 func (h *Handler) handleRoomMembersByID(w http.ResponseWriter, r *http.Request, roomID string) {
@@ -1175,8 +1157,8 @@ func (h *Handler) handleRoomMembersByID(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUserPath(r.URL.Path, "/api/v1/users/")
-	if !ok {
+	id := pathValue(r, "id")
+	if id == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -1601,37 +1583,13 @@ func (r addRoomMembersRequest) toServiceRequest() (im.AddRoomMembersRequest, err
 	}, nil
 }
 
-func parseRoomMembersPath(path string) (string, bool) {
-	return parseRoomPath(path, "/api/v1/rooms/")
-}
-
-func parseUserPath(path, prefix string) (string, bool) {
-	if !strings.HasPrefix(path, prefix) {
-		return "", false
+func hubTemplateIDFromPathValues(r *http.Request) string {
+	registry := pathValue(r, "registry")
+	template := pathValue(r, "template")
+	if registry == "" || template == "" {
+		return ""
 	}
-	userID := strings.TrimSpace(strings.TrimPrefix(path, prefix))
-	if userID == "" || strings.Contains(userID, "/") {
-		return "", false
-	}
-	return userID, true
-}
-
-func parseRoomPath(path, prefix string) (string, bool) {
-	if !strings.HasPrefix(path, prefix) {
-		return "", false
-	}
-	rest := strings.Trim(strings.TrimPrefix(path, prefix), "/")
-	if rest == "" {
-		return "", false
-	}
-	parts := strings.Split(rest, "/")
-	if len(parts) == 1 {
-		return parts[0], false
-	}
-	if len(parts) == 2 && parts[1] == "members" {
-		return parts[0], true
-	}
-	return "", false
+	return registry + "/" + template
 }
 
 func (h *Handler) reloadIM() error {

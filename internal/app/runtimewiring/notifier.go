@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"csgclaw/internal/agent"
 	"csgclaw/internal/channel/notifierbridge"
 	"csgclaw/internal/im"
@@ -58,17 +60,17 @@ func RunNotifierPullSupervisor(ctx context.Context, agents *agent.Service, deliv
 	notifierpull.NewSupervisor(agents, deliver).Run(ctx)
 }
 
-// WireNotifierDelivery registers POST {NotifyHTTPPathPrefix}{agent_id} on mux and starts the pull supervisor.
-// mux may be nil (tests): routing is skipped but the pull supervisor still runs when agents and deliver are non-nil.
+// WireNotifierDelivery registers POST {NotifyHTTPPathPrefix}{agent_id} on router and starts the pull supervisor.
+// router may be nil (tests): routing is skipped but the pull supervisor still runs when agents and deliver are non-nil.
 // IM may be nil (deliver is nil; webhook auth still works but delivery returns 503).
-func WireNotifierDelivery(ctx context.Context, mux *http.ServeMux, agents *agent.Service, imSvc *im.Service, apiBaseURL, accessToken string) {
+func WireNotifierDelivery(ctx context.Context, router chi.Router, agents *agent.Service, imSvc *im.Service, apiBaseURL, accessToken string) {
 	if agents == nil {
 		return
 	}
 	deliver := NewNotifierDeliver(imSvc, apiBaseURL, accessToken)
 	deps := NotifierWebhookDeps(agents, deliver)
-	if mux != nil {
-		mux.HandleFunc(runtimenotifier.NotifyHTTPPathPrefix, func(w http.ResponseWriter, r *http.Request) {
+	if router != nil {
+		router.Post(runtimenotifier.NotifyHTTPPathPrefix+"{agent_id}", func(w http.ResponseWriter, r *http.Request) {
 			runtimenotifier.ServeNotifyHTTP(w, r, deps)
 		})
 	}

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"csgclaw/internal/agent"
 	"csgclaw/internal/api"
 	"csgclaw/internal/bot"
@@ -32,7 +34,7 @@ type Options struct {
 	AccessToken string
 	NoAuth      bool
 	Context     context.Context
-	OnReady     func(h *api.Handler, mux *http.ServeMux)
+	OnReady     func(h *api.Handler, router chi.Router)
 }
 
 func newHandler(opts Options) *api.Handler {
@@ -49,12 +51,12 @@ func Run(opts Options) error {
 		opts.Context = context.Background()
 	}
 	handler := newHandler(opts)
-	mux := handler.Routes()
-	mux.Handle("/", uiHandler())
+	router := handler.Routes()
+	router.Handle("/*", uiHandler())
 
 	httpServer := &http.Server{
 		Addr:              opts.ListenAddr,
-		Handler:           accessLog(slog.Default(), mux),
+		Handler:           accessLog(slog.Default(), router),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -94,7 +96,7 @@ func Run(opts Options) error {
 		return err
 	}
 	if opts.OnReady != nil {
-		go opts.OnReady(handler, mux)
+		go opts.OnReady(handler, router)
 	}
 
 	if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {

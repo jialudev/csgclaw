@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
 	"csgclaw/internal/api"
@@ -480,8 +482,8 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		AccessToken: cfg.Server.AccessToken,
 		NoAuth:      cfg.Server.NoAuth,
 		Context:     ctx,
-		OnReady: func(handler *api.Handler, mux *http.ServeMux) {
-			runtimewiring.WireNotifierDelivery(ctx, mux, svc, imSvc, apiURL, cfg.Server.AccessToken)
+		OnReady: func(handler *api.Handler, router chi.Router) {
+			runtimewiring.WireNotifierDelivery(ctx, router, svc, imSvc, apiURL, cfg.Server.AccessToken)
 			if output != "json" && run != nil {
 				go func() {
 					if err := WaitForHealthy(apiURL, 5*time.Second); err != nil {
