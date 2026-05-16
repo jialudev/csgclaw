@@ -88,7 +88,7 @@ func (f *fakeInstance) Close() error {
 
 type fakeAgentRuntime struct {
 	kind       string
-	create     func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
+	new        func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
 	stop       func(context.Context, agentruntime.Handle) (agentruntime.State, error)
 	del        func(context.Context, agentruntime.Handle) error
@@ -101,9 +101,9 @@ func (f fakeAgentRuntime) Kind() string {
 	return f.kind
 }
 
-func (f fakeAgentRuntime) Create(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
-	if f.create != nil {
-		return f.create(ctx, spec)
+func (f fakeAgentRuntime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+	if f.new != nil {
+		return f.new(ctx, spec)
 	}
 	return agentruntime.Handle{}, nil
 }
@@ -159,7 +159,7 @@ func (f fakeAgentRuntimeNoLogs) Kind() string {
 	return f.kind
 }
 
-func (f fakeAgentRuntimeNoLogs) Create(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
+func (f fakeAgentRuntimeNoLogs) New(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
 	return agentruntime.Handle{}, nil
 }
 
@@ -510,7 +510,7 @@ func TestCreateWorkerUsesCodexRuntimeWhenRequested(t *testing.T) {
 		"",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				if spec.AgentID != "u-alice" {
 					t.Fatalf("Create() agent id = %q, want %q", spec.AgentID, "u-alice")
 				}
@@ -568,7 +568,7 @@ func TestCreateWorkerTriggersLifecycleObserver(t *testing.T) {
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-" + spec.AgentName}, nil
 			},
 		}),
@@ -613,7 +613,7 @@ func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			del:  func(context.Context, agentruntime.Handle) error { return nil },
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				if got, want := spec.Profile.BaseURL, "http://127.0.0.1:18080/api/bots/u-alice/llm"; got != want {
 					t.Fatalf("Create() profile base url = %q, want %q", got, want)
 				}
@@ -720,7 +720,7 @@ func TestCreateWorkerRequiresRuntimeKindWhenTemplateDoesNotProvideIt(t *testing.
 		"",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
-			create: func(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
 				t.Fatal("codex runtime should not be used when runtime kind is unset")
 				return agentruntime.Handle{}, nil
 			},
@@ -3003,7 +3003,7 @@ func TestCreateWorkerSkipsDefaultTemplateRuntimeMismatch(t *testing.T) {
 		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				if spec.AgentName != "alice" {
 					t.Fatalf("Create() agent name = %q, want %q", spec.AgentName, "alice")
 				}

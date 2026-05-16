@@ -25,7 +25,7 @@ func (r *AgentRuntime) HydrateTrustPersistedStopped() bool {
 	return true
 }
 
-func (r *AgentRuntime) Create(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+func (r *AgentRuntime) New(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 	return agentruntime.Handle{
 		RuntimeID: strings.TrimSpace(spec.RuntimeID),
 		HandleID:  "",

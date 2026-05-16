@@ -18,7 +18,7 @@ const (
 type Runtime interface {
 	Kind() string
 
-	Create(ctx context.Context, spec Spec) (Handle, error)
+	New(ctx context.Context, spec Spec) (Handle, error)
 	Start(ctx context.Context, h Handle) (State, error)
 	Stop(ctx context.Context, h Handle) (State, error)
 	Delete(ctx context.Context, h Handle) error

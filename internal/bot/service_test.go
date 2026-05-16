@@ -36,7 +36,7 @@ func (f fakeBotAgentRuntime) Kind() string {
 	return f.kind
 }
 
-func (f fakeBotAgentRuntime) Create(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+func (f fakeBotAgentRuntime) New(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 	return agentruntime.Handle{
 		RuntimeID: spec.RuntimeID,
 		HandleID:  fmt.Sprintf("%s-%s", f.kind, spec.AgentName),

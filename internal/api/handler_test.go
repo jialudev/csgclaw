@@ -29,12 +29,12 @@ import (
 )
 
 type fakeCompatRuntime struct {
-	kind   string
-	create func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
-	start  func(context.Context, agentruntime.Handle) (agentruntime.State, error)
-	stop   func(context.Context, agentruntime.Handle) (agentruntime.State, error)
-	del    func(context.Context, agentruntime.Handle) error
-	info   func(context.Context, agentruntime.Handle) (agentruntime.Info, error)
+	kind  string
+	new   func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
+	start func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	stop  func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	del   func(context.Context, agentruntime.Handle) error
+	info  func(context.Context, agentruntime.Handle) (agentruntime.Info, error)
 }
 
 func init() {
@@ -64,9 +64,9 @@ func (f fakeCompatRuntime) Kind() string {
 	return agent.RuntimeKindPicoClawSandbox
 }
 
-func (f fakeCompatRuntime) Create(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
-	if f.create != nil {
-		return f.create(ctx, spec)
+func (f fakeCompatRuntime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+	if f.new != nil {
+		return f.new(ctx, spec)
 	}
 	return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "box-" + spec.AgentName}, nil
 }
@@ -632,7 +632,7 @@ func TestHandleBotsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
 		"",
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
 			},
 		}),
@@ -1367,7 +1367,7 @@ func TestHandleAgentStartEnsuresCodexBridge(t *testing.T) {
 		statePath,
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
 			},
 			start: func(_ context.Context, _ agentruntime.Handle) (agentruntime.State, error) {
@@ -1599,7 +1599,7 @@ func TestHandleAgentsCreateWorkerUsesRequestedRuntimeKind(t *testing.T) {
 		"",
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
 			},
 		}),
@@ -1648,7 +1648,7 @@ func TestHandleAgentsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
 		"",
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-" + spec.AgentName}, nil
 			},
 		}),
@@ -3260,7 +3260,7 @@ func TestPublishBotEventReensuresRunningWorkerLifecycle(t *testing.T) {
 				started <- h.HandleID
 				return agentruntime.StateRunning, nil
 			},
-			create: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				recreated <- spec.AgentName
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "box-" + spec.AgentName}, nil
 			},

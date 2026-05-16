@@ -17,7 +17,7 @@ func TestAgentRuntimeKind(t *testing.T) {
 func TestAgentRuntimeCreateStartInfo(t *testing.T) {
 	r := NewAgentRuntime()
 	ctx := context.Background()
-	h, err := r.Create(ctx, agentruntime.Spec{RuntimeID: "rt-u-test", AgentID: "u-test", AgentName: "test"})
+	h, err := r.New(ctx, agentruntime.Spec{RuntimeID: "rt-u-test", AgentID: "u-test", AgentName: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -277,7 +277,7 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 		Image:     image,
 		Profile:   s.runtimeProfileForKind(runtimeKind, got.ID, got.Name, got.Description, profile),
 	}
-	handle, err := runtimeImpl.Create(ctx, createSpec)
+	handle, err := runtimeImpl.New(ctx, createSpec)
 	if err != nil {
 		return Agent{}, fmt.Errorf("create agent box: %w", err)
 	}

@@ -1448,7 +1448,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 			CreatedAt: info.CreatedAt.UTC(),
 		})
 	}
-	handle, err := runtimeImpl.Create(ctx, agentruntime.Spec{
+	handle, err := runtimeImpl.New(ctx, agentruntime.Spec{
 		RuntimeID: runtimeIDForAgentID(id),
 		AgentID:   id,
 		AgentName: name,
