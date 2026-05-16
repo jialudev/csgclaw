@@ -278,7 +278,7 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 		Image:     image,
 		Profile:   runtimeProfile,
 	}
-	if err := s.provisionRuntime(ctx, runtimeImpl, agentruntime.ProvisionRequest{
+	if err := s.provisionRuntime(ctx, runtimeImpl, runtimeKind, agentruntime.ProvisionRequest{
 		RuntimeID: createSpec.RuntimeID,
 		AgentID:   createSpec.AgentID,
 		AgentName: createSpec.AgentName,

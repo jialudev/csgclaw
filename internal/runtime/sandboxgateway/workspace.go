@@ -8,6 +8,8 @@ import (
 	pathpkg "path"
 	"path/filepath"
 	"strings"
+
+	"csgclaw/internal/templates"
 )
 
 var (
@@ -16,7 +18,7 @@ var (
 	errWorkspaceSymlinkDenied = errors.New("workspace symlinks are not supported")
 )
 
-func overlayWorkspaceTree(srcRoot, dstRoot string) error {
+func OverlayWorkspaceTree(srcRoot, dstRoot string) error {
 	srcRoot = strings.TrimSpace(srcRoot)
 	if srcRoot == "" {
 		return fmt.Errorf("workspace source is required")
@@ -31,10 +33,21 @@ func overlayWorkspaceTree(srcRoot, dstRoot string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("workspace source %q is not a directory", srcRoot)
 	}
-	return copyWorkspaceFS(os.DirFS(srcRoot), ".", dstRoot, "workspace")
+	return copyWorkspaceFS(os.DirFS(srcRoot), ".", dstRoot, "workspace", true)
 }
 
-func copyWorkspaceFS(srcFS fs.FS, root, dstRoot, label string) error {
+func EnsureEmbeddedWorkspace(templateRoot, dstRoot string) error {
+	templateRoot = strings.Trim(strings.TrimSpace(templateRoot), "/")
+	if templateRoot == "" {
+		return fmt.Errorf("runtime template root is required")
+	}
+	if _, err := fs.Stat(templates.FS(), templates.ManifestPath(templateRoot)); err != nil {
+		return fmt.Errorf("stat embedded runtime template manifest %q: %w", templateRoot, err)
+	}
+	return copyWorkspaceFS(templates.FS(), templates.WorkspacePath(templateRoot), dstRoot, "embedded workspace", false)
+}
+
+func copyWorkspaceFS(srcFS fs.FS, root, dstRoot, label string, overwrite bool) error {
 	dstRoot = strings.TrimSpace(dstRoot)
 	if dstRoot == "" {
 		return fmt.Errorf("workspace destination is required")
@@ -88,6 +101,14 @@ func copyWorkspaceFS(srcFS fs.FS, root, dstRoot, label string) error {
 			mode = 0o644
 		}
 		mode |= 0o200
+		if !overwrite {
+			if _, err := os.Stat(dst); err == nil {
+				fileCount++
+				return nil
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("stat workspace file %q: %w", dst, err)
+			}
+		}
 		if err := os.WriteFile(dst, data, mode); err != nil {
 			return fmt.Errorf("write workspace file %q: %w", dst, err)
 		}

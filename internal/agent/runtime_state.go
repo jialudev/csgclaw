@@ -11,8 +11,6 @@ import (
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/runtime/openclawsandbox"
-	"csgclaw/internal/runtime/picoclawsandbox"
-	"csgclaw/internal/runtime/sandboxgateway"
 	"csgclaw/internal/sandbox"
 )
 
@@ -32,8 +30,6 @@ type gatewayBoxFactory interface {
 }
 
 type PicoClawRuntimeHost struct {
-	ModelFallback         string
-	Server                config.ServerConfig
 	EnsureRuntime         func(agentName string) (sandbox.Runtime, error)
 	AgentHome             func(agentName string) (string, error)
 	RuntimeHome           func(agentName string) (string, error)
@@ -49,29 +45,11 @@ type PicoClawRuntimeHost struct {
 	ResolveAgent          func(h agentruntime.Handle) (Agent, error)
 	ResolveRuntimeProfile func(h agentruntime.Handle) (agentruntime.Profile, error)
 	SyncHandle            func(h agentruntime.Handle) error
-	EnsureGatewayConfig   func(agentName, botID string, profile agentruntime.Profile) error
-	EnsureWorkspace       func(agentName, template string) (sandboxgateway.WorkspaceLayout, error)
-	WorkspaceLayout       func(agentName string) (sandboxgateway.WorkspaceLayout, error)
-	WorkspaceTemplate     func(name, botID string) (string, error)
-	EnsureProjectsRoot    func() (string, error)
-	HomeEnv               string
-	MountGuestPath        string
-	WorkspaceGuestPath    string
-	ProjectsGuestPath     string
-	GatewayLogPath        string
-	GatewayCommand        func() string
 	StreamLogs            func(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error
 }
 
 func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
-	s.mu.RLock()
-	modelFallback := s.model.Resolved().ModelID
-	server := s.server
-	s.mu.RUnlock()
-
 	return PicoClawRuntimeHost{
-		ModelFallback: modelFallback,
-		Server:        server,
 		EnsureRuntime: s.ensureRuntime,
 		AgentHome:     agentHomeDir,
 		RuntimeHome:   s.sandboxRuntimeHome,
@@ -95,109 +73,12 @@ func (s *Service) PicoClawRuntimeHost() PicoClawRuntimeHost {
 			return s.runtimeProfileForAgent(got), nil
 		},
 		SyncHandle: s.syncRuntimeHandle,
-		EnsureGatewayConfig: func(agentName, botID string, profile agentruntime.Profile) error {
-			agentHome, err := agentHomeDir(agentName)
-			if err != nil {
-				return err
-			}
-			_, err = picoclawsandbox.EnsureConfig(agentHome, botID, s.server, config.ModelConfig{ModelID: profile.ModelID}, resolveManagerBaseURL)
-			return err
-		},
-		EnsureWorkspace:    ensurePicoClawWorkspace,
-		WorkspaceLayout:    picoClawWorkspaceLayout,
-		WorkspaceTemplate:  workspaceTemplateForAgent,
-		EnsureProjectsRoot: ensureAgentProjectsRoot,
-		MountGuestPath:     picoclawsandbox.BoxWorkspaceDir,
-		WorkspaceGuestPath: picoclawsandbox.BoxWorkspaceDir,
-		ProjectsGuestPath:  picoclawsandbox.BoxProjectsDir,
-		GatewayLogPath:     picoclawsandbox.BoxGatewayLogPath,
-		StreamLogs:         s.streamRuntimeHostLogs,
+		StreamLogs: s.streamRuntimeHostLogs,
 	}
 }
 
 func (s *Service) OpenClawRuntimeHost() PicoClawRuntimeHost {
-	host := s.PicoClawRuntimeHost()
-	host.EnsureGatewayConfig = func(agentName, botID string, profile agentruntime.Profile) error {
-		agentHome, err := agentHomeDir(agentName)
-		if err != nil {
-			return err
-		}
-		_, err = openclawsandbox.EnsureConfig(agentHome, botID, s.server, config.ModelConfig{
-			Provider:        profile.Provider,
-			BaseURL:         profile.BaseURL,
-			APIKey:          profile.APIKey,
-			ModelID:         profile.ModelID,
-			ReasoningEffort: profile.ReasoningEffort,
-		}, resolveManagerBaseURL)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-	host.EnsureWorkspace = ensureOpenClawWorkspace
-	host.WorkspaceLayout = openClawWorkspaceLayout
-	host.WorkspaceTemplate = func(name, botID string) (string, error) {
-		role := RoleWorker
-		if managerGatewayMatch(name, botID) {
-			role = RoleManager
-		}
-		return resolveRuntimeTemplateRoot(RuntimeKindOpenClawSandbox, role)
-	}
-	host.HomeEnv = openclawsandbox.BoxUserHome
-	host.MountGuestPath = openclawsandbox.BoxDir
-	host.WorkspaceGuestPath = openclawsandbox.BoxWorkspaceDir
-	host.ProjectsGuestPath = openclawsandbox.BoxProjectsDir
-	host.GatewayLogPath = openclawsandbox.BoxGatewayLogPath
-	host.GatewayCommand = openclawsandbox.GatewayRunCommand
-	return host
-}
-
-func ensurePicoClawWorkspace(agentName, template string) (sandboxgateway.WorkspaceLayout, error) {
-	layout, err := picoClawWorkspaceLayout(agentName)
-	if err != nil {
-		return sandboxgateway.WorkspaceLayout{}, err
-	}
-	if _, err := ensureWorkspaceAtRoot(layout.WorkspaceHostPath, template); err != nil {
-		return sandboxgateway.WorkspaceLayout{}, err
-	}
-	return layout, nil
-}
-
-func picoClawWorkspaceLayout(agentName string) (sandboxgateway.WorkspaceLayout, error) {
-	workspaceRoot, err := agentWorkspaceRoot(agentName)
-	if err != nil {
-		return sandboxgateway.WorkspaceLayout{}, err
-	}
-	return sandboxgateway.WorkspaceLayout{
-		MountHostPath:      workspaceRoot,
-		MountGuestPath:     picoclawsandbox.BoxWorkspaceDir,
-		WorkspaceHostPath:  workspaceRoot,
-		WorkspaceGuestPath: picoclawsandbox.BoxWorkspaceDir,
-	}, nil
-}
-
-func ensureOpenClawWorkspace(agentName, template string) (sandboxgateway.WorkspaceLayout, error) {
-	layout, err := openClawWorkspaceLayout(agentName)
-	if err != nil {
-		return sandboxgateway.WorkspaceLayout{}, err
-	}
-	if _, err := ensureWorkspaceAtRoot(layout.WorkspaceHostPath, template); err != nil {
-		return sandboxgateway.WorkspaceLayout{}, err
-	}
-	return layout, nil
-}
-
-func openClawWorkspaceLayout(agentName string) (sandboxgateway.WorkspaceLayout, error) {
-	agentHome, err := agentHomeDir(agentName)
-	if err != nil {
-		return sandboxgateway.WorkspaceLayout{}, err
-	}
-	return sandboxgateway.WorkspaceLayout{
-		MountHostPath:      openclawsandbox.Root(agentHome),
-		MountGuestPath:     openclawsandbox.BoxDir,
-		WorkspaceHostPath:  openclawsandbox.WorkspaceRoot(agentHome),
-		WorkspaceGuestPath: openclawsandbox.BoxWorkspaceDir,
-	}, nil
+	return s.PicoClawRuntimeHost()
 }
 
 func (s *Service) setGatewayWorkPhase(p uint32) {

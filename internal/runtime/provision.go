@@ -1,6 +1,10 @@
 package runtime
 
-import "context"
+import (
+	"context"
+
+	"csgclaw/internal/config"
+)
 
 // Provisioner is an optional runtime capability for host-side preparation that
 // must happen before Runtime.New.
@@ -25,4 +29,17 @@ type ProvisionRequest struct {
 	AgentName        string
 	Profile          Profile
 	WorkspaceOverlay string
+	Gateway          *GatewayProvision
+}
+
+// GatewayProvision carries the host-side data needed by sandbox gateway
+// runtimes during Provision. These inputs are consumed once to materialize
+// config, workspace, and related host assets before Runtime.New.
+type GatewayProvision struct {
+	ModelFallback     string
+	Server            config.ServerConfig
+	ManagerBaseURL    string
+	AgentHome         string
+	ProjectsRoot      string
+	WorkspaceTemplate string
 }

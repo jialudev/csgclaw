@@ -31,10 +31,7 @@ type WorkspaceLayout struct {
 
 type Dependencies struct {
 	RuntimeKind    string
-	ModelFallback  string
-	Server         config.ServerConfig
 	FeishuProvider feishu.BotCredentialProvider
-	ResolveBaseURL func(server config.ServerConfig) string
 
 	EnsureRuntime    func(agentName string) (sandbox.Runtime, error)
 	RuntimeHome      func(agentName string) (string, error)
@@ -49,26 +46,23 @@ type Dependencies struct {
 	CloseBox         func(box sandbox.Instance) error
 	RunBoxCommand    func(ctx context.Context, box sandbox.Instance, name string, args []string, w io.Writer) (int, error)
 
-	ResolveAgent        func(h agentruntime.Handle) (AgentRef, error)
-	SyncHandle          func(h agentruntime.Handle) error
-	EnsureGatewayConfig func(agentName, botID string, profile agentruntime.Profile) error
-	EnsureWorkspace     func(agentName, template string) (WorkspaceLayout, error)
-	WorkspaceTemplate   func(name, botID string) (string, error)
-	EnsureProjectsRoot  func() (string, error)
-	BuildRuntimeEnv     func(baseURL, accessToken, botID, llmBaseURL, modelID string, feishuProvider feishu.BotCredentialProvider) map[string]string
-	AddProfileEnv       func(envVars map[string]string, profileEnv map[string]string)
-	HomeEnv             string
-	MountGuestPath      string
-	WorkspaceGuestPath  string
-	ProjectsGuestPath   string
-	GatewayLogPath      string
-	GatewayCommand      func() string
-	StreamLogs          func(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error
+	ResolveAgent       func(h agentruntime.Handle) (AgentRef, error)
+	SyncHandle         func(h agentruntime.Handle) error
+	BuildRuntimeEnv    func(baseURL, accessToken, botID, llmBaseURL, modelID string, feishuProvider feishu.BotCredentialProvider) map[string]string
+	AddProfileEnv      func(envVars map[string]string, profileEnv map[string]string)
+	HomeEnv            string
+	MountGuestPath     string
+	WorkspaceGuestPath string
+	ProjectsGuestPath  string
+	GatewayLogPath     string
+	GatewayCommand     func() string
+	StreamLogs         func(ctx context.Context, agentID string, follow bool, lines int, w io.Writer) error
 }
 
 type Runtime struct {
-	mu   sync.RWMutex
-	deps Dependencies
+	mu       sync.RWMutex
+	deps     Dependencies
+	prepared map[string]PreparedGatewayProvision
 }
 
 var (
@@ -77,7 +71,10 @@ var (
 )
 
 func New(deps Dependencies) *Runtime {
-	return &Runtime{deps: deps}
+	return &Runtime{
+		deps:     deps,
+		prepared: make(map[string]PreparedGatewayProvision),
+	}
 }
 
 func (r *Runtime) SetFeishuProvider(provider feishu.BotCredentialProvider) {
@@ -305,21 +302,17 @@ func (r *Runtime) CreateGatewayBox(ctx context.Context, rt sandbox.Runtime, imag
 }
 
 func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentruntime.Profile) (sandbox.CreateSpec, error) {
-	prepared, err := PrepareGatewayProvision(r.deps, agentruntime.ProvisionRequest{
-		AgentID:   botID,
-		AgentName: name,
-		Profile:   profile,
-	})
+	prepared, err := r.preparedGatewayProvision(botID)
 	if err != nil {
 		return sandbox.CreateSpec{}, err
 	}
 	modelID := prepared.ModelID
-	managerBaseURL := r.deps.ResolveBaseURL(r.deps.Server)
+	managerBaseURL := strings.TrimRight(strings.TrimSpace(prepared.ManagerBaseURL), "/")
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, botID)
 	profile = prepared.Profile
 	workspaceLayout := prepared.WorkspaceLayout
 	projectsRoot := prepared.ProjectsRoot
-	envVars := r.deps.BuildRuntimeEnv(managerBaseURL, r.deps.Server.AccessToken, botID, llmBaseURL, modelID, r.feishuProvider())
+	envVars := r.deps.BuildRuntimeEnv(managerBaseURL, prepared.Server.AccessToken, botID, llmBaseURL, modelID, r.feishuProvider())
 	r.deps.AddProfileEnv(envVars, profile.Env)
 	homeEnv := r.homeEnv()
 	projectsGuestPath := r.projectsGuestPath()
@@ -366,47 +359,69 @@ type PreparedGatewayProvision struct {
 	Profile         agentruntime.Profile
 	WorkspaceLayout WorkspaceLayout
 	ProjectsRoot    string
+	ManagerBaseURL  string
+	Server          config.ServerConfig
 }
 
-func PrepareGatewayProvision(deps Dependencies, req agentruntime.ProvisionRequest) (PreparedGatewayProvision, error) {
+func FinalizePreparedGatewayProvision(req agentruntime.ProvisionRequest, workspaceLayout WorkspaceLayout) (PreparedGatewayProvision, error) {
 	name := strings.TrimSpace(req.AgentName)
-	botID := strings.TrimSpace(req.AgentID)
-	if name == "" || botID == "" {
+	if name == "" || strings.TrimSpace(req.AgentID) == "" {
 		return PreparedGatewayProvision{}, fmt.Errorf("runtime agent name and id are required")
+	}
+	gateway := req.Gateway
+	if gateway == nil {
+		return PreparedGatewayProvision{}, fmt.Errorf("gateway provisioning data is required")
 	}
 	profile := req.Profile.Normalized()
 	modelID := strings.TrimSpace(profile.ModelID)
 	if modelID == "" {
-		modelID = strings.TrimSpace(deps.ModelFallback)
+		modelID = strings.TrimSpace(gateway.ModelFallback)
 	}
 	profile.ModelID = modelID
-	if err := deps.EnsureGatewayConfig(name, botID, profile); err != nil {
-		return PreparedGatewayProvision{}, err
-	}
-	templateRoot, err := deps.WorkspaceTemplate(name, botID)
-	if err != nil {
-		return PreparedGatewayProvision{}, err
-	}
-	workspaceLayout, err := deps.EnsureWorkspace(name, templateRoot)
-	if err != nil {
-		return PreparedGatewayProvision{}, err
-	}
-	workspaceLayout = normalizeWorkspaceLayout(deps, workspaceLayout)
+	workspaceLayout = normalizeWorkspaceLayout(Dependencies{}, workspaceLayout)
 	if overlayRoot := strings.TrimSpace(req.WorkspaceOverlay); overlayRoot != "" {
-		if err := overlayWorkspaceTree(overlayRoot, workspaceLayout.WorkspaceHostPath); err != nil {
+		if err := OverlayWorkspaceTree(overlayRoot, workspaceLayout.WorkspaceHostPath); err != nil {
 			return PreparedGatewayProvision{}, fmt.Errorf("overlay workspace for agent %q: %w", name, err)
 		}
-	}
-	projectsRoot, err := deps.EnsureProjectsRoot()
-	if err != nil {
-		return PreparedGatewayProvision{}, err
 	}
 	return PreparedGatewayProvision{
 		ModelID:         modelID,
 		Profile:         profile,
 		WorkspaceLayout: workspaceLayout,
-		ProjectsRoot:    strings.TrimSpace(projectsRoot),
+		ProjectsRoot:    strings.TrimSpace(gateway.ProjectsRoot),
+		ManagerBaseURL:  strings.TrimRight(strings.TrimSpace(gateway.ManagerBaseURL), "/"),
+		Server:          gateway.Server,
 	}, nil
+}
+
+func (r *Runtime) RememberPreparedGatewayProvision(agentID string, prepared PreparedGatewayProvision) {
+	if r == nil {
+		return
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.prepared[agentID] = prepared
+}
+
+func (r *Runtime) preparedGatewayProvision(agentID string) (PreparedGatewayProvision, error) {
+	if r == nil {
+		return PreparedGatewayProvision{}, fmt.Errorf("runtime is required")
+	}
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return PreparedGatewayProvision{}, fmt.Errorf("runtime agent id is required")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	prepared, ok := r.prepared[agentID]
+	if !ok {
+		return PreparedGatewayProvision{}, fmt.Errorf("gateway provision for agent %q is not available; call Provision first", agentID)
+	}
+	return prepared, nil
 }
 
 func (r *Runtime) GatewayLogPath() string {

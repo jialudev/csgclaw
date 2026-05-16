@@ -1536,6 +1536,7 @@ func TestDeleteAllowsManagerAgent(t *testing.T) {
 	defer ResetTestHooks()
 
 	dir := t.TempDir()
+	t.Setenv("HOME", dir)
 	statePath := filepath.Join(dir, "agents.json")
 	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
 	if err != nil {
@@ -4286,6 +4287,21 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
+	rt, err := svc.runtimeForKind(RuntimeKindPicoClawSandbox)
+	if err != nil {
+		t.Fatalf("runtimeForKind() error = %v", err)
+	}
+	if err := svc.provisionRuntime(context.Background(), rt, RuntimeKindPicoClawSandbox, agentruntime.ProvisionRequest{
+		RuntimeID: "rt-u-worker-1",
+		AgentID:   "u-worker-1",
+		AgentName: "alice",
+		Profile: agentruntime.Profile{
+			Provider: ProviderAPI,
+			ModelID:  "minimax-m2.7",
+		},
+	}); err != nil {
+		t.Fatalf("provisionRuntime() error = %v", err)
+	}
 
 	spec, err := svc.gatewayCreateSpec("picoclaw:latest", "alice", "u-worker-1", AgentProfile{
 		Name:     "alice",
@@ -4349,7 +4365,7 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 	}
 }
 
-func TestOpenClawRuntimeHostBuildsWorkerWorkspaceAndConfig(t *testing.T) {
+func TestGatewayProvisionRequestBuildsOpenClawWorkerAssets(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	orig := localIPv4Resolver
@@ -4366,61 +4382,38 @@ func TestOpenClawRuntimeHostBuildsWorkerWorkspaceAndConfig(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	host := svc.OpenClawRuntimeHost()
-	if got, want := host.HomeEnv, openclawsandbox.BoxUserHome; got != want {
-		t.Fatalf("HomeEnv = %q, want %q", got, want)
-	}
-	if got, want := host.MountGuestPath, openclawsandbox.BoxDir; got != want {
-		t.Fatalf("MountGuestPath = %q, want %q", got, want)
-	}
-	if got, want := host.WorkspaceGuestPath, openclawsandbox.BoxWorkspaceDir; got != want {
-		t.Fatalf("WorkspaceGuestPath = %q, want %q", got, want)
-	}
-	if got, want := host.ProjectsGuestPath, openclawsandbox.BoxProjectsDir; got != want {
-		t.Fatalf("ProjectsGuestPath = %q, want %q", got, want)
-	}
-	if got := host.GatewayCommand(); strings.Contains(got, "install.sh") || strings.Contains(got, "command -v csgclaw-cli") {
-		t.Fatalf("openclaw start script should not install csgclaw-cli at runtime (it is baked into the image), got: %q", got)
-	}
-
-	if err := host.EnsureGatewayConfig("alice", "u-worker-1", agentruntime.Profile{
-		BaseURL: "https://api.minimaxi.com/v1",
-		APIKey:  "sk-minimax-test",
-		ModelID: "MiniMax-M2.7",
-	}); err != nil {
-		t.Fatalf("EnsureGatewayConfig() error = %v", err)
+	gateway, err := svc.gatewayProvisionRequest(RuntimeKindOpenClawSandbox, "alice", "u-worker-1")
+	if err != nil {
+		t.Fatalf("gatewayProvisionRequest() error = %v", err)
 	}
 	wantAgentHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice")
 	wantOpenClawRoot := openclawsandbox.Root(wantAgentHome)
-	templateRoot, err := host.WorkspaceTemplate("alice", "u-worker-1")
+	if gateway.AgentHome != wantAgentHome {
+		t.Fatalf("Gateway.AgentHome = %q, want %q", gateway.AgentHome, wantAgentHome)
+	}
+	if gateway.WorkspaceTemplate != templates.OpenClawWorkerRoot {
+		t.Fatalf("Gateway.WorkspaceTemplate(worker) = %q, want %q", gateway.WorkspaceTemplate, templates.OpenClawWorkerRoot)
+	}
+	managerGateway, err := svc.gatewayProvisionRequest(RuntimeKindOpenClawSandbox, ManagerName, ManagerUserID)
 	if err != nil {
-		t.Fatalf("WorkspaceTemplate() error = %v", err)
+		t.Fatalf("gatewayProvisionRequest(manager) error = %v", err)
 	}
-	if templateRoot != templates.OpenClawWorkerRoot {
-		t.Fatalf("WorkspaceTemplate(worker) = %q, want %q", templateRoot, templates.OpenClawWorkerRoot)
+	if managerGateway.WorkspaceTemplate != templates.OpenClawManagerRoot {
+		t.Fatalf("Gateway.WorkspaceTemplate(manager) = %q, want %q", managerGateway.WorkspaceTemplate, templates.OpenClawManagerRoot)
 	}
-	managerTemplateRoot, err := host.WorkspaceTemplate(ManagerName, ManagerUserID)
-	if err != nil {
-		t.Fatalf("WorkspaceTemplate(manager) error = %v", err)
-	}
-	if managerTemplateRoot != templates.OpenClawManagerRoot {
-		t.Fatalf("WorkspaceTemplate(manager) = %q, want %q", managerTemplateRoot, templates.OpenClawManagerRoot)
-	}
-	if got, err := host.EnsureWorkspace("alice", templateRoot); err != nil {
-		t.Fatalf("EnsureWorkspace() error = %v", err)
-	} else {
-		if got.MountHostPath != wantOpenClawRoot {
-			t.Fatalf("EnsureWorkspace().MountHostPath = %q, want %q", got.MountHostPath, wantOpenClawRoot)
-		}
-		if got.MountGuestPath != openclawsandbox.BoxDir {
-			t.Fatalf("EnsureWorkspace().MountGuestPath = %q, want %q", got.MountGuestPath, openclawsandbox.BoxDir)
-		}
-		if got.WorkspaceHostPath != openclawsandbox.WorkspaceRoot(wantAgentHome) {
-			t.Fatalf("EnsureWorkspace().WorkspaceHostPath = %q, want %q", got.WorkspaceHostPath, openclawsandbox.WorkspaceRoot(wantAgentHome))
-		}
-		if got.WorkspaceGuestPath != openclawsandbox.BoxWorkspaceDir {
-			t.Fatalf("EnsureWorkspace().WorkspaceGuestPath = %q, want %q", got.WorkspaceGuestPath, openclawsandbox.BoxWorkspaceDir)
-		}
+	rt := openclawsandbox.New(sandboxgateway.Dependencies{})
+	if err := rt.Provision(context.Background(), agentruntime.ProvisionRequest{
+		RuntimeID: "rt-u-worker-1",
+		AgentID:   "u-worker-1",
+		AgentName: "alice",
+		Profile: agentruntime.Profile{
+			BaseURL: "https://api.minimaxi.com/v1",
+			APIKey:  "sk-minimax-test",
+			ModelID: "MiniMax-M2.7",
+		},
+		Gateway: gateway,
+	}); err != nil {
+		t.Fatalf("Provision() error = %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(wantOpenClawRoot, openclawsandbox.HostWorkspaceDir, "AGENTS.md")); err != nil {
 		t.Fatalf("expected openclaw workspace template under openclaw root: %v", err)
@@ -4817,10 +4810,7 @@ func withTestPicoClawSandboxRuntime(apps ...map[string]feishu.AppConfig) Service
 func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, provider feishu.BotCredentialProvider, newRuntime func(sandboxgateway.Dependencies) agentruntime.Runtime) ServiceOption {
 	return func(s *Service) error {
 		return WithRuntime(newRuntime(sandboxgateway.Dependencies{
-			ModelFallback:  host.ModelFallback,
-			Server:         host.Server,
 			FeishuProvider: provider,
-			ResolveBaseURL: resolveManagerBaseURL,
 			EnsureRuntime:  host.EnsureRuntime,
 			RuntimeHome:    host.RuntimeHome,
 			CloseRuntime:   host.CloseRuntime,
@@ -4851,24 +4841,14 @@ func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, provider feishu.BotCre
 					BoxID:     got.BoxID,
 				}, nil
 			},
-			SyncHandle:          host.SyncHandle,
-			EnsureGatewayConfig: host.EnsureGatewayConfig,
-			EnsureWorkspace:     host.EnsureWorkspace,
-			WorkspaceTemplate:   host.WorkspaceTemplate,
-			EnsureProjectsRoot:  host.EnsureProjectsRoot,
+			SyncHandle: host.SyncHandle,
 			BuildRuntimeEnv: func(baseURL, accessToken, botID, llmBaseURL, modelID string, provider feishu.BotCredentialProvider) map[string]string {
 				env := picoclawBoxEnvVars(baseURL, accessToken, botID, llmBaseURL, modelID)
 				addFeishuBoxEnvVars(env, botID, provider)
 				return env
 			},
-			AddProfileEnv:      addProfileEnvVars,
-			HomeEnv:            host.HomeEnv,
-			MountGuestPath:     host.MountGuestPath,
-			WorkspaceGuestPath: host.WorkspaceGuestPath,
-			ProjectsGuestPath:  host.ProjectsGuestPath,
-			GatewayLogPath:     host.GatewayLogPath,
-			GatewayCommand:     host.GatewayCommand,
-			StreamLogs:         host.StreamLogs,
+			AddProfileEnv: addProfileEnvVars,
+			StreamLogs:    host.StreamLogs,
 		}))(s)
 	}
 }

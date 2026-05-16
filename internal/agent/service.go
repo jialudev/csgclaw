@@ -467,7 +467,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		if err != nil {
 			return Agent{}, err
 		}
-		if err := s.provisionRuntime(ctx, runtimeImpl, agentruntime.ProvisionRequest{
+		if err := s.provisionRuntime(ctx, runtimeImpl, runtimeKind, agentruntime.ProvisionRequest{
 			RuntimeID: runtimeIDForAgentID(ManagerUserID),
 			AgentID:   ManagerUserID,
 			AgentName: ManagerName,
@@ -1419,7 +1419,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		return Agent{}, err
 	}
 	runtimeProfile := s.runtimeProfileForKind(runtimeKind, id, name, description, resolvedProfile)
-	if err := s.provisionRuntime(ctx, runtimeImpl, agentruntime.ProvisionRequest{
+	if err := s.provisionRuntime(ctx, runtimeImpl, runtimeKind, agentruntime.ProvisionRequest{
 		RuntimeID:        runtimeIDForAgentID(id),
 		AgentID:          id,
 		AgentName:        name,
@@ -1541,9 +1541,16 @@ func isResolvedWorkspacePath(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func (s *Service) provisionRuntime(ctx context.Context, rt agentruntime.Runtime, req agentruntime.ProvisionRequest) error {
+func (s *Service) provisionRuntime(ctx context.Context, rt agentruntime.Runtime, runtimeKind string, req agentruntime.ProvisionRequest) error {
 	if rt == nil {
 		return fmt.Errorf("runtime is required")
+	}
+	if isGatewayRuntimeKind(runtimeKind) && req.Gateway == nil {
+		gateway, err := s.gatewayProvisionRequest(runtimeKind, req.AgentName, req.AgentID)
+		if err != nil {
+			return err
+		}
+		req.Gateway = gateway
 	}
 	provisioner, ok := rt.(agentruntime.Provisioner)
 	if !ok {
@@ -1556,13 +1563,47 @@ func (s *Service) provisionRuntimeForAgent(ctx context.Context, rt agentruntime.
 	if s == nil || rt == nil {
 		return nil
 	}
-	return s.provisionRuntime(ctx, rt, agentruntime.ProvisionRequest{
+	return s.provisionRuntime(ctx, rt, strings.TrimSpace(got.RuntimeKind), agentruntime.ProvisionRequest{
 		RuntimeID:        normalizeRuntimeID(got.RuntimeID, got.ID),
 		AgentID:          strings.TrimSpace(got.ID),
 		AgentName:        strings.TrimSpace(got.Name),
 		Profile:          s.runtimeProfileForAgent(got),
 		WorkspaceOverlay: strings.TrimSpace(workspaceOverlay),
 	})
+}
+
+func (s *Service) gatewayProvisionRequest(runtimeKind, agentName, agentID string) (*agentruntime.GatewayProvision, error) {
+	if s == nil {
+		return nil, fmt.Errorf("agent service is required")
+	}
+	agentHome, err := agentHomeDir(agentName)
+	if err != nil {
+		return nil, err
+	}
+	projectsRoot, err := ensureAgentProjectsRoot()
+	if err != nil {
+		return nil, err
+	}
+	role := RoleWorker
+	if managerGatewayMatch(agentName, agentID) {
+		role = RoleManager
+	}
+	templateRoot, err := resolveRuntimeTemplateRoot(runtimeKind, role)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	modelFallback := s.model.Resolved().ModelID
+	server := s.server
+	s.mu.RUnlock()
+	return &agentruntime.GatewayProvision{
+		ModelFallback:     modelFallback,
+		Server:            server,
+		ManagerBaseURL:    resolveManagerBaseURL(server),
+		AgentHome:         agentHome,
+		ProjectsRoot:      projectsRoot,
+		WorkspaceTemplate: templateRoot,
+	}, nil
 }
 
 func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines int, w io.Writer) error {
