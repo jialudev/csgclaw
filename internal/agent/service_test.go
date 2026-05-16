@@ -424,8 +424,9 @@ func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
 	}
 
 	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{
-		ID:   "worker-2",
-		Name: "Alice",
+		ID:          "worker-2",
+		Name:        "Alice",
+		RuntimeKind: RuntimeKindCodex,
 	})
 	if err == nil {
 		t.Fatal("CreateWorker() duplicate error = nil, want duplicate-name error")
@@ -478,10 +479,10 @@ func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
 
 	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
 	if err == nil {
-		t.Fatal("CreateWorker() error = nil, want invalid runtime error")
+		t.Fatal("CreateWorker() error = nil, want missing runtime_kind error")
 	}
-	if !strings.Contains(err.Error(), "invalid sandbox runtime") {
-		t.Fatalf("CreateWorker() error = %q, want invalid runtime error", err)
+	if !strings.Contains(err.Error(), "runtime_kind is required") {
+		t.Fatalf("CreateWorker() error = %q, want missing runtime_kind error", err)
 	}
 }
 
@@ -698,7 +699,7 @@ func TestDeleteTriggersLifecycleObserver(t *testing.T) {
 	}
 }
 
-func TestCreateWorkerUsesPicoClawByDefaultWhenRuntimeKindUnset(t *testing.T) {
+func TestCreateWorkerRequiresRuntimeKindWhenTemplateDoesNotProvideIt(t *testing.T) {
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
 		func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string, name, _ string, _ AgentProfile) (sandbox.Instance, sandbox.Info, error) {
@@ -729,15 +730,12 @@ func TestCreateWorkerUsesPicoClawByDefaultWhenRuntimeKindUnset(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
-	if err != nil {
-		t.Fatalf("CreateWorker() error = %v", err)
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	if err == nil {
+		t.Fatal("CreateWorker() error = nil, want missing runtime_kind error")
 	}
-	if got.RuntimeKind != RuntimeKindPicoClawSandbox {
-		t.Fatalf("CreateWorker().RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
-	}
-	if got.BoxID != "box-alice" {
-		t.Fatalf("CreateWorker().BoxID = %q, want %q", got.BoxID, "box-alice")
+	if !strings.Contains(err.Error(), "runtime_kind is required") {
+		t.Fatalf("CreateWorker() error = %v, want missing runtime_kind error", err)
 	}
 }
 
@@ -1702,6 +1700,40 @@ func TestLoadAgentRequiresRuntimeKind(t *testing.T) {
 	}
 }
 
+func TestLoadRuntimeRecordRequiresRuntimeKind(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(persistedState{
+		Agents: []persistedAgent{
+			{
+				ID:          "u-alice",
+				Name:        "alice",
+				RuntimeID:   "rt-u-alice",
+				RuntimeKind: RuntimeKindCodex,
+				Role:        RoleWorker,
+				CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+			},
+		},
+		Runtimes: []RuntimeRecord{
+			{
+				ID:        "rt-u-alice",
+				CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+
+	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	if err == nil || !strings.Contains(err.Error(), "runtime kind is required") {
+		t.Fatalf("NewService() error = %v, want runtime kind validation error", err)
+	}
+}
+
 func TestLoadManagerRequiresCanonicalIdentity(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
@@ -1801,12 +1833,13 @@ func TestDeletePrefersBoxIDOverName(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:        "u-alice",
-		Name:      "alice",
-		BoxID:     "box-123",
-		Role:      RoleWorker,
-		Status:    "running",
-		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		ID:          "u-alice",
+		Name:        "alice",
+		BoxID:       "box-123",
+		Role:        RoleWorker,
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Status:      "running",
+		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 
 	if err := svc.Delete(context.Background(), "u-alice"); err != nil {
@@ -2011,7 +2044,11 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		Name:        "alice",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
 	}
@@ -2020,14 +2057,15 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 	}
 }
 
-func TestCreateWorkerUsesRequestedImageOrManagerFallback(t *testing.T) {
+func TestCreateWorkerUsesRequestedImageWhenGatewayRuntimeExplicit(t *testing.T) {
 	tests := []struct {
 		name      string
 		reqImage  string
 		wantImage string
+		wantErr   string
 	}{
 		{name: "requested image", reqImage: "worker-image:2", wantImage: "worker-image:2"},
-		{name: "manager fallback", reqImage: "", wantImage: "manager-image:1"},
+		{name: "missing image", reqImage: "", wantErr: fmt.Sprintf(`image is required for runtime_kind %q`, RuntimeKindPicoClawSandbox)},
 	}
 
 	for _, tt := range tests {
@@ -2052,7 +2090,17 @@ func TestCreateWorkerUsesRequestedImageOrManagerFallback(t *testing.T) {
 				t.Fatalf("NewService() error = %v", err)
 			}
 
-			got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice", Image: tt.reqImage})
+			got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+				Name:        "alice",
+				RuntimeKind: RuntimeKindPicoClawSandbox,
+				Image:       tt.reqImage,
+			})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("CreateWorker() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("CreateWorker() error = %v", err)
 			}
@@ -2066,7 +2114,7 @@ func TestCreateWorkerUsesRequestedImageOrManagerFallback(t *testing.T) {
 	}
 }
 
-func TestCreateWorkerUsesRuntimeDefaultImageWhenGatewayRuntimeExplicit(t *testing.T) {
+func TestCreateWorkerRejectsMissingImageWhenGatewayRuntimeExplicit(t *testing.T) {
 	var gotImage string
 	SetTestHooks(
 		func(_ *Service, _ string) (sandbox.Runtime, error) { return nil, nil },
@@ -2093,18 +2141,15 @@ func TestCreateWorkerUsesRuntimeDefaultImageWhenGatewayRuntimeExplicit(t *testin
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+	_, err = svc.CreateWorker(context.Background(), CreateAgentSpec{
 		Name:        "alice",
 		RuntimeKind: RuntimeKindOpenClawSandbox,
 	})
-	if err != nil {
-		t.Fatalf("CreateWorker() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf(`image is required for runtime_kind %q`, RuntimeKindOpenClawSandbox)) {
+		t.Fatalf("CreateWorker() error = %v, want missing image error", err)
 	}
-	if gotImage != config.DefaultOpenClawManagerImage {
-		t.Fatalf("createGatewayBox() image = %q, want %q", gotImage, config.DefaultOpenClawManagerImage)
-	}
-	if got.Image != config.DefaultOpenClawManagerImage {
-		t.Fatalf("CreateWorker().Image = %q, want %q", got.Image, config.DefaultOpenClawManagerImage)
+	if gotImage != "" {
+		t.Fatalf("createGatewayBox() image = %q, want empty because create should fail before box creation", gotImage)
 	}
 }
 
@@ -2139,8 +2184,10 @@ func TestCreateWorkerStoresResolvedProfileSnapshot(t *testing.T) {
 	}
 
 	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
-		Name:    "alice",
-		Profile: "remote-main",
+		Name:        "alice",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+		Profile:     "remote-main",
 	})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
@@ -2193,7 +2240,11 @@ func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{Name: "alice"})
+	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
+		Name:        "alice",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "worker-image:1",
+	})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
 	}
@@ -2236,12 +2287,13 @@ func TestStreamLogsFallsBackToSandboxTailWhenHostLogIsMissing(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:        "u-alice",
-		Name:      "alice",
-		BoxID:     "box-123",
-		Role:      RoleWorker,
-		Status:    "running",
-		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		ID:          "u-alice",
+		Name:        "alice",
+		BoxID:       "box-123",
+		Role:        RoleWorker,
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Status:      "running",
+		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 
 	var out strings.Builder
@@ -2271,12 +2323,13 @@ func TestStreamLogsFollowUsesHostGatewayLogWithoutSandboxRuntime(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:        "u-alice",
-		Name:      "alice",
-		BoxID:     "box-123",
-		Role:      RoleWorker,
-		Status:    "running",
-		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		ID:          "u-alice",
+		Name:        "alice",
+		BoxID:       "box-123",
+		Role:        RoleWorker,
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Status:      "running",
+		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 	logPath, err := agentGatewayLogPath("alice")
 	if err != nil {
@@ -2339,12 +2392,13 @@ func TestStreamLogsFallsBackToNameAndRefreshesStoredBoxID(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:        "u-alice",
-		Name:      "alice",
-		BoxID:     "box-stale",
-		Role:      RoleWorker,
-		Status:    "running",
-		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		ID:          "u-alice",
+		Name:        "alice",
+		BoxID:       "box-stale",
+		Role:        RoleWorker,
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Status:      "running",
+		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 
 	var out strings.Builder
@@ -2515,12 +2569,13 @@ func TestStartSkipsStartBoxWhenAlreadyRunning(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	svc.agents["u-alice"] = Agent{
-		ID:        "u-alice",
-		Name:      "alice",
-		BoxID:     "box-stale",
-		Role:      RoleWorker,
-		Status:    "running",
-		CreatedAt: time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		ID:          "u-alice",
+		Name:        "alice",
+		BoxID:       "box-stale",
+		Role:        RoleWorker,
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Status:      "running",
+		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
 
 	got, err := svc.Start(context.Background(), "u-alice")
@@ -2577,6 +2632,7 @@ func TestStartRefreshesCompleteWorkerGatewayConfig(t *testing.T) {
 		ID:              "u-alice",
 		Name:            "alice",
 		Role:            RoleWorker,
+		RuntimeKind:     RuntimeKindPicoClawSandbox,
 		BoxID:           "box-alice",
 		Status:          string(sandbox.StateRunning),
 		AgentProfile:    AgentProfile{Name: "alice", Provider: ProviderCodex, ModelID: "gpt-5.5", ProfileComplete: true},
@@ -3220,6 +3276,7 @@ func TestStartConfiguredAgentsStartsStoppedCompleteWorkersAndLeavesRunningWorker
 		ID:              "u-alice",
 		Name:            "alice",
 		Role:            RoleWorker,
+		RuntimeKind:     RuntimeKindPicoClawSandbox,
 		BoxID:           "box-alice",
 		AgentProfile:    completeAlice,
 		ProfileComplete: true,
@@ -3229,6 +3286,7 @@ func TestStartConfiguredAgentsStartsStoppedCompleteWorkersAndLeavesRunningWorker
 		ID:              "u-bob",
 		Name:            "bob",
 		Role:            RoleWorker,
+		RuntimeKind:     RuntimeKindPicoClawSandbox,
 		BoxID:           "box-bob",
 		AgentProfile:    incompleteBob,
 		ProfileComplete: false,
@@ -3238,6 +3296,7 @@ func TestStartConfiguredAgentsStartsStoppedCompleteWorkersAndLeavesRunningWorker
 		ID:              "u-carol",
 		Name:            "carol",
 		Role:            RoleWorker,
+		RuntimeKind:     RuntimeKindPicoClawSandbox,
 		BoxID:           "box-carol",
 		Status:          string(sandbox.StateRunning),
 		AgentProfile:    completeCarol,
@@ -3422,7 +3481,7 @@ func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	got, err := svc.Create(context.Background(), CreateRequest{
+	_, err = svc.Create(context.Background(), CreateRequest{
 		Spec: CreateAgentSpec{
 			ID:    "agent-1",
 			Name:  "alice",
@@ -3430,17 +3489,14 @@ func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
 			Role:  RoleAgent,
 		},
 	})
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), `role must be one of "manager" or "worker"`) {
+		t.Fatalf("Create() error = %v, want invalid-role error", err)
 	}
-	if got.ID != "agent-1" {
-		t.Fatalf("Create().ID = %q, want %q", got.ID, "agent-1")
+	if closeCalls != 0 {
+		t.Fatalf("closeBox() calls = %d, want %d", closeCalls, 0)
 	}
-	if closeCalls != 1 {
-		t.Fatalf("closeBox() calls = %d, want %d", closeCalls, 1)
-	}
-	if closeRuntimeCalls != 1 {
-		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
+	if closeRuntimeCalls != 0 {
+		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 0)
 	}
 }
 
@@ -3482,7 +3538,7 @@ func TestCreateUsesRequestedImageOrManagerFallback(t *testing.T) {
 				t.Fatalf("NewService() error = %v", err)
 			}
 
-			got, err := svc.Create(context.Background(), CreateRequest{
+			_, err = svc.Create(context.Background(), CreateRequest{
 				Spec: CreateAgentSpec{
 					ID:    "agent-1",
 					Name:  "alice",
@@ -3490,14 +3546,11 @@ func TestCreateUsesRequestedImageOrManagerFallback(t *testing.T) {
 					Role:  RoleAgent,
 				},
 			})
-			if err != nil {
-				t.Fatalf("Create() error = %v", err)
+			if err == nil || !strings.Contains(err.Error(), `role must be one of "manager" or "worker"`) {
+				t.Fatalf("Create() error = %v, want invalid-role error", err)
 			}
-			if gotSpec.Image != tt.wantImage {
-				t.Fatalf("createBox() spec.Image = %q, want %q", gotSpec.Image, tt.wantImage)
-			}
-			if got.Image != tt.wantImage {
-				t.Fatalf("Create().Image = %q, want %q", got.Image, tt.wantImage)
+			if gotSpec.Image != "" {
+				t.Fatalf("createBox() spec.Image = %q, want empty because no box should be created", gotSpec.Image)
 			}
 		})
 	}

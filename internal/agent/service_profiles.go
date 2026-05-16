@@ -222,12 +222,13 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 		return Agent{}, fmt.Errorf("agent %q profile is incomplete", id)
 	}
 
-	runtimeImpl, err := s.runtimeForAgent(got)
+	runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(got.RuntimeKind))
 	if err != nil {
 		return Agent{}, err
 	}
 	image := strings.TrimSpace(got.Image)
-	if isGatewayRuntimeKind(runtimeKindForAgent(got)) {
+	runtimeKind := strings.TrimSpace(got.RuntimeKind)
+	if isGatewayRuntimeKind(runtimeKind) {
 		if image == "" {
 			image = s.managerImage
 		}
@@ -281,7 +282,7 @@ func (s *Service) Recreate(ctx context.Context, id string) (Agent, error) {
 		AgentID:   got.ID,
 		AgentName: got.Name,
 		Image:     image,
-		Profile:   s.runtimeProfileForKind(runtimeKindForAgent(got), got.ID, got.Name, got.Description, profile),
+		Profile:   s.runtimeProfileForKind(runtimeKind, got.ID, got.Name, got.Description, profile),
 	}
 	handle, err := runtimeImpl.Create(ctx, createSpec)
 	if err != nil {
@@ -340,8 +341,8 @@ func (s *Service) profileForCreateRequest(ctx context.Context, spec *CreateAgent
 	}
 
 	profile := spec.AgentProfile
-	rk := spec.RuntimeKind
-	if rk == "" || isGatewayRuntimeKind(rk) {
+	rk := strings.TrimSpace(spec.RuntimeKind)
+	if isGatewayRuntimeKind(rk) {
 		if strings.TrimSpace(profile.ModelID) == "" && strings.TrimSpace(spec.ModelID) != "" {
 			profile.ModelID = strings.TrimSpace(spec.ModelID)
 		}

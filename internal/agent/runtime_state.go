@@ -233,29 +233,8 @@ func (s *Service) gatewayRuntimeKind() string {
 	return RuntimeKindPicoClawSandbox
 }
 
-func (s *Service) runtimeKindForGatewayAgent(a Agent) string {
-	if kind := a.RuntimeKind; kind != "" && isGatewayRuntimeKind(kind) {
-		return kind
-	}
-	return s.gatewayRuntimeKind()
-}
-
-func (s *Service) runtimeForAgent(a Agent) (agentruntime.Runtime, error) {
-	kind := a.RuntimeKind
-	if strings.EqualFold(normalizeRole(a.Role), RoleManager) {
-		return s.runtimeForKind(s.runtimeKindForGatewayAgent(a))
-	}
-	if strings.EqualFold(normalizeRole(a.Role), RoleWorker) {
-		if kind != "" && !isGatewayRuntimeKind(kind) {
-			return s.runtimeForKind(kind)
-		}
-		return s.runtimeForKind(s.runtimeKindForGatewayAgent(a))
-	}
-	return s.runtimeForKind(runtimeKindForAgent(a))
-}
-
 func (s *Service) runtimeProfileForAgent(a Agent) agentruntime.Profile {
-	return s.runtimeProfileForKind(runtimeKindForAgent(a), a.ID, a.Name, a.Description, a.AgentProfile)
+	return s.runtimeProfileForKind(strings.TrimSpace(a.RuntimeKind), a.ID, a.Name, a.Description, a.AgentProfile)
 }
 
 func (s *Service) runtimeProfileForKind(runtimeKind, agentID, fallbackName, fallbackDescription string, profile AgentProfile) agentruntime.Profile {
@@ -307,7 +286,11 @@ func (s *Service) gatewayConfigurer() (gatewayConfigurer, error) {
 }
 
 func (s *Service) gatewayConfigurerForAgent(a Agent) (gatewayConfigurer, error) {
-	rt, err := s.runtimeForKind(s.runtimeKindForGatewayAgent(a))
+	kind := strings.TrimSpace(a.RuntimeKind)
+	if !isGatewayRuntimeKind(kind) {
+		return nil, fmt.Errorf("agent %q requires gateway runtime_kind, got %q", a.ID, strings.TrimSpace(a.RuntimeKind))
+	}
+	rt, err := s.runtimeForKind(kind)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +365,7 @@ func (s *Service) RuntimeView(ctx context.Context, id string) (RuntimeView, erro
 	if !ok {
 		return RuntimeView{}, fmt.Errorf("agent %q not found", id)
 	}
-	runtimeImpl, err := s.runtimeForAgent(got)
+	runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(got.RuntimeKind))
 	if err != nil {
 		return RuntimeView{}, err
 	}

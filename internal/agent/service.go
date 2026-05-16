@@ -679,13 +679,9 @@ func (s *Service) syncRuntimeRecordLocked(a Agent) {
 	if s == nil {
 		return
 	}
-	agentRuntimeKind := a.RuntimeKind
 	rt := runtimeRecordForAgent(a)
 	if rt.ID == "" {
 		return
-	}
-	if strings.EqualFold(normalizeRole(a.Role), RoleManager) || (strings.EqualFold(normalizeRole(a.Role), RoleWorker) && (agentRuntimeKind == "" || isGatewayRuntimeKind(agentRuntimeKind))) {
-		rt.Kind = s.runtimeKindForGatewayAgent(a)
 	}
 	s.runtimeRecords[rt.ID] = rt
 }
@@ -873,142 +869,7 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 		spec.Role = RoleWorker
 		return s.CreateWorker(ctx, spec)
 	}
-
-	id := strings.TrimSpace(spec.ID)
-	name := strings.TrimSpace(spec.Name)
-	description := strings.TrimSpace(spec.Description)
-	image := strings.TrimSpace(spec.Image)
-	runtimeExplicit := strings.TrimSpace(spec.RuntimeKind) != ""
-	runtimeKind := spec.RuntimeKind
-	if runtimeKind == "" {
-		runtimeKind = s.gatewayRuntimeKind()
-	}
-	if image == "" {
-		if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && runtimeExplicit {
-			image = defaultImage
-		}
-		if image == "" && isGatewayRuntimeKind(runtimeKind) {
-			image = s.managerImage
-		}
-	}
-	role := normalizeRole(spec.Role)
-	if name == "" {
-		return Agent{}, fmt.Errorf("name is required")
-	}
-	if role == RoleManager {
-		return Agent{}, fmt.Errorf("role %q is reserved", role)
-	}
-	if id == "" {
-		id = fmt.Sprintf("%s-%d", role, time.Now().UnixNano())
-	}
-
-	s.mu.RLock()
-	idExists := false
-	if _, ok := s.agents[id]; ok {
-		idExists = true
-	}
-	nameExists := s.hasNameLocked(name)
-	s.mu.RUnlock()
-	if idExists {
-		return Agent{}, fmt.Errorf("agent id %q already exists", id)
-	}
-	if nameExists {
-		return Agent{}, fmt.Errorf("agent name %q already exists", name)
-	}
-
-	rt, err := s.ensureRuntime(name)
-	if err != nil {
-		return Agent{}, err
-	}
-	runtimeHome, err := s.sandboxRuntimeHome(name)
-	if err != nil {
-		return Agent{}, err
-	}
-	defer func() {
-		_ = s.closeRuntime(runtimeHome, rt)
-	}()
-
-	resolvedProfile, err := s.profileForCreateRequest(ctx, &spec)
-	if err != nil {
-		return Agent{}, err
-	}
-
-	projectsRoot, err := ensureAgentProjectsRoot()
-	if err != nil {
-		return Agent{}, err
-	}
-	managerBaseURL := resolveManagerBaseURL(s.server)
-	llmBaseURL := llmBridgeBaseURL(managerBaseURL, id)
-	boxSpec := sandbox.CreateSpec{
-		Image:      image,
-		Name:       name,
-		Detach:     true,
-		AutoRemove: false,
-		Mounts:     []sandbox.Mount{},
-		Env:        make(map[string]string),
-	}
-	gatewayConfig, err := s.gatewayConfigurer()
-	if err != nil {
-		return Agent{}, err
-	}
-	boxSpec.Mounts = append(boxSpec.Mounts, sandbox.Mount{HostPath: projectsRoot, GuestPath: gatewayConfig.ProjectsGuestPath()})
-	for key, value := range bridgeLLMEnvVars(llmBaseURL, s.server.AccessToken, resolvedProfile.ModelID) {
-		boxSpec.Env[key] = value
-	}
-	addProfileEnvVars(boxSpec.Env, resolvedProfile.Env)
-	box, err := s.createBox(ctx, rt, boxSpec)
-	if err != nil {
-		return Agent{}, fmt.Errorf("create sandbox agent: %w", err)
-	}
-	defer func() {
-		_ = s.closeBox(box)
-	}()
-	if err := s.overlayTemplateWorkspace(name, "", spec.FromTemplate); err != nil {
-		return Agent{}, err
-	}
-
-	createdAt := spec.CreatedAt.UTC()
-	if spec.CreatedAt.IsZero() {
-		createdAt = time.Now().UTC()
-	}
-	status := strings.TrimSpace(spec.Status)
-	if status == "" {
-		status = "running"
-	}
-	agent := Agent{
-		ID:              id,
-		Name:            name,
-		Description:     description,
-		RuntimeID:       runtimeIDForAgentID(id),
-		RuntimeKind:     runtimeKindForAgent(Agent{Role: role, RuntimeKind: runtimeKind}),
-		Image:           image,
-		Role:            role,
-		Status:          status,
-		CreatedAt:       createdAt,
-		Profile:         profileSelector(resolvedProfile),
-		Provider:        resolvedProfile.Provider,
-		ModelID:         resolvedProfile.ModelID,
-		ReasoningEffort: resolvedProfile.ReasoningEffort,
-		AgentProfile:    resolvedProfile,
-		ProfileComplete: resolvedProfile.ProfileComplete,
-	}
-
-	s.mu.Lock()
-	s.agents[id] = agent
-	s.syncRuntimeRecordLocked(agent)
-	if resolvedProfile.ProfileComplete {
-		s.profileDefaults = cloneProfile(resolvedProfile)
-	}
-	err = s.saveLocked()
-	s.mu.Unlock()
-	if err != nil {
-		s.mu.Lock()
-		delete(s.agents, id)
-		s.deleteRuntimeRecordLocked(agent.RuntimeID)
-		s.mu.Unlock()
-		return Agent{}, err
-	}
-	return agent, nil
+	return Agent{}, fmt.Errorf("role must be one of %q or %q", RoleManager, RoleWorker)
 }
 
 func (s *Service) replace(ctx context.Context, req CreateRequest) (Agent, error) {
@@ -1248,7 +1109,7 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 		return Agent{}, err
 	}
 
-	runtimeImpl, err := s.runtimeForAgent(got)
+	runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(got.RuntimeKind))
 	if err != nil {
 		return Agent{}, err
 	}
@@ -1329,7 +1190,7 @@ func (s *Service) Stop(ctx context.Context, id string) (Agent, error) {
 		return Agent{}, fmt.Errorf("agent %q not found", id)
 	}
 
-	runtimeImpl, err := s.runtimeForAgent(got)
+	runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(got.RuntimeKind))
 	if err != nil {
 		return Agent{}, err
 	}
@@ -1370,7 +1231,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("agent %q not found", id)
 	}
 
-	if runtimeImpl, err := s.runtimeForAgent(existing); err == nil && strings.TrimSpace(existing.BoxID) != "" {
+	if runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(existing.RuntimeKind)); err == nil && strings.TrimSpace(existing.BoxID) != "" {
 		if err := runtimeImpl.Delete(ctx, runtimeHandleForAgent(existing)); err != nil && !sandbox.IsNotFound(err) {
 			return fmt.Errorf("remove agent box: %w", err)
 		}
@@ -1535,28 +1396,16 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
-	runtimeKind := spec.RuntimeKind
-	explicitRuntime := strings.TrimSpace(spec.RuntimeKind) != ""
-
-	if runtimeKind == "" {
-		runtimeKind = s.gatewayRuntimeKind()
-	}
-
-	if isGatewayRuntimeKind(runtimeKind) {
-		if image == "" {
-			if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" && explicitRuntime {
-				image = defaultImage
-			}
-			if image == "" {
-				image = s.managerImage
-			}
-		}
-	}
+	runtimeKind := strings.TrimSpace(spec.RuntimeKind)
 	switch {
 	case name == "":
 		return Agent{}, fmt.Errorf("name is required")
 	case strings.EqualFold(name, ManagerName):
 		return Agent{}, fmt.Errorf("name %q is reserved", name)
+	case runtimeKind == "":
+		return Agent{}, fmt.Errorf("runtime_kind is required")
+	case isGatewayRuntimeKind(runtimeKind) && image == "":
+		return Agent{}, fmt.Errorf("image is required for runtime_kind %q", runtimeKind)
 	}
 	if id == "" {
 		// id = fmt.Sprintf("%s-%d", RoleWorker, time.Now().UnixNano())
@@ -1758,7 +1607,7 @@ func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines 
 	if !ok {
 		return fmt.Errorf("agent %q not found", id)
 	}
-	runtimeImpl, err := s.runtimeForAgent(got)
+	runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(got.RuntimeKind))
 	if err != nil {
 		return err
 	}
@@ -1976,7 +1825,7 @@ func (s *Service) hydrateAgentStatus(ctx context.Context, a Agent) Agent {
 		return a
 	}
 
-	runtimeImpl, err := s.runtimeForAgent(a)
+	runtimeImpl, err := s.runtimeForKind(strings.TrimSpace(a.RuntimeKind))
 	if err != nil {
 		return statusAfterHydrateFailure(a, "select_runtime", err)
 	}

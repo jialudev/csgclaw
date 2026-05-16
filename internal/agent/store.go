@@ -187,6 +187,9 @@ func (s *Service) readState() (map[string]Agent, error) {
 			if normalized.ID == "" {
 				continue
 			}
+			if normalized.Kind == "" {
+				return nil, fmt.Errorf("normalize persisted runtime %q: runtime kind is required", normalized.ID)
+			}
 			runtimes[normalized.ID] = normalized
 		}
 		for _, a := range state.Agents {
@@ -194,7 +197,7 @@ func (s *Service) readState() (map[string]Agent, error) {
 			if err != nil {
 				return nil, fmt.Errorf("normalize persisted agent %q: %w", strings.TrimSpace(a.ID), err)
 			}
-			if rt, ok := runtimes[normalized.RuntimeID]; ok {
+			if rt, ok := runtimes[normalized.RuntimeID]; ok && rt.Kind != "" {
 				normalized.RuntimeKind = rt.Kind
 			}
 			agents[normalized.ID] = normalized
@@ -207,7 +210,7 @@ func (s *Service) readState() (map[string]Agent, error) {
 			if err != nil {
 				return nil, fmt.Errorf("normalize legacy worker %q: %w", strings.TrimSpace(w.ID), err)
 			}
-			if rt, ok := runtimes[normalized.RuntimeID]; ok {
+			if rt, ok := runtimes[normalized.RuntimeID]; ok && rt.Kind != "" {
 				normalized.RuntimeKind = rt.Kind
 			}
 			agents[normalized.ID] = normalized
