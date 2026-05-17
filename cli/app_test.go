@@ -207,7 +207,7 @@ func TestExecuteBotListUsesDefaultChannel(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots?channel=csgclaw" {
+			if req.URL.String() != "http://example.test/api/v1/channels/csgclaw/bots" {
 				t.Fatalf("url = %q, want csgclaw bot list route", req.URL.String())
 			}
 			return jsonResponse(http.StatusOK, `[{"id":"bot-alice","name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"codex","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}]`), nil
@@ -229,7 +229,7 @@ func TestExecuteBotListFeishuUsesChannelQuery(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots?channel=feishu" {
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/bots" {
 				t.Fatalf("url = %q, want feishu bot list route", req.URL.String())
 			}
 			return jsonResponse(http.StatusOK, `[{"id":"bot-feishu","name":"feishu","role":"manager","channel":"feishu","agent_id":"u-manager","user_id":"fsu-manager","created_at":"2026-04-12T09:00:00Z"}]`), nil
@@ -258,7 +258,7 @@ func TestExecuteBotListUsesRoleQuery(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots?channel=csgclaw&role=worker" {
+			if req.URL.String() != "http://example.test/api/v1/channels/csgclaw/bots?role=worker" {
 				t.Fatalf("url = %q, want role-filtered bot list route", req.URL.String())
 			}
 			return jsonResponse(http.StatusOK, `[{"id":"bot-alice","name":"alice","description":"abcdefghijklmnopqrstuvwxyz1234567890ABCDE","role":"worker","channel":"csgclaw","runtime_kind":"codex","agent_id":"u-alice","user_id":"u-alice","available":true,"created_at":"2026-04-12T09:00:00Z"}]`), nil
@@ -280,8 +280,8 @@ func TestExecuteBotCreateUsesDefaultChannel(t *testing.T) {
 			if req.Method != http.MethodPost {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots" {
-				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/bots")
+			if req.URL.String() != "http://example.test/api/v1/channels/csgclaw/bots" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/channels/csgclaw/bots")
 			}
 			var payload bot.CreateRequest
 			if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
@@ -347,7 +347,7 @@ func TestExecuteBotDeleteUsesDefaultChannel(t *testing.T) {
 			if req.Method != http.MethodDelete {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots/u-alice?channel=csgclaw" {
+			if req.URL.String() != "http://example.test/api/v1/channels/csgclaw/bots/u-alice" {
 				t.Fatalf("url = %q, want csgclaw bot delete route", req.URL.String())
 			}
 			return jsonResponse(http.StatusNoContent, ``), nil
@@ -367,7 +367,7 @@ func TestExecuteBotDeleteFeishuUsesChannelQuery(t *testing.T) {
 			if req.Method != http.MethodDelete {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots/u-alice?channel=feishu" {
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/bots/u-alice" {
 				t.Fatalf("url = %q, want feishu bot delete route", req.URL.String())
 			}
 			return jsonResponse(http.StatusNoContent, ``), nil

@@ -2942,7 +2942,7 @@ function App() {
       if (rx) {
         payload.runtime_options = rx;
       }
-      const url = isCreate ? "api/v1/bots" : `api/v1/agents/${encodeURIComponent(editingAgent.id)}`;
+      const url = isCreate ? "api/v1/channels/csgclaw/bots" : `api/v1/agents/${encodeURIComponent(editingAgent.id)}`;
       const patchBody = {
         name: payload.name,
         description: payload.description,
@@ -2996,7 +2996,7 @@ function App() {
         return;
       }
       const url = action === "delete"
-        ? `api/v1/bots/${encodeURIComponent(item.id)}`
+        ? `api/v1/channels/csgclaw/bots/${encodeURIComponent(item.id)}`
         : `api/v1/agents/${encodeURIComponent(item.id)}/${action}`;
       const resp = await fetch(url, { method: action === "delete" ? "DELETE" : "POST" });
       if (!resp.ok) {
@@ -3023,7 +3023,7 @@ function App() {
     setAgentActionBusy(`${item.id}:delete-bot`);
     setAgentsError("");
     try {
-      const resp = await fetch(`api/v1/bots/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      const resp = await fetch(`api/v1/channels/csgclaw/bots/${encodeURIComponent(item.id)}`, { method: "DELETE" });
       if (!resp.ok) {
         throw new Error((await resp.text()).trim());
       }

@@ -203,7 +203,7 @@ func TestExecuteBotListUsesAPIClient(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots?channel=feishu" {
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/bots" {
 				t.Fatalf("url = %q, want feishu bot list route", req.URL.String())
 			}
 			return jsonResponse(http.StatusOK, `[{"id":"bot-feishu","name":"feishu","role":"manager","channel":"feishu","agent_id":"u-manager","user_id":"fsu-manager","created_at":"2026-04-12T09:00:00Z"}]`), nil
@@ -238,7 +238,7 @@ func TestExecuteDefaultsToJSONOutputForNonTerminalStdout(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots?channel=feishu" {
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/bots" {
 				t.Fatalf("url = %q, want feishu bot list route", req.URL.String())
 			}
 			return jsonResponse(http.StatusOK, `[{"id":"bot-feishu","name":"feishu","role":"manager","channel":"feishu","agent_id":"u-manager","user_id":"fsu-manager","created_at":"2026-04-12T09:00:00Z"}]`), nil
@@ -271,7 +271,7 @@ func TestExecuteBotListUsesRoleQuery(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots?channel=feishu&role=manager" {
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/bots?role=manager" {
 				t.Fatalf("url = %q, want role-filtered bot list route", req.URL.String())
 			}
 			return jsonResponse(http.StatusOK, `[{"id":"bot-feishu","name":"feishu","role":"manager","channel":"feishu","agent_id":"u-manager","user_id":"fsu-manager","created_at":"2026-04-12T09:00:00Z"}]`), nil
@@ -300,8 +300,8 @@ func TestExecuteUsesEnvironmentForEndpointAndToken(t *testing.T) {
 		stdout: &bytes.Buffer{},
 		stderr: &bytes.Buffer{},
 		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			if req.URL.String() != "http://env.example.test/api/v1/bots?channel=feishu" {
-				t.Fatalf("url = %q, want %q", req.URL.String(), "http://env.example.test/api/v1/bots?channel=feishu")
+			if req.URL.String() != "http://env.example.test/api/v1/channels/feishu/bots" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://env.example.test/api/v1/channels/feishu/bots")
 			}
 			if got := req.Header.Get("Authorization"); got != "Bearer env-secret-token" {
 				t.Fatalf("Authorization = %q, want %q", got, "Bearer env-secret-token")
@@ -323,8 +323,8 @@ func TestExecuteFlagsOverrideEnvironmentForEndpointAndToken(t *testing.T) {
 		stdout: &bytes.Buffer{},
 		stderr: &bytes.Buffer{},
 		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-			if req.URL.String() != "http://flag.example.test/api/v1/bots?channel=feishu" {
-				t.Fatalf("url = %q, want %q", req.URL.String(), "http://flag.example.test/api/v1/bots?channel=feishu")
+			if req.URL.String() != "http://flag.example.test/api/v1/channels/feishu/bots" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://flag.example.test/api/v1/channels/feishu/bots")
 			}
 			if got := req.Header.Get("Authorization"); got != "Bearer flag-secret-token" {
 				t.Fatalf("Authorization = %q, want %q", got, "Bearer flag-secret-token")
@@ -350,7 +350,7 @@ func TestExecuteBotDeleteUsesAPIClient(t *testing.T) {
 			if req.Method != http.MethodDelete {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodDelete)
 			}
-			if req.URL.String() != "http://example.test/api/v1/bots/u-alice?channel=feishu" {
+			if req.URL.String() != "http://example.test/api/v1/channels/feishu/bots/u-alice" {
 				t.Fatalf("url = %q, want feishu bot delete route", req.URL.String())
 			}
 			return jsonResponse(http.StatusNoContent, ``), nil

@@ -86,15 +86,18 @@ ok
 
 ## Bot 管理 API
 
-这组接口由 `bot.Service` 提供，概念上是“频道里的 bot 管理”。`role` 仅支持 `manager` 和 `worker`，`channel` 仅支持 `csgclaw` 和 `feishu`。
+这组接口挂在 channel API 命名空间下，但底层仍由统一的 `internal/bot` 服务负责编排，当前并没有按 channel 拆成独立 bot service。`role` 仅支持 `manager` 和 `worker`，`channel` 仅支持 `csgclaw` 和 `feishu`。
 
-### `GET /api/v1/bots`
+### `GET /api/v1/channels/{channel}/bots`
 
-获取 bot 列表。
+获取指定 channel 下的 bot 列表。
+
+路径参数：
+
+- `channel`：`csgclaw` 或 `feishu`
 
 可选查询参数：
 
-- `channel`
 - `role`
 
 响应字段：
@@ -110,9 +113,18 @@ ok
 - `runtime_kind`
 - `created_at`
 
-### `POST /api/v1/bots`
+示例：
 
-创建 bot。
+- `GET /api/v1/channels/csgclaw/bots`
+- `GET /api/v1/channels/feishu/bots?role=worker`
+
+### `POST /api/v1/channels/{channel}/bots`
+
+在指定 channel 下创建 bot。
+
+路径参数：
+
+- `channel`：`csgclaw` 或 `feishu`
 
 请求体示例：
 
@@ -121,7 +133,6 @@ ok
   "id": "u-alice",
   "name": "alice",
   "role": "worker",
-  "channel": "csgclaw",
   "runtime_kind": "codex",
   "from_template": "local/review-bot"
 }
@@ -131,19 +142,30 @@ ok
 
 - `name` 必填
 - `role` 必填，且只能是 `manager` 或 `worker`
-- `channel` 省略时默认为 `csgclaw`
+- 实际 channel 由路由路径决定，而不是由请求体决定
 - `worker` bot 会关联后端 agent
 - `manager` / `worker` 在不同 channel 上的创建行为可能不同
 
-### `DELETE /api/v1/bots/{id}`
+示例：
 
-删除指定 bot。
+- `POST /api/v1/channels/csgclaw/bots`
+- `POST /api/v1/channels/feishu/bots`
 
-可选查询参数：
+### `DELETE /api/v1/channels/{channel}/bots/{id}`
 
-- `channel`
+删除指定 channel 下的 bot。
+
+路径参数：
+
+- `channel`：`csgclaw` 或 `feishu`
+- `id`：bot ID
 
 成功返回 `204 No Content`。
+
+示例：
+
+- `DELETE /api/v1/channels/csgclaw/bots/u-alice`
+- `DELETE /api/v1/channels/feishu/bots/u-alice`
 
 ## Agent API
 

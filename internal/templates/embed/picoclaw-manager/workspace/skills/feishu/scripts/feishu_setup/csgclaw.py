@@ -145,7 +145,7 @@ def ensure_bot(args, state: dict, result: dict) -> Optional[dict]:
         "role": role,
         "channel": "feishu",
     }
-    return api_json(args, "POST", "/api/v1/bots", payload)
+    return api_json(args, "POST", f"/api/v1/channels/feishu/bots", payload)
 
 
 def worker_box_conflict_message(bot_id: str, name: str) -> str:

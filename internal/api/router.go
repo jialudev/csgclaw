@@ -18,11 +18,6 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Get("/status", h.getUpgradeStatus)
 			r.Post("/apply", h.createUpgradeApply)
 		})
-		r.Route("/bots", func(r chi.Router) {
-			r.Get("/", h.listBots)
-			r.Post("/", h.createBot)
-			r.Delete("/{id}", h.deleteBot)
-		})
 		r.Route("/agents", func(r chi.Router) {
 			r.Get("/", h.listAgents)
 			r.Post("/", h.createAgent)
@@ -85,6 +80,13 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 func (h *Handler) registerChannelRoutes(router chi.Router) {
 	router.Route("/api/v1/channels", func(r chi.Router) {
 		r.Route("/csgclaw", func(r chi.Router) {
+			r.Route("/bots", func(r chi.Router) {
+				r.Get("/", h.listBots)
+				r.Post("/", h.createBot)
+			})
+			r.Route("/bots/{id}", func(r chi.Router) {
+				r.Delete("/", h.deleteBot)
+			})
 			r.Route("/users", func(r chi.Router) {
 				r.Get("/", h.listUsers)
 				r.Post("/", h.createUser)
@@ -107,12 +109,17 @@ func (h *Handler) registerChannelRoutes(router chi.Router) {
 			})
 		})
 		r.Route("/feishu", func(r chi.Router) {
+			r.Route("/bots", func(r chi.Router) {
+				r.Get("/", h.listBots)
+				r.Post("/", h.createBot)
+			})
 			r.Route("/config", func(r chi.Router) {
 				r.Get("/", h.getFeishuConfig)
 				r.Put("/", h.updateFeishuConfig)
 				r.Post("/", h.reloadFeishuConfig)
 			})
 			r.Route("/bots/{id}", func(r chi.Router) {
+				r.Delete("/", h.deleteBot)
 				r.Get("/events", h.getFeishuBotEvents)
 			})
 			r.Route("/users", func(r chi.Router) {
@@ -135,6 +142,13 @@ func (h *Handler) registerChannelRoutes(router chi.Router) {
 				r.Get("/", h.listFeishuMessages)
 				r.Post("/", h.createFeishuMessage)
 			})
+		})
+		r.Route("/{channel}/bots", func(r chi.Router) {
+			r.Get("/", h.listBots)
+			r.Post("/", h.createBot)
+		})
+		r.Route("/{channel}/bots/{id}", func(r chi.Router) {
+			r.Delete("/", h.deleteBot)
 		})
 	})
 }

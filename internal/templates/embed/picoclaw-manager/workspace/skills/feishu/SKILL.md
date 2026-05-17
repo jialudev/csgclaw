@@ -72,7 +72,7 @@ Do not use this skill for generic Feishu webhook integrations or non-CSGClaw Fei
    - host repo path: `internal/templates/embed/picoclaw-manager/workspace/skills/feishu`
 4. Server build supports:
    - `csgclaw-cli bot config --channel feishu --set/--get/--reload`
-   - `POST /api/v1/bots`
+   - `POST /api/v1/channels/feishu/bots`
    - `POST /api/v1/agents/{id}/recreate`
 
 ## Safe Credential Rules
@@ -149,7 +149,7 @@ By default, `finalize` will:
    - for `u-manager`, overwrite global `admin_open_id` only with the registration `open_id`
    - for worker bots, ignore registration `open_id` and do not read, preserve, write, or report `admin_open_id`
 4. auto-reload channel config
-5. ensure the CSGClaw bot through `POST /api/v1/bots`
+5. ensure the CSGClaw bot through `POST /api/v1/channels/feishu/bots`
 6. for worker targets, check whether the Feishu bot already existed before ensure using `./csgclaw-cli --output json bot list --channel feishu`:
    - existing bot: recreate its worker so the new Feishu env takes effect
    - missing bot: let bot ensure create it with the already-reloaded config, then skip redundant recreate

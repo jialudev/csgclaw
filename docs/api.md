@@ -86,15 +86,18 @@ Returns `503 Service Unavailable` if the upgrade manager is not configured.
 
 ## Bot Management API
 
-These endpoints are backed by `bot.Service` and conceptually manage bots inside a channel. `role` only supports `manager` and `worker`, and `channel` only supports `csgclaw` and `feishu`.
+These endpoints are exposed under the channel API namespace and are still backed by the unified `internal/bot` service. The route shape is channel-scoped, but bot lifecycle orchestration is not split into separate per-channel bot services. `role` only supports `manager` and `worker`, and `channel` only supports `csgclaw` and `feishu`.
 
-### `GET /api/v1/bots`
+### `GET /api/v1/channels/{channel}/bots`
 
-Returns the bot list.
+Returns the bot list for the specified channel.
+
+Path parameters:
+
+- `channel`: `csgclaw` or `feishu`
 
 Optional query parameters:
 
-- `channel`
 - `role`
 
 Response fields:
@@ -110,9 +113,18 @@ Response fields:
 - `runtime_kind`
 - `created_at`
 
-### `POST /api/v1/bots`
+Examples:
 
-Creates a bot.
+- `GET /api/v1/channels/csgclaw/bots`
+- `GET /api/v1/channels/feishu/bots?role=worker`
+
+### `POST /api/v1/channels/{channel}/bots`
+
+Creates a bot in the specified channel.
+
+Path parameters:
+
+- `channel`: `csgclaw` or `feishu`
 
 Example request body:
 
@@ -121,7 +133,6 @@ Example request body:
   "id": "u-alice",
   "name": "alice",
   "role": "worker",
-  "channel": "csgclaw",
   "runtime_kind": "codex",
   "from_template": "local/review-bot"
 }
@@ -131,19 +142,30 @@ Notes:
 
 - `name` is required
 - `role` is required and must be either `manager` or `worker`
-- `channel` defaults to `csgclaw` when omitted
+- The effective channel comes from the route path rather than the request body
 - A `worker` bot is associated with a backend agent
 - `manager` and `worker` creation behavior can differ by channel
 
-### `DELETE /api/v1/bots/{id}`
+Examples:
 
-Deletes the specified bot.
+- `POST /api/v1/channels/csgclaw/bots`
+- `POST /api/v1/channels/feishu/bots`
 
-Optional query parameters:
+### `DELETE /api/v1/channels/{channel}/bots/{id}`
 
-- `channel`
+Deletes the specified bot in the specified channel.
+
+Path parameters:
+
+- `channel`: `csgclaw` or `feishu`
+- `id`: bot ID
 
 Returns `204 No Content` on success.
+
+Examples:
+
+- `DELETE /api/v1/channels/csgclaw/bots/u-alice`
+- `DELETE /api/v1/channels/feishu/bots/u-alice`
 
 ## Agent API
 

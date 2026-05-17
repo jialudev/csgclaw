@@ -46,8 +46,8 @@ assert(
   'saving the manager profile must not auto-trigger manager rebuild; rebuilds require an explicit window button click',
 );
 assert(
-  source.includes('const payload = {\n        name: agentPageDraft.name,\n        description: agentPageDraft.description,\n        agent_profile: profile,\n      };') &&
-    source.includes('body: JSON.stringify(isCreate ? payload : {\n          name: payload.name,\n          description: payload.description,\n          agent_profile: payload.agent_profile,\n        }),'),
+  source.includes('const patchBody = {\n        name: payload.name,\n        description: payload.description,\n        agent_profile: payload.agent_profile,\n      };') &&
+    source.includes('body: JSON.stringify(isCreate ? payload : patchBody),'),
   'ordinary agent save flows must keep runtime_kind and image out of PATCH payloads',
 );
 assert(
@@ -59,8 +59,9 @@ assert(
   'markdown links must use a safe rel attribute when opening a new tab',
 );
 assert(
-  source.includes('hubUseTemplate: "使用此模板"'),
-  'hub detail must expose a localized "use this template" action',
+  source.includes('onClick=${() => onCreateFromTemplate?.(selectedTemplate)}') &&
+    source.includes('<span>${t("createAgent")}</span>'),
+  'hub detail must expose a localized create-from-template action',
 );
 assert(
   source.includes('onCreateFromTemplate=${openCreateAgentModal}'),
@@ -69,6 +70,12 @@ assert(
 assert(
   source.includes('from_template: agentDraft.from_template || ""'),
   'creating an agent from hub detail must pass from_template to the create API',
+);
+assert(
+  source.includes('const url = isCreate ? "api/v1/channels/csgclaw/bots" : `api/v1/agents/${encodeURIComponent(editingAgent.id)}`;') &&
+    source.includes('? `api/v1/channels/csgclaw/bots/${encodeURIComponent(item.id)}`') &&
+    source.includes('fetch(`api/v1/channels/csgclaw/bots/${encodeURIComponent(item.id)}`, { method: "DELETE" });'),
+  'frontend bot create/delete flows must use the channel-scoped bots API',
 );
 assert(
   source.includes('templateLabel: "模板"'),

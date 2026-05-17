@@ -140,7 +140,6 @@ func TestParseBotCompatibilityPath(t *testing.T) {
 		{path: "/api/bots/u-manager/llm/chat/completions", wantBotID: "u-manager", wantAction: "llm/chat/completions", wantOK: true},
 		{path: "/api/bots/u-manager/llm/v1/chat/completions", wantBotID: "u-manager", wantAction: "llm/v1/chat/completions", wantOK: true},
 		{path: "/api/bots/u-manager", wantOK: false},
-		{path: "/api/v1/bots/u-manager/events", wantOK: false},
 		{path: "/api/bots//events", wantOK: false},
 	}
 
@@ -362,7 +361,7 @@ func TestHandleRoomsMembersAddsCsgclawMember(t *testing.T) {
 	}
 }
 
-func TestHandleBotsListReturnsAllBots(t *testing.T) {
+func TestHandleBotsListUsesChannelPath(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, []bot.Bot{
 		{
 			ID:        "bot-csgclaw",
@@ -384,7 +383,7 @@ func TestHandleBotsListReturnsAllBots(t *testing.T) {
 		},
 	})}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/csgclaw/bots", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -396,8 +395,8 @@ func TestHandleBotsListReturnsAllBots(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(got) != 2 || got[0].ID != "bot-csgclaw" || got[1].ID != "bot-feishu" {
-		t.Fatalf("bots = %+v, want all bots in store order", got)
+	if len(got) != 1 || got[0].ID != "bot-csgclaw" {
+		t.Fatalf("bots = %+v, want only csgclaw bot", got)
 	}
 }
 
@@ -419,7 +418,7 @@ func TestHandleBotsListFiltersByChannel(t *testing.T) {
 		},
 	})}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots?channel=csgclaw", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/csgclaw/bots", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -454,7 +453,7 @@ func TestHandleBotsListFiltersByRole(t *testing.T) {
 		},
 	})}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots?role=worker", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/csgclaw/bots?role=worker", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -473,7 +472,7 @@ func TestHandleBotsListFiltersByRole(t *testing.T) {
 
 func TestHandleBotsListRejectsInvalidChannel(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, nil)}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots?channel=unknown", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/unknown/bots", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -485,7 +484,7 @@ func TestHandleBotsListRejectsInvalidChannel(t *testing.T) {
 
 func TestHandleBotsListRejectsInvalidRole(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, nil)}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots?role=agent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/csgclaw/bots?role=agent", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -497,7 +496,7 @@ func TestHandleBotsListRejectsInvalidRole(t *testing.T) {
 
 func TestHandleBotsListRequiresService(t *testing.T) {
 	srv := &Handler{}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/bots", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/channels/csgclaw/bots", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -531,7 +530,7 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 		imBus:  bus,
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","description":"test lead","image":"agent-image:1","role":"worker","channel":"csgclaw","runtime_kind":"picoclaw_sandbox","agent_profile":{"provider":"csghub_lite","model_id":"glm-4.5","reasoning_effort":"high"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/csgclaw/bots", strings.NewReader(`{"name":"alice","description":"test lead","image":"agent-image:1","role":"worker","runtime_kind":"picoclaw_sandbox","agent_profile":{"provider":"csghub_lite","model_id":"glm-4.5","reasoning_effort":"high"}}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -551,7 +550,7 @@ func TestHandleBotsCreateCSGClawWorker(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/bots?channel=csgclaw", nil))
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/channels/csgclaw/bots", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list bots status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -660,7 +659,7 @@ func TestHandleBotsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
 		imBus:  bus,
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"codex"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/csgclaw/bots", strings.NewReader(`{"name":"alice","role":"worker","runtime_kind":"codex"}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -696,7 +695,7 @@ func TestHandleBotsCreateFeishuWorker(t *testing.T) {
 		feishu: feishuSvc,
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"feishu","runtime_kind":"picoclaw_sandbox"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/feishu/bots", strings.NewReader(`{"name":"alice","image":"agent-image:1","role":"worker","runtime_kind":"picoclaw_sandbox"}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -713,7 +712,7 @@ func TestHandleBotsCreateFeishuWorker(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/bots?channel=feishu", nil))
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/channels/feishu/bots", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list bots status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -759,14 +758,14 @@ func TestHandleBotsCreateRejectsDuplicateWorkerNameInSameChannel(t *testing.T) {
 		im:     imSvc,
 	}
 
-	first := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"picoclaw_sandbox"}`))
+	first := httptest.NewRequest(http.MethodPost, "/api/v1/channels/csgclaw/bots", strings.NewReader(`{"name":"alice","image":"agent-image:1","role":"worker","runtime_kind":"picoclaw_sandbox"}`))
 	firstRec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(firstRec, first)
 	if firstRec.Code != http.StatusCreated {
 		t.Fatalf("first status = %d, want %d; body=%s", firstRec.Code, http.StatusCreated, firstRec.Body.String())
 	}
 
-	second := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"alice","role":"worker","channel":"csgclaw","runtime_kind":"picoclaw_sandbox"}`))
+	second := httptest.NewRequest(http.MethodPost, "/api/v1/channels/csgclaw/bots", strings.NewReader(`{"name":"alice","image":"agent-image:1","role":"worker","runtime_kind":"picoclaw_sandbox"}`))
 	secondRec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(secondRec, second)
 	if secondRec.Code != http.StatusBadRequest {
@@ -801,7 +800,7 @@ func TestHandleBotsCreateCSGClawManagerBindsBootstrappedAgent(t *testing.T) {
 		im:     imSvc,
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"manager","role":"manager","channel":"csgclaw"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/csgclaw/bots", strings.NewReader(`{"name":"manager","role":"manager"}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -838,7 +837,7 @@ func TestHandleBotsCreateManagerBootstrapsMissingAgent(t *testing.T) {
 		im:     imSvc,
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/bots", strings.NewReader(`{"name":"manager","role":"manager","channel":"csgclaw"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/channels/csgclaw/bots", strings.NewReader(`{"name":"manager","role":"manager"}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -857,7 +856,7 @@ func TestHandleBotsCreateManagerBootstrapsMissingAgent(t *testing.T) {
 
 func TestHandleBotsListRejectsUnsupportedMethod(t *testing.T) {
 	srv := &Handler{botSvc: mustNewBotService(t, nil)}
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/bots", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/channels/csgclaw/bots", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -888,7 +887,7 @@ func TestHandleBotByIDDeleteUsesChannel(t *testing.T) {
 			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
 		},
 	})}
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/bots/u-alice?channel=feishu", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/channels/feishu/bots/u-alice", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -947,7 +946,7 @@ func TestHandleBotByIDDeleteRemovesCSGClawUser(t *testing.T) {
 		t.Fatalf("NewServiceWithDependencies() error = %v", err)
 	}
 	srv := &Handler{botSvc: botSvc}
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/bots/u-alice?channel=csgclaw", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/channels/csgclaw/bots/u-alice", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)

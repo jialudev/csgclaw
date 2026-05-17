@@ -391,10 +391,11 @@ func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.botSvc.SetIMBus(h.imBus)
+	channelName := botChannelName(r)
 
 	switch r.Method {
 	case http.MethodGet:
-		bots, err := h.botSvc.List(r.URL.Query().Get("channel"), r.URL.Query().Get("role"))
+		bots, err := h.botSvc.List(channelName, r.URL.Query().Get("role"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -406,6 +407,7 @@ func (h *Handler) handleBots(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 			return
 		}
+		req.Channel = channelName
 		created, err := h.botSvc.Create(r.Context(), req)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -431,13 +433,30 @@ func (h *Handler) handleBotByID(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodDelete:
-		if err := h.botSvc.Delete(r.Context(), r.URL.Query().Get("channel"), id); err != nil {
+		if err := h.botSvc.Delete(r.Context(), botChannelName(r), id); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func botChannelName(r *http.Request) string {
+	if channel := pathValue(r, "channel"); channel != "" {
+		return channel
+	}
+	if r == nil {
+		return ""
+	}
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/v1/channels/csgclaw/"):
+		return "csgclaw"
+	case strings.HasPrefix(r.URL.Path, "/api/v1/channels/feishu/"):
+		return "feishu"
+	default:
+		return ""
 	}
 }
 
