@@ -3336,7 +3336,7 @@ function App() {
                             ? html`<div className="workspace-empty">${hubError}</div>`
                             : hubLoaded && hubTemplates.length === 0
                               ? html`<div className="workspace-empty">${t("hubEmpty")}</div>`
-                              : hubTemplates.slice(0, 6).map((item) => html`
+                              : hubTemplates.map((item) => html`
                                   <button key=${item.id} className=${`workspace-row hub-template-row ${selectedHubTemplateId === item.id ? "active" : ""}`} onClick=${() => selectHubTemplate(item)}>
                                     <span className="workspace-row-icon"><${HubIcon} /></span>
                                     <span className="workspace-row-main">
