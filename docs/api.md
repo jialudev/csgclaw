@@ -448,7 +448,7 @@ Notes:
 - `registry` uses the default publish registry when omitted
 - Successful publish returns `201 Created`
 
-### `GET /api/v1/hub/templates/{registry}/{template}`
+### `GET /api/v1/hub/templates/{id}`
 
 Returns template details.
 
@@ -470,7 +470,7 @@ Example `workspace.entries` payload:
 }
 ```
 
-### `GET /api/v1/hub/templates/{registry}/{template}/workspace/file?path=...`
+### `GET /api/v1/hub/templates/{id}/workspace/file?path=...`
 
 Reads a single file preview from the template workspace.
 

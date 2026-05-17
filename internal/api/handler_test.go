@@ -1831,7 +1831,7 @@ func TestHandleHubTemplateByIDReturnsTemplate(t *testing.T) {
 	})
 	srv := &Handler{}
 	srv.SetHubService(hubSvc)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local%2Freview-bot", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -1879,7 +1879,7 @@ func TestHandleHubTemplateWorkspaceFileReturnsContent(t *testing.T) {
 	})
 	srv := &Handler{}
 	srv.SetHubService(hubSvc)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot/workspace/file?path=skills/custom/SKILL.md", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local%2Freview-bot/workspace/file?path=skills/custom/SKILL.md", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -1909,7 +1909,7 @@ func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.
 	srv := &Handler{}
 	srv.SetHubService(hubSvc)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local%2Freview-bot", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
@@ -1924,7 +1924,7 @@ func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.
 		t.Fatalf("workspace entries = %#v, want empty", detail.Workspace.Entries)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot/workspace/file?path=USER.md", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local%2Freview-bot/workspace/file?path=USER.md", nil)
 	rec = httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {

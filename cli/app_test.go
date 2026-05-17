@@ -1075,8 +1075,8 @@ func TestExecuteHubGetUsesHTTPClient(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
 			}
-			if req.URL.String() != "http://example.test/api/v1/hub/templates/local/review-bot" {
-				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/hub/templates/local/review-bot")
+			if req.URL.String() != "http://example.test/api/v1/hub/templates/local%2Freview-bot" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/hub/templates/local%2Freview-bot")
 			}
 			return jsonResponse(http.StatusOK, `{"id":"local/review-bot","name":"review-bot","runtime_kind":"codex","source":{"name":"local","kind":"local"}}`), nil
 		}),

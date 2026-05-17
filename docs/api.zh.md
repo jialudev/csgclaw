@@ -448,7 +448,7 @@ ok
 - `registry` 省略时使用默认 publish registry
 - 发布成功返回 `201 Created`
 
-### `GET /api/v1/hub/templates/{registry}/{template}`
+### `GET /api/v1/hub/templates/{id}`
 
 获取模板详情。
 
@@ -470,7 +470,7 @@ ok
 }
 ```
 
-### `GET /api/v1/hub/templates/{registry}/{template}/workspace/file?path=...`
+### `GET /api/v1/hub/templates/{id}/workspace/file?path=...`
 
 读取模板 workspace 中的单个文件预览。
 

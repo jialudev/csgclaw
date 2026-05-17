@@ -1545,12 +1545,7 @@ func (r addRoomMembersRequest) toServiceRequest() (im.AddRoomMembersRequest, err
 }
 
 func hubTemplateIDFromPathValues(r *http.Request) string {
-	registry := pathValue(r, "registry")
-	template := pathValue(r, "template")
-	if registry == "" || template == "" {
-		return ""
-	}
-	return registry + "/" + template
+	return pathValue(r, "id")
 }
 
 func (h *Handler) reloadIM() error {
