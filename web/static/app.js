@@ -5178,11 +5178,11 @@ function AgentDetailPane({
             `
           : null}
         <button className="btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onOpenDM(item)}>${t("openDM")}</button>
-        ${SHOW_AGENT_LIFECYCLE_ACTIONS
-          ? isManager
-            ? html`<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>`
-            : html`<button className="btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>`
-          : null}
+        ${isManager
+          ? html`<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>`
+          : SHOW_AGENT_LIFECYCLE_ACTIONS
+            ? html`<button className="btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>`
+            : null}
         ${!isManager
           ? html`<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onDelete(item)}>${t("agentDelete")}</button>`
           : null}
@@ -6962,7 +6962,7 @@ function availableManagerRuntimeOptions(bootstrapConfig) {
     : [];
   const gatewayKinds = (configuredKinds.length ? configuredKinds : ["picoclaw_sandbox", "openclaw_sandbox"])
     .map((kind) => normalizeRuntimeKind(kind))
-    .filter((kind, index, array) => kind && kind !== "codex" && array.indexOf(kind) === index);
+    .filter((kind, index, array) => kind && kind !== "codex" && kind !== "notifier" && array.indexOf(kind) === index);
   return RUNTIME_KIND_OPTIONS.filter((option) => gatewayKinds.includes(option.value));
 }
 
