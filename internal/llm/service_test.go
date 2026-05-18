@@ -349,7 +349,7 @@ func mustSeededAgentService(t *testing.T, llmCfg config.LLMConfig, agents []agen
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	svc, err := agent.NewServiceWithLLM(llmCfg, config.ServerConfig{}, "", statePath)
+	svc, err := agent.NewServiceWithLLM(llmCfg, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

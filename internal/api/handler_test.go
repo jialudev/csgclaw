@@ -626,9 +626,7 @@ func TestHandleBotsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
 			APIKey:   "sk-test",
 			ModelID:  "model-1",
 		},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -1020,7 +1018,7 @@ func TestHandleAgentsListHydratesStatusFromSandboxInfo(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("writeSeededAgents() error = %v", err)
 	}
-	svc, err := agent.NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath, agent.WithSandboxProvider(provider))
+	svc, err := agent.NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath, agent.WithSandboxProvider(provider))
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -1361,9 +1359,7 @@ func TestHandleAgentStartEnsuresCodexBridge(t *testing.T) {
 			APIKey:   "sk-test",
 			ModelID:  "model-1",
 		},
-		config.ServerConfig{},
-		"",
-		statePath,
+		config.ServerConfig{}, "manager-image:test", statePath,
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -1593,9 +1589,7 @@ func TestHandleAgentsCreateWorkerUsesRequestedRuntimeKind(t *testing.T) {
 			APIKey:   "sk-test",
 			ModelID:  "model-1",
 		},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -1642,9 +1636,7 @@ func TestHandleAgentsCreateCodexWorkerEnsuresCodexBridge(t *testing.T) {
 			APIKey:   "sk-test",
 			ModelID:  "model-1",
 		},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		agent.WithRuntime(fakeCompatRuntime{
 			kind: agent.RuntimeKindCodex,
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -3231,9 +3223,7 @@ func TestPublishBotEventReensuresRunningWorkerLifecycle(t *testing.T) {
 	}
 	svc, err := agent.NewService(
 		config.ModelConfig{ModelID: "gpt-5.5"},
-		config.ServerConfig{ListenAddr: ":18080", AccessToken: "token"},
-		"",
-		statePath,
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "token"}, "manager-image:test", statePath,
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -3315,9 +3305,7 @@ func TestPublishBotEventStartsStoppedWorker(t *testing.T) {
 	}
 	svc, err := agent.NewService(
 		config.ModelConfig{ModelID: "gpt-5.5"},
-		config.ServerConfig{ListenAddr: ":18080", AccessToken: "token"},
-		"",
-		statePath,
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "token"}, "manager-image:test", statePath,
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -3635,12 +3623,13 @@ func TestHandleBotLLMModelsReturnsBridgeCatalog(t *testing.T) {
 	statePath := filepath.Join(dir, "agents.json")
 	agents := []agent.Agent{
 		{
-			ID:      agent.ManagerUserID,
-			Name:    agent.ManagerName,
-			Role:    agent.RoleManager,
-			Profile: config.DefaultLLMProfile,
+			ID:          agent.ManagerUserID,
+			Name:        agent.ManagerName,
+			Role:        agent.RoleManager,
+			RuntimeKind: agent.RuntimeKindCodex,
+			Profile:     config.DefaultLLMProfile,
 			AgentProfile: agent.AgentProfile{
-				Provider:        config.ProviderLLMAPI,
+				Provider:        agent.ProviderCodex,
 				ModelID:         "gpt-5.4",
 				ReasoningEffort: agent.DefaultReasoningEffort,
 				ProfileComplete: true,
@@ -3656,7 +3645,9 @@ func TestHandleBotLLMModelsReturnsBridgeCatalog(t *testing.T) {
 		BaseURL:  "http://127.0.0.1:4000",
 		APIKey:   "sk-test",
 		ModelID:  "gpt-5.4",
-	}), config.ServerConfig{}, "", statePath)
+	}), config.ServerConfig{}, "manager-image:test", statePath,
+		agent.WithRuntime(fakeCompatRuntime{kind: agent.RuntimeKindCodex}),
+	)
 	if err != nil {
 		t.Fatalf("NewServiceWithLLM() error = %v", err)
 	}
@@ -3692,12 +3683,13 @@ func TestHandleBotLLMModelsLegacyRouteReturnsBridgeCatalog(t *testing.T) {
 	statePath := filepath.Join(dir, "agents.json")
 	agents := []agent.Agent{
 		{
-			ID:      agent.ManagerUserID,
-			Name:    agent.ManagerName,
-			Role:    agent.RoleManager,
-			Profile: config.DefaultLLMProfile,
+			ID:          agent.ManagerUserID,
+			Name:        agent.ManagerName,
+			Role:        agent.RoleManager,
+			RuntimeKind: agent.RuntimeKindCodex,
+			Profile:     config.DefaultLLMProfile,
 			AgentProfile: agent.AgentProfile{
-				Provider:        config.ProviderLLMAPI,
+				Provider:        agent.ProviderCodex,
 				ModelID:         "gpt-5.4",
 				ReasoningEffort: agent.DefaultReasoningEffort,
 				ProfileComplete: true,
@@ -3713,7 +3705,9 @@ func TestHandleBotLLMModelsLegacyRouteReturnsBridgeCatalog(t *testing.T) {
 		BaseURL:  "http://127.0.0.1:4000",
 		APIKey:   "sk-test",
 		ModelID:  "gpt-5.4",
-	}), config.ServerConfig{}, "", statePath)
+	}), config.ServerConfig{}, "manager-image:test", statePath,
+		agent.WithRuntime(fakeCompatRuntime{kind: agent.RuntimeKindCodex}),
+	)
 	if err != nil {
 		t.Fatalf("NewServiceWithLLM() error = %v", err)
 	}
@@ -3749,12 +3743,23 @@ func mustNewService(t *testing.T) *agent.Service {
 	t.Setenv("HOME", t.TempDir())
 	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
 
+	hubSvc, err := hub.NewService(config.HubConfig{}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+
 	svc, err := agent.NewService(config.ModelConfig{
 		Provider: config.ProviderLLMAPI,
 		BaseURL:  "http://127.0.0.1:4000",
 		APIKey:   "sk-test",
 		ModelID:  "model-1",
-	}, config.ServerConfig{}, "", "")
+	}, config.ServerConfig{}, "manager-image:test", "",
+		agent.WithHubService(hubSvc),
+		agent.WithBootstrapDefaultTemplates(config.BootstrapConfig{
+			DefaultManagerTemplate: config.DefaultBootstrapManagerTemplate,
+			DefaultWorkerTemplate:  config.DefaultBootstrapWorkerTemplate,
+		}),
+	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -3797,12 +3802,23 @@ func mustNewSeededServiceWithPath(t *testing.T, agents []agent.Agent) (*agent.Se
 		t.Fatalf("writeSeededAgents() error = %v", err)
 	}
 
+	hubSvc, err := hub.NewService(config.HubConfig{}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+
 	svc, err := agent.NewService(config.ModelConfig{
 		Provider: config.ProviderLLMAPI,
 		BaseURL:  "http://127.0.0.1:4000",
 		APIKey:   "sk-test",
 		ModelID:  "model-1",
-	}, config.ServerConfig{}, "", statePath)
+	}, config.ServerConfig{}, "manager-image:test", statePath,
+		agent.WithHubService(hubSvc),
+		agent.WithBootstrapDefaultTemplates(config.BootstrapConfig{
+			DefaultManagerTemplate: config.DefaultBootstrapManagerTemplate,
+			DefaultWorkerTemplate:  config.DefaultBootstrapWorkerTemplate,
+		}),
+	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -3810,6 +3826,7 @@ func mustNewSeededServiceWithPath(t *testing.T, agents []agent.Agent) (*agent.Se
 }
 
 func writeSeededAgents(statePath string, agents []agent.Agent) error {
+	agents = normalizeSeededAgents(agents)
 	data, err := json.Marshal(map[string]any{
 		"agents": agents,
 	})
@@ -3817,6 +3834,26 @@ func writeSeededAgents(statePath string, agents []agent.Agent) error {
 		return err
 	}
 	return os.WriteFile(statePath, append(data, '\n'), 0o600)
+}
+
+func normalizeSeededAgents(agents []agent.Agent) []agent.Agent {
+	out := make([]agent.Agent, len(agents))
+	for i, item := range agents {
+		out[i] = item
+		if strings.TrimSpace(out[i].RuntimeKind) != "" {
+			continue
+		}
+		switch strings.TrimSpace(out[i].Role) {
+		case agent.RoleManager, agent.RoleWorker:
+			out[i].RuntimeKind = agent.RuntimeKindPicoClawSandbox
+			if strings.TrimSpace(out[i].Image) == "" {
+				out[i].Image = "manager-image:test"
+			}
+		case agent.RoleAgent:
+			out[i].RuntimeKind = agent.RuntimeKindCodex
+		}
+	}
+	return out
 }
 
 func agentSandboxRuntimeHomeForTest(agentName string) (string, error) {

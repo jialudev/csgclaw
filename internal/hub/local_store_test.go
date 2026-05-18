@@ -166,6 +166,38 @@ func TestLocalStorePublishAllowsMissingWorkspace(t *testing.T) {
 	}
 }
 
+func TestLocalStorePublishRequiresImageForGatewayRuntime(t *testing.T) {
+	store := NewLocalStore(t.TempDir())
+	workspaceRoot := writeWorkspaceFile(t, "workspace", "AGENTS.md", "agent")
+
+	_, err := store.Publish(context.Background(), PublishSpec{
+		Name:         "gateway-worker",
+		RuntimeKind:  runtime.KindPicoClawSandbox,
+		WorkspaceRef: WorkspaceRef{Kind: WorkspaceKindDir, Path: workspaceRoot},
+	})
+	if err == nil || err.Error() != `image is required for runtime_kind "picoclaw_sandbox"` {
+		t.Fatalf("Publish() error = %v, want missing image error", err)
+	}
+}
+
+func TestLocalStoreGetRejectsGatewayRuntimeWithoutImage(t *testing.T) {
+	registryRoot := t.TempDir()
+	templateDir := filepath.Join(registryRoot, localTemplatesDirName, "gateway-worker")
+	if err := os.MkdirAll(templateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	manifest := []byte("name = \"gateway-worker\"\nruntime_kind = \"picoclaw_sandbox\"\n")
+	if err := os.WriteFile(filepath.Join(templateDir, localManifestFileName), manifest, 0o644); err != nil {
+		t.Fatalf("WriteFile(agent.toml) error = %v", err)
+	}
+
+	store := NewLocalStore(registryRoot)
+	_, err := store.Get(context.Background(), "gateway-worker")
+	if err == nil || err.Error() != `validate local hub manifest "gateway-worker": image is required for runtime_kind "picoclaw_sandbox"` {
+		t.Fatalf("Get() error = %v, want missing image validation error", err)
+	}
+}
+
 func TestLocalStorePublishRejectsSymlinks(t *testing.T) {
 	store := NewLocalStore(t.TempDir())
 	workspaceRoot := filepath.Join(t.TempDir(), "workspace")

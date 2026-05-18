@@ -11,6 +11,11 @@ import (
 	"csgclaw/internal/runtime"
 )
 
+const (
+	testBuiltinPicoClawImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.5.9"
+	testBuiltinOpenClawImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260518.1-csgclaw"
+)
+
 func TestBuiltinStoreListGetAndFetchWorkspace(t *testing.T) {
 	store := NewBuiltinStore()
 
@@ -41,7 +46,7 @@ func TestBuiltinStoreListGetAndFetchWorkspace(t *testing.T) {
 	if got, want := item.RuntimeKind, runtime.KindPicoClawSandbox; got != want {
 		t.Fatalf("Get().RuntimeKind = %q, want %q", got, want)
 	}
-	if got, want := item.Image, config.DefaultManagerImage; got != want {
+	if got, want := item.Image, testBuiltinPicoClawImage; got != want {
 		t.Fatalf("Get().Image = %q, want %q", got, want)
 	}
 	if got, want := item.WorkspaceRef.Kind, WorkspaceKindDir; got != want {
@@ -52,7 +57,7 @@ func TestBuiltinStoreListGetAndFetchWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get(openclaw-worker) error = %v", err)
 	}
-	if got, want := openclawItem.Image, config.DefaultOpenClawManagerImage; got != want {
+	if got, want := openclawItem.Image, testBuiltinOpenClawImage; got != want {
 		t.Fatalf("Get(openclaw-worker).Image = %q, want %q", got, want)
 	}
 

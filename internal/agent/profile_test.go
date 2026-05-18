@@ -56,7 +56,7 @@ func TestDetectDefaultProfileUsesCSGHubLiteWhenAvailable(t *testing.T) {
 	restore := setProfileDetectionURLs(t, server.URL+"/v1", "http://127.0.0.1:1/v1")
 	defer restore()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -75,7 +75,7 @@ func TestDetectDefaultProfileFallsBackToCodex(t *testing.T) {
 	restore := setProfileDetectionURLs(t, "http://127.0.0.1:1/v1", proxy.URL+"/v1")
 	defer restore()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestDetectDefaultProfileFallsBackToClaudeCode(t *testing.T) {
 	restore := setProfileDetectionURLs(t, "http://127.0.0.1:1/v1", "http://127.0.0.1:1/v1", proxy.URL+"/v1")
 	defer restore()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -108,7 +108,7 @@ func TestDetectDefaultProfileAllFailedReturnsIncompleteProfile(t *testing.T) {
 	restore := setProfileDetectionURLs(t, "http://127.0.0.1:1/v1", "http://127.0.0.1:1/v1", "http://127.0.0.1:1/v1")
 	defer restore()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -129,7 +129,7 @@ func TestDetectDefaultProfileAllFailedReturnsIncompleteProfile(t *testing.T) {
 func TestProfileDefaultsPersistAfterProfileUpdate(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -230,7 +230,7 @@ func TestListModelsForRequestUsesStoredAgentAPIKeyForMatchingProfile(t *testing.
 	}))
 	defer upstream.Close()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -275,7 +275,7 @@ func TestListModelsForRequestDoesNotReuseStoredAPIKeyForChangedBaseURL(t *testin
 	}))
 	defer otherUpstream.Close()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

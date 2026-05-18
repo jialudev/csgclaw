@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 )
 
@@ -54,15 +53,6 @@ func runtimeKindForGatewayRuntime(runtime string) string {
 	switch runtime {
 	case RuntimeKindPicoClawSandbox, RuntimeKindOpenClawSandbox:
 		return runtime
-	default:
-		return ""
-	}
-}
-
-func managerImageForRuntimeKind(kind string) string {
-	switch kind {
-	case RuntimeKindOpenClawSandbox, RuntimeKindPicoClawSandbox:
-		return config.DefaultManagerImageForRuntimeKind(kind)
 	default:
 		return ""
 	}

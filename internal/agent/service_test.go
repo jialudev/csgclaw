@@ -400,7 +400,7 @@ func testModelConfig() config.ModelConfig {
 }
 
 func TestCreateWorkerRejectsReservedManagerName(t *testing.T) {
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -418,7 +418,7 @@ func TestCreateWorkerRejectsReservedManagerName(t *testing.T) {
 }
 
 func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -445,7 +445,7 @@ func TestCreateWorkerRejectsDuplicateName(t *testing.T) {
 }
 
 func TestCreateRejectsDuplicateAgentIDWithoutReplace(t *testing.T) {
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -480,7 +480,7 @@ func TestCreateWorkerRejectsInvalidRuntime(t *testing.T) {
 	)
 	defer ResetTestHooks()
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -513,9 +513,7 @@ func TestCreateWorkerUsesCodexRuntimeWhenRequested(t *testing.T) {
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -570,9 +568,7 @@ func TestCreateWorkerTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		config.ModelConfig{},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
@@ -614,9 +610,7 @@ func TestCreateWorkerProvisionsRuntimeBeforeNew(t *testing.T) {
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			provision: func(_ context.Context, req agentruntime.ProvisionRequest) error {
@@ -677,9 +671,7 @@ func TestCreateWorkerPassesWorkspaceOverlayToProvision(t *testing.T) {
 	var gotOverlay string
 	svc, err := NewService(
 		testModelConfig(),
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			provision: func(_ context.Context, req agentruntime.ProvisionRequest) error {
@@ -717,9 +709,7 @@ func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
@@ -780,9 +770,7 @@ func TestRecreateProvisionsRuntimeBeforeNew(t *testing.T) {
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			del: func(context.Context, agentruntime.Handle) error {
@@ -856,9 +844,7 @@ func TestDeleteTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		config.ModelConfig{},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
@@ -905,9 +891,7 @@ func TestCreateWorkerRequiresRuntimeKindWhenTemplateDoesNotProvideIt(t *testing.
 
 	svc, err := NewService(
 		testModelConfig(),
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			new: func(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
@@ -932,7 +916,7 @@ func TestCreateWorkerRequiresRuntimeKindWhenTemplateDoesNotProvideIt(t *testing.
 func TestCreateWorkerNotifierPersistsWebhookToken(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -957,7 +941,7 @@ func TestCreateWorkerNotifierPersistsWebhookToken(t *testing.T) {
 		t.Fatalf("in-memory webhook_token = %q, want %q", cfg.WebhookToken, wantToken)
 	}
 
-	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService(reload) error = %v", err)
 	}
@@ -974,7 +958,7 @@ func TestCreateWorkerNotifierPersistsWebhookToken(t *testing.T) {
 func TestStopNotifierPersistsStoppedAndHydrateKeepsStopped(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state.json")
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1001,7 +985,7 @@ func TestStopNotifierPersistsStoppedAndHydrateKeepsStopped(t *testing.T) {
 	if agentNow.Status != string(sandbox.StateStopped) {
 		t.Fatalf("Agent().Status after stop = %q, want stopped (notifier Runtime.Info reports running)", agentNow.Status)
 	}
-	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService(reload) error = %v", err)
 	}
@@ -1044,8 +1028,10 @@ func TestBoxLiteProviderGatewayLifecycle(t *testing.T) {
 	}
 
 	worker, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
-		ID:   "u-alice",
-		Name: "alice",
+		ID:          "u-alice",
+		Name:        "alice",
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Image:       "picoclaw:latest",
 	})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
@@ -1199,8 +1185,10 @@ func TestCreateReplaceWorkerRecreatesExistingAgent(t *testing.T) {
 
 	created, err := svc.Create(context.Background(), CreateRequest{
 		Spec: CreateAgentSpec{
-			ID:   "u-alice",
-			Name: "alice",
+			ID:          "u-alice",
+			Name:        "alice",
+			RuntimeKind: RuntimeKindPicoClawSandbox,
+			Image:       "picoclaw:latest",
 		},
 	})
 	if err != nil {
@@ -1232,7 +1220,7 @@ func TestCreateReplaceWorkerRecreatesExistingAgent(t *testing.T) {
 }
 
 func TestCreateReplaceRequiresExistingAgent(t *testing.T) {
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1276,6 +1264,7 @@ func TestCreateReplaceFieldMaskMergesExistingAgent(t *testing.T) {
 			Name:        "alice",
 			Description: "worker",
 			Image:       "agent-image:v1",
+			RuntimeKind: RuntimeKindPicoClawSandbox,
 		},
 	}); err != nil {
 		t.Fatalf("Create() seed error = %v", err)
@@ -1502,7 +1491,7 @@ func TestCreateReplaceManagerWithoutRequestedImageUsesManagerDefault(t *testing.
 	}
 }
 
-func TestCreateReplaceManagerSwitchesRuntimeKind(t *testing.T) {
+func TestCreateReplaceManagerSwitchesRuntimeKindRequiresImage(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
@@ -1553,23 +1542,17 @@ func TestCreateReplaceManagerSwitchesRuntimeKind(t *testing.T) {
 		},
 		Replace: true,
 	})
-	if err != nil {
-		t.Fatalf("Create() replace error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), `image is required when changing gateway runtime_kind to "openclaw_sandbox"`) {
+		t.Fatalf("Create() replace error = %v, want missing image error", err)
 	}
-	if got, want := replaced.RuntimeKind, RuntimeKindOpenClawSandbox; got != want {
-		t.Fatalf("Create() runtime_kind = %q, want %q", got, want)
+	if replaced.ID != "" || replaced.Name != "" || replaced.RuntimeKind != "" || replaced.Image != "" {
+		t.Fatalf("Create() replaced = %+v, want zero-value agent fields on error", replaced)
 	}
-	if got, want := replaced.Image, config.DefaultOpenClawManagerImage; got != want {
-		t.Fatalf("Create() image = %q, want %q", got, want)
+	if got, want := svc.GatewayRuntime(), RuntimeKindPicoClawSandbox; got != want {
+		t.Fatalf("GatewayRuntime() = %q, want %q after failed replace", got, want)
 	}
-	if got, want := svc.GatewayRuntime(), RuntimeKindOpenClawSandbox; got != want {
-		t.Fatalf("GatewayRuntime() = %q, want %q", got, want)
-	}
-	if len(gotImages) != 2 {
-		t.Fatalf("createGatewayBox() calls = %d, want 2", len(gotImages))
-	}
-	if got, want := gotImages[1], config.DefaultOpenClawManagerImage; got != want {
-		t.Fatalf("recreate manager image = %q, want %q", got, want)
+	if len(gotImages) != 1 {
+		t.Fatalf("createGatewayBox() calls = %d, want 1", len(gotImages))
 	}
 }
 
@@ -1666,7 +1649,7 @@ func TestLoadMigratesLegacyWorkersIntoAgents(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1690,7 +1673,7 @@ func TestDeleteAllowsManagerAgent(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	statePath := filepath.Join(dir, "agents.json")
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1712,7 +1695,7 @@ func TestDeleteAllowsManagerAgent(t *testing.T) {
 		t.Fatal("Agent() ok = true, want false after delete")
 	}
 
-	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() reload error = %v", err)
 	}
@@ -1730,7 +1713,7 @@ func TestDeleteRemovesAgentFromState(t *testing.T) {
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1753,7 +1736,7 @@ func TestDeleteRemovesAgentFromState(t *testing.T) {
 		t.Fatal("Agent() ok = true, want false after delete")
 	}
 
-	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() reload error = %v", err)
 	}
@@ -1766,7 +1749,7 @@ func TestSaveLockedPersistsLastKnownAgentStatus(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1801,7 +1784,7 @@ func TestListKeepsLastKnownStatusWhenHydrationFails(t *testing.T) {
 	)
 	defer ResetTestHooks()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1890,7 +1873,7 @@ func TestLoadLegacyAgentWithBoxIDInfersRunningUntilHydrated(t *testing.T) {
 	)
 	defer ResetTestHooks()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -1926,7 +1909,7 @@ func TestLoadLegacyAgentSynthesizesRuntimeRecord(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2001,7 +1984,7 @@ func TestLoadAgentPreservesExplicitRuntimeKind(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2037,7 +2020,7 @@ func TestLoadAgentRequiresRuntimeKind(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err == nil || !strings.Contains(err.Error(), "runtime_kind is required") {
 		t.Fatalf("NewService() error = %v, want runtime_kind validation error", err)
 	}
@@ -2071,7 +2054,7 @@ func TestLoadRuntimeRecordRequiresRuntimeKind(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err == nil || !strings.Contains(err.Error(), "runtime kind is required") {
 		t.Fatalf("NewService() error = %v, want runtime kind validation error", err)
 	}
@@ -2098,7 +2081,7 @@ func TestLoadManagerRequiresCanonicalIdentity(t *testing.T) {
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	_, err = NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err == nil || !strings.Contains(err.Error(), "manager id must be") {
 		t.Fatalf("NewService() error = %v, want canonical manager validation error", err)
 	}
@@ -2114,7 +2097,7 @@ func TestDeleteRemovesAgentHomeDirectory(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2171,7 +2154,7 @@ func TestDeletePrefersBoxIDOverName(t *testing.T) {
 		testForceRemoveBoxHook = nil
 	}()
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2221,7 +2204,7 @@ func TestDeleteFallsBackToNameWhenStoredBoxIDIsStale(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2278,7 +2261,7 @@ func TestDeleteRemovesRuntimeCacheByHomeDir(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2321,7 +2304,7 @@ func TestDeleteRetriesAgentHomeRemovalOnDirectoryNotEmpty(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2382,7 +2365,7 @@ func TestCreateWorkerStoresBoxID(t *testing.T) {
 	)
 	defer ResetTestHooks()
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2521,7 +2504,7 @@ func TestCreateWorkerUsesDefaultProfileSnapshotForGatewayRuntime(t *testing.T) {
 				ReasoningEffort: "medium",
 			},
 		},
-	}, config.ServerConfig{}, "", "")
+	}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2578,7 +2561,7 @@ func TestCreateWorkerClosesBoxHandleAfterCreate(t *testing.T) {
 		return nil
 	}
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2625,7 +2608,7 @@ func TestStreamLogsFallsBackToSandboxTailWhenHostLogIsMissing(t *testing.T) {
 		testRunBoxCommandHook = nil
 	}()
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2661,7 +2644,7 @@ func TestStreamLogsFollowUsesHostGatewayLogWithoutSandboxRuntime(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2730,7 +2713,7 @@ func TestStreamLogsFallsBackToNameAndRefreshesStoredBoxID(t *testing.T) {
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2795,7 +2778,7 @@ func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -2826,7 +2809,7 @@ func TestStartFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 		t.Fatalf("Start().Status = %q, want %q", got.Status, "running")
 	}
 
-	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService(reload) error = %v", err)
 	}
@@ -2843,9 +2826,7 @@ func TestStartTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		config.ModelConfig{},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
@@ -2888,9 +2869,7 @@ func TestStartProvisionsRuntimeBeforeStart(t *testing.T) {
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			provision: func(_ context.Context, req agentruntime.ProvisionRequest) error {
@@ -2959,7 +2938,7 @@ func TestStartSkipsStartBoxWhenAlreadyRunning(t *testing.T) {
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -3019,7 +2998,7 @@ func TestStartRefreshesCompleteWorkerGatewayConfig(t *testing.T) {
 		testBoxInfoHook = nil
 	}()
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{ListenAddr: ":18080", AccessToken: "token"}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{ListenAddr: ":18080", AccessToken: "token"}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -3650,7 +3629,7 @@ func TestStartConfiguredAgentsStartsStoppedCompleteWorkersAndLeavesRunningWorker
 		}
 		return info, nil
 	}
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -3756,7 +3735,7 @@ func TestStopFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -3787,7 +3766,7 @@ func TestStopFallsBackToNameAndRefreshesStoredAgentState(t *testing.T) {
 		t.Fatalf("Stop().Status = %q, want %q", got.Status, "stopped")
 	}
 
-	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService(reload) error = %v", err)
 	}
@@ -3804,9 +3783,7 @@ func TestStopTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		config.ModelConfig{},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
@@ -3868,9 +3845,7 @@ func TestCreateClosesBoxHandleAfterCreate(t *testing.T) {
 
 	svc, err := NewService(
 		config.ModelConfig{BaseURL: "http://127.0.0.1:4000", APIKey: "sk-test", ModelID: "model-1"},
-		config.ServerConfig{},
-		"",
-		"",
+		config.ServerConfig{}, "manager-image:test", "",
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -4000,14 +3975,14 @@ func TestEnsureBootstrapStateForceRecreatePrefersStoredManagerBoxID(t *testing.T
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, testModelConfig(), "", true); err != nil {
+	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, testModelConfig(), "manager-image:test", true); err != nil {
 		t.Fatalf("EnsureBootstrapState() error = %v", err)
 	}
 	if removed != "box-old" {
 		t.Fatalf("ForceRemove() target = %q, want %q", removed, "box-old")
 	}
 
-	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() reload error = %v", err)
 	}
@@ -4024,7 +3999,7 @@ func TestEnsureBootstrapStateForceRecreateResetsManagerHomeBeforeCreate(t *testi
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -4098,7 +4073,7 @@ func TestEnsureBootstrapStateForceRecreateResetsManagerHomeBeforeCreate(t *testi
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, testModelConfig(), "", true); err != nil {
+	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, testModelConfig(), "manager-image:test", true); err != nil {
 		t.Fatalf("EnsureBootstrapState() error = %v", err)
 	}
 	if got, want := len(ensuredHomes), 2; got != want {
@@ -4151,7 +4126,7 @@ func TestEnsureBootstrapStateClosesManagerBoxHandleAfterCreate(t *testing.T) {
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "agents.json")
-	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, testModelConfig(), "", false); err != nil {
+	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, testModelConfig(), "manager-image:test", false); err != nil {
 		t.Fatalf("EnsureBootstrapState() error = %v", err)
 	}
 	if closeCalls != 1 {
@@ -4161,7 +4136,7 @@ func TestEnsureBootstrapStateClosesManagerBoxHandleAfterCreate(t *testing.T) {
 		t.Fatalf("closeRuntime() calls = %d, want %d", closeRuntimeCalls, 1)
 	}
 
-	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() reload error = %v", err)
 	}
@@ -4223,7 +4198,7 @@ func TestEnsureBootstrapStateReusesStoredManagerBoxIDWithoutForce(t *testing.T) 
 		t.Fatalf("os.WriteFile() error = %v", err)
 	}
 
-	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, config.ModelConfig{}, "", false); err != nil {
+	if err := EnsureBootstrapState(context.Background(), statePath, config.ServerConfig{}, config.ModelConfig{}, "manager-image:test", false); err != nil {
 		t.Fatalf("EnsureBootstrapState() error = %v", err)
 	}
 	if created {
@@ -4235,7 +4210,7 @@ func TestBoxRuntimeHomeUsesPerAgentDirectory(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -4269,7 +4244,7 @@ func TestLookupBootstrapManagerUsesPerAgentHome(t *testing.T) {
 		},
 	}
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "", WithSandboxProvider(provider))
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "", WithSandboxProvider(provider))
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -4322,7 +4297,7 @@ func TestLookupBootstrapManagerUsesStoredIDWhenConfigured(t *testing.T) {
 		testGetBoxHook = nil
 	}()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -4370,7 +4345,7 @@ func TestLookupBootstrapManagerUsesManagerNameWhenNoStoredID(t *testing.T) {
 		testGetBoxHook = nil
 	}()
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -4431,9 +4406,7 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 	}
 	svc, err := NewService(
 		testModelConfig(),
-		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"},
-		"",
-		"",
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "shared-token"}, "manager-image:test", "",
 		withTestPicoClawSandboxRuntime(apps),
 	)
 	if err != nil {
@@ -4709,7 +4682,7 @@ func TestGatewayStartCommandKeepsDebugSleepMode(t *testing.T) {
 }
 
 func TestPicoclawSandboxRuntimeKind(t *testing.T) {
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -4744,7 +4717,7 @@ func TestRuntimeViewUsesRuntimeInfoAndReportsLogSupport(t *testing.T) {
 		t.Fatalf("writeSeededAgents() error = %v", err)
 	}
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -4799,7 +4772,7 @@ func TestRuntimeViewMapsRuntimeNotFoundToUnknown(t *testing.T) {
 		t.Fatalf("writeSeededAgents() error = %v", err)
 	}
 
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "", statePath)
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}

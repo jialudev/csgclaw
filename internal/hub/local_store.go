@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"csgclaw/internal/runtime"
-
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -34,14 +32,6 @@ var (
 
 type LocalStore struct {
 	root string
-}
-
-type localTemplateManifest struct {
-	Name        string `toml:"name"`
-	Description string `toml:"description,omitempty"`
-	RuntimeKind string `toml:"runtime_kind"`
-	Image       string `toml:"image,omitempty"`
-	UpdatedAt   string `toml:"updated_at,omitempty"`
 }
 
 func NewLocalStore(root string) *LocalStore {
@@ -190,16 +180,16 @@ func (s *LocalStore) workspaceRef(id string) WorkspaceRef {
 	return WorkspaceRef{Kind: WorkspaceKindDir, Path: workspace}
 }
 
-func (s *LocalStore) loadTemplate(id string) (string, localTemplateManifest, error) {
+func (s *LocalStore) loadTemplate(id string) (string, templateManifest, error) {
 	id = strings.TrimSpace(id)
 	if err := validateLocalTemplateID(id); err != nil {
-		return "", localTemplateManifest{}, err
+		return "", templateManifest{}, err
 	}
 	return loadManifestFS(os.DirFS(s.root), filepath.ToSlash(filepath.Join(localTemplatesDirName, id, localManifestFileName)), "local hub")
 }
 
 func (s *LocalStore) writeManifest(path string, spec PublishSpec) error {
-	manifest := localTemplateManifest{
+	manifest := templateManifest{
 		Name:        spec.Name,
 		Description: spec.Description,
 		RuntimeKind: spec.RuntimeKind,
@@ -229,9 +219,14 @@ func normalizePublishSpec(spec PublishSpec) (PublishSpec, error) {
 	if spec.Name == "" {
 		return PublishSpec{}, ErrTemplateNameRequired
 	}
+	spec.RuntimeKind = strings.TrimSpace(spec.RuntimeKind)
+	spec.Image = strings.TrimSpace(spec.Image)
 	spec.Description = strings.TrimSpace(spec.Description)
 	if spec.RuntimeKind == "" {
 		return PublishSpec{}, ErrRuntimeKindRequired
+	}
+	if requiresTemplateImage(spec.RuntimeKind) && spec.Image == "" {
+		return PublishSpec{}, fmt.Errorf("image is required for runtime_kind %q", spec.RuntimeKind)
 	}
 	spec.WorkspaceRef.Kind = strings.TrimSpace(spec.WorkspaceRef.Kind)
 	spec.WorkspaceRef.Path = strings.TrimSpace(spec.WorkspaceRef.Path)
@@ -268,34 +263,6 @@ func normalizePublishSpec(spec PublishSpec) (PublishSpec, error) {
 		spec.UpdatedAt = spec.UpdatedAt.UTC()
 	}
 	return spec, nil
-}
-
-func validateManifest(manifest localTemplateManifest) error {
-	manifest.Name = strings.TrimSpace(manifest.Name)
-	if manifest.Name == "" {
-		return ErrTemplateNameRequired
-	}
-	switch manifest.RuntimeKind {
-	case runtime.KindPicoClawSandbox, runtime.KindOpenClawSandbox, runtime.KindCodex:
-	default:
-		return fmt.Errorf("%w: %s", ErrRuntimeKindRequired, manifest.RuntimeKind)
-	}
-	if _, err := parseManifestUpdatedAt(manifest.UpdatedAt); err != nil {
-		return err
-	}
-	return nil
-}
-
-func parseManifestUpdatedAt(value string) (time.Time, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return time.Time{}, nil
-	}
-	parsed, err := time.Parse(time.RFC3339Nano, value)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("invalid updated_at %q", value)
-	}
-	return parsed.UTC(), nil
 }
 
 func validateLocalTemplateID(id string) error {

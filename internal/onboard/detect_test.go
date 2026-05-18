@@ -155,11 +155,13 @@ func writeManagerAgentState(t *testing.T) error {
 	state := map[string]any{
 		"agents": []map[string]any{
 			{
-				"id":         agent.ManagerUserID,
-				"name":       agent.ManagerName,
-				"role":       agent.RoleManager,
-				"status":     "running",
-				"created_at": time.Date(2026, 5, 1, 8, 0, 0, 0, time.UTC).Format(time.RFC3339Nano),
+				"id":           agent.ManagerUserID,
+				"name":         agent.ManagerName,
+				"role":         agent.RoleManager,
+				"runtime_kind": agent.RuntimeKindPicoClawSandbox,
+				"image":        "manager-image:test",
+				"status":       "running",
+				"created_at":   time.Date(2026, 5, 1, 8, 0, 0, 0, time.UTC).Format(time.RFC3339Nano),
 			},
 		},
 	}

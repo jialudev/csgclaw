@@ -669,7 +669,7 @@ func TestServiceCreateCSGClawWorkerCreatesAgentUserAndBot(t *testing.T) {
 	})
 	t.Cleanup(restoreDefault)
 
-	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -776,7 +776,7 @@ func TestServiceCreateFeishuWorkerCreatesAgentUserAndBot(t *testing.T) {
 	})
 	t.Cleanup(restoreDefault)
 
-	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -837,7 +837,7 @@ func TestServiceCreateWorkerReusesAgentAcrossChannels(t *testing.T) {
 	})
 	t.Cleanup(restoreDefault)
 
-	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -910,7 +910,7 @@ func TestServiceCreateWorkerRejectsDuplicateNameInSameChannel(t *testing.T) {
 	})
 	t.Cleanup(restoreDefault)
 
-	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", "")
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}
@@ -1407,7 +1407,7 @@ func mustNewSeededAgentService(t *testing.T, agents []agent.Agent) *agent.Servic
 	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
 		t.Fatalf("write agents: %v", err)
 	}
-	svc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "", statePath)
+	svc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
 	if err != nil {
 		t.Fatalf("agent.NewService() error = %v", err)
 	}

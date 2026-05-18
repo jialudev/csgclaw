@@ -82,27 +82,6 @@ func (b BootstrapConfig) Validate() error {
 	return nil
 }
 
-// DefaultManagerImageForRuntimeKind returns the default manager/worker sandbox image for an explicit runtime_kind value.
-func DefaultManagerImageForRuntimeKind(runtimeKind string) string {
-	switch normalizeGatewayRuntimeKind(runtimeKind) {
-	case RuntimeKindOpenClawSandbox:
-		return DefaultOpenClawManagerImage
-	default:
-		return DefaultManagerImage
-	}
-}
-
-func normalizeGatewayRuntimeKind(kind string) string {
-	switch strings.TrimSpace(strings.ToLower(kind)) {
-	case RuntimeKindPicoClawSandbox:
-		return RuntimeKindPicoClawSandbox
-	case RuntimeKindOpenClawSandbox:
-		return RuntimeKindOpenClawSandbox
-	default:
-		return ""
-	}
-}
-
 type SandboxConfig struct {
 	Provider                 string
 	StoragePath              string
@@ -260,8 +239,6 @@ const (
 
 	DefaultHTTPPort                 = apiclient.DefaultHTTPPort
 	DefaultAccessToken              = "your_access_token"
-	DefaultManagerImage             = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.5.9"
-	DefaultOpenClawManagerImage     = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260518.1-csgclaw"
 	CSGHubProvider                  = "csghub"
 	DockerProvider                  = "docker"
 	BoxLiteProvider                 = "boxlite"

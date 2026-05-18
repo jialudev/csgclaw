@@ -301,11 +301,15 @@ func (s *Service) SetGatewayRuntime(runtime, managerImage string) error {
 	if kind == "" {
 		return fmt.Errorf("gateway runtime %q is not supported", runtime)
 	}
+	managerImage = strings.TrimSpace(managerImage)
+	if kind != s.gatewayRuntimeKind() && managerImage == "" {
+		return fmt.Errorf("image is required when changing gateway runtime_kind to %q", kind)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.gatewayRuntime = kind
-	if image := strings.TrimSpace(managerImage); image != "" {
-		s.managerImage = image
+	if managerImage != "" {
+		s.managerImage = managerImage
 	}
 	return nil
 }
@@ -320,8 +324,8 @@ func NewService(model config.ModelConfig, server config.ServerConfig, managerIma
 
 func NewServiceWithLLM(llmCfg config.LLMConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
 	// agent.Service owns the persisted registry and runtime selection.
-	if managerImage == "" {
-		managerImage = config.DefaultManagerImage
+	if strings.TrimSpace(managerImage) == "" {
+		return nil, fmt.Errorf("manager image is required")
 	}
 	defaultProfile, model, err := llmCfg.Resolve("")
 	if err != nil {
@@ -435,6 +439,9 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 	}
 
 	managerImage := strings.TrimSpace(imageOverride)
+	if runtimeKind != s.gatewayRuntimeKind() && managerImage == "" {
+		return Agent{}, fmt.Errorf("image is required when changing gateway runtime_kind to %q", runtimeKind)
+	}
 	previousGatewayRuntime := ""
 	previousManagerImage := ""
 	shouldUpdateGatewayDefaults := runtimeKind != s.gatewayRuntimeKind() || managerImage != ""
@@ -445,8 +452,6 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		s.gatewayRuntime = runtimeKind
 		if managerImage != "" {
 			s.managerImage = managerImage
-		} else if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" {
-			s.managerImage = defaultImage
 		}
 		managerImage = s.managerImage
 		s.mu.Unlock()
@@ -881,7 +886,6 @@ func (s *Service) createNew(ctx context.Context, spec CreateAgentSpec) (Agent, e
 		return s.EnsureManager(ctx, false)
 	}
 	if shouldCreateWorkerSpec(spec) {
-		spec = s.applyDefaultWorkerRuntimeSpec(spec)
 		spec.Role = RoleWorker
 		return s.CreateWorker(ctx, spec)
 	}
@@ -929,7 +933,6 @@ func (s *Service) replace(ctx context.Context, req CreateRequest) (Agent, error)
 		if err := s.Delete(ctx, existing.ID); err != nil {
 			return Agent{}, err
 		}
-		spec = s.applyDefaultWorkerRuntimeSpec(spec)
 		spec.Role = RoleWorker
 		return s.CreateWorker(ctx, spec)
 	}
@@ -950,19 +953,6 @@ func replaceImageOverride(req CreateRequest) string {
 		}
 	}
 	return ""
-}
-
-func (s *Service) applyDefaultWorkerRuntimeSpec(spec CreateAgentSpec) CreateAgentSpec {
-	if s == nil || strings.TrimSpace(spec.RuntimeKind) != "" {
-		return spec
-	}
-	spec.RuntimeKind = s.gatewayRuntimeKind()
-	if strings.TrimSpace(spec.Image) == "" {
-		s.mu.RLock()
-		spec.Image = strings.TrimSpace(s.managerImage)
-		s.mu.RUnlock()
-	}
-	return spec
 }
 
 func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) (CreateAgentSpec, error) {
@@ -1407,18 +1397,6 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	}
 	if nameExists {
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
-	}
-	if runtimeKind == "" {
-		s.mu.RLock()
-		_, managerExists := s.agents[ManagerUserID]
-		defaultImage := strings.TrimSpace(s.managerImage)
-		s.mu.RUnlock()
-		if managerExists && defaultImage != "" {
-			runtimeKind = s.gatewayRuntimeKind()
-			if image == "" {
-				image = defaultImage
-			}
-		}
 	}
 	switch {
 	case runtimeKind == "":

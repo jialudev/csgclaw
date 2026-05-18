@@ -12,7 +12,7 @@ func TestPicoClawRuntimeHostAgentHomeUsesAgentRoot(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "", "")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", "")
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -36,9 +36,7 @@ func TestRuntimeProfileForAgentUsesBridgeForCodex(t *testing.T) {
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -81,9 +79,7 @@ func TestRuntimeProfileForKindUsesBridgeForCodexRuntime(t *testing.T) {
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -121,9 +117,7 @@ func TestPicoClawRuntimeHostResolveRuntimeProfilePreservesAPIProfile(t *testing.
 			ListenAddr:       "0.0.0.0:18080",
 			AdvertiseBaseURL: "http://127.0.0.1:18080",
 			AccessToken:      "shared-token",
-		},
-		"",
-		"",
+		}, "manager-image:test", "",
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

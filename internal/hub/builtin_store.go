@@ -96,24 +96,24 @@ func (s *BuiltinStore) Publish(context.Context, PublishSpec) (Template, error) {
 	return Template{}, ErrRegistryNotWritable
 }
 
-func (s *BuiltinStore) loadManifest(id string) (localTemplateManifest, error) {
+func (s *BuiltinStore) loadManifest(id string) (templateManifest, error) {
 	if err := validateLocalTemplateID(id); err != nil {
-		return localTemplateManifest{}, err
+		return templateManifest{}, err
 	}
 	manifestPath := s.manifestPath(id)
 	data, err := fs.ReadFile(templates.FS(), manifestPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return localTemplateManifest{}, fmt.Errorf("%w: %s", ErrTemplateNotFound, id)
+			return templateManifest{}, fmt.Errorf("%w: %s", ErrTemplateNotFound, id)
 		}
-		return localTemplateManifest{}, fmt.Errorf("read builtin manifest %q: %w", id, err)
+		return templateManifest{}, fmt.Errorf("read builtin manifest %q: %w", id, err)
 	}
-	var manifest localTemplateManifest
+	var manifest templateManifest
 	if err := toml.Unmarshal(data, &manifest); err != nil {
-		return localTemplateManifest{}, fmt.Errorf("decode builtin manifest %q: %w", id, err)
+		return templateManifest{}, fmt.Errorf("decode builtin manifest %q: %w", id, err)
 	}
 	if err := validateManifest(manifest); err != nil {
-		return localTemplateManifest{}, fmt.Errorf("validate builtin manifest %q: %w", id, err)
+		return templateManifest{}, fmt.Errorf("validate builtin manifest %q: %w", id, err)
 	}
 	return manifest, nil
 }

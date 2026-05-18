@@ -203,10 +203,7 @@ func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Ser
 			agent.RuntimeKindOpenClawSandbox,
 			agent.RuntimeKindNotifier,
 		},
-		RuntimeDefaultImages: map[string]string{
-			agent.RuntimeKindPicoClawSandbox: config.DefaultManagerImageForRuntimeKind(agent.RuntimeKindPicoClawSandbox),
-			agent.RuntimeKindOpenClawSandbox: config.DefaultManagerImageForRuntimeKind(agent.RuntimeKindOpenClawSandbox),
-		},
+		RuntimeDefaultImages: map[string]string{},
 	}
 	defaults, err := hub.ResolveBootstrapDefaults(ctx, cfg.Bootstrap, hubSvc)
 	if err != nil {
@@ -215,6 +212,9 @@ func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Ser
 	}
 	resp.RuntimeKind = bootstrapRuntimeKind(defaults.ManagerRuntimeKind)
 	resp.EffectiveManagerImage = defaults.ManagerImage
+	if defaults.ManagerRuntimeKind != "" && defaults.ManagerImage != "" {
+		resp.RuntimeDefaultImages[defaults.ManagerRuntimeKind] = defaults.ManagerImage
+	}
 	if defaults.WorkerRuntimeKind != "" && defaults.WorkerImage != "" {
 		resp.RuntimeDefaultImages[defaults.WorkerRuntimeKind] = defaults.WorkerImage
 	}

@@ -1,6 +1,7 @@
 package onboard
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,17 +11,18 @@ import (
 	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/config"
+	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 )
 
 var (
 	loadIMBootstrap = im.LoadBootstrap
 	openBotStore    = bot.NewStore
-	openAgentState  = func(cfg config.Config, path string) (agentStateReader, error) {
+	openAgentState  = func(cfg config.Config, path, managerImage string) (agentStateReader, error) {
 		return agent.NewServiceWithLLM(
 			effectiveLLMConfig(cfg),
 			cfg.Server,
-			config.DefaultManagerImage,
+			managerImage,
 			path,
 			runtimewiring.WithPicoClawSandboxRuntime(nil),
 			runtimewiring.WithOpenClawSandboxRuntime(),
@@ -95,7 +97,16 @@ func DetectState(opts DetectStateOptions) (DetectStateResult, error) {
 	}
 	result.IMBootstrapComplete = imBootstrapComplete(imState)
 
-	agentState, err := openAgentState(cfg, agentsPath)
+	hubSvc, err := hub.NewService(cfg.Hub, hub.DefaultStoreFactory)
+	if err != nil {
+		return DetectStateResult{}, err
+	}
+	bootstrapDefaults, err := hub.ResolveBootstrapDefaults(context.Background(), cfg.Bootstrap, hubSvc)
+	if err != nil {
+		return DetectStateResult{}, err
+	}
+
+	agentState, err := openAgentState(cfg, agentsPath, bootstrapDefaults.ManagerImage)
 	if err != nil {
 		return DetectStateResult{}, err
 	}

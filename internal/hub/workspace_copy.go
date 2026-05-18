@@ -151,25 +151,25 @@ func validateWorkspaceRelativePath(rel string) error {
 	return nil
 }
 
-func loadManifestFS(srcFS fs.FS, manifestPath, label string) (string, localTemplateManifest, error) {
+func loadManifestFS(srcFS fs.FS, manifestPath, label string) (string, templateManifest, error) {
 	id := templateIDFromManifestPath(manifestPath)
 	if err := validateLocalTemplateID(id); err != nil {
-		return "", localTemplateManifest{}, err
+		return "", templateManifest{}, err
 	}
 
-	var manifest localTemplateManifest
+	var manifest templateManifest
 	data, err := fs.ReadFile(srcFS, manifestPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", localTemplateManifest{}, fmt.Errorf("%w: %s", ErrTemplateNotFound, id)
+			return "", templateManifest{}, fmt.Errorf("%w: %s", ErrTemplateNotFound, id)
 		}
-		return "", localTemplateManifest{}, fmt.Errorf("read %s manifest %q: %w", label, id, err)
+		return "", templateManifest{}, fmt.Errorf("read %s manifest %q: %w", label, id, err)
 	}
 	if err := toml.Unmarshal(data, &manifest); err != nil {
-		return "", localTemplateManifest{}, fmt.Errorf("decode %s manifest %q: %w", label, id, err)
+		return "", templateManifest{}, fmt.Errorf("decode %s manifest %q: %w", label, id, err)
 	}
 	if err := validateManifest(manifest); err != nil {
-		return "", localTemplateManifest{}, fmt.Errorf("validate %s manifest %q: %w", label, id, err)
+		return "", templateManifest{}, fmt.Errorf("validate %s manifest %q: %w", label, id, err)
 	}
 	return id, manifest, nil
 }
