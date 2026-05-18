@@ -199,11 +199,11 @@ export function HubDetailPane({
                               ? (<div className="workspace-empty">{t("hubWorkspaceFileLoading")}</div>)
                               : !workspaceFile
                                 ? (
-                                    <>
+                                    <div className="hub-preview-empty-state">
                                       <div className="hub-preview-empty-icon" aria-hidden="true"></div>
                                       <strong>{t("hubWorkspacePreviewTitle")}</strong>
                                       <p>{t("hubWorkspacePreviewHint")}</p>
-                                    </>
+                                    </div>
                                   )
                                 : (
                                     <>
