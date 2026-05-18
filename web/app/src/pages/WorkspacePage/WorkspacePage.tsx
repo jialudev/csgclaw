@@ -8,11 +8,11 @@ import { fetchCLIProxyAuthStatus as fetchCLIProxyAuthStatusRequest, loginCLIProx
 import { fetchHubTemplate, fetchHubTemplates as fetchHubTemplatesRequest, fetchHubWorkspaceFile, publishAgentTemplateRequest } from "@/api/hub";
 import { createRoomRequest, createUserRequest, deleteRoomRequest, inviteRoomUsersRequest, joinAgentToRoomRequest, sendMessageRequest } from "@/api/im";
 import { ACTION_REBUILD_MANAGER, MESSAGE_LIST_BOTTOM_THRESHOLD, WORKSPACE_TAB_AGENTS, WORKSPACE_TAB_HUB, WORKSPACE_TAB_MESSAGES } from "@/bootstrap/constants";
-import { applyTemplateToDraft, advanceAgentProgress, agentToDraft, draftNotifierRuntimeOptionsForSave, draftToProfile, ensureNotifierPullSubscriptionDraft, isAgentRunning, isManagerAgent, isNotifierRuntimeDraft, isNotifierRuntimeDraftOnAgentPage, modelRequestKey, normalizeAuthProviderName, normalizeRuntimeKind, normalizeTemplateSelection, parseJSONMap, pickDefaultAgentTemplate, profileToDraft, providerNeedsAuth, runtimeImageForKind, startAgentCreateProgress } from "@/models/agents";
+import { applyTemplateToDraft, advanceAgentProgress, agentToDraft, availableManagerRuntimeOptions, draftNotifierRuntimeOptionsForSave, draftToProfile, ensureNotifierPullSubscriptionDraft, isAgentRunning, isManagerAgent, isNotifierRuntimeDraft, isNotifierRuntimeDraftOnAgentPage, modelRequestKey, normalizeAuthProviderName, normalizeRuntimeKind, normalizeTemplateSelection, parseJSONMap, pickDefaultAgentTemplate, profileToDraft, providerNeedsAuth, runtimeImageForKind, startAgentCreateProgress } from "@/models/agents";
 import { agentMatchesUser, appendMessageToData, applyIMEvent, isDirectConversation, isToolCallMessage, removeConversationFromData, upsertConversationInData } from "@/models/conversations";
 import { areComposerSegmentsEqual, getComposerMentionState, insertComposerLineBreak, parseComposerSegments, placeCaretAtEnd, removeAdjacentMentionToken, renderComposerSegments, replaceMentionQueryWithToken, segmentsToPlainText, serializeComposerSegments, updateDrafts } from "@/models/composer";
 import { paneFromLocation, syncBrowserPath, workspaceTabForPane } from "@/models/routing";
-import { AgentDetailPane, AgentProfileModal, ComputerDetailPane, ConversationPane, CreateRoomModal, HubDetailPane, InviteMembersModal, ManagerProfileSetupModal, ProfilePreviewPopover, UpgradeModal, WorkspaceSidebar } from "./components";
+import { AgentDetailPane, AgentProfileModal, ComputerDetailPane, ConversationPane, CreateRoomModal, HubDetailPane, InviteMembersModal, ManagerProfileSetupModal, ManagerRebuildModal, ProfilePreviewPopover, UpgradeModal, WorkspaceSidebar } from "./components";
 import { normalizeUpgradeStatus } from "@/models/upgradeStatus";
 import { createTranslator, localizeError } from "@/shared/i18n";
 import { messages } from "@/shared/i18n/messages";
@@ -23,6 +23,7 @@ import { errorMessage } from "@/api/client";
 import { useWorkspaceUiStore } from "./workspaceUiStore";
 import {
   fetchWorkspaceBootstrapData,
+  fetchWorkspaceBootstrapConfig,
   fetchWorkspaceUpgradeStatus,
   useWorkspaceAgentsQuery,
   useWorkspaceAppVersionQuery,
@@ -101,6 +102,9 @@ function WorkspacePage() {
   const [hubWorkspaceFileError, setHubWorkspaceFileError] = useState("");
   const [selectedHubWorkspacePath, setSelectedHubWorkspacePath] = useState("");
   const [showAgentModal, setShowAgentModal] = useState(false);
+  const [showManagerRebuildModal, setShowManagerRebuildModal] = useState(false);
+  const [managerRebuildRuntimeKind, setManagerRebuildRuntimeKind] = useState("picoclaw_sandbox");
+  const [managerRebuildImage, setManagerRebuildImage] = useState("");
   const [agentModalMode, setAgentModalMode] = useState("create");
   const [editingAgent, setEditingAgent] = useState(null);
   const [agentDraft, setAgentDraft] = useState(null);
@@ -721,6 +725,16 @@ function WorkspacePage() {
     }
   }
 
+  async function refreshBootstrapConfig() {
+    try {
+      const normalized = await fetchWorkspaceBootstrapConfig();
+      queryClient.setQueryData(workspaceQueryKeys.bootstrapConfig(), normalized);
+      return normalized;
+    } catch (_) {
+      return null;
+    }
+  }
+
   async function refreshUpgradeStatus() {
     try {
       const payload = await fetchWorkspaceUpgradeStatus();
@@ -1116,6 +1130,7 @@ function WorkspacePage() {
     : t("inviteMembers");
 
   const managerAgent = agents.find((item) => item.role === "manager" || item.id === "u-manager");
+  const managerRuntimeOptions = availableManagerRuntimeOptions(bootstrapConfig);
   const workerAgents = agents.filter((item) => item.id !== managerAgent?.id);
   const agentItems = [managerAgent, ...workerAgents].filter(Boolean);
   const runningAgentCount = agentItems.filter(isAgentRunning).length;
@@ -1291,21 +1306,39 @@ function WorkspacePage() {
     }
   }
 
-  async function requestManagerRebuild() {
-    await createManagerAgentRequest();
+  function openManagerRebuildModal(item = managerAgent) {
+    const initialRuntimeKind = normalizeRuntimeKind(item?.runtime_kind || bootstrapConfig?.runtime_kind || managerRebuildRuntimeKind);
+    const fallbackRuntimeKind = managerRuntimeOptions[0]?.value || "picoclaw_sandbox";
+    const resolvedRuntimeKind = managerRuntimeOptions.some((option) => option.value === initialRuntimeKind)
+      ? initialRuntimeKind
+      : fallbackRuntimeKind;
+    const resolvedImage = runtimeImageForKind(
+      resolvedRuntimeKind,
+      bootstrapConfig,
+      item?.image || managerAgent?.image || "",
+    );
+    setManagerRebuildRuntimeKind(resolvedRuntimeKind);
+    setManagerRebuildImage(resolvedImage);
+    setShowManagerRebuildModal(true);
+  }
+
+  async function requestManagerRebuild(options = {}) {
+    const runtimeKind = normalizeRuntimeKind(options.runtimeKind || managerAgent?.runtime_kind || bootstrapConfig?.runtime_kind || managerRuntimeOptions[0]?.value);
+    const image = String(options.image ?? managerAgent?.image ?? "").trim();
+    await createManagerAgentRequest({
+      runtime_kind: runtimeKind,
+      image,
+    });
     await refreshAgents();
     await refreshManagerProfile();
+    await refreshBootstrapConfig();
   }
 
   async function rebuildManagerFromBrowser(options = {}) {
-    const confirmText = options.confirm || t("managerRebuildConfirm");
-    if (!options.skipConfirm && confirmText && !window.confirm(confirmText)) {
-      return false;
-    }
     setAgentActionBusy("u-manager:recreate");
     setAgentsError("");
     try {
-      await requestManagerRebuild();
+      await requestManagerRebuild(options);
       return true;
     } catch (err) {
       setAgentsError(err.message || t("agentActionFailed"));
@@ -1315,27 +1348,28 @@ function WorkspacePage() {
     }
   }
 
+  async function confirmManagerRebuild() {
+    if (agentActionBusy) {
+      return;
+    }
+    const selectedRuntimeKind = normalizeRuntimeKind(managerRebuildRuntimeKind || managerAgent?.runtime_kind || bootstrapConfig?.runtime_kind);
+    const selectedImage = String(managerRebuildImage ?? "").trim();
+    setMessageActionError({ key: "", message: "" });
+    const rebuilt = await rebuildManagerFromBrowser({ runtimeKind: selectedRuntimeKind, image: selectedImage });
+    if (rebuilt) {
+      setShowManagerRebuildModal(false);
+    }
+  }
+
   async function handleMessageAction(action, message) {
     if (!action || action.id !== ACTION_REBUILD_MANAGER) {
       return;
     }
-    const busyKey = `${message?.id || "message"}:${action.id}`;
     if (messageActionBusy || agentActionBusy) {
       return;
     }
-    const confirmText = action.confirm || t("managerRebuildConfirm");
-    if (confirmText && !window.confirm(confirmText)) {
-      return;
-    }
-    setMessageActionBusy(busyKey);
     setMessageActionError({ key: "", message: "" });
-    try {
-      await requestManagerRebuild();
-    } catch (err) {
-      setMessageActionError({ key: busyKey, message: err.message || t("agentActionFailed") });
-    } finally {
-      setMessageActionBusy("");
-    }
+    openManagerRebuildModal(managerAgent);
   }
 
   async function saveManagerProfile() {
@@ -1670,16 +1704,16 @@ function WorkspacePage() {
     if (!item?.id || agentActionBusy) {
       return;
     }
+    if (action === "recreate" && isManagerAgent(item)) {
+      openManagerRebuildModal(item);
+      return;
+    }
     if (action === "delete" && !window.confirm(`${t("agentDelete")} ${item.name}?`)) {
       return;
     }
     setAgentActionBusy(`${item.id}:${action}`);
     setAgentsError("");
     try {
-      if (action === "recreate" && isManagerAgent(item)) {
-        await rebuildManagerFromBrowser({ confirm: t("managerRebuildConfirm") });
-        return;
-      }
       if (action === "delete") {
         await deleteBotRequest(item.id);
       } else {
@@ -2123,6 +2157,25 @@ function WorkspacePage() {
               agentBusy={agentBusy}
               onClose={() => setShowAgentModal(false)}
               onSave={saveAgent}
+            />
+          )
+        : null}
+
+      {showManagerRebuildModal
+        ? (
+            <ManagerRebuildModal
+              t={t}
+              runtimeOptions={managerRuntimeOptions}
+              runtimeKind={managerRebuildRuntimeKind}
+              image={managerRebuildImage}
+              bootstrapConfig={bootstrapConfig}
+              managerAgent={managerAgent}
+              busy={agentActionBusy === "u-manager:recreate"}
+              error={agentsError}
+              onRuntimeKindChange={setManagerRebuildRuntimeKind}
+              onImageChange={setManagerRebuildImage}
+              onClose={() => setShowManagerRebuildModal(false)}
+              onConfirm={confirmManagerRebuild}
             />
           )
         : null}

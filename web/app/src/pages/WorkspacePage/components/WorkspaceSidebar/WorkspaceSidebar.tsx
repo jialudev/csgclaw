@@ -242,7 +242,7 @@ export function WorkspaceSidebar({
                                   <span className="workspace-row-title truncate">{item.name || item.id}</span>
                                   <span className="workspace-row-meta truncate">{item.description || item.source?.name || item.id}</span>
                                 </span>
-                                <span className="mini-badge template-source-badge">{localizeTemplateSourceTag(item.source?.name, locale)}</span>
+                                <span className="mini-badge template-source-badge"><span className="template-source-badge-dot" aria-hidden="true"></span>{localizeTemplateSourceTag(item.source?.name, locale)}</span>
                               </button>
                             ))}
                     </WorkspaceGroup>

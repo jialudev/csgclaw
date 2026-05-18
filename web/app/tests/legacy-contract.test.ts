@@ -22,10 +22,13 @@ describe("legacy UI contract", () => {
     expect(source).toContain("function ActionCard");
     expect(source).toContain("function isNotifyCardPayload");
     expect(source).toContain("function rebuildManagerFromBrowser");
+    expect(source).toContain("function ManagerRebuildModal");
     expect(source).toContain("function createManagerAgentRequest");
-    expect(source).toContain('post("api/v1/agents", {');
+    expect(source).toContain('post("api/v1/agents", payload)');
     expect(source).toContain('id: "u-manager",');
     expect(source).toContain("replace: true,");
+    expect(source).toContain("payload.runtime_kind = options.runtime_kind;");
+    expect(source).toContain("payload.image = options.image;");
     expect(source).not.toContain('request("api/v1/agents/u-manager/recreate"');
     expect(source).not.toContain("saved.profile_complete");
     expect(source).not.toContain("if (saved.profile_complete)");

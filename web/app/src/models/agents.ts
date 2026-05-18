@@ -1,4 +1,4 @@
-import { CLIPROXY_AUTH_PROVIDERS, NOTIFIER_RELAY_WEBHOOK_INGRESS_PATH } from "@/bootstrap/constants";
+import { CLIPROXY_AUTH_PROVIDERS, NOTIFIER_RELAY_WEBHOOK_INGRESS_PATH, RUNTIME_KIND_OPTIONS } from "@/bootstrap/constants";
 
 export type RuntimeKind = "picoclaw_sandbox" | "openclaw_sandbox" | "codex" | "notifier" | string;
 export type ProviderName = "csghub_lite" | "codex" | "claude_code" | "api" | string;
@@ -88,6 +88,7 @@ export type RuntimeBootstrapConfig = {
   effective_manager_image?: string | null;
   runtime_default_images?: unknown;
   runtime_kind?: string | null;
+  supported_runtime_kinds?: unknown;
 };
 
 export type DraftProfileOptions = {
@@ -774,6 +775,16 @@ export function runtimeImageForKind(
     return String(bootstrapConfig.effective_manager_image).trim();
   }
   return String(fallbackImage ?? "").trim();
+}
+
+export function availableManagerRuntimeOptions(bootstrapConfig: RuntimeBootstrapConfig | null | undefined) {
+  const configuredKinds = Array.isArray(bootstrapConfig?.supported_runtime_kinds)
+    ? bootstrapConfig.supported_runtime_kinds
+    : [];
+  const gatewayKinds = (configuredKinds.length ? configuredKinds : ["picoclaw_sandbox", "openclaw_sandbox"])
+    .map((kind) => normalizeRuntimeKind(kind))
+    .filter((kind, index, array) => kind && kind !== "codex" && kind !== "notifier" && array.indexOf(kind) === index);
+  return RUNTIME_KIND_OPTIONS.filter((option) => gatewayKinds.includes(option.value));
 }
 
 export function agentCreateProgressSteps(runtimeKind: unknown): AgentCreateProgressStep[] {

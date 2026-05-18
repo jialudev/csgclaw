@@ -2,6 +2,7 @@ import {
   advanceAgentProgress,
   agentToDraft,
   applyTemplateToDraft,
+  availableManagerRuntimeOptions,
   draftNotifierRuntimeOptionsForSave,
   draftToProfile,
   ensureNotifierPullSubscriptionDraft,
@@ -144,6 +145,14 @@ describe("agent model helpers", () => {
       runtime_kind: "openclaw_sandbox",
       template_name: "openclaw-worker",
     });
+  });
+
+  it("filters manager rebuild runtime options to gateway runtimes", () => {
+    expect(availableManagerRuntimeOptions({
+      supported_runtime_kinds: ["picoclaw_sandbox", "openclaw_sandbox", "codex", "notifier", "picoclaw_sandbox"],
+    }).map((option) => option.value)).toEqual(["picoclaw_sandbox", "openclaw_sandbox"]);
+
+    expect(availableManagerRuntimeOptions(null).map((option) => option.value)).toEqual(["picoclaw_sandbox", "openclaw_sandbox"]);
   });
 
   it("normalizes runtime and auth provider labels", () => {

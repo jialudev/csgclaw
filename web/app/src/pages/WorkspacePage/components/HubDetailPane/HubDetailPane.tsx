@@ -103,8 +103,8 @@ export function HubDetailPane({
                           </div>
                           <p>{item.description || item.id}</p>
                           <div className="hub-template-card-meta">
-                            <span className="mini-badge">{item.runtime_kind || item.workspace?.kind || "-"}</span>
-                            <span className="mini-badge template-source-badge">{localizeTemplateSourceTag(item.source?.name, locale)}</span>
+                            <span className="mini-badge template-runtime-badge">{item.runtime_kind || item.workspace?.kind || "-"}</span>
+                            <span className="mini-badge template-source-badge"><span className="template-source-badge-dot" aria-hidden="true"></span>{localizeTemplateSourceTag(item.source?.name, locale)}</span>
                             <span className="hub-template-card-updated">{t("hubUpdatedAtLabel")} {formatHubDate(item.updated_at, locale)}</span>
                           </div>
                         </div>
@@ -124,8 +124,8 @@ export function HubDetailPane({
                           <div className="hub-inspector-copy">
                             <h2>{selectedTemplate.name || selectedTemplate.id}</h2>
                             <p>{selectedTemplate.description || selectedTemplate.id}</p>
-                            <span className="mini-badge">{selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
-                            <span className="mini-badge template-source-badge">{localizeTemplateSourceTag(selectedTemplate.source?.name, locale)}</span>
+                            <span className="mini-badge template-runtime-badge">{selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
+                            <span className="mini-badge template-source-badge"><span className="template-source-badge-dot" aria-hidden="true"></span>{localizeTemplateSourceTag(selectedTemplate.source?.name, locale)}</span>
                           </div>
                         </div>
                         <div className="hub-template-actions">

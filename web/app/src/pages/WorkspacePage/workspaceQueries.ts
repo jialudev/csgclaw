@@ -28,6 +28,11 @@ export async function fetchWorkspaceBootstrapConfig() {
   return {
     ...payload,
     runtime_kind: normalizeRuntimeKind(payload.runtime_kind),
+    supported_runtime_kinds: Array.isArray(payload.supported_runtime_kinds)
+      ? payload.supported_runtime_kinds
+        .map((item) => normalizeRuntimeKind(item))
+        .filter((item, index, array) => item && array.indexOf(item) === index)
+      : [],
     runtime_default_images: normalizeRuntimeImageMap(payload.runtime_default_images),
   };
 }

@@ -23,11 +23,18 @@ export function fetchAgents(options = {}) {
   return get(options.silent ? "api/v1/agents?poll=1" : "api/v1/agents");
 }
 
-export function createManagerAgentRequest() {
-  return post("api/v1/agents", {
+export function createManagerAgentRequest(options = {}) {
+  const payload = {
     id: "u-manager",
     replace: true,
-  });
+  };
+  if (options.runtime_kind) {
+    payload.runtime_kind = options.runtime_kind;
+  }
+  if (Object.prototype.hasOwnProperty.call(options, "image")) {
+    payload.image = options.image;
+  }
+  return post("api/v1/agents", payload);
 }
 
 export function fetchAgentProfileDefaults() {
