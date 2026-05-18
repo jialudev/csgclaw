@@ -1366,6 +1366,85 @@ func TestCreateReplaceManagerUsesRequestedImage(t *testing.T) {
 	}
 }
 
+func TestCreateReplaceManagerReprovisionsWorkspaceAfterHomeRemoval(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	rt := sandboxtest.NewRuntime()
+	createCalls := 0
+	rt.CreateFunc = func(_ context.Context, spec sandbox.CreateSpec) (sandbox.Instance, error) {
+		createCalls++
+		if len(spec.Mounts) == 0 {
+			return nil, fmt.Errorf("create spec mounts are empty")
+		}
+		if _, err := os.Stat(spec.Mounts[0].HostPath); err != nil {
+			return nil, fmt.Errorf("workspace mount host path %q is not available: %w", spec.Mounts[0].HostPath, err)
+		}
+		info := sandbox.Info{
+			ID:        "box-" + spec.Name,
+			Name:      spec.Name,
+			State:     sandbox.StateRunning,
+			CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+		}
+		inst := sandboxtest.NewInstance(info)
+		rt.CreateCalls = append(rt.CreateCalls, spec)
+		if rt.Instances == nil {
+			rt.Instances = make(map[string]*sandboxtest.Instance)
+		}
+		rt.Instances[info.ID] = inst
+		rt.Instances[info.Name] = inst
+		return inst, nil
+	}
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:1",
+		"",
+		WithSandboxProvider(fakeProvider{
+			open: func(context.Context, string) (sandbox.Runtime, error) {
+				return rt, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if _, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   ManagerUserID,
+			Name: ManagerName,
+		},
+	}); err != nil {
+		t.Fatalf("seed Create() error = %v", err)
+	}
+
+	replaced, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:    ManagerUserID,
+			Name:  ManagerName,
+			Image: "manager-image:2",
+		},
+		Replace: true,
+	})
+	if err != nil {
+		t.Fatalf("Create() replace error = %v", err)
+	}
+	if createCalls != 2 {
+		t.Fatalf("sandbox Create() calls = %d, want 2", createCalls)
+	}
+	if replaced.Image != "manager-image:2" {
+		t.Fatalf("Create() image = %q, want requested image", replaced.Image)
+	}
+	workspaceRoot, err := agentWorkspaceRoot(ManagerName)
+	if err != nil {
+		t.Fatalf("agentWorkspaceRoot() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "AGENT.md")); err != nil {
+		t.Fatalf("manager workspace was not reprovisioned after replace: %v", err)
+	}
+}
+
 func TestCreateReplaceManagerWithoutRequestedImageUsesManagerDefault(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
@@ -1490,6 +1569,79 @@ func TestCreateReplaceManagerSwitchesRuntimeKind(t *testing.T) {
 		t.Fatalf("createGatewayBox() calls = %d, want 2", len(gotImages))
 	}
 	if got, want := gotImages[1], config.DefaultOpenClawManagerImage; got != want {
+		t.Fatalf("recreate manager image = %q, want %q", got, want)
+	}
+}
+
+func TestCreateReplaceManagerSwitchesRuntimeKindUsesRequestedImage(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	var gotImages []string
+	SetTestHooks(
+		func(_ *Service, _ string) (sandbox.Runtime, error) { return &fakeRuntime{}, nil },
+		func(_ *Service, _ context.Context, _ sandbox.Runtime, image, name, _ string, _ AgentProfile) (sandbox.Instance, sandbox.Info, error) {
+			gotImages = append(gotImages, image)
+			return &fakeInstance{}, sandbox.Info{
+				ID:        "box-" + name,
+				Name:      name,
+				State:     sandbox.StateRunning,
+				CreatedAt: time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC),
+			}, nil
+		},
+	)
+	testGetBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) (sandbox.Instance, error) {
+		return nil, fmt.Errorf("%w: missing", sandbox.ErrNotFound)
+	}
+	testForceRemoveBoxHook = func(_ *Service, _ context.Context, _ sandbox.Runtime, _ string) error {
+		return nil
+	}
+	defer ResetTestHooks()
+
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"picoclaw-manager:old",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if _, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:   ManagerUserID,
+			Name: ManagerName,
+		},
+	}); err != nil {
+		t.Fatalf("seed Create() error = %v", err)
+	}
+
+	const requestedImage = "openclaw-manager:requested"
+	replaced, err := svc.Create(context.Background(), CreateRequest{
+		Spec: CreateAgentSpec{
+			ID:          ManagerUserID,
+			Name:        ManagerName,
+			Image:       requestedImage,
+			RuntimeKind: RuntimeKindOpenClawSandbox,
+		},
+		Replace: true,
+	})
+	if err != nil {
+		t.Fatalf("Create() replace error = %v", err)
+	}
+	if got, want := replaced.RuntimeKind, RuntimeKindOpenClawSandbox; got != want {
+		t.Fatalf("Create() runtime_kind = %q, want %q", got, want)
+	}
+	if got, want := replaced.Image, requestedImage; got != want {
+		t.Fatalf("Create() image = %q, want %q", got, want)
+	}
+	if got, want := svc.managerImage, requestedImage; got != want {
+		t.Fatalf("managerImage = %q, want %q", got, want)
+	}
+	if len(gotImages) != 2 {
+		t.Fatalf("createGatewayBox() calls = %d, want 2", len(gotImages))
+	}
+	if got, want := gotImages[1], requestedImage; got != want {
 		t.Fatalf("recreate manager image = %q, want %q", got, want)
 	}
 }
