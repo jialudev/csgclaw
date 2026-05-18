@@ -437,15 +437,16 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 	managerImage := strings.TrimSpace(imageOverride)
 	previousGatewayRuntime := ""
 	previousManagerImage := ""
-	if runtimeKind != s.gatewayRuntimeKind() {
+	shouldUpdateGatewayDefaults := runtimeKind != s.gatewayRuntimeKind() || managerImage != ""
+	if shouldUpdateGatewayDefaults {
 		s.mu.Lock()
 		previousGatewayRuntime = s.gatewayRuntime
 		previousManagerImage = s.managerImage
 		s.gatewayRuntime = runtimeKind
-		if managerImage == "" {
-			if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" {
-				s.managerImage = defaultImage
-			}
+		if managerImage != "" {
+			s.managerImage = managerImage
+		} else if defaultImage := managerImageForRuntimeKind(runtimeKind); defaultImage != "" {
+			s.managerImage = defaultImage
 		}
 		managerImage = s.managerImage
 		s.mu.Unlock()
@@ -458,14 +459,19 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 			s.managerImage = previousManagerImage
 			s.mu.Unlock()
 		}()
-	} else if managerImage == "" {
+	} else {
+		s.mu.RLock()
 		managerImage = s.managerImage
+		s.mu.RUnlock()
 	}
 	startProfile, detectionResults := s.managerStartupProfile(ctx)
-	if startProfile.ProfileComplete {
+	provisionBootstrapManagerRuntime := func() error {
+		if !startProfile.ProfileComplete {
+			return nil
+		}
 		runtimeImpl, err := s.runtimeForKind(runtimeKind)
 		if err != nil {
-			return Agent{}, err
+			return err
 		}
 		if err := s.provisionRuntime(ctx, runtimeImpl, runtimeKind, agentruntime.ProvisionRequest{
 			RuntimeID: runtimeIDForAgentID(ManagerUserID),
@@ -473,10 +479,10 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 			AgentName: ManagerName,
 			Profile:   s.runtimeProfileForKind(runtimeKind, ManagerUserID, ManagerName, "", startProfile),
 		}); err != nil {
-			return Agent{}, fmt.Errorf("provision bootstrap manager runtime: %w", err)
+			return fmt.Errorf("provision bootstrap manager runtime: %w", err)
 		}
+		return nil
 	}
-
 	rt, box, err := s.lookupBootstrapManager(ctx)
 	if err != nil {
 		return Agent{}, err
@@ -489,39 +495,14 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		_ = s.closeRuntime(runtimeHome, rt)
 	}()
 	if forceRecreate {
-		log.Printf("force recreating bootstrap manager box %q", ManagerName)
-		removed := false
-		for _, managerBoxIDOrName := range s.bootstrapManagerLookupKeys() {
-			if err := s.forceRemoveBox(ctx, rt, managerBoxIDOrName); err != nil {
-				if sandbox.IsNotFound(err) {
-					log.Printf("bootstrap manager box %q (%q) does not exist yet; continuing", ManagerName, managerBoxIDOrName)
-					continue
-				}
-				return Agent{}, fmt.Errorf("force remove bootstrap manager box %q (%q): %w", ManagerName, managerBoxIDOrName, err)
-			}
-			log.Printf("bootstrap manager box %q (%q) removed", ManagerName, managerBoxIDOrName)
-			removed = true
-			break
-		}
-		if !removed {
-			log.Printf("bootstrap manager box %q not found under known identifiers; continuing", ManagerName)
-		}
-		if err := s.closeRuntime(runtimeHome, rt); err != nil {
-			return Agent{}, fmt.Errorf("close bootstrap manager runtime before recreate: %w", err)
-		}
-		rt = nil
-		managerHome, err := agentHomeDir(ManagerName)
-		if err != nil {
-			return Agent{}, err
-		}
-		if err := removeAllWithRetry(managerHome); err != nil {
-			return Agent{}, fmt.Errorf("remove bootstrap manager home: %w", err)
-		}
-		rt, err = s.ensureRuntimeAtHome(runtimeHome)
+		rt, err = s.cleanupBootstrapManagerForRecreate(ctx, rt, runtimeHome)
 		if err != nil {
 			return Agent{}, err
 		}
 		box = nil
+	}
+	if err := provisionBootstrapManagerRuntime(); err != nil {
+		return Agent{}, err
 	}
 	if !startProfile.ProfileComplete {
 		now := time.Now().UTC()
@@ -630,6 +611,42 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		return Agent{}, err
 	}
 	return *cloneAgent(&manager), nil
+}
+
+func (s *Service) cleanupBootstrapManagerForRecreate(ctx context.Context, rt sandbox.Runtime, runtimeHome string) (sandbox.Runtime, error) {
+	log.Printf("force recreating bootstrap manager box %q", ManagerName)
+	removed := false
+	for _, managerBoxIDOrName := range s.bootstrapManagerLookupKeys() {
+		if err := s.forceRemoveBox(ctx, rt, managerBoxIDOrName); err != nil {
+			if sandbox.IsNotFound(err) {
+				log.Printf("bootstrap manager box %q (%q) does not exist yet; continuing", ManagerName, managerBoxIDOrName)
+				continue
+			}
+			return rt, fmt.Errorf("force remove bootstrap manager box %q (%q): %w", ManagerName, managerBoxIDOrName, err)
+		}
+		log.Printf("bootstrap manager box %q (%q) removed", ManagerName, managerBoxIDOrName)
+		removed = true
+		break
+	}
+	if !removed {
+		log.Printf("bootstrap manager box %q not found under known identifiers; continuing", ManagerName)
+	}
+	if err := s.closeRuntime(runtimeHome, rt); err != nil {
+		return rt, fmt.Errorf("close bootstrap manager runtime before recreate: %w", err)
+	}
+	rt = nil
+	managerHome, err := agentHomeDir(ManagerName)
+	if err != nil {
+		return nil, err
+	}
+	if err := removeAllWithRetry(managerHome); err != nil {
+		return nil, fmt.Errorf("remove bootstrap manager home: %w", err)
+	}
+	rt, err = s.ensureRuntimeAtHome(runtimeHome)
+	if err != nil {
+		return nil, err
+	}
+	return rt, nil
 }
 
 func (s *Service) managerStartupProfile(ctx context.Context) (AgentProfile, []ProfileDetectionResult) {
