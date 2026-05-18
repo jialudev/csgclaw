@@ -1,7 +1,16 @@
 // @ts-nocheck
-import { IM_EVENTS_ENDPOINT } from "@/bootstrap/constants";
+import { IM_EVENTS_ENDPOINT, IM_EVENTS_SHARED_WORKER_PATH } from "@/bootstrap/constants";
 
-const sharedWorkerURL = new URL("./sseSharedWorker.ts", import.meta.url);
+const sharedWorkerURL = import.meta.env.DEV
+  ? "/src/shared/realtime/sseSharedWorker.ts"
+  : IM_EVENTS_SHARED_WORKER_PATH;
+
+function createSharedWorker() {
+  if (import.meta.env.DEV) {
+    return new SharedWorker(sharedWorkerURL, { type: "module" });
+  }
+  return new SharedWorker(sharedWorkerURL);
+}
 
 export function safeParseEventData(raw) {
   try {
@@ -15,7 +24,7 @@ export function safeParseEventData(raw) {
 export function subscribeIMEvents(onEvent) {
   if (typeof window.SharedWorker === "function") {
     try {
-      const worker = new SharedWorker(sharedWorkerURL, { type: "module" });
+      const worker = createSharedWorker();
       const port = worker.port;
       const handleMessage = ({ data }) => {
         if (!data || data.type !== "message") {

@@ -1,12 +1,9 @@
 import "./WorkspaceComponents.css";
 
-export * from "./AgentDetailPane";
-export * from "./AgentList";
-export * from "./ComputerDetailPane";
-export * from "./ConversationSection";
-export * from "./ConversationPane";
-export * from "./HubDetailPane";
 export * from "./ProfilePreviewPopover";
+export * from "./WorkspaceLayout";
+export * from "./WorkspaceMainPanel";
 export * from "./WorkspaceModals";
+export * from "./WorkspaceOverlays";
 export * from "./WorkspaceRows";
 export * from "./WorkspaceSidebar";

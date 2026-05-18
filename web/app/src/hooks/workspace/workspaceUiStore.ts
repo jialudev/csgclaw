@@ -16,6 +16,8 @@ export const useWorkspaceUiStore = create((set) => ({
   collapsedWorkspaceGroups: readCollapsedWorkspaceGroups(),
   activeConversationId: initialPane.type === "conversation" ? initialPane.id : "",
   activePane: initialPane,
+  selectedHubTemplateId: "",
+  selectedHubWorkspacePath: "",
 
   setLocale: (locale) => set({ locale }),
   setTheme: (theme) => set({ theme }),
@@ -31,4 +33,10 @@ export const useWorkspaceUiStore = create((set) => ({
   })),
   setActiveConversationId: (activeConversationId) => set({ activeConversationId }),
   setActivePane: (activePane) => set({ activePane }),
+  setSelectedHubTemplateId: (value) => set((state) => ({
+    selectedHubTemplateId: typeof value === "function" ? value(state.selectedHubTemplateId) : value,
+  })),
+  setSelectedHubWorkspacePath: (value) => set((state) => ({
+    selectedHubWorkspacePath: typeof value === "function" ? value(state.selectedHubWorkspacePath) : value,
+  })),
 }));

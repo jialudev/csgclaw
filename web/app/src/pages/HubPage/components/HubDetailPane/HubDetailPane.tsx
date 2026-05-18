@@ -8,21 +8,24 @@ import { Button } from "@/components/ui";
 export function HubDetailPane({
   t,
   locale,
-  templates,
-  selectedTemplate,
-  selectedTemplateId,
-  loaded,
-  error,
-  detailLoading,
-  selectedWorkspacePath,
-  workspaceFile,
-  workspaceFileLoading,
-  workspaceFileError,
-  onRetry,
-  onSelectTemplate,
-  onSelectWorkspaceFile,
+  hub,
   onCreateFromTemplate,
 }) {
+  const {
+    templates,
+    selectedTemplate,
+    selectedTemplateId,
+    loaded,
+    error,
+    detailLoading,
+    selectedWorkspacePath,
+    workspaceFile,
+    workspaceFileLoading,
+    workspaceFileError,
+    onRetry,
+    onSelectTemplate,
+    onSelectWorkspaceFile,
+  } = hub.detailPaneProps;
   const workspaceEntries = selectedTemplate?.workspace?.entries || [];
   const [collapsedWorkspaceDirs, setCollapsedWorkspaceDirs] = useState({});
   const visibleWorkspaceEntries = useMemo(

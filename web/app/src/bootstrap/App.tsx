@@ -1,11 +1,10 @@
-import { QueryClientProvider } from "@tanstack/react-query";
-import { WorkspacePage } from "@/pages/WorkspacePage/WorkspacePage";
-import { queryClient } from "@/bootstrap/queryClient";
+import { AppProviders } from "@/bootstrap/AppProviders";
+import { AppRouter } from "@/routes/AppRouter";
 
 export function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <WorkspacePage />
-    </QueryClientProvider>
+    <AppProviders>
+      <AppRouter />
+    </AppProviders>
   );
 }
