@@ -78,6 +78,10 @@ assert(
   'frontend bot create/delete flows must use the channel-scoped bots API',
 );
 assert(
+  source.includes('const resp = await fetch("api/v1/channels/csgclaw/bots");'),
+  'worker and manager list refresh must read from the channel-scoped bots API',
+);
+assert(
   source.includes('templateLabel: "模板"'),
   'create-agent modal must expose a template selector label',
 );

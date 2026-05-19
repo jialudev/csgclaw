@@ -37,6 +37,7 @@ func init() {
 
 type fakeBotAgentRuntime struct {
 	kind string
+	del  func(context.Context, agentruntime.Handle) error
 }
 
 func (f fakeBotAgentRuntime) Kind() string {
@@ -70,7 +71,10 @@ func (f fakeBotAgentRuntime) Stop(context.Context, agentruntime.Handle) (agentru
 	return agentruntime.StateStopped, nil
 }
 
-func (f fakeBotAgentRuntime) Delete(context.Context, agentruntime.Handle) error {
+func (f fakeBotAgentRuntime) Delete(ctx context.Context, h agentruntime.Handle) error {
+	if f.del != nil {
+		return f.del(ctx, h)
+	}
 	return nil
 }
 
@@ -437,6 +441,63 @@ func TestServiceListStoredBotUnavailableWhenAgentNotRunning(t *testing.T) {
 	}
 }
 
+func TestServiceListIncludesAgentViewFieldsForCSGClawBots(t *testing.T) {
+	store, err := NewMemoryStore([]Bot{
+		{
+			ID:        "u-worker",
+			Name:      "Worker",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelCSGClaw),
+			AgentID:   "u-worker",
+			UserID:    "u-worker",
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:              "u-worker",
+			Name:            "worker",
+			Role:            agent.RoleWorker,
+			RuntimeKind:     agent.RuntimeKindCodex,
+			Image:           "agent-image:test",
+			Status:          "running",
+			CreatedAt:       time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+			ProfileComplete: true,
+			AgentProfile: agent.AgentProfile{
+				Provider:           agent.ProviderCSGHubLite,
+				ModelID:            "glm-4.5",
+				ProfileComplete:    true,
+				EnvRestartRequired: true,
+			},
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, agentSvc, nil)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+	mustSetAgentRuntimeState(t, "worker", "box-worker", sandbox.StateRunning)
+
+	got, err := svc.List(string(ChannelCSGClaw), "")
+	if err != nil {
+		t.Fatalf("List(csgclaw) error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("List(csgclaw) = %+v, want one stored bot", got)
+	}
+	if got[0].RuntimeKind != agent.RuntimeKindCodex || got[0].Image != "agent-image:test" || got[0].Status != "running" {
+		t.Fatalf("bot runtime fields = %+v, want codex/agent-image:test/running", got[0])
+	}
+	if got[0].Provider != agent.ProviderCSGHubLite || got[0].ModelID != "glm-4.5" {
+		t.Fatalf("bot profile fields = %+v, want csghub_lite/glm-4.5", got[0])
+	}
+	if !got[0].ProfileComplete || !got[0].EnvRestartRequired {
+		t.Fatalf("bot completeness fields = %+v, want profile_complete and env_restart_required", got[0])
+	}
+}
+
 func TestServiceListWithoutFiltersRefreshesAvailability(t *testing.T) {
 	store, err := NewMemoryStore([]Bot{
 		{
@@ -662,6 +723,218 @@ func TestServiceDeleteRemovesBackingAgentWhenLastReference(t *testing.T) {
 	}
 	if _, ok := agentSvc.Agent("u-alice"); ok {
 		t.Fatal("Agent() ok = true, want false after deleting last bot reference")
+	}
+}
+
+func TestServiceDeleteIsIdempotent(t *testing.T) {
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        "u-alice",
+			Name:      "alice",
+			Role:      agent.RoleWorker,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	})
+	store, err := NewMemoryStore([]Bot{
+		{
+			ID:        "u-alice",
+			Name:      "Alice",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelCSGClaw),
+			AgentID:   "u-alice",
+			UserID:    "u-alice",
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", IsOnline: true},
+			{ID: "u-alice", Name: "Alice", Handle: "alice", IsOnline: true},
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	if err := svc.Delete(context.Background(), "csgclaw", "u-alice"); err != nil {
+		t.Fatalf("first Delete() error = %v", err)
+	}
+	if err := svc.Delete(context.Background(), "csgclaw", "u-alice"); err != nil {
+		t.Fatalf("second Delete() error = %v, want idempotent success", err)
+	}
+}
+
+func TestServiceDeleteCleansResidualResourcesWhenBotMissing(t *testing.T) {
+	agentSvc := mustNewSeededAgentService(t, []agent.Agent{
+		{
+			ID:        "u-codex",
+			Name:      "codex",
+			Role:      agent.RoleWorker,
+			CreatedAt: time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	})
+	store, err := NewMemoryStore(nil)
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", IsOnline: true},
+			{ID: "u-codex", Name: "Codex", Handle: "codex", IsOnline: true},
+		},
+		Rooms: []im.Room{
+			{
+				ID:       "room-codex",
+				Title:    "Codex",
+				Members:  []string{"u-admin", "u-codex"},
+				Messages: []im.Message{{ID: "msg-1", SenderID: "u-codex", Content: "hello"}},
+			},
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	if err := svc.Delete(context.Background(), "csgclaw", "u-codex"); err != nil {
+		t.Fatalf("Delete() error = %v, want residual cleanup success", err)
+	}
+	if _, ok := agentSvc.Agent("u-codex"); ok {
+		t.Fatal("Agent(u-codex) ok = true, want false after residual cleanup")
+	}
+	if _, ok := imSvc.User("u-codex"); ok {
+		t.Fatal("User(u-codex) ok = true, want false after residual cleanup")
+	}
+	if _, ok := imSvc.Room("room-codex"); ok {
+		t.Fatal("Room(room-codex) ok = true, want false after residual cleanup")
+	}
+}
+
+func TestServiceDeleteKeepsBotRecordWhenChannelUserDeletionFails(t *testing.T) {
+	store, err := NewMemoryStore([]Bot{
+		{
+			ID:        "u-manager",
+			Name:      "Manager",
+			Role:      string(RoleManager),
+			Channel:   string(ChannelCSGClaw),
+			AgentID:   "u-manager",
+			UserID:    "u-manager",
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-manager",
+		Users: []im.User{
+			{ID: "u-manager", Name: "manager", Handle: "manager", IsOnline: true},
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, nil, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	if err := svc.Delete(context.Background(), "csgclaw", "u-manager"); err == nil {
+		t.Fatal("Delete() error = nil, want current user conflict")
+	}
+	bots, err := svc.List("csgclaw", "")
+	if err != nil {
+		t.Fatalf("List(csgclaw) error = %v", err)
+	}
+	if len(bots) != 1 || bots[0].ID != "u-manager" {
+		t.Fatalf("List(csgclaw) = %+v, want retained u-manager after failed delete", bots)
+	}
+}
+
+func TestServiceDeleteReturnsPartialErrorWhenAgentCleanupFailsAfterUserDeletion(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+	resetFakeBotRuntimeStates()
+	t.Cleanup(resetFakeBotRuntimeStates)
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		if err := agent.WithRuntime(fakeBotAgentRuntime{
+			kind: agent.RuntimeKindPicoClawSandbox,
+			del: func(context.Context, agentruntime.Handle) error {
+				return fmt.Errorf("boom")
+			},
+		})(s); err != nil {
+			return err
+		}
+		if err := agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindOpenClawSandbox})(s); err != nil {
+			return err
+		}
+		return agent.WithRuntime(fakeBotAgentRuntime{kind: agent.RuntimeKindCodex})(s)
+	})
+	t.Cleanup(restoreDefault)
+
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+	data, err := json.Marshal(map[string]any{"agents": []agent.Agent{
+		{
+			ID:          "u-alice",
+			Name:        "alice",
+			Role:        agent.RoleWorker,
+			RuntimeKind: agent.RuntimeKindPicoClawSandbox,
+			BoxID:       "box-alice",
+			CreatedAt:   time.Date(2026, 4, 12, 9, 0, 0, 0, time.UTC),
+		},
+	}})
+	if err != nil {
+		t.Fatalf("marshal agents: %v", err)
+	}
+	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
+		t.Fatalf("write agents: %v", err)
+	}
+	agentSvc, err := agent.NewService(testAgentModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
+	if err != nil {
+		t.Fatalf("agent.NewService() error = %v", err)
+	}
+	store, err := NewMemoryStore([]Bot{
+		{
+			ID:        "u-alice",
+			Name:      "Alice",
+			Role:      string(RoleWorker),
+			Channel:   string(ChannelCSGClaw),
+			AgentID:   "u-alice",
+			UserID:    "u-alice",
+			CreatedAt: time.Date(2026, 4, 12, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryStore() error = %v", err)
+	}
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin", IsOnline: true},
+			{ID: "u-alice", Name: "Alice", Handle: "alice", IsOnline: true},
+		},
+	})
+	svc, err := NewServiceWithDependencies(store, agentSvc, imSvc)
+	if err != nil {
+		t.Fatalf("NewServiceWithDependencies() error = %v", err)
+	}
+
+	err = svc.Delete(context.Background(), "csgclaw", "u-alice")
+	if err == nil || !strings.Contains(err.Error(), "partially deleted") || !strings.Contains(err.Error(), "retry delete") {
+		t.Fatalf("Delete() error = %v, want partial-delete retry guidance", err)
+	}
+	if _, ok := imSvc.User("u-alice"); ok {
+		t.Fatal("User(u-alice) ok = true, want false after partial delete")
+	}
+	bots, err := svc.List("csgclaw", "")
+	if err != nil {
+		t.Fatalf("List(csgclaw) error = %v", err)
+	}
+	if len(bots) != 1 || bots[0].ID != "u-alice" {
+		t.Fatalf("List(csgclaw) = %+v, want retained bot after partial delete", bots)
 	}
 }
 

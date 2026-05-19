@@ -2631,7 +2631,7 @@ function App() {
 
   async function refreshAgents(options = {}) {
     try {
-      const resp = await fetch(options.silent ? "api/v1/agents?poll=1" : "api/v1/agents");
+      const resp = await fetch("api/v1/channels/csgclaw/bots");
       if (!resp.ok) {
         throw new Error((await resp.text()).trim());
       }

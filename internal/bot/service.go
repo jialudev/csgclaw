@@ -116,6 +116,13 @@ func (s *Service) refreshBotAvailability(bots []Bot) []Bot {
 			if a, ok := s.agents.Agent(agentID); ok {
 				b.AgentID = a.ID
 				b.Available = strings.EqualFold(strings.TrimSpace(a.Status), "running")
+				b.RuntimeKind = strings.TrimSpace(a.RuntimeKind)
+				b.Image = strings.TrimSpace(a.Image)
+				b.Status = strings.TrimSpace(a.Status)
+				b.Provider = strings.TrimSpace(a.AgentProfile.Provider)
+				b.ModelID = strings.TrimSpace(a.AgentProfile.ModelID)
+				b.ProfileComplete = a.ProfileComplete || a.AgentProfile.ProfileComplete
+				b.EnvRestartRequired = a.AgentProfile.EnvRestartRequired
 			}
 		}
 		refreshed = append(refreshed, b)
@@ -213,52 +220,147 @@ func (s *Service) Delete(ctx context.Context, channel, id string) error {
 	if strings.TrimSpace(channel) == "" {
 		channel = string(ChannelCSGClaw)
 	}
-	deleted, ok, err := s.store.DeleteByChannelID(channel, id)
+	deleted, ok, err := s.store.GetByChannelID(channel, id)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return fmt.Errorf("bot %q not found", id)
-	}
-	if err := s.deleteChannelUser(deleted); err != nil {
+	target, err := s.deletionTarget(ctx, channel, id, deleted, ok)
+	if err != nil {
 		return err
 	}
-	if s.agents == nil {
-		return nil
+	userDeleted, err := s.deleteChannelUser(target)
+	if err != nil {
+		return err
 	}
-	if r := strings.ToLower(strings.TrimSpace(deleted.Role)); r != string(RoleWorker) {
-		return nil
+	agentDeleted, err := s.deleteBackingAgent(ctx, target)
+	if err != nil {
+		if userDeleted {
+			return fmt.Errorf("bot %q partially deleted: channel user removed, but backing agent cleanup failed; retry delete to finish cleanup: %w", id, err)
+		}
+		return err
 	}
-	agentID := strings.TrimSpace(deleted.AgentID)
-	if agentID == "" {
-		return nil
-	}
-	for _, b := range s.store.List() {
-		if strings.TrimSpace(b.AgentID) == agentID {
+	if ok {
+		if _, deletedOK, err := s.store.DeleteByChannelID(channel, id); err != nil {
+			if userDeleted || agentDeleted {
+				return fmt.Errorf("bot %q partially deleted: backing resources were removed, but bot state cleanup failed; retry delete to finish cleanup: %w", id, err)
+			}
+			return err
+		} else if !deletedOK {
 			return nil
 		}
-	}
-	if err := s.agents.Delete(ctx, agentID); err != nil {
-		return fmt.Errorf("delete backing agent %q: %w", agentID, err)
 	}
 	return nil
 }
 
-func (s *Service) deleteChannelUser(deleted Bot) error {
-	if strings.TrimSpace(deleted.Channel) != string(ChannelCSGClaw) || s.im == nil {
-		return nil
+func (s *Service) deletionTarget(ctx context.Context, channel, id string, stored Bot, storedOK bool) (Bot, error) {
+	if storedOK {
+		return stored, nil
 	}
-	userID := strings.TrimSpace(deleted.UserID)
+
+	target := Bot{
+		ID:      id,
+		Channel: channel,
+		AgentID: id,
+		UserID:  id,
+	}
+	if s.agents != nil {
+		if a, ok := s.agents.Agent(id); ok {
+			target.AgentID = a.ID
+			target.Role = strings.ToLower(strings.TrimSpace(a.Role))
+		}
+	}
+	if target.Role == "" {
+		target.Role = string(RoleWorker)
+	}
+	switch strings.TrimSpace(channel) {
+	case string(ChannelCSGClaw):
+		target.UserID = id
+	case string(ChannelFeishu):
+		target.UserID = ""
+		if s.feishu != nil {
+			if user, ok, err := s.feishu.ResolveBotUser(ctx, id); err != nil {
+				return Bot{}, fmt.Errorf("resolve feishu user for bot %q: %w", id, err)
+			} else if ok {
+				target.UserID = strings.TrimSpace(user.ID)
+			}
+		}
+	}
+	return target, nil
+}
+
+func (s *Service) deleteBackingAgent(ctx context.Context, target Bot) (bool, error) {
+	if s == nil || s.agents == nil {
+		return false, nil
+	}
+	agentID := strings.TrimSpace(target.AgentID)
+	if agentID == "" {
+		return false, nil
+	}
+	role := strings.ToLower(strings.TrimSpace(target.Role))
+	if role == "" {
+		if a, ok := s.agents.Agent(agentID); ok {
+			role = strings.ToLower(strings.TrimSpace(a.Role))
+		}
+	}
+	if role != string(RoleWorker) {
+		return false, nil
+	}
+	for _, b := range s.store.List() {
+		if sameChannelBot(target, b) {
+			continue
+		}
+		if strings.TrimSpace(b.AgentID) == agentID {
+			return false, nil
+		}
+	}
+	if err := s.agents.Delete(ctx, agentID); err != nil {
+		if isNotFoundError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("delete backing agent %q: %w", agentID, err)
+	}
+	return true, nil
+}
+
+func (s *Service) deleteChannelUser(target Bot) (bool, error) {
+	userID := strings.TrimSpace(target.UserID)
 	if userID == "" {
-		userID = strings.TrimSpace(deleted.ID)
+		return false, nil
 	}
-	if userID == "" {
-		return nil
+	switch strings.TrimSpace(target.Channel) {
+	case string(ChannelCSGClaw):
+		if s.im == nil {
+			return false, nil
+		}
+		if err := s.im.DeleteUser(userID); err != nil {
+			if isNotFoundError(err) {
+				return false, nil
+			}
+			return false, fmt.Errorf("delete csgclaw user %q: %w", userID, err)
+		}
+		return true, nil
+	case string(ChannelFeishu):
+		if s.feishu == nil {
+			return false, nil
+		}
+		if err := s.feishu.DeleteUser(userID); err != nil {
+			if isNotFoundError(err) {
+				return false, nil
+			}
+			return false, fmt.Errorf("delete feishu user %q: %w", userID, err)
+		}
+		return true, nil
 	}
-	if err := s.im.DeleteUser(userID); err != nil && !strings.Contains(err.Error(), "user not found") {
-		return fmt.Errorf("delete csgclaw user %q: %w", userID, err)
-	}
-	return nil
+	return false, nil
+}
+
+func sameChannelBot(a, b Bot) bool {
+	return strings.TrimSpace(a.Channel) == strings.TrimSpace(b.Channel) &&
+		strings.TrimSpace(a.ID) == strings.TrimSpace(b.ID)
+}
+
+func isNotFoundError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Bot, error) {
