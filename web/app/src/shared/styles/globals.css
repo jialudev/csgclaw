@@ -79,7 +79,10 @@ body::after {
   overflow: hidden;
   position: absolute;
   inset: 0;
-  transition: opacity 220ms ease, transform 280ms ease, visibility 0s linear 0s;
+  transition:
+    opacity 220ms ease,
+    transform 280ms ease,
+    visibility 0s linear 0s;
   opacity: 1;
   transform: translateX(0);
   visibility: visible;
@@ -111,7 +114,10 @@ body::after {
   transform: translateX(-14px);
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 220ms ease, transform 280ms ease, visibility 0s linear 280ms;
+  transition:
+    opacity 220ms ease,
+    transform 280ms ease,
+    visibility 0s linear 280ms;
 }
 
 .sidebar-rail.visible {
@@ -195,7 +201,10 @@ body::after {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 160ms ease, transform 160ms ease, background 160ms ease;
+  transition:
+    color 160ms ease,
+    transform 160ms ease,
+    background 160ms ease;
 }
 
 .sidebar-toggle-button:hover,
@@ -291,7 +300,10 @@ body::after {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  transition:
+    color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .theme-switch-track .theme-toggle {
@@ -430,7 +442,10 @@ body::after {
   gap: 8px;
   font: inherit;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
 }
 
 .member-badge-button:hover {
@@ -615,7 +630,10 @@ body::after {
   cursor: pointer;
   font: inherit;
   color: inherit;
-  transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .conversation-item:hover .conversation-item-main,
@@ -643,7 +661,11 @@ body::after {
   opacity: 0;
   pointer-events: none;
   transform: translateY(2px);
-  transition: opacity 160ms ease, transform 160ms ease, background 160ms ease, color 160ms ease;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
 }
 
 .conversation-item:hover .conversation-delete-button {
@@ -704,7 +726,10 @@ body::after {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
 }
 
 .agent-add-button:hover,
@@ -823,7 +848,9 @@ body::after {
   font: inherit;
   font-size: 11px;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease;
+  transition:
+    transform 160ms ease,
+    background 160ms ease;
 }
 
 .agent-icon-button.danger {
@@ -928,7 +955,10 @@ body::after {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
 }
 
 .icon-button:hover {
@@ -965,7 +995,10 @@ body::after {
   font: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
 }
 
 .ghost-button:hover,
@@ -998,7 +1031,10 @@ body::after {
   justify-content: flex-start;
   gap: 12px;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease, color 160ms ease;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    color 160ms ease;
 }
 
 .sidebar-nav-button:hover {
@@ -1095,7 +1131,10 @@ body::after {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease, color 160ms ease;
+  transition:
+    background 160ms ease,
+    transform 160ms ease,
+    color 160ms ease;
 }
 
 .sidebar-rail-button:hover {
@@ -1150,7 +1189,11 @@ body::after {
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 0.02em;
-  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .language-switch-track .language-toggle {
@@ -1649,7 +1692,10 @@ body::after {
   color: var(--on-primary);
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
-  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
 }
 
 .composer-send-main {
@@ -1668,7 +1714,9 @@ body::after {
 
 .composer-send-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84), 0 10px 18px rgba(84, 120, 214, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 10px 18px rgba(84, 120, 214, 0.22);
 }
 
 .composer-send-button:focus-visible {
@@ -1961,8 +2009,7 @@ body::after {
 .selection-all-item {
   border-color: color-mix(in oklab, var(--primary) 34%, var(--line));
   background:
-    linear-gradient(90deg, color-mix(in oklab, var(--primary) 13%, transparent), transparent 72%),
-    var(--field);
+    linear-gradient(90deg, color-mix(in oklab, var(--primary) 13%, transparent), transparent 72%), var(--field);
 }
 
 .selection-empty,
@@ -2310,7 +2357,11 @@ body::after {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, color 160ms ease;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
 }
 
 .sidebar-upgrade-button:hover:not(:disabled) {
@@ -2482,7 +2533,11 @@ body::after {
   font: inherit;
   cursor: pointer;
   box-shadow: var(--shadow-xs);
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .workspace-tab:hover {
@@ -3028,7 +3083,11 @@ body::after {
   grid-template-columns: 46px minmax(0, 1fr);
   gap: 14px;
   cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .hub-template-card:hover {
@@ -3572,7 +3631,11 @@ body::after {
   font-weight: 650;
   line-height: 1;
   cursor: pointer;
-  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
 }
 
 .preview-action-button-primary {
@@ -3965,7 +4028,10 @@ body {
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     linear-gradient(0deg, var(--grid-line) 1px, transparent 1px),
     linear-gradient(135deg, oklch(0.155 0.014 82), var(--bg) 48%, oklch(0.105 0.011 82));
-  background-size: 44px 44px, 44px 44px, auto;
+  background-size:
+    44px 44px,
+    44px 44px,
+    auto;
   letter-spacing: 0;
 }
 
@@ -3974,7 +4040,10 @@ body {
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     linear-gradient(0deg, var(--grid-line) 1px, transparent 1px),
     linear-gradient(135deg, oklch(0.97 0.008 82), var(--bg) 55%, oklch(0.92 0.014 82));
-  background-size: 44px 44px, 44px 44px, auto;
+  background-size:
+    44px 44px,
+    44px 44px,
+    auto;
 }
 
 body::before {
@@ -3994,8 +4063,7 @@ body::after {
   inset: 0;
   display: block;
   pointer-events: none;
-  background-image:
-    repeating-linear-gradient(0deg, oklch(1 0 0 / 0.018) 0 1px, transparent 1px 4px);
+  background-image: repeating-linear-gradient(0deg, oklch(1 0 0 / 0.018) 0 1px, transparent 1px 4px);
   mix-blend-mode: soft-light;
 }
 
@@ -4027,15 +4095,11 @@ body::after {
 
 .sidebar,
 .sidebar-rail {
-  background:
-    linear-gradient(180deg, oklch(0.19 0.016 82 / 0.96), var(--sidebar)),
-    var(--sidebar);
+  background: linear-gradient(180deg, oklch(0.19 0.016 82 / 0.96), var(--sidebar)), var(--sidebar);
 }
 
 .chat-panel {
-  background:
-    linear-gradient(180deg, oklch(0.19 0.016 82 / 0.78), var(--panel) 34%, var(--surface)),
-    var(--panel);
+  background: linear-gradient(180deg, oklch(0.19 0.016 82 / 0.78), var(--panel) 34%, var(--surface)), var(--panel);
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
@@ -4088,10 +4152,10 @@ body::after {
   place-items: center;
   border: 1px solid oklch(0.77 0.16 164 / 0.62);
   border-radius: 8px;
-  background:
-    linear-gradient(145deg, oklch(0.77 0.16 164 / 0.18), transparent 48%),
-    var(--surface);
-  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.045), 0 0 18px oklch(0.77 0.16 164 / 0.12);
+  background: linear-gradient(145deg, oklch(0.77 0.16 164 / 0.18), transparent 48%), var(--surface);
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.045),
+    0 0 18px oklch(0.77 0.16 164 / 0.12);
 }
 
 .sidebar-brand-mark::before,
@@ -4263,9 +4327,7 @@ body::after {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, oklch(0.77 0.16 164 / 0.09), transparent 52%),
-    var(--surface);
+  background: linear-gradient(135deg, oklch(0.77 0.16 164 / 0.09), transparent 52%), var(--surface);
 }
 
 .workspace-signal-copy {
@@ -4346,9 +4408,7 @@ body::after {
 
 .workspace-tab.active {
   border-color: oklch(0.77 0.16 164 / 0.56);
-  background:
-    linear-gradient(135deg, oklch(0.77 0.16 164 / 0.18), transparent 58%),
-    var(--field);
+  background: linear-gradient(135deg, oklch(0.77 0.16 164 / 0.18), transparent 58%), var(--field);
   color: var(--text);
   box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.035);
 }
@@ -4435,9 +4495,7 @@ body::after {
 
 .workspace-row.active {
   border-color: oklch(0.77 0.16 164 / 0.46);
-  background:
-    linear-gradient(90deg, oklch(0.77 0.16 164 / 0.18), transparent 72%),
-    var(--field);
+  background: linear-gradient(90deg, oklch(0.77 0.16 164 / 0.18), transparent 72%), var(--field);
 }
 
 .workspace-row-icon {
@@ -4456,7 +4514,9 @@ body::after {
 }
 
 .workspace-status-dot.online {
-  box-shadow: 0 0 0 3px var(--primary-soft), 0 0 14px oklch(0.77 0.16 164 / 0.28);
+  box-shadow:
+    0 0 0 3px var(--primary-soft),
+    0 0 14px oklch(0.77 0.16 164 / 0.28);
 }
 
 .mini-badge,
@@ -4469,9 +4529,7 @@ body::after {
 
 .chat-header {
   border-bottom-color: var(--line);
-  background:
-    linear-gradient(90deg, oklch(0.77 0.16 164 / 0.08), transparent 35%),
-    var(--surface);
+  background: linear-gradient(90deg, oklch(0.77 0.16 164 / 0.08), transparent 35%), var(--surface);
 }
 
 .chat-title-bar {
@@ -4605,17 +4663,22 @@ body::after {
   background:
     linear-gradient(90deg, oklch(1 0 0 / 0.022) 1px, transparent 1px),
     linear-gradient(0deg, oklch(1 0 0 / 0.018) 1px, transparent 1px),
-    linear-gradient(180deg, oklch(0.77 0.16 164 / 0.04), transparent 34%),
-    var(--panel);
-  background-size: 36px 36px, 36px 36px, auto, auto;
+    linear-gradient(180deg, oklch(0.77 0.16 164 / 0.04), transparent 34%), var(--panel);
+  background-size:
+    36px 36px,
+    36px 36px,
+    auto,
+    auto;
 }
 
 :root[data-theme="light"] .messages {
   background:
     linear-gradient(90deg, oklch(0.58 0.045 72 / 0.08) 1px, transparent 1px),
-    linear-gradient(0deg, oklch(0.58 0.045 72 / 0.07) 1px, transparent 1px),
-    var(--panel);
-  background-size: 36px 36px, 36px 36px, auto;
+    linear-gradient(0deg, oklch(0.58 0.045 72 / 0.07) 1px, transparent 1px), var(--panel);
+  background-size:
+    36px 36px,
+    36px 36px,
+    auto;
 }
 
 .message-row {
@@ -4630,16 +4693,13 @@ body::after {
 
 .message-bubble {
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, oklch(1 0 0 / 0.035), transparent),
-    var(--panel-strong);
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.035), transparent), var(--panel-strong);
   box-shadow: var(--shadow-soft);
 }
 
 .message-row.own .message-bubble {
   border-color: oklch(0.77 0.16 164 / 0.45);
-  background:
-    linear-gradient(180deg, oklch(0.86 0.15 164), var(--primary));
+  background: linear-gradient(180deg, oklch(0.86 0.15 164), var(--primary));
   color: var(--on-primary);
 }
 
@@ -4682,9 +4742,7 @@ body::after {
 
 .composer {
   border-top-color: var(--line);
-  background:
-    linear-gradient(180deg, oklch(0.77 0.16 164 / 0.035), transparent),
-    var(--surface);
+  background: linear-gradient(180deg, oklch(0.77 0.16 164 / 0.035), transparent), var(--surface);
 }
 
 .composer-box {
@@ -4708,7 +4766,9 @@ body::after {
 }
 
 .composer-editor:focus {
-  box-shadow: inset 0 0 0 1px oklch(0.77 0.16 164 / 0.42), var(--focus-ring);
+  box-shadow:
+    inset 0 0 0 1px oklch(0.77 0.16 164 / 0.42),
+    var(--focus-ring);
 }
 
 .composer-placeholder {
@@ -4720,8 +4780,7 @@ body::after {
 .send-button,
 .preview-action-button-primary {
   border: 1px solid oklch(0.77 0.16 164 / 0.48);
-  background:
-    linear-gradient(180deg, oklch(0.86 0.15 164), var(--primary));
+  background: linear-gradient(180deg, oklch(0.86 0.15 164), var(--primary));
   color: var(--on-primary);
   box-shadow: 0 14px 28px oklch(0.08 0.07 164 / 0.26);
 }
@@ -4766,9 +4825,7 @@ body::after {
   padding: 24px;
   border-radius: 8px;
   border: 1px dashed oklch(0.77 0.16 164 / 0.34);
-  background:
-    linear-gradient(135deg, oklch(0.77 0.16 164 / 0.08), transparent 60%),
-    var(--surface);
+  background: linear-gradient(135deg, oklch(0.77 0.16 164 / 0.08), transparent 60%), var(--surface);
   text-align: center;
 }
 
@@ -4868,9 +4925,7 @@ body::after {
 .detection-row {
   border-color: var(--line);
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, oklch(1 0 0 / 0.025), transparent),
-    var(--surface);
+  background: linear-gradient(180deg, oklch(1 0 0 / 0.025), transparent), var(--surface);
 }
 
 .selection-item {
@@ -4882,8 +4937,7 @@ body::after {
 .selection-item.selection-all-item {
   border-color: color-mix(in oklab, var(--primary) 34%, var(--line));
   background:
-    linear-gradient(90deg, color-mix(in oklab, var(--primary) 13%, transparent), transparent 72%),
-    var(--field);
+    linear-gradient(90deg, color-mix(in oklab, var(--primary) 13%, transparent), transparent 72%), var(--field);
 }
 
 .selection-item.compact-toggle-row {
@@ -4931,9 +4985,7 @@ body::after {
   height: 72px;
   border-radius: 8px;
   border-color: oklch(0.77 0.16 164 / 0.36);
-  background:
-    linear-gradient(135deg, oklch(0.77 0.16 164 / 0.16), transparent 60%),
-    var(--field);
+  background: linear-gradient(135deg, oklch(0.77 0.16 164 / 0.16), transparent 60%), var(--field);
   color: var(--primary-strong);
 }
 
@@ -5328,7 +5380,9 @@ body::after {
   border-color: var(--portal-brand-600);
   background: var(--portal-brand-600);
   color: var(--portal-white);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(77, 106, 214, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(77, 106, 214, 0.24);
 }
 
 .btn-secondary-gray,
@@ -5370,7 +5424,9 @@ body::after {
   border-color: var(--portal-gray-300);
   background: var(--portal-white);
   color: var(--portal-gray-700);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(152, 162, 179, 0.14);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(152, 162, 179, 0.14);
 }
 
 .btn-secondary-color,
@@ -5555,7 +5611,8 @@ button[disabled],
 :root[data-theme="dark"] .csg-button-secondary-gray:hover:not(:disabled),
 :root[data-theme="dark"] .secondary-button:hover:not(:disabled),
 :root[data-theme="dark"] .modal-close:hover:not(:disabled),
-:root[data-theme="dark"] .preview-action-button:not(.preview-action-button-primary):not(.preview-action-button-danger):hover:not(:disabled),
+:root[data-theme="dark"]
+  .preview-action-button:not(.preview-action-button-primary):not(.preview-action-button-danger):hover:not(:disabled),
 :root[data-theme="dark"] .agent-action-text:hover:not(:disabled),
 :root[data-theme="dark"] .tool-menu-row:hover:not(:disabled),
 :root[data-theme="dark"] .member-badge-button:hover:not(:disabled),
@@ -5617,8 +5674,10 @@ button[disabled],
 :root,
 :root[data-theme="light"],
 :root[data-theme="dark"] {
-  --font-sans: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
-  --font-display: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  --font-sans:
+    "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  --font-display:
+    "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
 
 html,
@@ -6243,7 +6302,9 @@ body::after {
   border-color: var(--portal-brand-600);
   background: var(--portal-brand-600);
   color: var(--portal-white);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(77, 106, 214, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(77, 106, 214, 0.24);
 }
 
 .composer-send-button:disabled,
@@ -6512,8 +6573,10 @@ body::after {
 :root,
 :root[data-theme="light"],
 :root[data-theme="dark"] {
-  --font-sans: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
-  --font-display: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  --font-sans:
+    "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  --font-display:
+    "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
 }
 
 html,
@@ -6776,7 +6839,9 @@ body {
 .profile-section .field select:focus,
 .env-row input:focus {
   border-color: var(--portal-brand-500);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(77, 106, 214, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(77, 106, 214, 0.24);
 }
 
 .modal-card .field input:disabled,
@@ -7285,7 +7350,9 @@ body {
   border-color: var(--portal-brand-600);
   background: var(--portal-brand-600);
   color: var(--portal-white);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(77, 106, 214, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(77, 106, 214, 0.24);
 }
 
 .btn-primary:disabled,
@@ -7388,7 +7455,9 @@ body {
   border-color: var(--portal-error-600);
   background: var(--portal-error-600);
   color: var(--portal-white);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(240, 68, 56, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(240, 68, 56, 0.24);
 }
 
 .btn-outline-danger.preview-action-button-danger:disabled,
@@ -7449,10 +7518,14 @@ body {
   transform: none;
 }
 
-:root[data-theme="light"] .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:hover:not(:disabled),
-:root[data-theme="dark"] .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:hover:not(:disabled),
-:root[data-theme="light"] .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:active:not(:disabled),
-:root[data-theme="dark"] .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:active:not(:disabled) {
+:root[data-theme="light"]
+  .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:hover:not(:disabled),
+:root[data-theme="dark"]
+  .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:hover:not(:disabled),
+:root[data-theme="light"]
+  .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:active:not(:disabled),
+:root[data-theme="dark"]
+  .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:active:not(:disabled) {
   border-color: #b42318;
   background: #b42318;
   color: var(--portal-white);
@@ -7465,7 +7538,9 @@ body {
   border-color: var(--portal-error-600);
   background: var(--portal-error-600);
   color: var(--portal-white);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(240, 68, 56, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(240, 68, 56, 0.24);
 }
 
 :root[data-theme="light"] .btn.btn-outline-danger.preview-action-button.preview-action-button-danger:disabled,
@@ -7530,7 +7605,9 @@ body {
   border-color: var(--portal-gray-300);
   background: var(--portal-white);
   color: var(--portal-gray-700);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(77, 106, 214, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(77, 106, 214, 0.24);
 }
 
 .profile-preview-popover .preview-header .modal-close:disabled,

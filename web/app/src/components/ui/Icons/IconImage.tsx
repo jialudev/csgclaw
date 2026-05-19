@@ -6,10 +6,12 @@ export function IconImage(name: string) {
     <span
       className="svg-icon"
       aria-hidden="true"
-      style={{
-        WebkitMaskImage: `url("/icons/${name}.svg")`,
-        maskImage: `url("/icons/${name}.svg")`,
-      } as CSSProperties}
+      style={
+        {
+          WebkitMaskImage: `url("/icons/${name}.svg")`,
+          maskImage: `url("/icons/${name}.svg")`,
+        } as CSSProperties
+      }
     ></span>
   );
 }

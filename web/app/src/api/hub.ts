@@ -10,7 +10,9 @@ export function fetchHubTemplate(templateID) {
 }
 
 export function fetchHubWorkspaceFile(templateID, workspacePath) {
-  return get(`/api/v1/hub/templates/${encodeURIComponent(templateID)}/workspace/file?path=${encodeURIComponent(workspacePath)}`);
+  return get(
+    `/api/v1/hub/templates/${encodeURIComponent(templateID)}/workspace/file?path=${encodeURIComponent(workspacePath)}`,
+  );
 }
 
 export function publishAgentTemplateRequest(agentID) {

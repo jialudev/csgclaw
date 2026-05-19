@@ -35,9 +35,7 @@ export default defineConfig({
         "sse-shared-worker": path.resolve(__dirname, "src/shared/realtime/sseSharedWorker.ts"),
       },
       output: {
-        entryFileNames: (chunk) => chunk.name === "sse-shared-worker"
-          ? "[name].js"
-          : "assets/[name]-[hash].js",
+        entryFileNames: (chunk) => (chunk.name === "sse-shared-worker" ? "[name].js" : "assets/[name]-[hash].js"),
         chunkFileNames: "assets/[name]-[hash].js",
         assetFileNames: "assets/[name]-[hash][extname]",
       },

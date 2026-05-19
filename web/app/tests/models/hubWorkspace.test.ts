@@ -37,11 +37,13 @@ describe("hub workspace helpers", () => {
   });
 
   it("initially collapses every directory entry", () => {
-    expect(buildInitialCollapsedHubWorkspaceDirs([
-      { path: "src", type: "dir" },
-      { path: "src/App.tsx", type: "file" },
-      { path: "tests", type: "dir" },
-    ])).toEqual({ src: true, tests: true });
+    expect(
+      buildInitialCollapsedHubWorkspaceDirs([
+        { path: "src", type: "dir" },
+        { path: "src/App.tsx", type: "file" },
+        { path: "tests", type: "dir" },
+      ]),
+    ).toEqual({ src: true, tests: true });
   });
 
   it("formats hub dates in a stable UTC timezone", () => {

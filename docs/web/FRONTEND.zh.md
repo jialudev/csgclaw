@@ -4,6 +4,21 @@
 
 英文版为 `FRONTEND.md`，Agent 默认以英文版为准。
 
+## 工具链
+
+- 前端开发使用 Node.js 24.x。
+- 仓库根目录有 `.nvmrc`；使用 `nvm` 时，在 `csgclaw` 根目录运行 `nvm use`。
+- `web/app/package.json` 通过 `engines.node` 声明 Node.js 版本范围。
+- 包管理使用 `pnpm`。`web/app/package.json` 通过 `packageManager` 字段和 `engines.pnpm` 固定为 `pnpm@11.1.3`。
+- 执行前端包管理命令前，先安装或切换到 Node.js 24.x。
+- 如果切换 Node.js 版本后本机没有 `pnpm`，用 Node.js 自带的 Corepack 安装固定版本:
+
+```bash
+corepack enable
+corepack prepare pnpm@11.1.3 --activate
+pnpm --dir web/app install
+```
+
 ## 范围
 
 - 前端源码放在 `web/app/src`。
@@ -21,6 +36,33 @@
 - `src/shared/`: 跨模块通用的 i18n、storage key、realtime、theme、样式和通用 helper。
 
 不要随意新增顶层目录。只有模块确实是跨领域通用，并且不适合现有目录时再新增。
+
+## 源码目录细则
+
+创建、移动或重组 `web/app/src` 下的文件时，使用这张表判断归属。
+
+| 路径 | 职责 | 避免 |
+| --- | --- | --- |
+| `src/main.tsx` | React 入口。 | 应用逻辑、路由规则或 provider 细节。 |
+| `src/bootstrap/` | 应用启动、providers、常量、根装配、错误边界和共享 client。 | 页面私有行为或 feature 专属 helper。 |
+| `src/routes/` | 路由声明和 route 到 page 的装配。 | 页面实现细节。 |
+| `src/api/` | HTTP client、请求封装、endpoint 类型和传输边界。 | 渲染逻辑、页面状态或可复用数据归一化。 |
+| `src/models/` | 可共享或可独立测试的纯数据整理、格式化、解析、路由和领域 helper。 | React hooks、浏览器存储、fetch 调用或 UI 状态。 |
+| `src/hooks/` | 复用型 React hooks，用于组合共享应用数据或 controller 状态。 | 只属于单个页面的 hooks；这类 hooks 放页面附近。 |
+| `src/components/ui/` | 展示型基础组件、布局基础件、表单控件、按钮和图标。 | CSGClaw 业务状态或 API 数据行为。 |
+| `src/components/business/` | 跨页面复用的业务组件，组合 UI 基础件和业务文案、状态、动作或 API 数据。 | 只被单个页面使用的组件。 |
+| `src/pages/<PageName>/` | 路由页面和该页面拥有的模块。 | 没有真实复用前提前抽跨页面抽象。 |
+| `src/pages/<PageName>/components/` | 页面私有组件。 | 从其它页面导入私有模块。 |
+| `src/shared/i18n/` | 文案表、语言选择和翻译 helper。 | 只属于单个未国际化路径的一次性文案。 |
+| `src/shared/storage/` | storage key 和 local/session storage 封装。 | 页面专属持久化策略。 |
+| `src/shared/realtime/` | event bus、SSE/shared worker、实时事件解析和订阅 helper。 | 页面渲染或组件私有 effect。 |
+| `src/shared/theme/` | 主题选择和主题相关共享逻辑。 | 组件 CSS 或页面专属视觉规则。 |
+| `src/shared/styles/` | 全局 CSS、reset、设计 token 和全局 CSS 变量。 | 组件或页面自有样式。 |
+| `src/shared/lib/` | 不依赖 React、API、storage 或页面的小型通用 helper。 | 应放进 `src/models/` 的领域 helper。 |
+
+默认把代码放在最接近 owner 的地方。只有出现真实跨页面复用，或边界确实共享时，才提升到 `src/components`、`src/models`、`src/hooks` 或 `src/shared`。
+
+如果后续某个子目录需要自己的规则，在该子目录加一个短 README，并从本规范链接过去。
 
 ## 页面模块
 
@@ -106,7 +148,10 @@ src/pages/WorkspacePage/components/
 ## 测试与验证
 
 - TypeScript 或 import 路径变化后，运行 `pnpm --dir web/app typecheck`。
+- 前端源码变化后，运行 `pnpm --dir web/app lint`。
+- 提交或共享改动前，运行 `pnpm --dir web/app format:check`；需要应用 Prettier 格式化时运行 `pnpm --dir web/app format`。
 - 运行 `pnpm --dir web/app test` 执行前端 Vitest 测试。
+- 运行 `pnpm --dir web/app check` 执行标准前端验证组合。
 - 需要验证打包但不想改 `web/static-dist` 时，运行 `pnpm --dir web/app exec vite build --outDir /private/tmp/csgclaw-web-build --emptyOutDir`。
 - 只有确实需要更新嵌入产物时，才运行 `pnpm --dir web/app build`。
 - 数据整理、路由解析、格式化、parser、serializer、状态流转 helper 应优先补纯单元测试。典型目标包括 `src/models/**`、`src/shared/lib/**`，以及组件包里不依赖 React 渲染的纯逻辑 helper。

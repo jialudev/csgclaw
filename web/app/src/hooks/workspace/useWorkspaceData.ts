@@ -28,41 +28,59 @@ export function useWorkspaceData() {
   const appVersionQuery = useWorkspaceAppVersionQuery();
   const upgradeStatusQuery = useWorkspaceUpgradeStatusQuery();
 
-  const setBootstrapData = useCallback((value) => {
-    queryClient.setQueryData(workspaceQueryKeys.bootstrap(), (current) => (
-      typeof value === "function" ? value(current ?? null) : value
-    ));
-  }, [queryClient]);
+  const setBootstrapData = useCallback(
+    (value) => {
+      queryClient.setQueryData(workspaceQueryKeys.bootstrap(), (current) =>
+        typeof value === "function" ? value(current ?? null) : value,
+      );
+    },
+    [queryClient],
+  );
 
-  const setManagerProfileData = useCallback((value) => {
-    queryClient.setQueryData(workspaceQueryKeys.managerProfile(), (current) => (
-      typeof value === "function" ? value(current ?? null) : value
-    ));
-  }, [queryClient]);
+  const setManagerProfileData = useCallback(
+    (value) => {
+      queryClient.setQueryData(workspaceQueryKeys.managerProfile(), (current) =>
+        typeof value === "function" ? value(current ?? null) : value,
+      );
+    },
+    [queryClient],
+  );
 
-  const setAgentsData = useCallback((value) => {
-    queryClient.setQueryData(workspaceQueryKeys.agents(), (current) => (
-      typeof value === "function" ? value(current ?? []) : value
-    ));
-  }, [queryClient]);
+  const setAgentsData = useCallback(
+    (value) => {
+      queryClient.setQueryData(workspaceQueryKeys.agents(), (current) =>
+        typeof value === "function" ? value(current ?? []) : value,
+      );
+    },
+    [queryClient],
+  );
 
-  const setHubTemplatesData = useCallback((value) => {
-    queryClient.setQueryData(workspaceQueryKeys.hubTemplates(), (current) => (
-      typeof value === "function" ? value(current ?? []) : value
-    ));
-  }, [queryClient]);
+  const setHubTemplatesData = useCallback(
+    (value) => {
+      queryClient.setQueryData(workspaceQueryKeys.hubTemplates(), (current) =>
+        typeof value === "function" ? value(current ?? []) : value,
+      );
+    },
+    [queryClient],
+  );
 
-  const setAppVersionData = useCallback((value) => {
-    queryClient.setQueryData(workspaceQueryKeys.appVersion(), (current) => (
-      typeof value === "function" ? value(current ?? "dev") : value
-    ));
-  }, [queryClient]);
+  const setAppVersionData = useCallback(
+    (value) => {
+      queryClient.setQueryData(workspaceQueryKeys.appVersion(), (current) =>
+        typeof value === "function" ? value(current ?? "dev") : value,
+      );
+    },
+    [queryClient],
+  );
 
-  const setUpgradeStatusData = useCallback((value) => {
-    queryClient.setQueryData(workspaceQueryKeys.upgradeStatus(), (current) => (
-      typeof value === "function" ? value(current ?? null) : value
-    ));
-  }, [queryClient]);
+  const setUpgradeStatusData = useCallback(
+    (value) => {
+      queryClient.setQueryData(workspaceQueryKeys.upgradeStatus(), (current) =>
+        typeof value === "function" ? value(current ?? null) : value,
+      );
+    },
+    [queryClient],
+  );
 
   const refreshWorkspaceBootstrap = useCallback(async () => {
     try {
@@ -95,11 +113,14 @@ export function useWorkspaceData() {
     }
   }, [setUpgradeStatusData]);
 
-  const refreshWorkspaceAppVersion = useCallback(async (options = {}) => {
-    const version = await fetchWorkspaceAppVersion(options);
-    setAppVersionData(version);
-    return version;
-  }, [setAppVersionData]);
+  const refreshWorkspaceAppVersion = useCallback(
+    async (options = {}) => {
+      const version = await fetchWorkspaceAppVersion(options);
+      setAppVersionData(version);
+      return version;
+    },
+    [setAppVersionData],
+  );
 
   const refreshWorkspaceManagerProfile = useCallback(async () => {
     try {
@@ -111,11 +132,14 @@ export function useWorkspaceData() {
     }
   }, [setManagerProfileData]);
 
-  const refreshWorkspaceAgents = useCallback(async (options = {}) => {
-    const agents = await fetchAgents(options);
-    setAgentsData(agents);
-    return agents;
-  }, [setAgentsData]);
+  const refreshWorkspaceAgents = useCallback(
+    async (options = {}) => {
+      const agents = await fetchAgents(options);
+      setAgentsData(agents);
+      return agents;
+    },
+    [setAgentsData],
+  );
 
   const refreshWorkspaceHubTemplates = useCallback(async () => {
     const payload = await fetchHubTemplates();

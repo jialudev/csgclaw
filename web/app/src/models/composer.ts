@@ -18,11 +18,13 @@ export function appendComposerSegments(parent, segments) {
       continue;
     }
     if (segment.type === "mention") {
-      parent.append(createMentionTokenElement({
-        id: segment.userId,
-        name: segment.userName,
-        handle: segment.userName,
-      }));
+      parent.append(
+        createMentionTokenElement({
+          id: segment.userId,
+          name: segment.userName,
+          handle: segment.userName,
+        }),
+      );
       continue;
     }
     const parts = String(segment.text ?? "").split("\n");
@@ -116,12 +118,14 @@ export function normalizeComposerSegments(segments) {
 }
 
 export function segmentsToPlainText(segments) {
-  return (segments ?? []).map((segment) => {
-    if (segment.type === "mention") {
-      return `@${segment.userName || segment.userId}`;
-    }
-    return segment.text ?? "";
-  }).join("");
+  return (segments ?? [])
+    .map((segment) => {
+      if (segment.type === "mention") {
+        return `@${segment.userName || segment.userId}`;
+      }
+      return segment.text ?? "";
+    })
+    .join("");
 }
 
 export function areComposerSegmentsEqual(left, right) {
@@ -133,10 +137,12 @@ export function areComposerSegmentsEqual(left, right) {
   }
   return left.every((segment, index) => {
     const other = right[index];
-    return segment.type === other?.type
-      && segment.text === other?.text
-      && segment.userId === other?.userId
-      && segment.userName === other?.userName;
+    return (
+      segment.type === other?.type &&
+      segment.text === other?.text &&
+      segment.userId === other?.userId &&
+      segment.userName === other?.userName
+    );
   });
 }
 
@@ -158,14 +164,16 @@ export function updateDrafts(current, conversationID, segments) {
 }
 
 export function serializeComposerSegments(segments) {
-  return (segments ?? []).map((segment) => {
-    if (segment.type === "mention") {
-      const userID = segment.userId || "";
-      const userName = segment.userName || userID;
-      return `<at user_id="${userID}">${userName}</at>`;
-    }
-    return segment.text ?? "";
-  }).join("");
+  return (segments ?? [])
+    .map((segment) => {
+      if (segment.type === "mention") {
+        const userID = segment.userId || "";
+        const userName = segment.userName || userID;
+        return `<at user_id="${userID}">${userName}</at>`;
+      }
+      return segment.text ?? "";
+    })
+    .join("");
 }
 
 export function splitTextSegmentByMentions(text, mentionableUsersByHandle) {
@@ -371,7 +379,11 @@ export function removeAdjacentMentionToken(root, direction) {
   if (sibling?.nodeType === Node.TEXT_NODE && sibling.textContent === " ") {
     sibling.remove();
   }
-  placeCaretNearNode(root, direction === "backward" ? sibling?.previousSibling ?? root : sibling?.nextSibling ?? root, direction);
+  placeCaretNearNode(
+    root,
+    direction === "backward" ? (sibling?.previousSibling ?? root) : (sibling?.nextSibling ?? root),
+    direction,
+  );
   return true;
 }
 

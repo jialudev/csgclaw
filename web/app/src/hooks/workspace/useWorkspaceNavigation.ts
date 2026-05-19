@@ -16,61 +16,84 @@ export function useWorkspaceNavigation({
   setShowChannelTools,
   rooms,
 }) {
-  const navigatePane = useCallback((pane, roomList = rooms, options = {}) => {
-    const nextPath = pathForPane(pane, roomList);
-    if (!nextPath || location.pathname === nextPath) {
-      return;
-    }
-    navigate(nextPath, { replace: Boolean(options.replace) });
-  }, [location.pathname, navigate, rooms]);
+  const navigatePane = useCallback(
+    (pane, roomList = rooms, options = {}) => {
+      const nextPath = pathForPane(pane, roomList);
+      if (!nextPath || location.pathname === nextPath) {
+        return;
+      }
+      navigate(nextPath, { replace: Boolean(options.replace) });
+    },
+    [location.pathname, navigate, rooms],
+  );
 
-  const selectConversation = useCallback((id, options = {}) => {
-    setActiveConversationId(id);
-    const next = { type: "conversation", id };
-    setActivePane(next);
-    setWorkspaceTab(WORKSPACE_TAB_MESSAGES);
-    setShowMemberList(false);
-    setShowChannelTools(false);
-    if (options.updateURL !== false) {
-      navigatePane(next, options.rooms ?? rooms, options);
-    }
-  }, [navigatePane, rooms, setActiveConversationId, setActivePane, setShowChannelTools, setShowMemberList, setWorkspaceTab]);
+  const selectConversation = useCallback(
+    (id, options = {}) => {
+      setActiveConversationId(id);
+      const next = { type: "conversation", id };
+      setActivePane(next);
+      setWorkspaceTab(WORKSPACE_TAB_MESSAGES);
+      setShowMemberList(false);
+      setShowChannelTools(false);
+      if (options.updateURL !== false) {
+        navigatePane(next, options.rooms ?? rooms, options);
+      }
+    },
+    [
+      navigatePane,
+      rooms,
+      setActiveConversationId,
+      setActivePane,
+      setShowChannelTools,
+      setShowMemberList,
+      setWorkspaceTab,
+    ],
+  );
 
-  const selectAgent = useCallback((item, options = {}) => {
-    if (!item?.id) {
-      return;
-    }
-    const next = { type: "agent", id: item.id };
-    setActivePane(next);
-    setWorkspaceTab(WORKSPACE_TAB_AGENTS);
-    setShowMemberList(false);
-    setShowChannelTools(false);
-    if (options.updateURL !== false) {
-      navigatePane(next, rooms, options);
-    }
-  }, [navigatePane, rooms, setActivePane, setShowChannelTools, setShowMemberList, setWorkspaceTab]);
+  const selectAgent = useCallback(
+    (item, options = {}) => {
+      if (!item?.id) {
+        return;
+      }
+      const next = { type: "agent", id: item.id };
+      setActivePane(next);
+      setWorkspaceTab(WORKSPACE_TAB_AGENTS);
+      setShowMemberList(false);
+      setShowChannelTools(false);
+      if (options.updateURL !== false) {
+        navigatePane(next, rooms, options);
+      }
+    },
+    [navigatePane, rooms, setActivePane, setShowChannelTools, setShowMemberList, setWorkspaceTab],
+  );
 
-  const selectComputer = useCallback((options = {}) => {
-    const next = { type: "computer", id: "local" };
-    setActivePane(next);
-    setWorkspaceTab(WORKSPACE_TAB_AGENTS);
-    setShowMemberList(false);
-    setShowChannelTools(false);
-    if (options.updateURL !== false) {
-      navigatePane(next, rooms, options);
-    }
-  }, [navigatePane, rooms, setActivePane, setShowChannelTools, setShowMemberList, setWorkspaceTab]);
+  const selectComputer = useCallback(
+    (options = {}) => {
+      const next = { type: "computer", id: "local" };
+      setActivePane(next);
+      setWorkspaceTab(WORKSPACE_TAB_AGENTS);
+      setShowMemberList(false);
+      setShowChannelTools(false);
+      if (options.updateURL !== false) {
+        navigatePane(next, rooms, options);
+      }
+    },
+    [navigatePane, rooms, setActivePane, setShowChannelTools, setShowMemberList, setWorkspaceTab],
+  );
 
-  const selectHub = useCallback((options = {}) => {
-    const next = { type: "hub", id: "hub" };
-    setActivePane(next);
-    setWorkspaceTab(WORKSPACE_TAB_HUB);
-    setShowMemberList(false);
-    setShowChannelTools(false);
-    if (options.updateURL !== false) {
-      navigatePane(next, rooms, options);
-    }
-  }, [navigatePane, rooms, setActivePane, setShowChannelTools, setShowMemberList, setWorkspaceTab]);
+  const selectHub = useCallback(
+    (options = {}) => {
+      const next = { type: "hub", id: "hub" };
+      setActivePane(next);
+      setWorkspaceTab(WORKSPACE_TAB_HUB);
+      setShowMemberList(false);
+      setShowChannelTools(false);
+      if (options.updateURL !== false) {
+        navigatePane(next, rooms, options);
+      }
+    },
+    [navigatePane, rooms, setActivePane, setShowChannelTools, setShowMemberList, setWorkspaceTab],
+  );
 
   useEffect(() => {
     setWorkspaceTab(workspaceTabForPane(activePane));

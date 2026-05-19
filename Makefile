@@ -62,16 +62,19 @@ test:
 check-web-toolchain:
 	@command -v node >/dev/null 2>&1 || { \
 		printf '%s\n' 'Node.js is required to build the Web UI.'; \
-		printf '%s\n' 'Install Node.js, then run make build again.'; \
+		printf '%s\n' 'Install Node.js 24.x, then run make build again.'; \
+		printf '%s\n' 'If you use nvm, run: nvm install 24 && nvm use 24'; \
+		exit 1; \
+	}
+	@node -e "const major = Number(process.versions.node.split('.')[0]); process.exit(major === 24 ? 0 : 1)" || { \
+		printf '%s\n' 'Node.js 24.x is required to build the Web UI.'; \
+		printf '%s\n' 'If you use nvm, run: nvm install 24 && nvm use 24'; \
 		exit 1; \
 	}
 	@if [ -z "$(WEB_PACKAGE_MANAGER)" ]; then \
 		printf '%s\n' 'pnpm is required to build the Web UI.'; \
 		printf '%s\n' 'This repo uses pnpm-lock.yaml and packageManager=pnpm, so npm is not used automatically.'; \
-		if command -v npm >/dev/null 2>&1; then \
-			printf '%s\n' 'You can install pnpm with: npm install -g pnpm@9.15.4'; \
-		fi; \
-		printf '%s\n' 'If your Node.js ships Corepack, you can also run: corepack enable'; \
+		printf '%s\n' 'Install the pinned pnpm with: corepack enable && corepack prepare pnpm@11.1.3 --activate'; \
 		exit 1; \
 	fi
 

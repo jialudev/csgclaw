@@ -1,10 +1,5 @@
 import { forwardRef } from "react";
-import type {
-  InputHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes,
-  TextareaHTMLAttributes,
-} from "react";
+import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { classNames } from "@/shared/lib/classNames";
 
 export type FieldProps = {

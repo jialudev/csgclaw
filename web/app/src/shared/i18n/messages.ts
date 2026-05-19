@@ -101,8 +101,10 @@ export const messages = {
     notifierWebhookTokenInputPlaceholder: "粘贴 Webhook 访问令牌（不是 LLM 的 API Key）",
     notifierRemoteURL: "收件箱服务地址 (remote_url)",
     notifierRemoteURLPlaceholder: "https://relay.example.com/api/v1/inbox/messages",
-    notifierRemoteURLSummary: "GET 列表的完整 URL，或仅 origin。误填 .../webhooks/ingress 时自动改为同前缀 inbox 的 GET/ack。",
-    notifierRemoteURLHelp: "须含 http(s)。仅填主机时默认请求 /api/v1/inbox/messages 与 /api/v1/inbox/ack；拉取会附带 subscription_id 等 query。",
+    notifierRemoteURLSummary:
+      "GET 列表的完整 URL，或仅 origin。误填 .../webhooks/ingress 时自动改为同前缀 inbox 的 GET/ack。",
+    notifierRemoteURLHelp:
+      "须含 http(s)。仅填主机时默认请求 /api/v1/inbox/messages 与 /api/v1/inbox/ack；拉取会附带 subscription_id 等 query。",
     notifierSubscriptionID: "订阅 ID（自动生成）",
     notifierSubscriptionIDSummary: "拉取模式由服务端写入，只读。",
     notifierSubscriptionIDHelp: "用于 relay 分区；对应 CSGClaw 的 subscription_id，请勿手动修改。",
@@ -112,7 +114,8 @@ export const messages = {
     notifierPollIntervalHelp: "轮询每秒检查一次，按此处间隔向中继发 GET。",
     notifierRemoteToken: "收件箱拉取鉴权（Bearer Token）",
     notifierRemoteTokenSummary: "GET 列表与 POST ack 时添加 Bearer；不是 GitLab Webhook Secret。",
-    notifierRemoteTokenHelp: "中继返回 401 等时在此填写平台颁发的 API token。GitLab 第三方粘贴地址的 Secret 在 GitLab 或中继侧配置。",
+    notifierRemoteTokenHelp:
+      "中继返回 401 等时在此填写平台颁发的 API token。GitLab 第三方粘贴地址的 Secret 在 GitLab 或中继侧配置。",
     notifierRemoteTokenInputPlaceholder: "填写中继拉取/ACK 使用的 Bearer token",
     notifierRemoteTokenLeaveUnchangedPlaceholder: "已保存凭据；留空不变，更换时请粘贴新 token",
     notifierPullEffectiveRoutes: "生效的拉取路由（预览）",
@@ -123,7 +126,8 @@ export const messages = {
     notifierPullRoutePlaceholderUnset: "（请先填写收件箱服务地址）",
     notifierThirdPartyWebhookPasteURL: "第三方 Webhook 粘贴地址（含订阅 ID）",
     notifierThirdPartyWebhookPasteURLSummary: "供 GitLab 等 POST 的中继入站 URL（含 subscription_id）。",
-    notifierThirdPartyWebhookPasteURLHelp: "仅 origin 时用默认 /api/v1/webhooks/ingress；以 .../inbox/messages 结尾则换成同 host 的 .../webhooks/ingress；其它 path 保留、仅追加 query。",
+    notifierThirdPartyWebhookPasteURLHelp:
+      "仅 origin 时用默认 /api/v1/webhooks/ingress；以 .../inbox/messages 结尾则换成同 host 的 .../webhooks/ingress；其它 path 保留、仅追加 query。",
     notifierWebhookPublicOrigin: "CSGClaw 对外基址（HTTPS）",
     notifierWebhookPublicOriginPlaceholder: "https://gitlab 能访问到的地址:端口",
     notifierWebhookPublicOriginSummary: "用于拼接下方对外 Webhook；默认同当前页 origin。",
@@ -342,7 +346,8 @@ export const messages = {
     send: "Send",
     composerTip: "Press Enter to send and Shift + Enter for a new line. Supports rooms, DMs, and @ mentions.",
     profileSetupTitle: "Manager Profile",
-    profileSetupSubtitle: "Auto-detection did not find a usable model. Complete the manager runtime profile before chatting.",
+    profileSetupSubtitle:
+      "Auto-detection did not find a usable model. Complete the manager runtime profile before chatting.",
     profileProvider: "Provider",
     profileModel: "Model",
     profileBaseURL: "Base URL",
@@ -356,7 +361,8 @@ export const messages = {
     profileEnvAdd: "Add variable",
     profileEnvRemove: "Remove variable",
     profileEnvNotifierSummary: "Injected for sandbox workers only; leave empty for notifier-only agents.",
-    profileEnvNotifierHelp: "If this agent still runs a gateway sandbox, variables are injected into the container. They are not used for webhook verification or notification formatting.",
+    profileEnvNotifierHelp:
+      "If this agent still runs a gateway sandbox, variables are injected into the container. They are not used for webhook verification or notification formatting.",
     profileReasoning: "Reasoning",
     profileFastMode: "Fast mode",
     agentRuntime: "Agent Runtime",
@@ -376,8 +382,10 @@ export const messages = {
     notifierWebhookTokenInputPlaceholder: "Paste webhook access token (not an LLM API key)",
     notifierRemoteURL: "Inbox service URL (remote_url)",
     notifierRemoteURLPlaceholder: "https://relay.example.com/api/v1/inbox/messages",
-    notifierRemoteURLSummary: "Full GET inbox URL, or origin only. A mistaken .../webhooks/ingress POST URL is rewritten to inbox GET/ack under the same prefix.",
-    notifierRemoteURLHelp: "Include http(s). Host-only defaults to /api/v1/inbox/messages and /api/v1/inbox/ack. Pull requests append subscription_id and other query params.",
+    notifierRemoteURLSummary:
+      "Full GET inbox URL, or origin only. A mistaken .../webhooks/ingress POST URL is rewritten to inbox GET/ack under the same prefix.",
+    notifierRemoteURLHelp:
+      "Include http(s). Host-only defaults to /api/v1/inbox/messages and /api/v1/inbox/ack. Pull requests append subscription_id and other query params.",
     notifierSubscriptionID: "Subscription ID (auto-generated)",
     notifierSubscriptionIDSummary: "Written by the server in pull mode; read-only.",
     notifierSubscriptionIDHelp: "Used for relay partitioning. Do not edit manually.",
@@ -389,7 +397,8 @@ export const messages = {
     notifierRemoteTokenSummary: "Bearer on GET list and POST ack, not the GitLab webhook secret.",
     notifierRemoteTokenHelp: "Use the API token from the relay/OpenAPI when you see 401/login errors.",
     notifierRemoteTokenInputPlaceholder: "Bearer token for relay pull/ack",
-    notifierRemoteTokenLeaveUnchangedPlaceholder: "Saved on server; leave blank to keep, or paste a new token to rotate",
+    notifierRemoteTokenLeaveUnchangedPlaceholder:
+      "Saved on server; leave blank to keep, or paste a new token to rotate",
     notifierPullEffectiveRoutes: "Effective pull routes (preview)",
     notifierPullEffectiveRoutesSummary: "Derived from the inbox URL; optional overrides below win.",
     notifierPullEffectiveRoutesHelp: "These are the URLs CSGClaw uses for GET list and POST ack.",
@@ -398,13 +407,15 @@ export const messages = {
     notifierPullRoutePlaceholderUnset: "(Enter inbox service URL first)",
     notifierThirdPartyWebhookPasteURL: "Third-party webhook URL (includes subscription ID)",
     notifierThirdPartyWebhookPasteURLSummary: "Inbound relay URL for GitLab etc. (includes subscription_id).",
-    notifierThirdPartyWebhookPasteURLHelp: "Origin-only inbox URL uses /api/v1/webhooks/ingress on that host. URLs ending in .../inbox/messages map to .../webhooks/ingress. Other paths stay the same.",
+    notifierThirdPartyWebhookPasteURLHelp:
+      "Origin-only inbox URL uses /api/v1/webhooks/ingress on that host. URLs ending in .../inbox/messages map to .../webhooks/ingress. Other paths stay the same.",
     notifierWebhookPublicOrigin: "CSGClaw public base URL (HTTPS)",
     notifierWebhookPublicOriginPlaceholder: "https://host:port reachable by GitLab",
     notifierWebhookPublicOriginSummary: "Builds the public webhook URL below; defaults to this page origin.",
     notifierWebhookPublicOriginHelp: "Set a URL GitLab can reach. Empty uses a placeholder in preview/copy.",
     notifierThirdPartyCSGWebhookURL: "CSGClaw Webhook (third-party POST)",
-    notifierThirdPartyCSGWebhookURLSummary: "GitLab POSTs here; Authorization: Bearer must match the webhook token above.",
+    notifierThirdPartyCSGWebhookURLSummary:
+      "GitLab POSTs here; Authorization: Bearer must match the webhook token above.",
     notifierThirdPartyCSGWebhookURLHelp: "<agent_id> is a placeholder until save; copy again after create.",
     notifierWebhookOriginPlaceholder: "https://<your-csgclaw-host>",
     copyToClipboard: "Copy",
@@ -428,7 +439,8 @@ export const messages = {
     createAgent: "Create Agent",
     createAgentTitle: "Create Agent",
     createAgentSubtitle: "Create a worker with the latest profile defaults.",
-    createAgentSubtitleNotifier: "Create a notification agent (push webhook or pull inbox). Can bind Feishu and join groups like workers.",
+    createAgentSubtitleNotifier:
+      "Create a notification agent (push webhook or pull inbox). Can bind Feishu and join groups like workers.",
     editAgentTitle: "Edit Agent Profile",
     editAgentSubtitle: "Change runtime settings. Env changes need a sandbox recreate.",
     agentName: "Name",
@@ -457,7 +469,8 @@ export const messages = {
     agentCreated: "Agent created",
     agentUpdated: "Agent updated",
     agentActionFailed: "Agent action failed",
-    managerRebuildConfirm: "Rebuilding Manager interrupts the current Manager and this session may need a refresh. Continue?",
+    managerRebuildConfirm:
+      "Rebuilding Manager interrupts the current Manager and this session may need a refresh. Continue?",
     managerRebuildTitle: "Recreate Manager",
     managerRebuildSubtitle: "Choose the runtime and image to use for recreate. This interrupts the current Manager.",
     managerRebuildAction: "Recreate",
@@ -522,7 +535,8 @@ export const messages = {
     upgradeStatusDone: "Upgrade complete",
     upgradeStatusError: "Upgrade failed",
     upgradeConfirmBody: "Updating runs csgclaw upgrade and restarts the local service when it finishes.",
-    upgradeRestartingBody: "The upgrade helper has started. This page will wait for the service to come back; a brief disconnect is normal.",
+    upgradeRestartingBody:
+      "The upgrade helper has started. This page will wait for the service to come back; a brief disconnect is normal.",
     upgradeDoneBody: "The service is back. Refresh the page to use the new version.",
     upgradeNoLatest: "Unknown",
     upgradeRefresh: "Refresh page",

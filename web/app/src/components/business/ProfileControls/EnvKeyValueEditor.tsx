@@ -10,7 +10,7 @@ export type EnvKeyValueEditorProps = {
 export function EnvKeyValueEditor({ rows = [], t, onChange }: EnvKeyValueEditorProps) {
   const items = rows.length ? rows : [{ key: "", value: "" }];
   function update(index: number, patch: Partial<EnvKeyValueRow>) {
-    onChange(items.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+    onChange(items.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
   }
   function remove(index: number) {
     const next = items.filter((_, rowIndex) => rowIndex !== index);
@@ -30,7 +30,13 @@ export function EnvKeyValueEditor({ rows = [], t, onChange }: EnvKeyValueEditorP
             placeholder={t("profileEnvValue")}
             onInput={(event) => update(index, { value: event.currentTarget.value })}
           />
-          <Button variant="ghost" className="env-remove-button" aria-label={t("profileEnvRemove")} title={t("profileEnvRemove")} onClick={() => remove(index)}>
+          <Button
+            variant="ghost"
+            className="env-remove-button"
+            aria-label={t("profileEnvRemove")}
+            title={t("profileEnvRemove")}
+            onClick={() => remove(index)}
+          >
             ×
           </Button>
         </div>

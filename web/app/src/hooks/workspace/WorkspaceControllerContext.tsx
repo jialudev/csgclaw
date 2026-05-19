@@ -3,11 +3,7 @@ import { createContext, useContext } from "react";
 const WorkspaceControllerContext = createContext(null);
 
 export function WorkspaceControllerProvider({ controller, children }) {
-  return (
-    <WorkspaceControllerContext.Provider value={controller}>
-      {children}
-    </WorkspaceControllerContext.Provider>
-  );
+  return <WorkspaceControllerContext.Provider value={controller}>{children}</WorkspaceControllerContext.Provider>;
 }
 
 export function useWorkspaceControllerContext() {

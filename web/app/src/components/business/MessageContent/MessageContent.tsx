@@ -43,8 +43,8 @@ export function MessageContent({ content, message, actionBusy, actionError, onAc
         />
       );
     }
-    return (<StructuredMessageCard data={structured} />);
+    return <StructuredMessageCard data={structured} />;
   }
 
-  return (<div ref={containerRef} className="message-content" dangerouslySetInnerHTML={{ __html: markup }} />);
+  return <div ref={containerRef} className="message-content" dangerouslySetInnerHTML={{ __html: markup }} />;
 }

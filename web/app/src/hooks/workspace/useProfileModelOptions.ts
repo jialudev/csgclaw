@@ -16,9 +16,12 @@ export function useProfileModelOptions({ draft, enabled = true, onDraftChange })
       setRequestDraft(null);
       return undefined;
     }
-    const timer = window.setTimeout(() => {
-      setRequestDraft(draft);
-    }, draft.provider === "api" ? 420 : 0);
+    const timer = window.setTimeout(
+      () => {
+        setRequestDraft(draft);
+      },
+      draft.provider === "api" ? 420 : 0,
+    );
     return () => window.clearTimeout(timer);
   }, [shouldLoad, draftRequestKey]);
 

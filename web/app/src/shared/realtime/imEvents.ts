@@ -1,9 +1,7 @@
 // @ts-nocheck
 import { IM_EVENTS_ENDPOINT, IM_EVENTS_SHARED_WORKER_PATH } from "@/bootstrap/constants";
 
-const sharedWorkerURL = import.meta.env.DEV
-  ? "/src/shared/realtime/sseSharedWorker.ts"
-  : IM_EVENTS_SHARED_WORKER_PATH;
+const sharedWorkerURL = import.meta.env.DEV ? "/src/shared/realtime/sseSharedWorker.ts" : IM_EVENTS_SHARED_WORKER_PATH;
 
 function createSharedWorker() {
   if (import.meta.env.DEV) {

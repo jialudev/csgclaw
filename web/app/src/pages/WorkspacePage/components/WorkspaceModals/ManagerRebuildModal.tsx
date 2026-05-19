@@ -25,7 +25,9 @@ export function ManagerRebuildModal({
             <div className="modal-title">{t("managerRebuildTitle")}</div>
             <div className="modal-subtitle">{t("managerRebuildSubtitle")}</div>
           </div>
-          <Button className="modal-close" onClick={onClose}>{t("close")}</Button>
+          <Button className="modal-close" onClick={onClose}>
+            {t("close")}
+          </Button>
         </div>
         <div className="profile-editor-shell">
           <section className="profile-section">
@@ -57,7 +59,7 @@ export function ManagerRebuildModal({
               </label>
             </div>
           </section>
-          {error ? (<div className="form-error">{error}</div>) : null}
+          {error ? <div className="form-error">{error}</div> : null}
           <div className="modal-actions">
             <Button className="secondary-button" disabled={busy} onClick={onClose}>
               {t("close")}

@@ -31,6 +31,9 @@ docker/
 .cursor/
 .idea/
 .vscode/
+!.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
 
 # Vendored native libraries / SDK dist fetched on demand
 third_party/boxlite-go/libboxlite.a

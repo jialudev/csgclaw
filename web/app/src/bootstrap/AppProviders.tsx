@@ -3,9 +3,5 @@ import type { ReactNode } from "react";
 import { queryClient } from "@/bootstrap/queryClient";
 
 export function AppProviders({ children }: { children: ReactNode }) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

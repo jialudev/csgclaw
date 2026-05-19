@@ -4,14 +4,7 @@ import { errorMessage } from "@/api/client";
 import { useWorkspaceUiStore } from "./workspaceUiStore";
 import { useWorkspaceHubTemplateQuery, useWorkspaceHubWorkspaceFileQuery } from "./workspaceQueries";
 
-export function useWorkspaceHubSelection({
-  templates,
-  templatesQuery,
-  loaded,
-  manualError,
-  refreshTemplates,
-  t,
-}) {
+export function useWorkspaceHubSelection({ templates, templatesQuery, loaded, manualError, refreshTemplates, t }) {
   const hubTemplates = templates ?? [];
   const selectedHubTemplateId = useWorkspaceUiStore((state) => state.selectedHubTemplateId);
   const setSelectedHubTemplateId = useWorkspaceUiStore((state) => state.setSelectedHubTemplateId);
@@ -24,9 +17,9 @@ export function useWorkspaceHubSelection({
       setSelectedHubWorkspacePath("");
       return;
     }
-    setSelectedHubTemplateId((current) => (
-      hubTemplates.some((item) => item.id === current) ? current : hubTemplates[0].id
-    ));
+    setSelectedHubTemplateId((current) =>
+      hubTemplates.some((item) => item.id === current) ? current : hubTemplates[0].id,
+    );
   }, [hubTemplates, setSelectedHubTemplateId, setSelectedHubWorkspacePath]);
 
   useEffect(() => {
@@ -34,23 +27,22 @@ export function useWorkspaceHubSelection({
   }, [selectedHubTemplateId, setSelectedHubWorkspacePath]);
 
   const hubTemplateDetailQuery = useWorkspaceHubTemplateQuery(selectedHubTemplateId);
-  const hubWorkspaceFileQuery = useWorkspaceHubWorkspaceFileQuery(
-    selectedHubTemplateId,
-    selectedHubWorkspacePath,
-  );
+  const hubWorkspaceFileQuery = useWorkspaceHubWorkspaceFileQuery(selectedHubTemplateId, selectedHubWorkspacePath);
 
   const selectedHubTemplate = useMemo(
     () => hubTemplates.find((item) => item.id === selectedHubTemplateId) || hubTemplates[0] || null,
     [hubTemplates, selectedHubTemplateId],
   );
 
-  const selectedHubTemplateView = hubTemplateDetailQuery.data?.id === selectedHubTemplateId
-    ? hubTemplateDetailQuery.data
-    : selectedHubTemplate;
+  const selectedHubTemplateView =
+    hubTemplateDetailQuery.data?.id === selectedHubTemplateId ? hubTemplateDetailQuery.data : selectedHubTemplate;
 
-  const selectWorkspaceFile = useCallback((workspacePath) => {
-    setSelectedHubWorkspacePath(workspacePath);
-  }, [setSelectedHubWorkspacePath]);
+  const selectWorkspaceFile = useCallback(
+    (workspacePath) => {
+      setSelectedHubWorkspacePath(workspacePath);
+    },
+    [setSelectedHubWorkspacePath],
+  );
 
   const listError = manualError || (templatesQuery?.isError ? t("hubLoadFailed") : "");
   const detailError = hubTemplateDetailQuery.error

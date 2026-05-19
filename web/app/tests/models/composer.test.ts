@@ -51,25 +51,27 @@ describe("composer model helpers", () => {
   });
 
   it("normalizes adjacent text segments and trims trailing line breaks", () => {
-    expect(normalizeComposerSegments([
-      { type: "text", text: "Hello" },
-      null,
-      { type: "text", text: " world\n\n" },
-      { type: "mention", userId: "", userName: "Ignored" },
-    ])).toEqual([{ type: "text", text: "Hello world" }]);
+    expect(
+      normalizeComposerSegments([
+        { type: "text", text: "Hello" },
+        null,
+        { type: "text", text: " world\n\n" },
+        { type: "mention", userId: "", userName: "Ignored" },
+      ]),
+    ).toEqual([{ type: "text", text: "Hello world" }]);
   });
 
   it("serializes mention segments into server markup", () => {
-    expect(serializeComposerSegments([
-      { type: "text", text: "Ping " },
-      { type: "mention", userId: "u-1", userName: "Alice" },
-    ])).toBe('Ping <at user_id="u-1">Alice</at>');
+    expect(
+      serializeComposerSegments([
+        { type: "text", text: "Ping " },
+        { type: "mention", userId: "u-1", userName: "Alice" },
+      ]),
+    ).toBe('Ping <at user_id="u-1">Alice</at>');
   });
 
   it("splits plain text mentions using the mentionable user map", () => {
-    const users = new Map([
-      ["alice", { handle: "alice", id: "u-1", name: "Alice" }],
-    ]);
+    const users = new Map([["alice", { handle: "alice", id: "u-1", name: "Alice" }]]);
 
     expect(splitTextSegmentByMentions("Hi @alice and @missing", users)).toEqual([
       { type: "text", text: "Hi " },

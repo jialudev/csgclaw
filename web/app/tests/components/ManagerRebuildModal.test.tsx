@@ -26,10 +26,7 @@ describe("ManagerRebuildModal", () => {
     render(
       <ManagerRebuildModal
         t={t}
-        runtimeOptions={[
-          { value: "picoclaw_sandbox" },
-          { value: "openclaw_sandbox" },
-        ]}
+        runtimeOptions={[{ value: "picoclaw_sandbox" }, { value: "openclaw_sandbox" }]}
         runtimeKind="picoclaw_sandbox"
         image="picoclaw:manager"
         bootstrapConfig={{

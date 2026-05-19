@@ -4,7 +4,10 @@ import { WORKSPACE_TAB_AGENTS, WORKSPACE_TAB_HUB, WORKSPACE_TAB_MESSAGES } from 
 import { isDirectConversation } from "@/models/conversations";
 
 export function paneFromLocation(pathname = window.location.pathname) {
-  const parts = String(pathname || "/").split("/").filter(Boolean).map(decodePathSegment);
+  const parts = String(pathname || "/")
+    .split("/")
+    .filter(Boolean)
+    .map(decodePathSegment);
   const section = parts[0] || "";
   const id = parts[1] || "";
   switch (section) {

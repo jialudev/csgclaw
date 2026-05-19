@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  AgentCreateProgress,
-  APIKeyField,
-  CLIProxyAuthControl,
-} from "@/components/business/ProfileControls";
+import { AgentCreateProgress, APIKeyField, CLIProxyAuthControl } from "@/components/business/ProfileControls";
 
 const labels: Record<string, string> = {
   agentCreateProgressDone: "Done",
@@ -63,25 +59,13 @@ describe("ProfileControls", () => {
     const onLogin = vi.fn();
 
     const { rerender } = render(
-      <CLIProxyAuthControl
-        provider="claude-code"
-        status={{ authenticated: false }}
-        t={t}
-        onLogin={onLogin}
-      />,
+      <CLIProxyAuthControl provider="claude-code" status={{ authenticated: false }} t={t} onLogin={onLogin} />,
     );
 
     await user.click(screen.getByRole("button", { name: "Connect Claude Code" }));
     expect(onLogin).toHaveBeenCalledWith("claude_code");
 
-    rerender(
-      <CLIProxyAuthControl
-        provider="claude-code"
-        status={{ authenticated: true }}
-        t={t}
-        onLogin={onLogin}
-      />,
-    );
+    rerender(<CLIProxyAuthControl provider="claude-code" status={{ authenticated: true }} t={t} onLogin={onLogin} />);
 
     expect(screen.getByText("Claude Code connected")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Connect Claude Code/ })).not.toBeInTheDocument();

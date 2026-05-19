@@ -33,11 +33,14 @@ export function ClipboardCopyButton({ className, disabled, label, text }: Clipbo
   const value = String(text ?? "");
   const busy = Boolean(disabled) || !value.trim();
 
-  useEffect(() => () => {
-    if (timerRef.current != null) {
-      window.clearTimeout(timerRef.current);
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (timerRef.current != null) {
+        window.clearTimeout(timerRef.current);
+      }
+    },
+    [],
+  );
 
   async function handleClick() {
     if (busy) {

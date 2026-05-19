@@ -31,7 +31,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
   });
 
   if (!response.ok) {
-    const message = await readResponseText(response) || response.statusText;
+    const message = (await readResponseText(response)) || response.statusText;
     throw { status: response.status, message } satisfies ApiError;
   }
 

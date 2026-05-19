@@ -30,7 +30,9 @@ export function CreateRoomModal({
             <div className="modal-title">{t("createRoomTitle")}</div>
             <div className="modal-subtitle">{t("createRoomSubtitle")}</div>
           </div>
-          <Button className="modal-close" onClick={onClose}>{t("close")}</Button>
+          <Button className="modal-close" onClick={onClose}>
+            {t("close")}
+          </Button>
         </div>
         <label className="field">
           {requiredFieldLabel(t("roomName"))}
@@ -44,7 +46,11 @@ export function CreateRoomModal({
         </label>
         <label className="field">
           <span>{t("roomDescription")}</span>
-          <textarea value={roomDescription} onInput={(event) => onRoomDescriptionChange(event.target.value)} placeholder={t("roomDescriptionPlaceholder")} />
+          <textarea
+            value={roomDescription}
+            onInput={(event) => onRoomDescriptionChange(event.target.value)}
+            placeholder={t("roomDescriptionPlaceholder")}
+          />
         </label>
         <div className="field">
           <span>{t("initialMembers")}</span>
@@ -65,7 +71,9 @@ export function CreateRoomModal({
                 }}
               />
               <span>{t("allMembers")}</span>
-              <small>{selectedMemberCount}/{candidateIDs.length}</small>
+              <small>
+                {selectedMemberCount}/{candidateIDs.length}
+              </small>
             </label>
             {candidates.map((user) => (
               <label key={user.id} className="selection-item">
@@ -81,10 +89,14 @@ export function CreateRoomModal({
             ))}
           </div>
         </div>
-        {submitError ? (<div className="form-error">{submitError}</div>) : null}
+        {submitError ? <div className="form-error">{submitError}</div> : null}
         <div className="modal-actions">
-          <Button className="secondary-button" onClick={onClose}>{t("cancel")}</Button>
-          <Button variant="primary" className="send-button" disabled={isBlank(roomTitle)} onClick={onCreate}>{t("create")}</Button>
+          <Button className="secondary-button" onClick={onClose}>
+            {t("cancel")}
+          </Button>
+          <Button variant="primary" className="send-button" disabled={isBlank(roomTitle)} onClick={onCreate}>
+            {t("create")}
+          </Button>
         </div>
       </div>
     </div>

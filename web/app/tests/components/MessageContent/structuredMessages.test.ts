@@ -46,19 +46,21 @@ describe("structured message helpers", () => {
   });
 
   it("parses notifier notify-card payloads with links and meta rows", () => {
-    const parsed = parseStructuredMessage(JSON.stringify({
-      type: CSGCLAW_NOTIFY_CARD_TYPE,
-      title: "GitLab · Merge request",
-      subtitle: "acme/app",
-      badge: "open",
-      summary: "Ready for review",
-      link: "https://gitlab.example/acme/app/-/merge_requests/1",
-      meta: [
-        { label: "标题", value: "Fix bug" },
-        { label: "empty", value: "" },
-      ],
-      raw: "{\"hello\":\"world\"}",
-    }));
+    const parsed = parseStructuredMessage(
+      JSON.stringify({
+        type: CSGCLAW_NOTIFY_CARD_TYPE,
+        title: "GitLab · Merge request",
+        subtitle: "acme/app",
+        badge: "open",
+        summary: "Ready for review",
+        link: "https://gitlab.example/acme/app/-/merge_requests/1",
+        meta: [
+          { label: "标题", value: "Fix bug" },
+          { label: "empty", value: "" },
+        ],
+        raw: '{"hello":"world"}',
+      }),
+    );
 
     expect(parsed).toMatchObject({
       badge: "open",
@@ -67,7 +69,7 @@ describe("structured message helpers", () => {
         { label: "标题", value: "Fix bug" },
         { label: "empty", value: "" },
       ],
-      payload: "{\"hello\":\"world\"}",
+      payload: '{"hello":"world"}',
       payloadSummary: "查看原始 JSON",
       subtitle: "acme/app",
       summary: "Ready for review",
@@ -98,12 +100,14 @@ ${code}
 
   it("summarizes code-looking fields in structured payloads", () => {
     const code = `function run() {\n${"  console.log('hello');\n".repeat(12)}}`;
-    const parsed = parseStructuredMessage(JSON.stringify({
-      action: "write_file",
-      arguments: { path: "src/App.tsx", replace: true },
-      code,
-      status: "ok",
-    }));
+    const parsed = parseStructuredMessage(
+      JSON.stringify({
+        action: "write_file",
+        arguments: { path: "src/App.tsx", replace: true },
+        code,
+        status: "ok",
+      }),
+    );
 
     expect(parsed).toMatchObject({
       badge: "ok",

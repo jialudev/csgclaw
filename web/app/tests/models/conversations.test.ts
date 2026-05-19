@@ -40,24 +40,40 @@ describe("conversation model helpers", () => {
       ["u-2", { handle: "bob", id: "u-2" }],
     ]);
 
-    expect(formatEventMessage({
-      content: "",
-      event: { actor_id: "u-1", key: "room_created", title: "Ops" },
-      sender_id: "u-1",
-    }, usersById, "en")).toBe('Alice created the room "Ops"');
+    expect(
+      formatEventMessage(
+        {
+          content: "",
+          event: { actor_id: "u-1", key: "room_created", title: "Ops" },
+          sender_id: "u-1",
+        },
+        usersById,
+        "en",
+      ),
+    ).toBe('Alice created the room "Ops"');
 
-    expect(formatEventMessage({
-      content: "",
-      event: { actor_id: "u-1", key: "room_members_added", target_ids: ["u-2"] },
-      mentions: [],
-      sender_id: "u-1",
-    }, usersById, "zh")).toBe("Alice 邀请 @bob 加入了房间");
+    expect(
+      formatEventMessage(
+        {
+          content: "",
+          event: { actor_id: "u-1", key: "room_members_added", target_ids: ["u-2"] },
+          mentions: [],
+          sender_id: "u-1",
+        },
+        usersById,
+        "zh",
+      ),
+    ).toBe("Alice 邀请 @bob 加入了房间");
   });
 
   it("uses message content or conversation subtitle for previews", () => {
     const usersById = new Map();
-    expect(formatConversationPreview({ content: "Hello <at user_id=\"u-1\">Alice</at>" }, null, "u-1", usersById, "en", t)).toBe("Hello @Alice");
-    expect(formatConversationPreview(null, room("general", "2026-05-15T00:00:00Z"), "u-1", usersById, "en", t)).toBe("");
+    expect(
+      formatConversationPreview({ content: 'Hello <at user_id="u-1">Alice</at>' }, null, "u-1", usersById, "en", t),
+    ).toBe("Hello @Alice");
+    expect(formatConversationPreview(null, room("general", "2026-05-15T00:00:00Z"), "u-1", usersById, "en", t)).toBe(
+      "",
+    );
   });
 
   it("resolves display names and agent/user matches defensively", () => {
@@ -76,10 +92,7 @@ describe("conversation model helpers", () => {
 
   it("applies IM events without duplicating messages and keeps rooms sorted by latest activity", () => {
     const current = {
-      rooms: [
-        room("old", "2026-05-14T00:00:00Z"),
-        room("new", "2026-05-15T00:00:00Z"),
-      ],
+      rooms: [room("old", "2026-05-14T00:00:00Z"), room("new", "2026-05-15T00:00:00Z")],
       users: [],
     };
 
@@ -115,7 +128,10 @@ describe("conversation model helpers", () => {
           messages: [message("from-2-only", "2026-05-15T00:00:00Z", "u-2")],
         }),
       ],
-      users: [{ id: "u-1", name: "Alice" }, { id: "u-2", name: "Bob" }],
+      users: [
+        { id: "u-1", name: "Alice" },
+        { id: "u-2", name: "Bob" },
+      ],
     };
 
     const next = removeUserFromData(current, "u-2");
@@ -131,9 +147,10 @@ describe("conversation model helpers", () => {
     expect(isAgentRosterEvent({ room: { is_direct: true }, type: "room.created" })).toBe(true);
     expect(isAgentRosterEvent({ room: { is_direct: false }, type: "room.created" })).toBe(false);
     expect(latestAt({ messages: [] })).toBe(0);
-    expect(sortConversations([
-      room("old", "2026-05-14T00:00:00Z"),
-      room("new", "2026-05-15T00:00:00Z"),
-    ]).map((item) => item.id)).toEqual(["new", "old"]);
+    expect(
+      sortConversations([room("old", "2026-05-14T00:00:00Z"), room("new", "2026-05-15T00:00:00Z")]).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["new", "old"]);
   });
 });

@@ -7,13 +7,17 @@ import { workspaceQueryKeys } from "./workspaceQueries";
 
 export function useCLIProxyAuthStatuses(providers, t) {
   const queryClient = useQueryClient();
-  const normalizedProviders = useMemo(() => (
-    Array.from(new Set(
-      providers
-        .map((provider) => normalizeAuthProviderName(provider))
-        .filter((provider) => providerNeedsAuth(provider)),
-    ))
-  ), [providers]);
+  const normalizedProviders = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          providers
+            .map((provider) => normalizeAuthProviderName(provider))
+            .filter((provider) => providerNeedsAuth(provider)),
+        ),
+      ),
+    [providers],
+  );
 
   const authQueries = useQueries({
     queries: normalizedProviders.map((provider) => ({
@@ -43,29 +47,35 @@ export function useCLIProxyAuthStatuses(providers, t) {
     return result;
   }, [authQueries, normalizedProviders, t]);
 
-  const setCLIProxyAuthStatus = useCallback((provider, status) => {
-    const normalized = normalizeAuthProviderName(provider);
-    if (!providerNeedsAuth(normalized)) {
-      return;
-    }
-    queryClient.setQueryData(workspaceQueryKeys.cliProxyAuthStatus(normalized), status);
-  }, [queryClient]);
+  const setCLIProxyAuthStatus = useCallback(
+    (provider, status) => {
+      const normalized = normalizeAuthProviderName(provider);
+      if (!providerNeedsAuth(normalized)) {
+        return;
+      }
+      queryClient.setQueryData(workspaceQueryKeys.cliProxyAuthStatus(normalized), status);
+    },
+    [queryClient],
+  );
 
-  const refreshCLIProxyAuthStatus = useCallback(async (provider) => {
-    const normalized = normalizeAuthProviderName(provider);
-    if (!providerNeedsAuth(normalized)) {
-      return null;
-    }
-    try {
-      return await queryClient.fetchQuery({
-        queryKey: workspaceQueryKeys.cliProxyAuthStatus(normalized),
-        queryFn: () => fetchCLIProxyAuthStatus(normalized),
-        retry: 0,
-      });
-    } catch (_) {
-      return null;
-    }
-  }, [queryClient]);
+  const refreshCLIProxyAuthStatus = useCallback(
+    async (provider) => {
+      const normalized = normalizeAuthProviderName(provider);
+      if (!providerNeedsAuth(normalized)) {
+        return null;
+      }
+      try {
+        return await queryClient.fetchQuery({
+          queryKey: workspaceQueryKeys.cliProxyAuthStatus(normalized),
+          queryFn: () => fetchCLIProxyAuthStatus(normalized),
+          retry: 0,
+        });
+      } catch (_) {
+        return null;
+      }
+    },
+    [queryClient],
+  );
 
   return {
     cliproxyAuthStatuses,

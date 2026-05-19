@@ -2,13 +2,7 @@ import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { classNames } from "@/shared/lib/classNames";
 
-export type ButtonVariant =
-  | "primary"
-  | "secondaryGray"
-  | "secondaryColor"
-  | "danger"
-  | "outlineDanger"
-  | "ghost";
+export type ButtonVariant = "primary" | "secondaryGray" | "secondaryColor" | "danger" | "outlineDanger" | "ghost";
 
 export type ButtonSize = "sm" | "md" | "lg";
 
@@ -35,15 +29,7 @@ const sizeClassNames: Record<ButtonSize, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  {
-    active,
-    className,
-    iconOnly = false,
-    size = "sm",
-    type = "button",
-    variant = "secondaryGray",
-    ...props
-  },
+  { active, className, iconOnly = false, size = "sm", type = "button", variant = "secondaryGray", ...props },
   ref,
 ) {
   return (
@@ -75,7 +61,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
 ) {
   return (
     <Button ref={ref} iconOnly aria-label={label} title={title} {...props}>
-      <span className={markClassName} aria-hidden="true">{icon}</span>
+      <span className={markClassName} aria-hidden="true">
+        {icon}
+      </span>
     </Button>
   );
 });

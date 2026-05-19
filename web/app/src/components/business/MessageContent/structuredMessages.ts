@@ -167,7 +167,9 @@ export function buildActionCardPayload(value: UnknownRecord & { actions: unknown
 
 export function normalizeActionCardActions(actions: unknown[]): MessageAction[] {
   return (actions ?? [])
-    .filter((action): action is UnknownRecord => Boolean(action && typeof action === "object" && !Array.isArray(action)))
+    .filter((action): action is UnknownRecord =>
+      Boolean(action && typeof action === "object" && !Array.isArray(action)),
+    )
     .filter((action) => action.id === ACTION_REBUILD_MANAGER)
     .slice(0, 1)
     .map((action) => ({
@@ -187,7 +189,9 @@ export function isStructuredPayload(value: unknown): value is UnknownRecord {
     return false;
   }
   const keys = Object.keys(value);
-  return keys.some((key) => ["tool", "name", "arguments", "input", "file", "path", "code", "content", "status", "action"].includes(key));
+  return keys.some((key) =>
+    ["tool", "name", "arguments", "input", "file", "path", "code", "content", "status", "action"].includes(key),
+  );
 }
 
 export function buildStructuredPayload(value: UnknownRecord): StructuredMessagePayload {

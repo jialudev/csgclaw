@@ -17,7 +17,9 @@ export function SidebarHeader({
     <div className="sidebar-header workspace-header">
       <div className="sidebar-brand-row">
         <div className="sidebar-brand-lockup" aria-label="CSGClaw">
-          <div className="sidebar-brand-mark sidebar-brand-wordmark" aria-hidden="true">CSGClaw</div>
+          <div className="sidebar-brand-mark sidebar-brand-wordmark" aria-hidden="true">
+            CSGClaw
+          </div>
         </div>
         <div className="sidebar-controls">
           <div className="theme-switch" role="group" aria-label={t("themeSwitcher")}>
@@ -32,7 +34,9 @@ export function SidebarHeader({
                 title={t("themeLight")}
                 onClick={() => onThemeChange("light")}
               >
-                <span aria-hidden="true"><SunIcon /></span>
+                <span aria-hidden="true">
+                  <SunIcon />
+                </span>
               </Button>
               <Button
                 variant="ghost"
@@ -43,16 +47,38 @@ export function SidebarHeader({
                 title={t("themeDark")}
                 onClick={() => onThemeChange("dark")}
               >
-                <span aria-hidden="true"><MoonIcon /></span>
+                <span aria-hidden="true">
+                  <MoonIcon />
+                </span>
               </Button>
             </div>
           </div>
           <div className="language-switch sidebar-language-switch" role="group" aria-label={t("languageSwitcher")}>
-            <span className="language-switch-icon" aria-hidden="true"><GlobeIcon /></span>
+            <span className="language-switch-icon" aria-hidden="true">
+              <GlobeIcon />
+            </span>
             <div className={`language-switch-track ${locale === "en" ? "is-en" : "is-zh"}`}>
               <span className="language-switch-thumb" aria-hidden="true"></span>
-              <Button variant="ghost" className="language-toggle" active={locale === "zh"} aria-pressed={locale === "zh"} title={t("languageOptionZh")} onClick={() => onLocaleChange("zh")}>中</Button>
-              <Button variant="ghost" className="language-toggle" active={locale === "en"} aria-pressed={locale === "en"} title={t("languageOptionEn")} onClick={() => onLocaleChange("en")}>EN</Button>
+              <Button
+                variant="ghost"
+                className="language-toggle"
+                active={locale === "zh"}
+                aria-pressed={locale === "zh"}
+                title={t("languageOptionZh")}
+                onClick={() => onLocaleChange("zh")}
+              >
+                中
+              </Button>
+              <Button
+                variant="ghost"
+                className="language-toggle"
+                active={locale === "en"}
+                aria-pressed={locale === "en"}
+                title={t("languageOptionEn")}
+                onClick={() => onLocaleChange("en")}
+              >
+                EN
+              </Button>
             </div>
           </div>
           <Button
@@ -62,14 +88,18 @@ export function SidebarHeader({
             title={t("collapseSidebar")}
             onClick={onCollapseSidebar}
           >
-            <span className="sidebar-toggle-mark"><SidebarToggleIcon /></span>
+            <span className="sidebar-toggle-mark">
+              <SidebarToggleIcon />
+            </span>
           </Button>
         </div>
       </div>
       <div className="workspace-signal-panel" aria-label={currentWorkspaceLabel}>
         <div className="workspace-signal-copy">
           <span>{currentWorkspaceLabel}</span>
-          <strong>{runningAgentCount}/{agentCount} {t("activeNow")}</strong>
+          <strong>
+            {runningAgentCount}/{agentCount} {t("activeNow")}
+          </strong>
         </div>
         <div className="workspace-signal-meter" aria-hidden="true">
           <span></span>

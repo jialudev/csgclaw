@@ -5,11 +5,7 @@ import { ACTION_REBUILD_MANAGER, CSGCLAW_ACTION_CARD_TYPE, CSGCLAW_NOTIFY_CARD_T
 
 describe("MessageContent", () => {
   it("renders sanitized markdown links with safe external-link attributes", () => {
-    render(
-      <MessageContent
-        content={'Open [docs](https://example.com/docs)<script>alert("xss")</script>'}
-      />,
-    );
+    render(<MessageContent content={'Open [docs](https://example.com/docs)<script>alert("xss")</script>'} />);
 
     const link = screen.getByRole("link", { name: "docs" });
     expect(link).toHaveAttribute("href", "https://example.com/docs");
@@ -86,14 +82,17 @@ describe("MessageContent", () => {
           badge: "opened",
           link: "https://github.com/acme/app/pull/1",
           meta: [{ label: "Branch", value: "feature -> main" }],
-          raw: "{\"action\":\"opened\"}",
+          raw: '{"action":"opened"}',
         })}
       />,
     );
 
     expect(screen.getByText("GitHub · Pull request")).toBeInTheDocument();
     expect(screen.getByText("opened")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open link" })).toHaveAttribute("href", "https://github.com/acme/app/pull/1");
+    expect(screen.getByRole("link", { name: "Open link" })).toHaveAttribute(
+      "href",
+      "https://github.com/acme/app/pull/1",
+    );
     expect(screen.getByText("Branch")).toBeInTheDocument();
     expect(screen.getByText("feature -> main")).toBeInTheDocument();
   });

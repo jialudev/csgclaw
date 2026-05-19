@@ -61,17 +61,21 @@ describe("agent model helpers", () => {
   });
 
   it("converts env rows to maps while rejecting missing and duplicate keys", () => {
-    expect(envRowsToMap([
-      { key: " FOO ", value: "one" },
-      { key: "", value: "" },
-      { key: "BAR", value: "" },
-    ])).toEqual({ FOO: "one", BAR: "" });
+    expect(
+      envRowsToMap([
+        { key: " FOO ", value: "one" },
+        { key: "", value: "" },
+        { key: "BAR", value: "" },
+      ]),
+    ).toEqual({ FOO: "one", BAR: "" });
 
     expect(() => envRowsToMap([{ key: "", value: "set" }])).toThrow("Environment variable key is required");
-    expect(() => envRowsToMap([
-      { key: "Path", value: "one" },
-      { key: "PATH", value: "two" },
-    ])).toThrow("Duplicate environment variable: PATH");
+    expect(() =>
+      envRowsToMap([
+        { key: "Path", value: "one" },
+        { key: "PATH", value: "two" },
+      ]),
+    ).toThrow("Duplicate environment variable: PATH");
   });
 
   it("keeps JSON profile fields object-shaped", () => {
@@ -79,20 +83,22 @@ describe("agent model helpers", () => {
     expect(parseJSONMap('{"temperature":0.1}')).toEqual({ temperature: 0.1 });
     expect(() => parseJSONMap("[1,2,3]")).toThrow("Expected a JSON object");
 
-    expect(draftToProfile({
-      api_key: "",
-      api_key_preview: "",
-      api_key_set: false,
-      base_url: "http://127.0.0.1:11435/v1",
-      enable_fast_mode: true,
-      envRows: [{ key: "MODEL_HOME", value: "/models" }],
-      headersText: '{"Authorization":"Bearer test"}',
-      model_id: "Qwen/Qwen3-0.6B-GGUF",
-      provider: "csghub_lite",
-      reasoning_effort: "",
-      requestOptionsText: '{"top_p":0.9}',
-      runtime_kind: "picoclaw_sandbox",
-    })).toMatchObject({
+    expect(
+      draftToProfile({
+        api_key: "",
+        api_key_preview: "",
+        api_key_set: false,
+        base_url: "http://127.0.0.1:11435/v1",
+        enable_fast_mode: true,
+        envRows: [{ key: "MODEL_HOME", value: "/models" }],
+        headersText: '{"Authorization":"Bearer test"}',
+        model_id: "Qwen/Qwen3-0.6B-GGUF",
+        provider: "csghub_lite",
+        reasoning_effort: "",
+        requestOptionsText: '{"top_p":0.9}',
+        runtime_kind: "picoclaw_sandbox",
+      }),
+    ).toMatchObject({
       description: "Manager Worker Dispatch",
       enable_fast_mode: true,
       env: { MODEL_HOME: "/models" },
@@ -120,26 +126,34 @@ describe("agent model helpers", () => {
     };
 
     expect(pickDefaultAgentTemplate(templates, "picoclaw_sandbox", bootstrapConfig)?.id).toBe("custom/worker");
-    expect(pickDefaultAgentTemplate(templates, "openclaw_sandbox", bootstrapConfig)?.id).toBe("builtin/openclaw-worker");
+    expect(pickDefaultAgentTemplate(templates, "openclaw_sandbox", bootstrapConfig)?.id).toBe(
+      "builtin/openclaw-worker",
+    );
     expect(pickDefaultAgentTemplate(templates, "notifier", bootstrapConfig)).toBeNull();
     expect(runtimeImageForKind("openclaw_sandbox", bootstrapConfig, "fallback:worker")).toBe("openclaw:worker");
     expect(runtimeImageForKind("codex", bootstrapConfig, "fallback:worker")).toBe("");
     expect(runtimeImageForKind("notifier", bootstrapConfig, "fallback:worker")).toBe("");
 
-    expect(applyTemplateToDraft({
-      api_key: "",
-      api_key_preview: "",
-      api_key_set: false,
-      base_url: "",
-      enable_fast_mode: false,
-      envRows: [],
-      headersText: "{}",
-      model_id: "",
-      provider: "csghub_lite",
-      reasoning_effort: "medium",
-      requestOptionsText: "{}",
-      runtime_kind: "picoclaw_sandbox",
-    }, templates[1], bootstrapConfig)).toMatchObject({
+    expect(
+      applyTemplateToDraft(
+        {
+          api_key: "",
+          api_key_preview: "",
+          api_key_set: false,
+          base_url: "",
+          enable_fast_mode: false,
+          envRows: [],
+          headersText: "{}",
+          model_id: "",
+          provider: "csghub_lite",
+          reasoning_effort: "medium",
+          requestOptionsText: "{}",
+          runtime_kind: "picoclaw_sandbox",
+        },
+        templates[1],
+        bootstrapConfig,
+      ),
+    ).toMatchObject({
       from_template: "builtin/openclaw-worker",
       image: "openclaw:worker",
       runtime_kind: "openclaw_sandbox",
@@ -148,11 +162,16 @@ describe("agent model helpers", () => {
   });
 
   it("filters manager rebuild runtime options to gateway runtimes", () => {
-    expect(availableManagerRuntimeOptions({
-      supported_runtime_kinds: ["picoclaw_sandbox", "openclaw_sandbox", "codex", "notifier", "picoclaw_sandbox"],
-    }).map((option) => option.value)).toEqual(["picoclaw_sandbox", "openclaw_sandbox"]);
+    expect(
+      availableManagerRuntimeOptions({
+        supported_runtime_kinds: ["picoclaw_sandbox", "openclaw_sandbox", "codex", "notifier", "picoclaw_sandbox"],
+      }).map((option) => option.value),
+    ).toEqual(["picoclaw_sandbox", "openclaw_sandbox"]);
 
-    expect(availableManagerRuntimeOptions(null).map((option) => option.value)).toEqual(["picoclaw_sandbox", "openclaw_sandbox"]);
+    expect(availableManagerRuntimeOptions(null).map((option) => option.value)).toEqual([
+      "picoclaw_sandbox",
+      "openclaw_sandbox",
+    ]);
   });
 
   it("normalizes runtime and auth provider labels", () => {
@@ -167,20 +186,27 @@ describe("agent model helpers", () => {
 
   it("advances agent creation progress toward each step target", () => {
     expect(advanceAgentProgress(null)).toBeNull();
-    expect(advanceAgentProgress({
-      index: 0,
-      percent: 4,
-      startedAt: 1,
-      status: "running",
-      steps: [{ label: "configure", target: 16 }],
-    })).toMatchObject({ index: 0, percent: 8 });
-    expect(advanceAgentProgress({
-      index: 0,
-      percent: 16,
-      startedAt: 1,
-      status: "running",
-      steps: [{ label: "configure", target: 16 }, { label: "start", target: 88 }],
-    })).toMatchObject({ index: 1, percent: 16 });
+    expect(
+      advanceAgentProgress({
+        index: 0,
+        percent: 4,
+        startedAt: 1,
+        status: "running",
+        steps: [{ label: "configure", target: 16 }],
+      }),
+    ).toMatchObject({ index: 0, percent: 8 });
+    expect(
+      advanceAgentProgress({
+        index: 0,
+        percent: 16,
+        startedAt: 1,
+        status: "running",
+        steps: [
+          { label: "configure", target: 16 },
+          { label: "start", target: 88 },
+        ],
+      }),
+    ).toMatchObject({ index: 1, percent: 16 });
   });
 
   it("maps non-object env values to one blank editable row", () => {
@@ -223,11 +249,13 @@ describe("agent model helpers", () => {
     }) as ReturnType<typeof agentToDraft>;
 
     expect(draft.notifier_remote_subscription_id).toMatch(/^sub-/);
-    expect(draftNotifierRuntimeOptionsForSave({
-      ...draft,
-      notifier_remote_url: "https://relay.example.com/api/v1/webhooks/ingress",
-      notifier_remote_token: "token",
-    })).toMatchObject({
+    expect(
+      draftNotifierRuntimeOptionsForSave({
+        ...draft,
+        notifier_remote_url: "https://relay.example.com/api/v1/webhooks/ingress",
+        notifier_remote_token: "token",
+      }),
+    ).toMatchObject({
       delivery_mode: "remote_pull",
       remote_url: "https://relay.example.com/api/v1/webhooks/ingress",
       remote_token: "token",
@@ -236,6 +264,8 @@ describe("agent model helpers", () => {
       messages: "https://relay.example.com/api/v1/inbox/messages",
       ack: "https://relay.example.com/api/v1/inbox/ack",
     });
-    expect(notifierThirdPartyRelayWebhookURL("https://relay.example.com/api/v1/inbox/messages", "sub-1")).toBe("https://relay.example.com/api/v1/webhooks/ingress?subscription_id=sub-1");
+    expect(notifierThirdPartyRelayWebhookURL("https://relay.example.com/api/v1/inbox/messages", "sub-1")).toBe(
+      "https://relay.example.com/api/v1/webhooks/ingress?subscription_id=sub-1",
+    );
   });
 });

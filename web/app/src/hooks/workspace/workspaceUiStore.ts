@@ -21,22 +21,27 @@ export const useWorkspaceUiStore = create((set) => ({
 
   setLocale: (locale) => set({ locale }),
   setTheme: (theme) => set({ theme }),
-  setShowToolCalls: (value) => set((state) => ({
-    showToolCalls: typeof value === "function" ? value(state.showToolCalls) : value,
-  })),
-  setIsSidebarCollapsed: (value) => set((state) => ({
-    isSidebarCollapsed: typeof value === "function" ? value(state.isSidebarCollapsed) : value,
-  })),
+  setShowToolCalls: (value) =>
+    set((state) => ({
+      showToolCalls: typeof value === "function" ? value(state.showToolCalls) : value,
+    })),
+  setIsSidebarCollapsed: (value) =>
+    set((state) => ({
+      isSidebarCollapsed: typeof value === "function" ? value(state.isSidebarCollapsed) : value,
+    })),
   setWorkspaceTab: (workspaceTab) => set({ workspaceTab }),
-  setCollapsedWorkspaceGroups: (value) => set((state) => ({
-    collapsedWorkspaceGroups: typeof value === "function" ? value(state.collapsedWorkspaceGroups) : value,
-  })),
+  setCollapsedWorkspaceGroups: (value) =>
+    set((state) => ({
+      collapsedWorkspaceGroups: typeof value === "function" ? value(state.collapsedWorkspaceGroups) : value,
+    })),
   setActiveConversationId: (activeConversationId) => set({ activeConversationId }),
   setActivePane: (activePane) => set({ activePane }),
-  setSelectedHubTemplateId: (value) => set((state) => ({
-    selectedHubTemplateId: typeof value === "function" ? value(state.selectedHubTemplateId) : value,
-  })),
-  setSelectedHubWorkspacePath: (value) => set((state) => ({
-    selectedHubWorkspacePath: typeof value === "function" ? value(state.selectedHubWorkspacePath) : value,
-  })),
+  setSelectedHubTemplateId: (value) =>
+    set((state) => ({
+      selectedHubTemplateId: typeof value === "function" ? value(state.selectedHubTemplateId) : value,
+    })),
+  setSelectedHubWorkspacePath: (value) =>
+    set((state) => ({
+      selectedHubWorkspacePath: typeof value === "function" ? value(state.selectedHubWorkspacePath) : value,
+    })),
 }));

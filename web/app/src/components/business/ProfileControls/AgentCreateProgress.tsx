@@ -21,7 +21,11 @@ export function AgentCreateProgress({ progress, t }: AgentCreateProgressProps) {
       : t(currentStep?.label || "agentCreateProgressPreparing");
   const percent = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
   return (
-    <div className={`agent-create-progress ${failed ? "failed" : ""} ${done ? "done" : ""}`.trim()} role="status" aria-live="polite">
+    <div
+      className={`agent-create-progress ${failed ? "failed" : ""} ${done ? "done" : ""}`.trim()}
+      role="status"
+      aria-live="polite"
+    >
       <div className="agent-create-progress-header">
         <span>{label}</span>
         <strong>{percent}%</strong>
@@ -31,7 +35,10 @@ export function AgentCreateProgress({ progress, t }: AgentCreateProgressProps) {
       </div>
       <div className="agent-create-progress-steps">
         {steps.map((step, index) => (
-          <span key={`${step.label}-${index}`} className={index < progressIndex || done ? "complete" : index === progressIndex && !failed ? "active" : ""}>
+          <span
+            key={`${step.label}-${index}`}
+            className={index < progressIndex || done ? "complete" : index === progressIndex && !failed ? "active" : ""}
+          >
             {t(step.label)}
           </span>
         ))}

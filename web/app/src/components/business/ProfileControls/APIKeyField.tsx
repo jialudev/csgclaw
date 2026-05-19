@@ -33,14 +33,12 @@ export function APIKeyField({ value, onInput, profile, t }: APIKeyFieldProps) {
           autoComplete="off"
           spellCheck={false}
         />
-        {showStoredMask
-          ? (
-              <div className="api-key-mask" aria-hidden="true">
-                {previewPrefix ? (<span className="api-key-mask-prefix">{previewPrefix}</span>) : null}
-                <span className="api-key-mask-dots">••••••••</span>
-              </div>
-            )
-          : null}
+        {showStoredMask ? (
+          <div className="api-key-mask" aria-hidden="true">
+            {previewPrefix ? <span className="api-key-mask-prefix">{previewPrefix}</span> : null}
+            <span className="api-key-mask-dots">••••••••</span>
+          </div>
+        ) : null}
       </div>
     </label>
   );

@@ -68,7 +68,9 @@
   border-color: var(--portal-brand-600);
   background: var(--portal-brand-600);
   color: var(--portal-white);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(77, 106, 214, 0.24);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(77, 106, 214, 0.24);
 }
 
 .btn-secondary-gray {
@@ -88,7 +90,9 @@
   border-color: var(--portal-gray-300);
   background: var(--portal-white);
   color: var(--portal-gray-700);
-  box-shadow: var(--shadow-xs), 0 0 0 4px rgba(152, 162, 179, 0.14);
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 4px rgba(152, 162, 179, 0.14);
 }
 
 .btn-secondary-color {

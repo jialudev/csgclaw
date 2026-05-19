@@ -8,14 +8,13 @@ export type FieldHelpTooltipProps = {
 };
 
 export function FieldHelpTooltip({ detail, summary }: FieldHelpTooltipProps) {
-  const body = [summary, detail].map((value) => String(value ?? "").trim()).filter(Boolean).join("\n\n");
+  const body = [summary, detail]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join("\n\n");
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const closeTimerRef = useRef<number | null>(null);
-
-  if (!body) {
-    return null;
-  }
 
   function clearCloseTimer() {
     if (closeTimerRef.current != null) {
@@ -61,6 +60,10 @@ export function FieldHelpTooltip({ detail, summary }: FieldHelpTooltipProps) {
 
   useEffect(() => () => clearCloseTimer(), []);
 
+  if (!body) {
+    return null;
+  }
+
   return (
     <span className="field-help-tooltip-root">
       <button
@@ -74,7 +77,11 @@ export function FieldHelpTooltip({ detail, summary }: FieldHelpTooltipProps) {
       </button>
       {open
         ? createPortal(
-            <div className="field-help-flyout" style={{ left: `${position.x}px`, top: `${position.y}px` }} role="tooltip">
+            <div
+              className="field-help-flyout"
+              style={{ left: `${position.x}px`, top: `${position.y}px` }}
+              role="tooltip"
+            >
               {body}
             </div>,
             document.body,

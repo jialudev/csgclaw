@@ -56,8 +56,8 @@ describe("legacy UI contract", () => {
 
   it("keeps channel-scoped bot and notifier frontend contracts", () => {
     expect(source).toContain('post("api/v1/channels/csgclaw/bots", payload)');
-    expect(source).toContain('del(`api/v1/channels/csgclaw/bots/${encodeURIComponent(botID)}`)');
-    expect(source).toContain('const SHOW_AGENT_LIFECYCLE_ACTIONS = false;');
+    expect(source).toContain("del(`api/v1/channels/csgclaw/bots/${encodeURIComponent(botID)}`)");
+    expect(source).toContain("const SHOW_AGENT_LIFECYCLE_ACTIONS = false;");
     expect(source).toContain('{ value: "notifier", label: "notifier" }');
     expect(source).toContain("function NotifierControls");
     expect(source).toContain("function draftNotifierRuntimeOptionsForSave");
@@ -74,6 +74,8 @@ describe("legacy UI contract", () => {
     expect(source).toContain("agent_id: agentID");
     expect(source).toContain("setSelectedHubTemplateId(published.id);");
     expect(source).toContain("preview-action-button-primary entity-toolbar-publish");
-    expect(source).toContain('const canPublish = runtimeKind === "picoclaw_sandbox" || runtimeKind === "openclaw_sandbox";');
+    expect(source).toContain(
+      'const canPublish = runtimeKind === "picoclaw_sandbox" || runtimeKind === "openclaw_sandbox";',
+    );
   });
 });

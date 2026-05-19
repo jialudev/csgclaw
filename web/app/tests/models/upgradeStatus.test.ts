@@ -1,8 +1,4 @@
-import {
-  formatSidebarVersionLabel,
-  normalizeUpgradeStatus,
-  upgradeStatusLabel,
-} from "@/models/upgradeStatus";
+import { formatSidebarVersionLabel, normalizeUpgradeStatus, upgradeStatusLabel } from "@/models/upgradeStatus";
 
 describe("upgrade status helpers", () => {
   it("formats sidebar versions without duplicating the v prefix", () => {
@@ -13,15 +9,17 @@ describe("upgrade status helpers", () => {
 
   it("normalizes loose upgrade status payloads", () => {
     expect(normalizeUpgradeStatus(null)).toBeNull();
-    expect(normalizeUpgradeStatus({
-      checking: 1,
-      current_version: "v0.2.0",
-      last_checked_at: 123,
-      last_error: 404,
-      latest_version: "v0.2.1",
-      update_available: true,
-      upgrading: "",
-    })).toEqual({
+    expect(
+      normalizeUpgradeStatus({
+        checking: 1,
+        current_version: "v0.2.0",
+        last_checked_at: 123,
+        last_error: 404,
+        latest_version: "v0.2.1",
+        update_available: true,
+        upgrading: "",
+      }),
+    ).toEqual({
       checking: true,
       current_version: "v0.2.0",
       last_checked_at: 123,

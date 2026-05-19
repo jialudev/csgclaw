@@ -20,7 +20,9 @@ export function WorkspaceOverlays() {
       {controller.upgradeModalProps ? <UpgradeModal {...controller.upgradeModalProps} /> : null}
       {controller.agentProfileModalProps ? <AgentProfileModal {...controller.agentProfileModalProps} /> : null}
       {controller.managerRebuildModalProps ? <ManagerRebuildModal {...controller.managerRebuildModalProps} /> : null}
-      {controller.managerProfileSetupModalProps ? <ManagerProfileSetupModal {...controller.managerProfileSetupModalProps} /> : null}
+      {controller.managerProfileSetupModalProps ? (
+        <ManagerProfileSetupModal {...controller.managerProfileSetupModalProps} />
+      ) : null}
     </>
   );
 }

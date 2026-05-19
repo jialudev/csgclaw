@@ -33,7 +33,9 @@ export function formatEventMessage(message, usersById, locale) {
   }
   if (message.event?.key === "room_members_added") {
     const actor = userDisplayName(message.event.actor_id || message.sender_id, usersById);
-    const targets = (message.event.target_ids || mentionIDs(message.mentions) || []).map((id) => userDisplayName(id, usersById)).filter(Boolean);
+    const targets = (message.event.target_ids || mentionIDs(message.mentions) || [])
+      .map((id) => userDisplayName(id, usersById))
+      .filter(Boolean);
     if (targets.length > 0) {
       return locale === "zh"
         ? `${actor} 邀请 ${targets.join("、")} 加入了房间`
@@ -44,12 +46,14 @@ export function formatEventMessage(message, usersById, locale) {
 }
 
 export function mentionIDs(mentions) {
-  return (mentions || []).map((mention) => {
-    if (typeof mention === "string") {
-      return mention;
-    }
-    return mention?.id || "";
-  }).filter(Boolean);
+  return (mentions || [])
+    .map((mention) => {
+      if (typeof mention === "string") {
+        return mention;
+      }
+      return mention?.id || "";
+    })
+    .filter(Boolean);
 }
 
 export function isLegacySystemEventContent(content) {
@@ -93,14 +97,18 @@ export function agentMatchesUser(agent, user) {
   const userHandle = normalizeComparable(user.handle);
   const agentName = normalizeComparable(agent.name);
   const userName = normalizeComparable(user.name);
-  return agent.id === user.id ||
+  return (
+    agent.id === user.id ||
     agent.user_id === user.id ||
     Boolean(agentHandle && userHandle && agentHandle === userHandle) ||
-    Boolean(agentName && userName && agentName === userName);
+    Boolean(agentName && userName && agentName === userName)
+  );
 }
 
 export function normalizeComparable(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 export function isDirectConversation(conversation) {
@@ -146,7 +154,13 @@ export function applyIMEvent(current, event) {
   if (event.type === "message.created" && event.message) {
     return appendMessageToData(current, event.room_id, event.message);
   }
-  if ((event.type === "conversation.created" || event.type === "conversation.members_added" || event.type === "room.created" || event.type === "room.members_added") && event.room) {
+  if (
+    (event.type === "conversation.created" ||
+      event.type === "conversation.members_added" ||
+      event.type === "room.created" ||
+      event.type === "room.members_added") &&
+    event.room
+  ) {
     return upsertConversationInData(current, event.room);
   }
   return current;
@@ -200,9 +214,7 @@ export function upsertUserInData(current, user) {
   }
 
   const existing = current.users.some((item) => item.id === user.id);
-  const users = existing
-    ? current.users.map((item) => (item.id === user.id ? user : item))
-    : [...current.users, user];
+  const users = existing ? current.users.map((item) => (item.id === user.id ? user : item)) : [...current.users, user];
   users.sort((a, b) => a.name.localeCompare(b.name));
   return { ...current, users };
 }

@@ -13,11 +13,9 @@ describe("message markdown helpers", () => {
   });
 
   it("renders basic markdown and strips unsafe HTML", () => {
-    const html = renderMarkdown([
-      "Hello **world**",
-      '<img src=x onerror="alert(1)">',
-      '<script>alert("xss")</script>',
-    ].join("\n"));
+    const html = renderMarkdown(
+      ["Hello **world**", '<img src=x onerror="alert(1)">', '<script>alert("xss")</script>'].join("\n"),
+    );
 
     expect(html).toContain("<strong>world</strong>");
     expect(html).not.toContain("<script");
@@ -25,9 +23,11 @@ describe("message markdown helpers", () => {
   });
 
   it("adds safe attributes to links after sanitization", () => {
-    render(createElement("div", {
-      dangerouslySetInnerHTML: { __html: renderMarkdown("[docs](https://example.com/docs)") },
-    }));
+    render(
+      createElement("div", {
+        dangerouslySetInnerHTML: { __html: renderMarkdown("[docs](https://example.com/docs)") },
+      }),
+    );
     const link = screen.getByRole("link", { name: "docs" });
 
     expect(link).toHaveAttribute("href", "https://example.com/docs");

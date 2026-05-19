@@ -15,10 +15,7 @@ export function WorkspaceLayout() {
   const controller = useWorkspaceControllerContext();
 
   return (
-    <AppLayout
-      ready={controller.ready}
-      loadingFallback={<AppLayoutLoading>{controller.loadingText}</AppLayoutLoading>}
-    >
+    <AppLayout ready={controller.ready} loadingFallback={<AppLayoutLoading>{controller.loadingText}</AppLayoutLoading>}>
       <AppLayoutShell className={controller.shellClassName}>
         <AppLayoutSidebar>
           <WorkspaceSidebar {...controller.sidebarProps} />

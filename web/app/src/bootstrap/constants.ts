@@ -14,7 +14,9 @@ export const RUNTIME_KIND_OPTIONS = [
   { value: "codex", label: "codex" },
   { value: "notifier", label: "notifier" },
 ];
-export const GATEWAY_RUNTIME_KIND_OPTIONS = RUNTIME_KIND_OPTIONS.filter((option) => option.value === "picoclaw_sandbox");
+export const GATEWAY_RUNTIME_KIND_OPTIONS = RUNTIME_KIND_OPTIONS.filter(
+  (option) => option.value === "picoclaw_sandbox",
+);
 export const NOTIFIER_DELIVERY_OPTIONS = ["webhook", "remote_pull"];
 export const NOTIFIER_RELAY_WEBHOOK_INGRESS_PATH = "/api/v1/webhooks/ingress";
 export const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);

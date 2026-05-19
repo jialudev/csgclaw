@@ -1,8 +1,23 @@
 // @ts-nocheck
-import { formatConversationPreview, formatTime, isDirectConversation, resolveConversationUser } from "@/models/conversations";
+import {
+  formatConversationPreview,
+  formatTime,
+  isDirectConversation,
+  resolveConversationUser,
+} from "@/models/conversations";
 import { TrashIcon } from "@/components/ui/Icons";
 
-export function ConversationSection({ title, items, activeConversationId, currentUserID, usersById, locale, t, onSelect, onDelete }) {
+export function ConversationSection({
+  title,
+  items,
+  activeConversationId,
+  currentUserID,
+  usersById,
+  locale,
+  t,
+  onSelect,
+  onDelete,
+}) {
   if (!items.length) {
     return null;
   }
@@ -13,22 +28,17 @@ export function ConversationSection({ title, items, activeConversationId, curren
         const lastMessage = conversation.messages[conversation.messages.length - 1];
         const displayUser = resolveConversationUser(conversation, currentUserID, usersById);
         const isDirect = isDirectConversation(conversation);
-        const avatar = isDirect && displayUser
-          ? displayUser.avatar
-          : conversation.title.slice(0, 2).toUpperCase();
-        const color = isDirect && displayUser
-          ? displayUser.accent_hex
-          : "#2563eb";
+        const avatar = isDirect && displayUser ? displayUser.avatar : conversation.title.slice(0, 2).toUpperCase();
+        const color = isDirect && displayUser ? displayUser.accent_hex : "#2563eb";
         return (
           <div
             key={conversation.id}
             className={`conversation-item ${conversation.id === activeConversationId ? "active" : ""}`}
           >
-            <button
-              className="conversation-item-main"
-              onClick={() => onSelect(conversation.id)}
-            >
-              <div className="avatar" style={{ background: `linear-gradient(135deg, ${color}, #10233f)` }}>{avatar}</div>
+            <button className="conversation-item-main" onClick={() => onSelect(conversation.id)}>
+              <div className="avatar" style={{ background: `linear-gradient(135deg, ${color}, #10233f)` }}>
+                {avatar}
+              </div>
               <div className="conversation-main">
                 <div className="conversation-head">
                   <div className="conversation-name truncate">{conversation.title}</div>
@@ -48,7 +58,9 @@ export function ConversationSection({ title, items, activeConversationId, curren
                 onDelete(conversation.id);
               }}
             >
-              <span className="conversation-delete-icon" aria-hidden="true"><TrashIcon /></span>
+              <span className="conversation-delete-icon" aria-hidden="true">
+                <TrashIcon />
+              </span>
             </button>
           </div>
         );

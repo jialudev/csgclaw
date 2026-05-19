@@ -4,6 +4,21 @@ These rules apply to the Vite web app in `web/app`.
 
 Chinese companion: `FRONTEND.zh.md`. This English document is the agent-facing source of truth.
 
+## Tooling
+
+- Use Node.js 24.x for frontend development.
+- The repository root has an `.nvmrc`; with `nvm`, run `nvm use` from the `csgclaw` root.
+- `web/app/package.json` declares the required Node.js range in `engines.node`.
+- Use `pnpm` for package management. `web/app/package.json` pins `pnpm@11.1.3` through the `packageManager` field and `engines.pnpm`.
+- Install or switch to Node.js 24.x before running frontend package commands.
+- If `pnpm` is not available after switching Node.js versions, install the pinned version with Corepack:
+
+```bash
+corepack enable
+corepack prepare pnpm@11.1.3 --activate
+pnpm --dir web/app install
+```
+
 ## Scope
 
 - Keep frontend source in `web/app/src`.
@@ -21,6 +36,33 @@ Chinese companion: `FRONTEND.zh.md`. This English document is the agent-facing s
 - `src/shared/`: cross-cutting i18n, storage keys, realtime utilities, theme, styles, and generic helpers.
 
 Do not create new top-level directories unless a module is clearly cross-cutting and does not fit the existing structure.
+
+## Source Directory Details
+
+Use this map when creating, moving, or reorganizing files under `web/app/src`.
+
+| Path | Owns | Avoid |
+| --- | --- | --- |
+| `src/main.tsx` | React entrypoint only. | App logic, routing rules, or provider setup details. |
+| `src/bootstrap/` | App startup, providers, constants, root app assembly, error boundaries, and shared clients. | Page-private behavior or feature-specific helpers. |
+| `src/routes/` | Route declarations and route-to-page wiring. | Page implementation details. |
+| `src/api/` | HTTP clients, request wrappers, endpoint types, and transport boundary code. | Rendering logic, page state, or reusable data normalization. |
+| `src/models/` | Pure data shaping, formatting, parsing, routing helpers, and domain helpers that are shared or independently testable. | React hooks, browser storage, fetch calls, or UI state. |
+| `src/hooks/` | Reusable React hooks that compose shared app data or controller state. | Hooks owned by one page only; keep those beside that page. |
+| `src/components/ui/` | Presentation primitives, layout primitives, form controls, buttons, and icons. | CSGClaw-specific business state or API-backed behavior. |
+| `src/components/business/` | Cross-page app-aware components that combine UI primitives with business labels, state, actions, or API data. | Components used by only one page. |
+| `src/pages/<PageName>/` | Route screens and modules owned by one page. | Cross-page abstractions before real reuse exists. |
+| `src/pages/<PageName>/components/` | Components private to that page. | Imports from another page's private modules. |
+| `src/shared/i18n/` | Message catalogs, locale selection, and translation helpers. | One-off text that belongs to a single untranslated path. |
+| `src/shared/storage/` | Storage keys and local/session storage wrappers. | Page-specific persistence policy. |
+| `src/shared/realtime/` | Event bus, SSE/shared worker plumbing, realtime event parsing, and subscription helpers. | Page rendering or component-owned effects. |
+| `src/shared/theme/` | Theme selection and theme-related shared logic. | Component CSS or page-specific visual rules. |
+| `src/shared/styles/` | Global CSS, reset rules, design tokens, and app-wide CSS variables. | Component-owned or page-owned styles. |
+| `src/shared/lib/` | Small generic helpers with no React, API, storage, or page dependency. | Domain helpers that belong in `src/models/`. |
+
+Default to placing code near its owner. Promote code to `src/components`, `src/models`, `src/hooks`, or `src/shared` only after there is real cross-page reuse or a clear shared boundary.
+
+If a subdirectory later needs its own rules, add a short README in that subdirectory and link it from this guide.
 
 ## Page Modules
 
@@ -106,7 +148,10 @@ src/pages/WorkspacePage/components/
 ## Tests And Verification
 
 - Run `pnpm --dir web/app typecheck` after TypeScript or import-path changes.
+- Run `pnpm --dir web/app lint` after frontend source changes.
+- Run `pnpm --dir web/app format:check` before sharing changes, or `pnpm --dir web/app format` to apply Prettier formatting.
 - Run `pnpm --dir web/app test` for the frontend Vitest suite.
+- Run `pnpm --dir web/app check` for the standard frontend verification bundle.
 - Run `pnpm --dir web/app exec vite build --outDir /private/tmp/csgclaw-web-build --emptyOutDir` when validating bundling without touching `web/static-dist`.
 - Run `pnpm --dir web/app build` only when the generated `web/static-dist` output is intended.
 - Add or update pure unit tests for data shaping, routing, formatting, parser, serializer, and state-transition helpers. Good targets include `src/models/**`, `src/shared/lib/**`, and logic-only helpers inside component packages.

@@ -2,20 +2,81 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { applyUpgradeRequest } from "@/api/upgrade";
-import { createBotRequest, createManagerAgentRequest, deleteBotRequest, fetchAgentProfile, fetchAgentProfileDefaults, runAgentActionRequest, saveManagerProfileRequest, updateAgentRequest } from "@/api/agents";
+import {
+  createBotRequest,
+  createManagerAgentRequest,
+  deleteBotRequest,
+  fetchAgentProfile,
+  fetchAgentProfileDefaults,
+  runAgentActionRequest,
+  saveManagerProfileRequest,
+  updateAgentRequest,
+} from "@/api/agents";
 import { loginCLIProxyProviderRequest } from "@/api/cliproxy";
 import { publishAgentTemplateRequest } from "@/api/hub";
-import { createRoomRequest, createUserRequest, deleteRoomRequest, inviteRoomUsersRequest, joinAgentToRoomRequest, sendMessageRequest } from "@/api/im";
+import {
+  createRoomRequest,
+  createUserRequest,
+  deleteRoomRequest,
+  inviteRoomUsersRequest,
+  joinAgentToRoomRequest,
+  sendMessageRequest,
+} from "@/api/im";
 import { ACTION_REBUILD_MANAGER, MESSAGE_LIST_BOTTOM_THRESHOLD } from "@/bootstrap/constants";
-import { applyTemplateToDraft, advanceAgentProgress, agentToDraft, availableManagerRuntimeOptions, draftNotifierRuntimeOptionsForSave, draftToProfile, ensureNotifierPullSubscriptionDraft, isAgentRunning, isManagerAgent, isNotifierRuntimeDraft, isNotifierRuntimeDraftOnAgentPage, normalizeAuthProviderName, normalizeRuntimeKind, normalizeTemplateSelection, pickDefaultAgentTemplate, profileToDraft, providerNeedsAuth, runtimeImageForKind, startAgentCreateProgress } from "@/models/agents";
-import { agentMatchesUser, appendMessageToData, applyIMEvent, isDirectConversation, isToolCallMessage, removeConversationFromData, upsertConversationInData } from "@/models/conversations";
-import { areComposerSegmentsEqual, getComposerMentionState, insertComposerLineBreak, parseComposerSegments, placeCaretAtEnd, removeAdjacentMentionToken, renderComposerSegments, replaceMentionQueryWithToken, segmentsToPlainText, serializeComposerSegments, updateDrafts } from "@/models/composer";
+import {
+  applyTemplateToDraft,
+  advanceAgentProgress,
+  agentToDraft,
+  availableManagerRuntimeOptions,
+  draftNotifierRuntimeOptionsForSave,
+  draftToProfile,
+  ensureNotifierPullSubscriptionDraft,
+  isAgentRunning,
+  isManagerAgent,
+  isNotifierRuntimeDraft,
+  isNotifierRuntimeDraftOnAgentPage,
+  normalizeAuthProviderName,
+  normalizeRuntimeKind,
+  normalizeTemplateSelection,
+  pickDefaultAgentTemplate,
+  profileToDraft,
+  providerNeedsAuth,
+  runtimeImageForKind,
+  startAgentCreateProgress,
+} from "@/models/agents";
+import {
+  agentMatchesUser,
+  appendMessageToData,
+  applyIMEvent,
+  isDirectConversation,
+  isToolCallMessage,
+  removeConversationFromData,
+  upsertConversationInData,
+} from "@/models/conversations";
+import {
+  areComposerSegmentsEqual,
+  getComposerMentionState,
+  insertComposerLineBreak,
+  parseComposerSegments,
+  placeCaretAtEnd,
+  removeAdjacentMentionToken,
+  renderComposerSegments,
+  replaceMentionQueryWithToken,
+  segmentsToPlainText,
+  serializeComposerSegments,
+  updateDrafts,
+} from "@/models/composer";
 import { normalizeUpgradeStatus } from "@/models/upgradeStatus";
 import { createTranslator, localizeError } from "@/shared/i18n";
 import { messages } from "@/shared/i18n/messages";
 import { initializeMermaidTheme } from "@/components/business/MessageContent";
 import { subscribeIMEvents } from "@/shared/realtime/imEvents";
-import { LOCALE_STORAGE_KEY, SIDEBAR_COLLAPSED_STORAGE_KEY, THEME_STORAGE_KEY, WORKSPACE_GROUPS_COLLAPSED_STORAGE_KEY } from "@/shared/storage/keys";
+import {
+  LOCALE_STORAGE_KEY,
+  SIDEBAR_COLLAPSED_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  WORKSPACE_GROUPS_COLLAPSED_STORAGE_KEY,
+} from "@/shared/storage/keys";
 import { errorMessage } from "@/api/client";
 import { useWorkspaceUiStore } from "./workspaceUiStore";
 import { useCLIProxyAuthStatuses } from "./useCLIProxyAuthStatuses";
@@ -23,7 +84,6 @@ import { useProfileModelOptions } from "./useProfileModelOptions";
 import { useWorkspaceData } from "./useWorkspaceData";
 import { useWorkspaceHubSelection } from "./useWorkspaceHubSelection";
 import { useWorkspaceNavigation } from "./useWorkspaceNavigation";
-
 
 export function useWorkspaceController() {
   const location = useLocation();
@@ -160,12 +220,15 @@ export function useWorkspaceController() {
     enabled: activePane.type === "agent",
     onDraftChange: setAgentPageDraft,
   });
-  const { cliproxyAuthStatuses, setCLIProxyAuthStatus } = useCLIProxyAuthStatuses([
-    managerProfile?.provider,
-    profileDraft?.provider,
-    isNotifierRuntimeDraft(agentDraft) ? "" : agentDraft?.provider,
-    isNotifierRuntimeDraft(agentPageDraft) ? "" : agentPageDraft?.provider,
-  ], t);
+  const { cliproxyAuthStatuses, setCLIProxyAuthStatus } = useCLIProxyAuthStatuses(
+    [
+      managerProfile?.provider,
+      profileDraft?.provider,
+      isNotifierRuntimeDraft(agentDraft) ? "" : agentDraft?.provider,
+      isNotifierRuntimeDraft(agentPageDraft) ? "" : agentPageDraft?.provider,
+    ],
+    t,
+  );
 
   useEffect(() => {
     return () => {
@@ -180,9 +243,11 @@ export function useWorkspaceController() {
     if (!bootstrapConfig?.runtime_kind) {
       return;
     }
-    setProfileDraft((current) => current && !current.runtime_kind
-      ? { ...current, runtime_kind: normalizeRuntimeKind(bootstrapConfig.runtime_kind) }
-      : current);
+    setProfileDraft((current) =>
+      current && !current.runtime_kind
+        ? { ...current, runtime_kind: normalizeRuntimeKind(bootstrapConfig.runtime_kind) }
+        : current,
+    );
   }, [bootstrapConfig?.runtime_kind]);
 
   useEffect(() => {
@@ -219,7 +284,7 @@ export function useWorkspaceController() {
         setUpgradeStatusData(next);
         if (next?.upgrading) {
           setUpgradeBusy(true);
-          setUpgradePhase((phase) => phase === "done" ? phase : "restarting");
+          setUpgradePhase((phase) => (phase === "done" ? phase : "restarting"));
         } else if (!next?.update_available) {
           setUpgradeBusy(false);
         }
@@ -274,18 +339,10 @@ export function useWorkspaceController() {
   }, [hubTemplatesQuery.isSuccess, hubTemplatesQuery.dataUpdatedAt]);
 
   const loadingError = bootstrapQuery.isError ? t("loadingFailed") : "";
-  const agentsDisplayError = agentsError || (agentsQuery.isError ? errorMessage(agentsQuery.error, t("agentActionFailed")) : "");
-  const rooms = useMemo(
-    () => data?.rooms ?? [],
-    [data],
-  );
-  const {
-    navigatePane,
-    selectConversation,
-    selectAgent,
-    selectComputer,
-    selectHub,
-  } = useWorkspaceNavigation({
+  const agentsDisplayError =
+    agentsError || (agentsQuery.isError ? errorMessage(agentsQuery.error, t("agentActionFailed")) : "");
+  const rooms = useMemo(() => data?.rooms ?? [], [data]);
+  const { navigatePane, selectConversation, selectAgent, selectComputer, selectHub } = useWorkspaceNavigation({
     location,
     navigate,
     dataReady: Boolean(data),
@@ -331,14 +388,8 @@ export function useWorkspaceController() {
   }, [activeConversation, showToolCalls]);
 
   const roomCount = rooms.length;
-  const channels = useMemo(
-    () => rooms.filter((room) => !isDirectConversation(room)),
-    [rooms],
-  );
-  const directMessages = useMemo(
-    () => rooms.filter((room) => isDirectConversation(room)),
-    [rooms],
-  );
+  const channels = useMemo(() => rooms.filter((room) => !isDirectConversation(room)), [rooms]);
+  const directMessages = useMemo(() => rooms.filter((room) => isDirectConversation(room)), [rooms]);
   const selectedAgentForPage = useMemo(() => {
     if (activePane.type !== "agent") {
       return null;
@@ -362,7 +413,11 @@ export function useWorkspaceController() {
     const allowed = new Set(activeConversation?.members ?? []);
     return data.users
       .filter((user) => allowed.has(user.id))
-      .filter((user) => user.handle.toLowerCase().includes(composerMentionState.query.toLowerCase()) || user.name.toLowerCase().includes(composerMentionState.query.toLowerCase()))
+      .filter(
+        (user) =>
+          user.handle.toLowerCase().includes(composerMentionState.query.toLowerCase()) ||
+          user.name.toLowerCase().includes(composerMentionState.query.toLowerCase()),
+      )
       .slice(0, 5);
   }, [data, activeConversation, composerMentionState]);
   const mentionableUsersByHandle = useMemo(() => {
@@ -374,7 +429,9 @@ export function useWorkspaceController() {
     data.users
       .filter((user) => allowed.has(user.id))
       .forEach((user) => {
-        const handle = String(user.handle ?? "").trim().toLowerCase();
+        const handle = String(user.handle ?? "")
+          .trim()
+          .toLowerCase();
         if (handle && !result.has(handle)) {
           result.set(handle, user);
         }
@@ -626,7 +683,7 @@ export function useWorkspaceController() {
     const payload = await refreshWorkspaceUpgradeStatus();
     if (payload?.upgrading) {
       setUpgradeBusy(true);
-      setUpgradePhase((phase) => phase === "done" ? phase : "restarting");
+      setUpgradePhase((phase) => (phase === "done" ? phase : "restarting"));
     } else if (!payload?.update_available) {
       setUpgradeBusy(false);
     }
@@ -953,9 +1010,8 @@ export function useWorkspaceController() {
   const activeConversationMembers = activeConversation
     ? activeConversation.members.map((id) => usersById.get(id)).filter(Boolean)
     : [];
-  const inviteActionLabel = activeConversation && isDirectConversation(activeConversation)
-    ? t("createRoomFromDM")
-    : t("inviteMembers");
+  const inviteActionLabel =
+    activeConversation && isDirectConversation(activeConversation) ? t("createRoomFromDM") : t("inviteMembers");
 
   const managerAgent = agents.find((item) => item.role === "manager" || item.id === "u-manager");
   const managerRuntimeOptions = availableManagerRuntimeOptions(bootstrapConfig);
@@ -964,22 +1020,25 @@ export function useWorkspaceController() {
   const runningAgentCount = agentItems.filter(isAgentRunning).length;
   const selectedAgent = selectedAgentForPage;
   const selectedConversation = activePane.type === "conversation" ? activeConversation : null;
-  const activeChannel = selectedConversation && !isDirectConversation(selectedConversation) ? selectedConversation : null;
+  const activeChannel =
+    selectedConversation && !isDirectConversation(selectedConversation) ? selectedConversation : null;
   const selectedMessageCount = selectedConversation?.messages?.length ?? 0;
-  const currentWorkspaceLabel = activePane.type === "agent"
-    ? t("agentOverview")
-    : activePane.type === "computer"
-      ? t("computerOverview")
-      : activePane.type === "hub"
-        ? t("hubOverview")
-      : t("conversationOverview");
-  const previewUser = profilePreview?.type === "user"
-    ? usersById.get(profilePreview.id) ?? null
-    : profilePreview?.type === "agent"
-      ? usersById.get(profilePreview.id) ?? null
-      : null;
+  const currentWorkspaceLabel =
+    activePane.type === "agent"
+      ? t("agentOverview")
+      : activePane.type === "computer"
+        ? t("computerOverview")
+        : activePane.type === "hub"
+          ? t("hubOverview")
+          : t("conversationOverview");
+  const previewUser =
+    profilePreview?.type === "user"
+      ? (usersById.get(profilePreview.id) ?? null)
+      : profilePreview?.type === "agent"
+        ? (usersById.get(profilePreview.id) ?? null)
+        : null;
   const previewAgent = profilePreview
-    ? agentItems.find((item) => item.id === profilePreview.id || agentMatchesUser(item, previewUser)) ?? null
+    ? (agentItems.find((item) => item.id === profilePreview.id || agentMatchesUser(item, previewUser)) ?? null)
     : null;
 
   async function refreshManagerProfile() {
@@ -1030,7 +1089,9 @@ export function useWorkspaceController() {
   }
 
   function openManagerRebuildModal(item = managerAgent) {
-    const initialRuntimeKind = normalizeRuntimeKind(item?.runtime_kind || bootstrapConfig?.runtime_kind || managerRebuildRuntimeKind);
+    const initialRuntimeKind = normalizeRuntimeKind(
+      item?.runtime_kind || bootstrapConfig?.runtime_kind || managerRebuildRuntimeKind,
+    );
     const fallbackRuntimeKind = managerRuntimeOptions[0]?.value || "picoclaw_sandbox";
     const resolvedRuntimeKind = managerRuntimeOptions.some((option) => option.value === initialRuntimeKind)
       ? initialRuntimeKind
@@ -1046,7 +1107,12 @@ export function useWorkspaceController() {
   }
 
   async function requestManagerRebuild(options = {}) {
-    const runtimeKind = normalizeRuntimeKind(options.runtimeKind || managerAgent?.runtime_kind || bootstrapConfig?.runtime_kind || managerRuntimeOptions[0]?.value);
+    const runtimeKind = normalizeRuntimeKind(
+      options.runtimeKind ||
+        managerAgent?.runtime_kind ||
+        bootstrapConfig?.runtime_kind ||
+        managerRuntimeOptions[0]?.value,
+    );
     const image = String(options.image ?? managerAgent?.image ?? "").trim();
     await createManagerAgentRequest({
       runtime_kind: runtimeKind,
@@ -1075,7 +1141,9 @@ export function useWorkspaceController() {
     if (agentActionBusy) {
       return;
     }
-    const selectedRuntimeKind = normalizeRuntimeKind(managerRebuildRuntimeKind || managerAgent?.runtime_kind || bootstrapConfig?.runtime_kind);
+    const selectedRuntimeKind = normalizeRuntimeKind(
+      managerRebuildRuntimeKind || managerAgent?.runtime_kind || bootstrapConfig?.runtime_kind,
+    );
     const selectedImage = String(managerRebuildImage ?? "").trim();
     setMessageActionError({ key: "", message: "" });
     const rebuilt = await rebuildManagerFromBrowser({ runtimeKind: selectedRuntimeKind, image: selectedImage });
@@ -1142,13 +1210,18 @@ export function useWorkspaceController() {
     setAgentError("");
     setAgentProgress(null);
     resetAgentModels();
-    const preferredRuntimeKind = normalizeRuntimeKind(bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "") || "picoclaw_sandbox";
-    const selectedTemplate = template === undefined
-      ? pickDefaultAgentTemplate(hubTemplates, preferredRuntimeKind, bootstrapConfig)
-      : normalizeTemplateSelection(template);
+    const preferredRuntimeKind =
+      normalizeRuntimeKind(bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "") || "picoclaw_sandbox";
+    const selectedTemplate =
+      template === undefined
+        ? pickDefaultAgentTemplate(hubTemplates, preferredRuntimeKind, bootstrapConfig)
+        : normalizeTemplateSelection(template);
     try {
       const defaults = await fetchAgentProfileDefaults();
-      const runtimeKind = normalizeRuntimeKind(selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "") || "picoclaw_sandbox";
+      const runtimeKind =
+        normalizeRuntimeKind(
+          selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "",
+        ) || "picoclaw_sandbox";
       let draft = agentToDraft({
         image: runtimeImageForKind(runtimeKind, bootstrapConfig, managerAgent?.image || ""),
         runtime_kind: runtimeKind,
@@ -1158,7 +1231,10 @@ export function useWorkspaceController() {
       setAgentDraft(draft);
       setShowAgentModal(true);
     } catch (_) {
-      const runtimeKind = normalizeRuntimeKind(selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "") || "picoclaw_sandbox";
+      const runtimeKind =
+        normalizeRuntimeKind(
+          selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "",
+        ) || "picoclaw_sandbox";
       let draft = agentToDraft({
         image: runtimeImageForKind(runtimeKind, bootstrapConfig, managerAgent?.image || ""),
         runtime_kind: runtimeKind,
@@ -1306,11 +1382,11 @@ export function useWorkspaceController() {
       const saved = isCreate
         ? await createBotRequest(payload)
         : await updateAgentRequest(editingAgent.id, {
-          name: payload.name,
-          description: payload.description,
-          agent_profile: payload.agent_profile,
-          ...(payload.runtime_options ? { runtime_options: payload.runtime_options } : {}),
-        });
+            name: payload.name,
+            description: payload.description,
+            agent_profile: payload.agent_profile,
+            ...(payload.runtime_options ? { runtime_options: payload.runtime_options } : {}),
+          });
       await refreshAgents();
       if (isCreate) {
         await refreshBootstrap();
@@ -1319,13 +1395,17 @@ export function useWorkspaceController() {
         await refreshManagerProfile();
       }
       if (isCreate) {
-        setAgentProgress((current) => current ? { ...current, percent: 100, status: "done", index: Math.max(0, (current.steps?.length || 1) - 1) } : current);
+        setAgentProgress((current) =>
+          current
+            ? { ...current, percent: 100, status: "done", index: Math.max(0, (current.steps?.length || 1) - 1) }
+            : current,
+        );
       }
       setShowAgentModal(false);
       setAgentDraft(null);
       setAgentProgress(null);
     } catch (err) {
-      setAgentProgress((current) => current ? { ...current, status: "failed" } : current);
+      setAgentProgress((current) => (current ? { ...current, status: "failed" } : current));
       setAgentError(err.message || t("agentActionFailed"));
     } finally {
       setAgentBusy(false);
@@ -1412,11 +1492,11 @@ export function useWorkspaceController() {
     if (!userID || !currentUserID) {
       return null;
     }
-    return roomList.find((room) => (
-      isDirectConversation(room) &&
-      room.members.includes(currentUserID) &&
-      room.members.includes(userID)
-    )) ?? null;
+    return (
+      roomList.find(
+        (room) => isDirectConversation(room) && room.members.includes(currentUserID) && room.members.includes(userID),
+      ) ?? null
+    );
   }
 
   async function openAgentDirectMessage(item) {
@@ -1652,24 +1732,25 @@ export function useWorkspaceController() {
       messageActionError,
       onMessageAction: handleMessageAction,
     },
-    profilePreviewProps: profilePreview && (previewAgent || previewUser)
-      ? {
-          previewRef: profilePreviewRef,
-          agent: previewAgent,
-          user: previewUser,
-          anchorRect: profilePreview.anchorRect,
-          t,
-          inDirectConversation: Boolean(selectedConversation && isDirectConversation(selectedConversation)),
-          busyKey: agentActionBusy,
-          onClose: closeProfilePreview,
-          onOpenAgent: (item) => {
-            selectAgent(item);
-            closeProfilePreview();
-          },
-          onOpenDM: openAgentDirectMessage,
-          onDelete: deletePreviewBot,
-        }
-      : null,
+    profilePreviewProps:
+      profilePreview && (previewAgent || previewUser)
+        ? {
+            previewRef: profilePreviewRef,
+            agent: previewAgent,
+            user: previewUser,
+            anchorRect: profilePreview.anchorRect,
+            t,
+            inDirectConversation: Boolean(selectedConversation && isDirectConversation(selectedConversation)),
+            busyKey: agentActionBusy,
+            onClose: closeProfilePreview,
+            onOpenAgent: (item) => {
+              selectAgent(item);
+              closeProfilePreview();
+            },
+            onOpenDM: openAgentDirectMessage,
+            onDelete: deletePreviewBot,
+          }
+        : null,
     createRoomModalProps: showCreateRoom
       ? {
           t,
@@ -1709,31 +1790,32 @@ export function useWorkspaceController() {
           onApply: applyUpgrade,
         }
       : null,
-    agentProfileModalProps: showAgentModal && agentDraft
-      ? {
-          t,
-          agentModalMode,
-          editingAgent,
-          agentDraft,
-          onAgentDraftChange: setAgentDraft,
-          onAgentModelsReset: resetAgentModels,
-          hubTemplates,
-          bootstrapConfig,
-          managerAgent,
-          agentModels,
-          agentModelBusy,
-          authStatuses: cliproxyAuthStatuses,
-          authBusyProvider: cliproxyAuthBusy,
-          notifierWebhookOrigin: notifierModalWebhookOrigin,
-          setNotifierWebhookOrigin: setNotifierModalWebhookOrigin,
-          onProviderLogin: loginCLIProxyProvider,
-          agentError,
-          agentProgress,
-          agentBusy,
-          onClose: () => setShowAgentModal(false),
-          onSave: saveAgent,
-        }
-      : null,
+    agentProfileModalProps:
+      showAgentModal && agentDraft
+        ? {
+            t,
+            agentModalMode,
+            editingAgent,
+            agentDraft,
+            onAgentDraftChange: setAgentDraft,
+            onAgentModelsReset: resetAgentModels,
+            hubTemplates,
+            bootstrapConfig,
+            managerAgent,
+            agentModels,
+            agentModelBusy,
+            authStatuses: cliproxyAuthStatuses,
+            authBusyProvider: cliproxyAuthBusy,
+            notifierWebhookOrigin: notifierModalWebhookOrigin,
+            setNotifierWebhookOrigin: setNotifierModalWebhookOrigin,
+            onProviderLogin: loginCLIProxyProvider,
+            agentError,
+            agentProgress,
+            agentBusy,
+            onClose: () => setShowAgentModal(false),
+            onSave: saveAgent,
+          }
+        : null,
     managerRebuildModalProps: showManagerRebuildModal
       ? {
           t,
@@ -1750,23 +1832,24 @@ export function useWorkspaceController() {
           onConfirm: confirmManagerRebuild,
         }
       : null,
-    managerProfileSetupModalProps: managerProfileIncomplete && profileDraft
-      ? {
-          t,
-          managerProfile,
-          profileDraft,
-          onProfileDraftChange: setProfileDraft,
-          onProfileModelsReset: resetProfileModels,
-          bootstrapConfig,
-          profileModels,
-          profileModelBusy,
-          authStatuses: cliproxyAuthStatuses,
-          authBusyProvider: cliproxyAuthBusy,
-          onProviderLogin: loginCLIProxyProvider,
-          profileError,
-          profileBusy,
-          onSave: saveManagerProfile,
-        }
-      : null,
+    managerProfileSetupModalProps:
+      managerProfileIncomplete && profileDraft
+        ? {
+            t,
+            managerProfile,
+            profileDraft,
+            onProfileDraftChange: setProfileDraft,
+            onProfileModelsReset: resetProfileModels,
+            bootstrapConfig,
+            profileModels,
+            profileModelBusy,
+            authStatuses: cliproxyAuthStatuses,
+            authBusyProvider: cliproxyAuthBusy,
+            onProviderLogin: loginCLIProxyProvider,
+            profileError,
+            profileBusy,
+            onSave: saveManagerProfile,
+          }
+        : null,
   };
 }

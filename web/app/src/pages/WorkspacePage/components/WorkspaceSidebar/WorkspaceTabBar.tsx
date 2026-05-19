@@ -3,14 +3,7 @@ import { WORKSPACE_TAB_AGENTS, WORKSPACE_TAB_HUB, WORKSPACE_TAB_MESSAGES } from 
 import { Button } from "@/components/ui";
 import { HubIcon, RoomsIcon, UsersIcon } from "@/components/ui/Icons";
 
-export function WorkspaceTabBar({
-  workspaceTab,
-  onWorkspaceTabChange,
-  roomCount,
-  agentCount,
-  onSelectHub,
-  t,
-}) {
+export function WorkspaceTabBar({ workspaceTab, onWorkspaceTabChange, roomCount, agentCount, onSelectHub, t }) {
   return (
     <div className="workspace-tabbar" role="tablist" aria-label="Workspace sections">
       <Button
@@ -22,7 +15,9 @@ export function WorkspaceTabBar({
         title={t("messagesTab")}
         onClick={() => onWorkspaceTabChange(WORKSPACE_TAB_MESSAGES)}
       >
-        <span className="workspace-tab-icon" aria-hidden="true"><RoomsIcon /></span>
+        <span className="workspace-tab-icon" aria-hidden="true">
+          <RoomsIcon />
+        </span>
         <span className="workspace-tab-copy">
           <strong>{t("messagesTab")}</strong>
           <small>{roomCount}</small>
@@ -37,7 +32,9 @@ export function WorkspaceTabBar({
         title={t("agentsTab")}
         onClick={() => onWorkspaceTabChange(WORKSPACE_TAB_AGENTS)}
       >
-        <span className="workspace-tab-icon" aria-hidden="true"><UsersIcon /></span>
+        <span className="workspace-tab-icon" aria-hidden="true">
+          <UsersIcon />
+        </span>
         <span className="workspace-tab-copy">
           <strong>{t("agentsTab")}</strong>
           <small>{agentCount}</small>
@@ -52,7 +49,9 @@ export function WorkspaceTabBar({
         title={t("hubTab")}
         onClick={() => onSelectHub()}
       >
-        <span className="workspace-tab-icon" aria-hidden="true"><HubIcon /></span>
+        <span className="workspace-tab-icon" aria-hidden="true">
+          <HubIcon />
+        </span>
         <span className="workspace-tab-copy">
           <strong>{t("hubTab")}</strong>
           <span className="workspace-tab-badge">{t("newBadge")}</span>
