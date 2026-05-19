@@ -25,8 +25,20 @@ assert(
 assert(
   agentDetailPaneSource.includes('isManager') &&
     agentDetailPaneSource.includes('btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger') &&
-    agentDetailPaneSource.includes('onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>'),
-  'manager profile must expose the red recreate button next to DM even when lifecycle actions are otherwise hidden',
+    !agentDetailPaneSource.includes('btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}') &&
+    agentDetailPaneSource.includes('<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>'),
+  'agent detail pane must expose recreate for both manager and worker with the same red danger styling',
+);
+
+const agentRowSource = source.slice(
+  source.indexOf('function AgentRow('),
+  source.indexOf('function WorkspaceAgentsPanel('),
+);
+
+assert(
+  agentRowSource.includes('SHOW_AGENT_LIFECYCLE_ACTIONS') &&
+    agentRowSource.includes('<button className="btn btn-outline-danger btn-sm agent-action-text danger" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>'),
+  'agent rows must keep recreate visible with red danger styling even when start/stop controls are hidden',
 );
 assert(
   source.includes('function openManagerRebuildModal(item = managerAgent)') &&

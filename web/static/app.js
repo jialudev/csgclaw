@@ -4650,9 +4650,9 @@ function AgentRow({ item, t, busyKey, onEdit, onStart, onStop, onRecreate, onDel
               <button className="btn btn-secondary-gray btn-sm agent-icon-button" aria-label=${running ? t("agentStop") : t("agentStart")} title=${running ? t("agentStop") : t("agentStart")} disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => running ? onStop(item) : onStart(item)}>
                 <span aria-hidden="true">${running ? html`<${StopIcon} />` : html`<${PlayIcon} />`}</span>
               </button>
-              <button className="btn btn-secondary-gray btn-sm agent-action-text" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>
             `
           : null}
+        <button className="btn btn-outline-danger btn-sm agent-action-text danger" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>
         ${!isManager
           ? html`
               <button className="btn btn-outline-danger btn-sm agent-icon-button danger" aria-label=${t("agentDelete")} title=${t("agentDelete")} disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onDelete(item)}>
@@ -5180,9 +5180,7 @@ function AgentDetailPane({
         <button className="btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onOpenDM(item)}>${t("openDM")}</button>
         ${isManager
           ? html`<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>`
-          : SHOW_AGENT_LIFECYCLE_ACTIONS
-            ? html`<button className="btn btn-secondary-gray btn-sm preview-action-button" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>`
-            : null}
+          : html`<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix) || incomplete} onClick=${() => onRecreate(item)}>${t("agentRecreate")}</button>`}
         ${!isManager
           ? html`<button className="btn btn-outline-danger btn-sm preview-action-button preview-action-button-danger" disabled=${busyKey.startsWith(busyPrefix)} onClick=${() => onDelete(item)}>${t("agentDelete")}</button>`
           : null}
