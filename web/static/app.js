@@ -2330,7 +2330,9 @@ function App() {
   const previewAgent = profilePreview
     ? agentItems.find((item) => item.id === profilePreview.id || agentMatchesUser(item, previewUser)) ?? null
     : null;
-  const managerRuntimeOptions = availableManagerRuntimeOptions(bootstrapConfig);
+  const managerTemplateVariants = collectManagerTemplateVariants(hubTemplates);
+  const managerRuntimeOptions = availableManagerRebuildRuntimeOptions(managerTemplateVariants, bootstrapConfig, managerAgent?.runtime_kind);
+  const managerRebuildImageOptions = availableManagerRebuildImageOptions(managerTemplateVariants, managerRebuildRuntimeKind, managerAgent?.image);
 
   async function refreshManagerProfile() {
     try {
@@ -2526,15 +2528,17 @@ function App() {
   }
 
   function openManagerRebuildModal(item = managerAgent) {
-    const initialRuntimeKind = normalizeRuntimeKind(item?.runtime_kind || bootstrapConfig?.runtime_kind || managerRebuildRuntimeKind);
+    const initialRuntimeKind = normalizeRuntimeKind(item?.runtime_kind || managerAgent?.runtime_kind || bootstrapConfig?.runtime_kind || managerRebuildRuntimeKind);
     const fallbackRuntimeKind = managerRuntimeOptions[0]?.value || "picoclaw_sandbox";
     const resolvedRuntimeKind = managerRuntimeOptions.some((option) => option.value === initialRuntimeKind)
       ? initialRuntimeKind
       : fallbackRuntimeKind;
-    const resolvedImage = runtimeImageForKind(
+    const currentImage = String(item?.image ?? managerAgent?.image ?? "").trim();
+    const resolvedImage = currentImage || defaultManagerRebuildImageForRuntime(
+      managerTemplateVariants,
       resolvedRuntimeKind,
       bootstrapConfig,
-      item?.image || managerAgent?.image || "",
+      "",
     );
     setManagerRebuildRuntimeKind(resolvedRuntimeKind);
     setManagerRebuildImage(resolvedImage);
@@ -4004,7 +4008,12 @@ function App() {
                           onChange=${(event) => {
                             const runtimeKind = normalizeRuntimeKind(event.target.value);
                             setManagerRebuildRuntimeKind(runtimeKind);
-                            setManagerRebuildImage(runtimeImageForKind(runtimeKind, bootstrapConfig, managerAgent?.image || ""));
+                            setManagerRebuildImage(defaultManagerRebuildImageForRuntime(
+                              managerTemplateVariants,
+                              runtimeKind,
+                              bootstrapConfig,
+                              managerAgent?.image || "",
+                            ));
                           }}
                         >
                           ${managerRuntimeOptions.map((option) => html`
@@ -4014,7 +4023,17 @@ function App() {
                       </label>
                       <label className="field manager-rebuild-image-field">
                         <span>${t("agentImage")}</span>
-                        <input value=${managerRebuildImage} onInput=${(event) => setManagerRebuildImage(event.target.value)} placeholder=${t("agentImagePlaceholder")} />
+                        <input
+                          list="manager-rebuild-image-options"
+                          value=${managerRebuildImage}
+                          onInput=${(event) => setManagerRebuildImage(event.target.value)}
+                          placeholder=${t("agentImagePlaceholder")}
+                        />
+                        <datalist id="manager-rebuild-image-options">
+                          ${managerRebuildImageOptions.map((image) => html`
+                            <option key=${image} value=${image} />
+                          `)}
+                        </datalist>
                       </label>
                     </div>
                   </section>
@@ -6971,6 +6990,92 @@ function availableManagerRuntimeOptions(bootstrapConfig) {
     .map((kind) => normalizeRuntimeKind(kind))
     .filter((kind, index, array) => kind && kind !== "codex" && kind !== "notifier" && array.indexOf(kind) === index);
   return RUNTIME_KIND_OPTIONS.filter((option) => gatewayKinds.includes(option.value));
+}
+
+function collectManagerTemplateVariants(templates) {
+  if (!Array.isArray(templates) || templates.length === 0) {
+    return [];
+  }
+  const out = [];
+  const seen = new Set();
+  for (const item of templates) {
+    if (String(item?.role ?? "").trim().toLowerCase() !== "manager") {
+      continue;
+    }
+    const runtimeKind = normalizeRuntimeKind(item?.runtime_kind);
+    const image = String(item?.image ?? "").trim();
+    if (!runtimeKind && !image) {
+      continue;
+    }
+    const key = `${runtimeKind}\n${image}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push({
+      runtimeKind,
+      image,
+    });
+  }
+  return out;
+}
+
+function availableManagerRebuildRuntimeOptions(variants, bootstrapConfig, currentRuntimeKind = "") {
+  const values = [];
+  const seen = new Set();
+  const push = (kind) => {
+    const normalized = normalizeRuntimeKind(kind);
+    if (!normalized || normalized === "codex" || normalized === "notifier" || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    values.push(normalized);
+  };
+  push(currentRuntimeKind);
+  if (Array.isArray(variants)) {
+    for (const item of variants) {
+      push(item?.runtimeKind);
+    }
+  }
+  for (const item of availableManagerRuntimeOptions(bootstrapConfig)) {
+    push(item?.value);
+  }
+  if (!values.length) {
+    push("picoclaw_sandbox");
+  }
+  return values.map((value) => ({ value, label: value }));
+}
+
+function availableManagerRebuildImageOptions(variants, runtimeKind, currentImage = "") {
+  const images = [];
+  const seen = new Set();
+  const push = (image) => {
+    const trimmed = String(image ?? "").trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+    seen.add(trimmed);
+    images.push(trimmed);
+  };
+  push(currentImage);
+  const selectedRuntime = normalizeRuntimeKind(runtimeKind);
+  if (Array.isArray(variants)) {
+    for (const item of variants) {
+      if (selectedRuntime && normalizeRuntimeKind(item?.runtimeKind) !== selectedRuntime) {
+        continue;
+      }
+      push(item?.image);
+    }
+  }
+  return images;
+}
+
+function defaultManagerRebuildImageForRuntime(variants, runtimeKind, bootstrapConfig, fallbackImage = "") {
+  const images = availableManagerRebuildImageOptions(variants, runtimeKind);
+  if (images.length > 0) {
+    return images[0];
+  }
+  return runtimeImageForKind(runtimeKind, bootstrapConfig, fallbackImage);
 }
 
 function agentCreateProgressSteps(runtimeKind) {
