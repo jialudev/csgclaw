@@ -53,6 +53,7 @@ func TestRemoteStoreListGetAndFetchWorkspace(t *testing.T) {
 				{
 					ID:          "review-bot",
 					Name:        "review-bot",
+					Role:        "worker",
 					RuntimeKind: "codex",
 					Source:      apitypes.HubTemplateSource{Name: config.DefaultOfficialHubRegistryName, Kind: "remote"},
 					Workspace:   apitypes.HubTemplateWorkspace{Kind: "dir"},
@@ -63,6 +64,7 @@ func TestRemoteStoreListGetAndFetchWorkspace(t *testing.T) {
 				ID:          "review-bot",
 				Name:        "review-bot",
 				Description: "code review helper",
+				Role:        "worker",
 				RuntimeKind: "codex",
 				Source:      apitypes.HubTemplateSource{Name: config.DefaultOfficialHubRegistryName, Kind: "remote"},
 				Workspace:   apitypes.HubTemplateWorkspace{Kind: "dir"},
@@ -94,6 +96,9 @@ func TestRemoteStoreListGetAndFetchWorkspace(t *testing.T) {
 	}
 	if got, want := item.Description, "code review helper"; got != want {
 		t.Fatalf("Get().Description = %q, want %q", got, want)
+	}
+	if got, want := item.Role, TemplateRoleWorker; got != want {
+		t.Fatalf("Get().Role = %q, want %q", got, want)
 	}
 
 	workspace, err := store.FetchWorkspace(context.Background(), "review-bot")

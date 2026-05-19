@@ -152,7 +152,7 @@ func TestPublishUsesDefaultPublishRegistry(t *testing.T) {
 		"local":   localStore,
 	})
 
-	item, err := svc.Publish(context.Background(), PublishSpec{Name: "frontend-alice"})
+	item, err := svc.Publish(context.Background(), PublishSpec{Name: "frontend-alice", Role: TemplateRoleWorker})
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestPublishRejectsBuiltinRegistry(t *testing.T) {
 		"builtin": stubStore{},
 	})
 
-	_, err := svc.Publish(context.Background(), PublishSpec{Name: "frontend-alice"})
+	_, err := svc.Publish(context.Background(), PublishSpec{Name: "frontend-alice", Role: TemplateRoleWorker})
 	if !errors.Is(err, ErrRegistryNotWritable) {
 		t.Fatalf("Publish() error = %v, want ErrRegistryNotWritable", err)
 	}

@@ -1795,6 +1795,7 @@ func TestHandleHubTemplatesListsAggregatedTemplates(t *testing.T) {
 	hubSvc := mustNewLocalTemplateHubService(t, "review-bot", hub.Template{
 		ID:          "review-bot",
 		Name:        "review-bot",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: agent.RuntimeKindCodex,
 	})
 	srv := &Handler{}
@@ -1824,6 +1825,7 @@ func TestHandleHubTemplateByIDReturnsTemplate(t *testing.T) {
 		ID:          "review-bot",
 		Name:        "review-bot",
 		Description: "code review helper",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: agent.RuntimeKindCodex,
 	})
 	srv := &Handler{}
@@ -1842,6 +1844,9 @@ func TestHandleHubTemplateByIDReturnsTemplate(t *testing.T) {
 	}
 	if got.ID != "local/review-bot" {
 		t.Fatalf("template id = %q, want %q", got.ID, "local/review-bot")
+	}
+	if got.Role != hub.TemplateRoleWorker {
+		t.Fatalf("template role = %q, want %q", got.Role, hub.TemplateRoleWorker)
 	}
 	if got.Source.Name != "local" || got.Source.Kind != "local" {
 		t.Fatalf("template source = %+v, want local/local", got.Source)
@@ -1872,6 +1877,7 @@ func TestHandleHubTemplateWorkspaceFileReturnsContent(t *testing.T) {
 		ID:          "review-bot",
 		Name:        "review-bot",
 		Description: "code review helper",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: agent.RuntimeKindCodex,
 	})
 	srv := &Handler{}
@@ -1901,6 +1907,7 @@ func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.
 		ID:          "review-bot",
 		Name:        "review-bot",
 		Description: "code review helper",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: agent.RuntimeKindCodex,
 	})
 	srv := &Handler{}
@@ -1983,6 +1990,9 @@ func TestHandleHubTemplatesPublishesAgentSnapshot(t *testing.T) {
 	if got.ID != "local/alice" {
 		t.Fatalf("template id = %q, want %q", got.ID, "local/alice")
 	}
+	if got.Role != hub.TemplateRoleWorker {
+		t.Fatalf("template role = %q, want %q", got.Role, hub.TemplateRoleWorker)
+	}
 	if got.Source.Name != "local" || got.Source.Kind != "local" {
 		t.Fatalf("template source = %+v, want local/local", got.Source)
 	}
@@ -2045,6 +2055,9 @@ func TestHandleHubTemplatesPublishesAgentSnapshotToDefaultRegistryWhenOmitted(t 
 	if got.ID != "local/alice" {
 		t.Fatalf("template id = %q, want %q", got.ID, "local/alice")
 	}
+	if got.Role != hub.TemplateRoleWorker {
+		t.Fatalf("template role = %q, want %q", got.Role, hub.TemplateRoleWorker)
+	}
 	if got.Source.Name != "local" || got.Source.Kind != "local" {
 		t.Fatalf("template source = %+v, want local/local", got.Source)
 	}
@@ -2070,6 +2083,7 @@ func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) 
 		ID:           id,
 		Name:         item.Name,
 		Description:  item.Description,
+		Role:         item.Role,
 		RuntimeKind:  item.RuntimeKind,
 		Image:        item.Image,
 		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},
@@ -2099,6 +2113,7 @@ func mustNewLocalTemplateHubServiceWithoutWorkspace(t *testing.T, id string, ite
 		ID:          id,
 		Name:        item.Name,
 		Description: item.Description,
+		Role:        item.Role,
 		RuntimeKind: item.RuntimeKind,
 		Image:       item.Image,
 		UpdatedAt:   time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),

@@ -178,6 +178,7 @@ func templateFromAPI(item apitypes.HubTemplate) Template {
 		ID:           strings.TrimSpace(item.ID),
 		Name:         strings.TrimSpace(item.Name),
 		Description:  strings.TrimSpace(item.Description),
+		Role:         normalizeTemplateRole(item.Role),
 		RuntimeKind:  strings.TrimSpace(item.RuntimeKind),
 		Image:        strings.TrimSpace(item.Image),
 		WorkspaceRef: WorkspaceRef{Kind: kind},

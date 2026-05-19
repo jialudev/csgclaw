@@ -3582,6 +3582,7 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
 		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -3644,6 +3645,7 @@ func TestCreateOpenClawWorkerFromTemplateOverlaysOpenClawWorkspace(t *testing.T)
 		ID:          "openclaw-manager",
 		Name:        "openclaw-manager",
 		Description: "openclaw manager",
+		Role:        hub.TemplateRoleManager,
 		RuntimeKind: RuntimeKindOpenClawSandbox,
 		Image:       "openclaw-image:1",
 	})
@@ -3690,6 +3692,7 @@ func TestCreateWorkerUsesConfiguredDefaultTemplate(t *testing.T) {
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
 		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -3740,6 +3743,7 @@ func TestCreateWorkerRejectsMissingDefaultTemplate(t *testing.T) {
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
 		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -3772,6 +3776,7 @@ func TestCreateWorkerRejectsDefaultTemplateRoleMismatch(t *testing.T) {
 		ID:          "review-manager",
 		Name:        "review-manager",
 		Description: "manager template",
+		Role:        hub.TemplateRoleManager,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "manager-image:1",
 	})
@@ -3802,6 +3807,7 @@ func TestCreateWorkerSkipsDefaultTemplateRuntimeMismatch(t *testing.T) {
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
 		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -3849,6 +3855,7 @@ func TestCreateWorkerAppliesTemplateDefaultsWithoutWorkspace(t *testing.T) {
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
 		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -3894,6 +3901,7 @@ func TestCreateWorkerNotifierSkipsDefaultSandboxTemplate(t *testing.T) {
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
 		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -3934,6 +3942,7 @@ func TestCreateRejectsDefaultManagerTemplateRoleMismatch(t *testing.T) {
 		ID:          "review-worker",
 		Name:        "review-worker",
 		Description: "worker template",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -4001,6 +4010,9 @@ func TestHubPublishSpecUsesAgentWorkspaceSnapshot(t *testing.T) {
 	}
 	if spec.Description != "review worker" {
 		t.Fatalf("Description = %q, want %q", spec.Description, "review worker")
+	}
+	if spec.Role != hub.TemplateRoleWorker {
+		t.Fatalf("Role = %q, want %q", spec.Role, hub.TemplateRoleWorker)
 	}
 	if spec.RuntimeKind != RuntimeKindPicoClawSandbox {
 		t.Fatalf("RuntimeKind = %q, want %q", spec.RuntimeKind, RuntimeKindPicoClawSandbox)
@@ -5032,6 +5044,7 @@ func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) 
 		ID:           id,
 		Name:         item.Name,
 		Description:  item.Description,
+		Role:         item.Role,
 		RuntimeKind:  item.RuntimeKind,
 		Image:        item.Image,
 		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},
@@ -5061,6 +5074,7 @@ func mustNewLocalTemplateHubServiceWithoutWorkspace(t *testing.T, id string, ite
 		ID:          id,
 		Name:        item.Name,
 		Description: item.Description,
+		Role:        item.Role,
 		RuntimeKind: item.RuntimeKind,
 		Image:       item.Image,
 		UpdatedAt:   time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),

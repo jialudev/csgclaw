@@ -4974,6 +4974,7 @@ function HubDetailPane({
                           </div>
                           <p>${item.description || item.id}</p>
                           <div className="hub-template-card-meta">
+                            <span className="mini-badge template-role-badge">${localizeRole(item.role || "worker", t)}</span>
                             <span className="mini-badge template-runtime-badge">${item.runtime_kind || item.workspace?.kind || "-"}</span>
                             <span className="mini-badge template-source-badge"><span className="template-source-badge-dot" aria-hidden="true"></span>${localizeTemplateSourceTag(item.source?.name, locale)}</span>
                             <span className="hub-template-card-updated">${t("hubUpdatedAtLabel")} ${formatHubDate(item.updated_at, locale)}</span>
@@ -4996,6 +4997,7 @@ function HubDetailPane({
                           <div className="hub-inspector-copy">
                             <h2>${selectedTemplate.name || selectedTemplate.id}</h2>
                             <p>${selectedTemplate.description || selectedTemplate.id}</p>
+                            <span className="mini-badge template-role-badge">${localizeRole(selectedTemplate.role || "worker", t)}</span>
                             <span className="mini-badge template-runtime-badge">${selectedTemplate.runtime_kind || selectedTemplate.workspace?.kind || "-"}</span>
                             <span className="mini-badge template-source-badge"><span className="template-source-badge-dot" aria-hidden="true"></span>${localizeTemplateSourceTag(selectedTemplate.source?.name, locale)}</span>
                           </div>
@@ -5013,6 +5015,10 @@ function HubDetailPane({
                     </div>
 
                     <div className="hub-inspector-grid">
+                      <div className="hub-inspector-field">
+                        <span>${t("roleLabel")}</span>
+                        <strong>${localizeRole(selectedTemplate.role || "worker", t)}</strong>
+                      </div>
                       <div className="hub-inspector-field">
                         <span>${t("hubSourceLabel")}</span>
                         <strong>${localizeTemplateSourceTag(selectedTemplate.source?.name, locale)}</strong>

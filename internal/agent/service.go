@@ -202,6 +202,7 @@ func (s *Service) HubPublishSpec(agentID string) (hub.PublishSpec, error) {
 		ID:          got.Name,
 		Name:        got.Name,
 		Description: got.Description,
+		Role:        got.Role,
 		RuntimeKind: got.RuntimeKind,
 		Image:       got.Image,
 		WorkspaceRef: hub.WorkspaceRef{
@@ -822,7 +823,7 @@ func createTemplateRole(spec CreateAgentSpec) string {
 }
 
 func validateDefaultTemplateCompatibility(expectedRole string, spec CreateAgentSpec, item hub.Template, templateRef string) error {
-	if actualRole := inferTemplateRole(item); actualRole != expectedRole {
+	if actualRole := normalizeRole(item.Role); actualRole != expectedRole {
 		if actualRole == "" {
 			return fmt.Errorf("default %s template %q does not identify itself as a %s template", expectedRole, templateRef, expectedRole)
 		}
@@ -834,19 +835,6 @@ func validateDefaultTemplateCompatibility(expectedRole string, spec CreateAgentS
 		return fmt.Errorf("%w: default %s template %q uses runtime_kind %q, incompatible with requested runtime_kind %q", errDefaultTemplateRuntimeMismatch, expectedRole, templateRef, item.RuntimeKind, spec.RuntimeKind)
 	}
 	return nil
-}
-
-func inferTemplateRole(item hub.Template) string {
-	for _, candidate := range []string{item.ID, item.Name} {
-		candidate = strings.ToLower(strings.TrimSpace(candidate))
-		switch {
-		case strings.HasSuffix(candidate, "-manager"), strings.HasSuffix(candidate, "/manager"):
-			return RoleManager
-		case strings.HasSuffix(candidate, "-worker"), strings.HasSuffix(candidate, "/worker"):
-			return RoleWorker
-		}
-	}
-	return ""
 }
 
 func applyTemplateDefaults(spec CreateAgentSpec, item hub.Template) CreateAgentSpec {

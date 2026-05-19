@@ -11,6 +11,7 @@ type HubTemplate struct {
 	ID          string               `json:"id"`
 	Name        string               `json:"name"`
 	Description string               `json:"description,omitempty"`
+	Role        string               `json:"role,omitempty"`
 	RuntimeKind string               `json:"runtime_kind,omitempty"`
 	Image       string               `json:"image,omitempty"`
 	Source      HubTemplateSource    `json:"source"`

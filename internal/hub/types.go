@@ -15,6 +15,7 @@ type Template struct {
 	ID           string
 	Name         string
 	Description  string
+	Role         string
 	RuntimeKind  string
 	Image        string
 	WorkspaceRef WorkspaceRef
@@ -37,6 +38,7 @@ type PublishSpec struct {
 	ID           string
 	Name         string
 	Description  string
+	Role         string
 	RuntimeKind  string
 	Image        string
 	WorkspaceRef WorkspaceRef

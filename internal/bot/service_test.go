@@ -1257,6 +1257,7 @@ func TestServiceCreateWorkerUsesFromTemplateWorkspace(t *testing.T) {
 		ID:          "frontend-worker",
 		Name:        "frontend-worker",
 		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
 		RuntimeKind: agent.RuntimeKindPicoClawSandbox,
 		Image:       "worker-image:1",
 	})
@@ -1661,6 +1662,7 @@ func mustNewBotLocalTemplateHubService(t *testing.T, id string, item hub.Templat
 		ID:           id,
 		Name:         item.Name,
 		Description:  item.Description,
+		Role:         item.Role,
 		RuntimeKind:  item.RuntimeKind,
 		Image:        item.Image,
 		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},

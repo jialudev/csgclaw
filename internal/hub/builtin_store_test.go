@@ -46,6 +46,9 @@ func TestBuiltinStoreListGetAndFetchWorkspace(t *testing.T) {
 	if got, want := item.RuntimeKind, runtime.KindPicoClawSandbox; got != want {
 		t.Fatalf("Get().RuntimeKind = %q, want %q", got, want)
 	}
+	if got, want := item.Role, TemplateRoleWorker; got != want {
+		t.Fatalf("Get().Role = %q, want %q", got, want)
+	}
 	if got, want := item.Image, testBuiltinPicoClawImage; got != want {
 		t.Fatalf("Get().Image = %q, want %q", got, want)
 	}
@@ -92,6 +95,7 @@ func TestServiceListAggregatesBuiltinAndLocalWithDefaultStoreFactory(t *testing.
 	localStore := NewLocalStore(registryRoot)
 	if _, err := localStore.Publish(context.Background(), PublishSpec{
 		Name:         "team-helper",
+		Role:         TemplateRoleWorker,
 		RuntimeKind:  runtime.KindCodex,
 		WorkspaceRef: WorkspaceRef{Kind: WorkspaceKindDir, Path: workspaceRoot},
 	}); err != nil {
