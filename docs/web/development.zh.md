@@ -31,7 +31,6 @@ pnpm --dir web/app install
 
 - 前端源码放在 `web/app/src`。
 - `web/static-dist` 是给 Go embed 使用的构建产物。
-- `web/static` 是 legacy 前端对照资产，除非任务明确要求，否则不要修改。
 - 新增模式或依赖前，优先沿用 `web/app` 里已有的约定。
 
 ## 顶层结构
@@ -147,6 +146,16 @@ src/pages/WorkspacePage/components/
 - 只有多个远距离模块都需要读写时，才引入共享状态。
 - 不要把 fetch、数据归一化和渲染逻辑都混在一个大组件里；可以清晰拆分时就拆出去。
 
+## 工作区路由维护
+
+- URL 是工作区导航面向用户的契约。每个可直接打开的 pane 都需要规范路由，以保证 deep link 和浏览器前进后退可用。
+- 当前 pane 通过 `paneFromLocation(useLocation().pathname)` 读取，可见 workspace tab 通过 `workspaceTabForPane` 推导。
+- 用户选择 conversation、agent、computer、hub 或 workspace tab 时，通过 `pathForPane` 构造目标路径，再使用 React Router 导航。
+- 路由解析和路径构建放在 `src/models/routing.ts`。路由声明放在 `src/routes/`，页面行为留在 `WorkspacePage` 附近。
+- Zustand 只保存不属于 URL 的辅助 UI 状态，例如偏好设置、折叠分组、hub 选择、composer 状态和临时 UI flags。
+- 路由变化相关 effect 应保持显式且范围有限，只处理辅助状态，例如更新 `activeConversationId`、关闭临时工具，或把 route alias 替换为规范路径。
+- 新增或重命名工作区 pane 时，同步更新路由声明、`src/models/routing.ts`、tab 推导、sidebar 选择行为、路由测试和架构图。
+
 ## 数据流
 
 - 把 `src/api/` 当作传输边界。API 模块负责 endpoint path、请求 payload、响应类型、底层错误映射，以及与 OpenAPI/server 返回形态的兼容；不要在这里承载 React 状态、渲染决策或页面专属默认值。
@@ -158,6 +167,19 @@ src/pages/WorkspacePage/components/
 - mutation 流程保持显式：在页面/controller 层调用 API，在一个明确位置更新本地或共享状态，并通过 props 暴露 loading、disabled 和 error 状态。只有回滚行为清晰时才使用 optimistic update。
 - 只有状态确实需要跨远距离路由或布局区域共享时，才引入全局 store 或 context。单一可见 owner 的数据优先使用页面本地 hook 和派生 props。
 - 优先测试数据流中的纯逻辑：API shape adapter、model normalizer、serializer、routing helper 和状态流转 helper。组件测试只补用户可观察的 wiring。
+
+### Workspace Controller 分层
+
+- `src/hooks/workspace/useWorkspaceController.ts` 只作为 `WorkspacePage` 的组合层。它负责汇总共享数据、调用聚焦的 controller hooks，并组装 sidebar、route views 和 overlays 消费的 props。
+- 不要把大块业务流程直接加回 `useWorkspaceController.ts`。workspace 行为放在 `src/hooks/workspace/` 下的聚焦 hook 中:
+  - `useConversationController`: rooms、邀请、当前 conversation 状态、IM realtime events、消息输入框、mentions、消息列表滚动，以及 conversation modal props。
+  - `useAgentController`: agent 列表和详情页状态、创建/编辑 modal、manager profile setup、manager rebuild、provider auth、agent actions、agent direct message，以及 template publishing。
+  - `useUpgradeController`: upgrade modal 状态、apply-upgrade mutation、upgrade status 更新和重连轮询。
+  - `useProfilePreviewController`: participant/agent preview popover 状态、outside-click 处理和 preview actions。
+- 如果 ownership 清楚，可以继续拆小的辅助组合 hook，例如 shell 偏好/theme/localStorage wiring，或 Hub selection refresh 状态。
+- `useWorkspaceNavigation` 只负责 pane 导航和同步路由派生状态，不要持有 member menu、channel tools 这类 feature UI state。
+- Controller hooks 可以调用 API 并更新 query/local state；纯解析、归一化、序列化和路由 helper 仍应放在 `src/models/` 或 `src/shared/`。
+- 新增 workspace feature 时，先判断哪个 controller 拥有该用户流程。只有新功能有独立生命周期或状态面、放进已有 controller 会明显膨胀时，才新增 controller。
 
 ## i18n 与文案
 

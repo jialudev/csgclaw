@@ -31,7 +31,6 @@ pnpm --dir web/app install
 
 - Keep frontend source in `web/app/src`.
 - Treat `web/static-dist` as generated output for Go embedding.
-- Keep legacy comparison assets in `web/static` unless the task explicitly targets them.
 - Prefer local conventions already present in `web/app` before adding new patterns or dependencies.
 
 ## Top-Level Structure
@@ -147,6 +146,16 @@ src/pages/WorkspacePage/components/
 - Add shared state only when state must be read or updated by multiple distant modules.
 - Do not mix fetch calls, normalization, and rendering logic in one large component when the logic can be cleanly separated.
 
+## Workspace Routing Maintenance
+
+- Use the URL as the user-facing contract for workspace navigation. Each addressable pane needs a canonical route so deep links and browser back/forward keep working.
+- Read the current pane from `paneFromLocation(useLocation().pathname)` and derive the visible workspace tab with `workspaceTabForPane`.
+- When a user selects a conversation, agent, computer, hub, or workspace tab, build the destination with `pathForPane` and navigate through React Router.
+- Keep route parsing and path building in `src/models/routing.ts`. Keep route declarations in `src/routes/`, and keep page behavior near `WorkspacePage`.
+- Use Zustand only for supporting UI state that is not part of the URL, such as preferences, collapsed groups, hub selection, composer state, and transient UI flags.
+- Route-change effects should stay explicit and limited to supporting state, such as updating `activeConversationId`, closing transient tools, or replacing route aliases with canonical paths.
+- When adding or renaming a workspace pane, update route declarations, `src/models/routing.ts`, tab derivation, sidebar selection behavior, routing tests, and the architecture diagram together.
+
 ## Data Flow
 
 - Treat `src/api/` as the transport boundary. API modules should own endpoint paths, request payloads, response types, low-level error mapping, and OpenAPI/server shape compatibility. They should not own React state, rendering decisions, or page-specific defaults.
@@ -158,6 +167,19 @@ src/pages/WorkspacePage/components/
 - Keep mutation flows explicit: call the API at the page/controller layer, update local or shared state in one place, and surface loading, disabled, and error states through props. Use optimistic updates only when rollback behavior is clear.
 - Introduce app-wide stores or context only for state that is genuinely shared across distant routes or layout areas. Prefer page-local hooks and derived props for data that has one visible owner.
 - Test the pure parts of the flow first: API shape adapters, model normalizers, serializers, routing helpers, and state-transition helpers. Add component tests only for the user-visible wiring around those helpers.
+
+### Workspace Controller Layering
+
+- Keep `src/hooks/workspace/useWorkspaceController.ts` as the composition layer for `WorkspacePage`. It should gather shared data, call focused controller hooks, and assemble the props consumed by sidebar, route views, and overlays.
+- Do not add large business flows directly to `useWorkspaceController.ts`. Put workspace behavior into focused hooks under `src/hooks/workspace/`:
+  - `useConversationController`: rooms, invites, selected conversation state, IM realtime events, message composer, mentions, message list scrolling, and conversation modal props.
+  - `useAgentController`: agent list/page state, create/edit modal state, manager profile setup, manager rebuild, provider auth, agent actions, agent direct messages, and template publishing.
+  - `useUpgradeController`: upgrade modal state, apply-upgrade mutation, upgrade status updates, and reconnect polling.
+  - `useProfilePreviewController`: participant/agent preview popover state, outside-click handling, and preview actions.
+- Keep small supporting composition hooks separate when they have clear ownership, such as shell preferences/theme/localStorage wiring or Hub selection refresh state.
+- Keep URL navigation focused in `useWorkspaceNavigation`; it should navigate panes and synchronize route-derived state, not own feature UI state such as member menus or channel tools.
+- Controller hooks may call API functions and update query/local state, but pure parsing, normalization, serialization, and route helpers should stay in `src/models/` or `src/shared/`.
+- When adding a new workspace feature, first decide which controller owns the user-visible workflow. Add a new controller only when the feature has a distinct lifecycle or state surface that would otherwise bloat an existing one.
 
 ## i18n And Text
 
