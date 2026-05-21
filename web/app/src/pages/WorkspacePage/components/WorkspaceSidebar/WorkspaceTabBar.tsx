@@ -2,11 +2,26 @@ import { Button } from "@/components/ui";
 import { HubIcon, RoomsIcon, UsersIcon } from "@/components/ui/Icons";
 import { WorkspaceTabs } from "@/models/routing";
 
-export function WorkspaceTabBar({ workspaceTab, onWorkspaceTabChange, roomCount, agentCount, onSelectHub, t }) {
+export function WorkspaceTabBar({
+  workspaceTab,
+  onWorkspaceTabChange,
+  roomCount,
+  agentCount,
+  onSelectHub,
+  t,
+  variant = "default",
+}) {
+  const rail = variant === "rail";
+
   return (
-    <div className="workspace-tabbar" role="tablist" aria-label="Workspace sections">
+    <div
+      className={`workspace-tabbar ${rail ? "workspace-tabbar-rail" : ""}`}
+      role="tablist"
+      aria-label="Workspace sections"
+      aria-orientation={rail ? "vertical" : undefined}
+    >
       <Button
-        className="workspace-tab"
+        className={`workspace-tab ${rail ? "workspace-tab-rail" : ""}`}
         active={workspaceTab === WorkspaceTabs.messages}
         role="tab"
         aria-selected={workspaceTab === WorkspaceTabs.messages}
@@ -17,13 +32,15 @@ export function WorkspaceTabBar({ workspaceTab, onWorkspaceTabChange, roomCount,
         <span className="workspace-tab-icon" aria-hidden="true">
           <RoomsIcon />
         </span>
-        <span className="workspace-tab-copy">
-          <strong>{t("messagesTab")}</strong>
-          <small>{roomCount}</small>
-        </span>
+        {!rail ? (
+          <span className="workspace-tab-copy">
+            <strong>{t("messagesTab")}</strong>
+            <small>{roomCount}</small>
+          </span>
+        ) : null}
       </Button>
       <Button
-        className="workspace-tab"
+        className={`workspace-tab ${rail ? "workspace-tab-rail" : ""}`}
         active={workspaceTab === WorkspaceTabs.agents}
         role="tab"
         aria-selected={workspaceTab === WorkspaceTabs.agents}
@@ -34,13 +51,15 @@ export function WorkspaceTabBar({ workspaceTab, onWorkspaceTabChange, roomCount,
         <span className="workspace-tab-icon" aria-hidden="true">
           <UsersIcon />
         </span>
-        <span className="workspace-tab-copy">
-          <strong>{t("agentsTab")}</strong>
-          <small>{agentCount}</small>
-        </span>
+        {!rail ? (
+          <span className="workspace-tab-copy">
+            <strong>{t("agentsTab")}</strong>
+            <small>{agentCount}</small>
+          </span>
+        ) : null}
       </Button>
       <Button
-        className="workspace-tab"
+        className={`workspace-tab ${rail ? "workspace-tab-rail" : ""}`}
         active={workspaceTab === WorkspaceTabs.hub}
         role="tab"
         aria-selected={workspaceTab === WorkspaceTabs.hub}
@@ -51,10 +70,14 @@ export function WorkspaceTabBar({ workspaceTab, onWorkspaceTabChange, roomCount,
         <span className="workspace-tab-icon" aria-hidden="true">
           <HubIcon />
         </span>
-        <span className="workspace-tab-copy">
-          <strong>{t("hubTab")}</strong>
-          <span className="workspace-tab-badge">{t("newBadge")}</span>
-        </span>
+        {rail ? (
+          <span className="workspace-tab-rail-new" aria-hidden="true"></span>
+        ) : (
+          <span className="workspace-tab-copy">
+            <strong>{t("hubTab")}</strong>
+            <span className="workspace-tab-badge">{t("newBadge")}</span>
+          </span>
+        )}
       </Button>
     </div>
   );
