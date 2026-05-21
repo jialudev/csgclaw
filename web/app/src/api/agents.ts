@@ -1,5 +1,5 @@
 import { del, get, patch, post, put } from "@/api/client";
-import { MANAGER_AGENT_ID } from "@/shared/constants/agents";
+import { BOT_TYPE_NOTIFICATION, MANAGER_AGENT_ID } from "@/shared/constants/agents";
 import type { AgentLike, AgentProfileLike, AgentProfileModelsResponse, JSONRecord, RuntimeKind } from "@/models/agents";
 
 export type AgentProfileModelRequest = {
@@ -48,9 +48,10 @@ export function saveManagerProfileRequest(profile: JSONRecord): Promise<AgentPro
   return put(`api/v1/agents/${MANAGER_AGENT_ID}/profile`, profile);
 }
 
-export function fetchAgents(options: FetchAgentsOptions = {}): Promise<AgentLike[]> {
+export async function fetchAgents(options: FetchAgentsOptions = {}): Promise<AgentLike[]> {
   void options;
-  return get("api/v1/channels/csgclaw/bots");
+  const bots = await get<AgentLike[]>("api/v1/channels/csgclaw/bots");
+  return Array.isArray(bots) ? bots : [];
 }
 
 export function fetchAgent(agentID: string): Promise<AgentLike> {
@@ -87,8 +88,20 @@ export function updateAgentRequest(agentID: string, payload: AgentUpdatePayload)
   return patch(`api/v1/agents/${encodeURIComponent(agentID)}`, payload);
 }
 
-export function createBotRequest(payload: AgentUpdatePayload): Promise<AgentLike> {
+export type CreateBotPayload = AgentUpdatePayload & {
+  type?: string;
+};
+
+export function createBotRequest(payload: CreateBotPayload): Promise<AgentLike> {
   return post("api/v1/channels/csgclaw/bots", payload);
+}
+
+export function createNotificationBotRequest(payload: CreateBotPayload): Promise<AgentLike> {
+  return post("api/v1/channels/csgclaw/bots", { ...payload, type: BOT_TYPE_NOTIFICATION });
+}
+
+export function patchNotificationBotRequest(botID: string, payload: CreateBotPayload): Promise<AgentLike> {
+  return patch(`api/v1/channels/csgclaw/bots/${encodeURIComponent(botID)}`, payload);
 }
 
 export function deleteBotRequest(botID: string): Promise<void> {

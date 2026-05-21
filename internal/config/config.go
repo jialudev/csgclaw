@@ -316,6 +316,14 @@ func ListenPort(listenAddr string) string {
 	return port
 }
 
+// ResolveAdvertiseBaseURL resolves server.advertise_base_url, falling back to a URL derived from listen_addr.
+func ResolveAdvertiseBaseURL(server ServerConfig) string {
+	if u := strings.TrimRight(strings.TrimSpace(server.AdvertiseBaseURL), "/"); u != "" {
+		return u
+	}
+	return "http://" + net.JoinHostPort("127.0.0.1", ListenPort(server.ListenAddr))
+}
+
 func DefaultDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

@@ -249,6 +249,44 @@ func TestExecuteBotListFeishuUsesChannelQuery(t *testing.T) {
 	}
 }
 
+func TestExecuteBotListUsesChannelBotsRoute(t *testing.T) {
+	app := &App{
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want GET", req.Method)
+			}
+			if strings.Contains(req.URL.String(), "type=notification") {
+				t.Fatalf("url = %q, bot list must not use type=notification query", req.URL.String())
+			}
+			if req.URL.String() != "http://example.test/api/v1/channels/csgclaw/bots" {
+				t.Fatalf("url = %q, want channel bot list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[]`), nil
+		}),
+	}
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "list"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestExecuteBotListUsesTypeQuery(t *testing.T) {
+	app := &App{
+		stdout: &bytes.Buffer{},
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.String() != "http://example.test/api/v1/channels/csgclaw/bots?type=notification" {
+				t.Fatalf("url = %q, want type=notification on bot list route", req.URL.String())
+			}
+			return jsonResponse(http.StatusOK, `[]`), nil
+		}),
+	}
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "bot", "list", "--type", "notification"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
 func TestExecuteBotListUsesRoleQuery(t *testing.T) {
 	var stdout bytes.Buffer
 	app := &App{
