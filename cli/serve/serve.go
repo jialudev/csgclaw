@@ -31,6 +31,7 @@ import (
 	"csgclaw/internal/app/runtimewiring"
 	"csgclaw/internal/bot"
 	"csgclaw/internal/channel/codexbridge"
+	csgclawchannel "csgclaw/internal/channel/csgclaw"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
@@ -469,20 +470,21 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		return err
 	}
 	return RunServer(server.Options{
-		ListenAddr:  cfg.Server.ListenAddr,
-		Service:     svc,
-		Hub:         hubSvc,
-		Bot:         botSvc,
-		IM:          imSvc,
-		IMBus:       imBus,
-		BotBridge:   im.NewBotBridge(cfg.Server.AccessToken),
-		Feishu:      feishuSvc,
-		LLM:         llmSvc,
-		Upgrade:     upgradeManager,
-		ConfigPath:  configPath,
-		AccessToken: cfg.Server.AccessToken,
-		NoAuth:      cfg.Server.NoAuth,
-		Context:     ctx,
+		ListenAddr:      cfg.Server.ListenAddr,
+		Service:         svc,
+		Hub:             hubSvc,
+		Bot:             botSvc,
+		IM:              imSvc,
+		IMBus:           imBus,
+		BotBridge:       im.NewBotBridge(cfg.Server.AccessToken),
+		Feishu:          feishuSvc,
+		LLM:             llmSvc,
+		Upgrade:         upgradeManager,
+		ActivityDecider: channelActivityDecider(codexBridgeMgr),
+		ConfigPath:      configPath,
+		AccessToken:     cfg.Server.AccessToken,
+		NoAuth:          cfg.Server.NoAuth,
+		Context:         ctx,
 		OnReady: func(handler *api.Handler, router chi.Router) {
 			deliver := channelwiring.WireNotificationBotPull(ctx, botSvc, imSvc, apiURL, cfg.Server.AccessToken)
 			handler.SetNotificationDeliver(deliver)
@@ -829,6 +831,20 @@ type codexBridgeManager interface {
 	Close()
 }
 
+func channelActivityDecider(m codexBridgeManager) api.ActivityDecider {
+	withPermissions, ok := m.(interface {
+		PermissionDecider() runtimecodex.PermissionDecider
+	})
+	if !ok {
+		return nil
+	}
+	decider := withPermissions.PermissionDecider()
+	if decider == nil {
+		return nil
+	}
+	return runtimecodex.NewPermissionActivityDecider(csgclawchannel.ChannelID, decider)
+}
+
 type serveCodexBridgeManager struct {
 	svc     *agent.Service
 	runtime *runtimecodex.Runtime
@@ -849,7 +865,7 @@ func newCodexBridgeManager(cfg config.Config, svc *agent.Service) (codexBridgeMa
 	if !ok {
 		return nil, fmt.Errorf("runtime %q has unexpected type %T", agentruntime.KindCodex, rt)
 	}
-	events, ok := codexRuntime.EventSink().(*codexbridge.EventSink)
+	events, ok := codexRuntime.EventSink().(*runtimecodex.EventSink)
 	if !ok || events == nil {
 		return nil, fmt.Errorf("runtime %q is missing codex event sink", agentruntime.KindCodex)
 	}
@@ -954,6 +970,13 @@ func (m *serveCodexBridgeManager) Close() {
 		return
 	}
 	m.bridge.Close()
+}
+
+func (m *serveCodexBridgeManager) PermissionDecider() runtimecodex.PermissionDecider {
+	if m == nil || m.runtime == nil {
+		return nil
+	}
+	return m.runtime.PermissionBroker()
 }
 
 func (m *serveCodexBridgeManager) ensureSession(ctx context.Context, a agent.Agent) (*runtimecodex.Session, error) {

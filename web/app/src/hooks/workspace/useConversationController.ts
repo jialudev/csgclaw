@@ -147,7 +147,7 @@ export function useConversationController({
       if (isThreadReply(message)) {
         return false;
       }
-      return showToolCalls || !isToolCallMessage(message.content);
+      return showToolCalls || !isToolCallMessage(message);
     });
   }, [activeConversation, showToolCalls]);
   const channels = useMemo(() => rooms.filter((room) => !isDirectConversation(room)), [rooms]);

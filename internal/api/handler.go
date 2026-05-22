@@ -46,6 +46,7 @@ type Handler struct {
 	upgradeConfigPath   string
 	upgradeApply        func(upgrade.ApplyHelperOptions) error
 	notificationDeliver notification_bot.Fanouter
+	activityDecider     ActivityDecider
 }
 
 const (
@@ -287,6 +288,12 @@ func NewHandlerWithBotAndAuth(svc *agent.Service, botSvc *bot.Service, imSvc *im
 func (h *Handler) SetNotificationDeliver(d notification_bot.Fanouter) {
 	if h != nil {
 		h.notificationDeliver = d
+	}
+}
+
+func (h *Handler) SetActivityDecider(decider ActivityDecider) {
+	if h != nil {
+		h.activityDecider = decider
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"csgclaw/internal/activity"
 	"csgclaw/internal/codexacp"
 	"csgclaw/internal/codexmodel"
 	agentruntime "csgclaw/internal/runtime"
@@ -84,41 +85,26 @@ type Manager interface {
 	Prompt(ctx context.Context, handle SessionHandle, req acp.PromptRequest) (acp.PromptResponse, error)
 }
 
-type SessionEventKind string
+type SessionEventKind = activity.RuntimeEventKind
 
 const (
-	SessionEventUserMessageDelta   SessionEventKind = "user_message_delta"
-	SessionEventTextDelta          SessionEventKind = "text_delta"
-	SessionEventThoughtDelta       SessionEventKind = "thought_delta"
-	SessionEventToolCallStart      SessionEventKind = "tool_call_start"
-	SessionEventToolCallUpdate     SessionEventKind = "tool_call_update"
-	SessionEventPlanUpdate         SessionEventKind = "plan_update"
-	SessionEventPermissionRequest  SessionEventKind = "permission_request"
-	SessionEventPermissionDecision SessionEventKind = "permission_decision"
-	SessionEventPromptCompleted    SessionEventKind = "prompt_completed"
-	SessionEventPromptFailed       SessionEventKind = "prompt_failed"
+	SessionEventUserMessageDelta   = activity.RuntimeEventUserMessageDelta
+	SessionEventTextDelta          = activity.RuntimeEventTextDelta
+	SessionEventThoughtDelta       = activity.RuntimeEventThoughtDelta
+	SessionEventToolCallStart      = activity.RuntimeEventToolCallStart
+	SessionEventToolCallUpdate     = activity.RuntimeEventToolCallUpdate
+	SessionEventPlanUpdate         = activity.RuntimeEventPlanUpdate
+	SessionEventPermissionRequest  = activity.RuntimeEventActionRequest
+	SessionEventPermissionDecision = activity.RuntimeEventActionDecision
+	SessionEventPromptCompleted    = activity.RuntimeEventPromptCompleted
+	SessionEventPromptFailed       = activity.RuntimeEventPromptFailed
 )
 
-type SessionEvent struct {
-	RuntimeID            string
-	SessionID            string
-	Kind                 SessionEventKind
-	ReceivedAt           time.Time
-	MessageID            string
-	Text                 string
-	ToolCallID           string
-	ToolTitle            string
-	ToolStatus           string
-	PermissionOptionID   string
-	PermissionOptionKind string
-	StopReason           string
-	Error                string
-	Payload              any
-}
+type SessionEvent = activity.RuntimeEvent
 
-type SessionEventSink interface {
-	Publish(SessionEvent)
-}
+type SessionEventSink = activity.RuntimeEventSink
+
+type SessionEventSubscriber = activity.RuntimeEventSubscriber
 
 type Dependencies struct {
 	BinaryProvider codexacp.BinaryProvider
@@ -126,6 +112,7 @@ type Dependencies struct {
 	AgentHome      func(agentName string) (string, error)
 	Manager        Manager
 	EventSink      SessionEventSink
+	Permission     PermissionBroker
 
 	MkdirAll  func(string, os.FileMode) error
 	ReadFile  func(string) ([]byte, error)
@@ -158,6 +145,10 @@ func (r *Runtime) SessionManager() Manager {
 
 func (r *Runtime) EventSink() SessionEventSink {
 	return r.deps.EventSink
+}
+
+func (r *Runtime) PermissionBroker() PermissionBroker {
+	return r.permissionBroker()
 }
 
 func (r *Runtime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -297,10 +288,11 @@ func (r *Runtime) sessionManager() Manager {
 		return r.deps.Manager
 	}
 	r.deps.Manager = newACPManager(acpManagerDeps{
-		EventSink: r.deps.EventSink,
-		OpenFile:  r.openFile,
-		WriteFile: r.writeFile,
-		ReadFile:  r.readFile,
+		EventSink:  r.deps.EventSink,
+		Permission: r.permissionBroker(),
+		OpenFile:   r.openFile,
+		WriteFile:  r.writeFile,
+		ReadFile:   r.readFile,
 		OnExit: func(session *Session, exitCode int) {
 			if session == nil {
 				return
@@ -318,6 +310,14 @@ func (r *Runtime) sessionManager() Manager {
 		},
 	})
 	return r.deps.Manager
+}
+
+func (r *Runtime) permissionBroker() PermissionBroker {
+	if r.deps.Permission != nil {
+		return r.deps.Permission
+	}
+	r.deps.Permission = NewPermissionBroker(r.deps.EventSink)
+	return r.deps.Permission
 }
 
 func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session, error) {
@@ -759,11 +759,12 @@ func writeJSONFile(writeFile func(string, []byte, os.FileMode) error, path strin
 }
 
 type acpManagerDeps struct {
-	EventSink SessionEventSink
-	OpenFile  func(string, int, os.FileMode) (*os.File, error)
-	WriteFile func(string, []byte, os.FileMode) error
-	ReadFile  func(string) ([]byte, error)
-	OnExit    func(*Session, int)
+	EventSink  SessionEventSink
+	Permission PermissionBroker
+	OpenFile   func(string, int, os.FileMode) (*os.File, error)
+	WriteFile  func(string, []byte, os.FileMode) error
+	ReadFile   func(string) ([]byte, error)
+	OnExit     func(*Session, int)
 }
 
 type acpManager struct {

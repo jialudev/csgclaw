@@ -14,6 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"csgclaw/internal/activity"
+	agentruntime "csgclaw/internal/runtime"
+
 	acp "github.com/coder/acp-go-sdk"
 )
 
@@ -96,17 +99,18 @@ func (m *acpManager) Start(ctx context.Context, spec SessionSpec) (*Session, err
 
 	logger := slog.New(slog.NewTextHandler(stderrFile, &slog.HandlerOptions{}))
 	client := &sessionClient{
-		runtimeID:    spec.RuntimeID,
-		eventSink:    m.deps.EventSink,
-		logger:       logger,
-		workspaceDir: spec.WorkspaceDir,
-		homeDir:      spec.HomeDir,
-		codexHomeDir: spec.CodexHomeDir,
-		baseEnv:      buildSessionEnv(spec),
-		mkdirAll:     os.MkdirAll,
-		readFile:     m.deps.ReadFile,
-		writeFile:    m.deps.WriteFile,
-		terminals:    make(map[string]*managedTerminal),
+		runtimeID:        spec.RuntimeID,
+		eventSink:        m.deps.EventSink,
+		permissionBroker: m.deps.Permission,
+		logger:           logger,
+		workspaceDir:     spec.WorkspaceDir,
+		homeDir:          spec.HomeDir,
+		codexHomeDir:     spec.CodexHomeDir,
+		baseEnv:          buildSessionEnv(spec),
+		mkdirAll:         os.MkdirAll,
+		readFile:         m.deps.ReadFile,
+		writeFile:        m.deps.WriteFile,
+		terminals:        make(map[string]*managedTerminal),
 	}
 	conn := acp.NewClientSideConnection(client, stdin, stdout)
 	conn.SetLogger(logger)
@@ -188,6 +192,9 @@ func (m *acpManager) Stop(ctx context.Context, handle SessionHandle) error {
 				SessionId: acp.SessionId(sessionID),
 			})
 		}
+	}
+	if m.deps.Permission != nil && live.session != nil {
+		m.deps.Permission.CancelSession(runtimeID, "")
 	}
 	if live.client != nil {
 		live.client.shutdownTerminals()
@@ -294,6 +301,9 @@ func (m *acpManager) waitSession(runtimeID string, live *liveSession) {
 	}
 	if live.client != nil {
 		live.client.shutdownTerminals()
+	}
+	if m.deps.Permission != nil && live.session != nil {
+		m.deps.Permission.CancelSession(runtimeID, "")
 	}
 	if live.stderr != nil {
 		_ = live.stderr.Close()
@@ -427,36 +437,56 @@ func formatSessionModelsDebug(models *acp.SessionModelState) string {
 }
 
 type sessionClient struct {
-	runtimeID    string
-	sessionID    string
-	eventSink    SessionEventSink
-	logger       *slog.Logger
-	workspaceDir string
-	homeDir      string
-	codexHomeDir string
-	baseEnv      []string
-	mkdirAll     func(string, os.FileMode) error
-	readFile     func(string) ([]byte, error)
-	writeFile    func(string, []byte, os.FileMode) error
+	runtimeID        string
+	sessionID        string
+	eventSink        SessionEventSink
+	permissionBroker PermissionBroker
+	logger           *slog.Logger
+	workspaceDir     string
+	homeDir          string
+	codexHomeDir     string
+	baseEnv          []string
+	mkdirAll         func(string, os.FileMode) error
+	readFile         func(string) ([]byte, error)
+	writeFile        func(string, []byte, os.FileMode) error
 
 	mu         sync.Mutex
 	nextTermID int
 	terminals  map[string]*managedTerminal
 }
 
-func (c *sessionClient) RequestPermission(_ context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
-	c.publish(permissionRequestEvent(c.runtimeID, params))
-
-	option := choosePermissionOption(params.Options)
-	if option != nil {
-		c.publish(permissionDecisionEvent(c.runtimeID, params, option))
+func (c *sessionClient) RequestPermission(ctx context.Context, params acp.RequestPermissionRequest) (acp.RequestPermissionResponse, error) {
+	if c.permissionBroker == nil {
 		return acp.RequestPermissionResponse{
 			Outcome: acp.RequestPermissionOutcome{
-				Selected: &acp.RequestPermissionOutcomeSelected{OptionId: option.OptionId},
+				Cancelled: &acp.RequestPermissionOutcomeCancelled{},
 			},
 		}, nil
 	}
-	c.publish(permissionDecisionEvent(c.runtimeID, params, nil))
+
+	decision, err := c.permissionBroker.Request(ctx, PendingPermissionRequest{
+		ExecutionRef: activity.ExecutionRef{
+			RuntimeKind: agentruntime.KindCodex,
+			RuntimeID:   c.runtimeID,
+			SessionID:   strings.TrimSpace(string(params.SessionId)),
+			ToolCallID:  strings.TrimSpace(string(params.ToolCall.ToolCallId)),
+			ToolKind:    permissionToolKind(params.ToolCall),
+		},
+		ToolTitle: stringValue(params.ToolCall.Title),
+		Options:   PermissionOptionsFromACP(params.Options),
+	})
+	if err != nil {
+		return acp.RequestPermissionResponse{}, err
+	}
+	if decision.Snapshot.Decision != nil && decision.Snapshot.Decision.OptionID != "" {
+		return acp.RequestPermissionResponse{
+			Outcome: acp.RequestPermissionOutcome{
+				Selected: &acp.RequestPermissionOutcomeSelected{
+					OptionId: acp.PermissionOptionId(decision.Snapshot.Decision.OptionID),
+				},
+			},
+		}, nil
+	}
 	return acp.RequestPermissionResponse{
 		Outcome: acp.RequestPermissionOutcome{
 			Cancelled: &acp.RequestPermissionOutcomeCancelled{},

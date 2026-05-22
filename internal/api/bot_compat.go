@@ -362,6 +362,7 @@ func (h *Handler) handleBotSendMessage(w http.ResponseWriter, r *http.Request, b
 		RoomID:       req.RoomID,
 		SenderID:     botID,
 		Content:      req.Text,
+		MessageID:    req.MessageID,
 		ThreadRootID: req.ThreadRootID,
 	})
 	if err != nil {

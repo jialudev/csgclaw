@@ -579,7 +579,8 @@ export function notifierDeliveryConfiguredInProfile(
 
 export function agentToDraft(agent: AgentDraftSource | null | undefined): AgentDraft {
   const profile = agent?.agent_profile || agent || {};
-  const botType = normalizeBotType(agent?.type ?? agent?.bot_type);
+  const botType = normalizeBotType(agent?.bot_type ?? agent?.type);
+  const base = profileToDraft(profile, agent);
   return {
     agent_id: agent?.id || "",
     name: agent?.name || "",
@@ -590,7 +591,10 @@ export function agentToDraft(agent: AgentDraftSource | null | undefined): AgentD
     image: agent?.image || "",
     from_template: agent?.from_template || "",
     template_name: agent?.template_name || "",
-    ...profileToDraft(profile, agent),
+    ...base,
+    notifier_delivery_mode: normalizeNotifierDeliveryMode(
+      agent?.notifier_delivery_mode || base.notifier_delivery_mode,
+    ),
     runtime_kind: normalizeRuntimeKind(agent?.runtime_kind || profile.runtime_kind),
   };
 }

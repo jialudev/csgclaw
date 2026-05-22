@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	csgclawchannel "csgclaw/internal/channel/csgclaw"
+	"csgclaw/internal/channel/runtimebridge"
 	runtimecodex "csgclaw/internal/runtime/codex"
 
 	acp "github.com/coder/acp-go-sdk"
@@ -16,6 +18,7 @@ const (
 	defaultQueueSize    = 32
 	defaultSeenWindow   = 256
 	defaultPromptSettle = 150 * time.Millisecond
+	localChannel        = csgclawchannel.ChannelID
 )
 
 type Binding struct {
@@ -36,7 +39,7 @@ type ConversationSessionEnsurer interface {
 type Service struct {
 	client         BotClient
 	prompter       SessionPrompter
-	events         *EventSink
+	events         runtimecodex.SessionEventSubscriber
 	reconnectDelay time.Duration
 	queueSize      int
 	seenWindow     int
@@ -46,7 +49,7 @@ type Service struct {
 	workers map[string]*worker
 }
 
-func NewService(client BotClient, prompter SessionPrompter, events *EventSink) *Service {
+func NewService(client BotClient, prompter SessionPrompter, events runtimecodex.SessionEventSubscriber) *Service {
 	return &Service{
 		client:         client,
 		prompter:       prompter,
@@ -228,8 +231,8 @@ func (w *worker) enqueue(ctx context.Context, evt BotEvent) {
 func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-chan runtimecodex.SessionEvent) error {
 	sessionID, err := w.sessionID(ctx, evt)
 	if err != nil {
-		renderer := newTurnRenderer()
-		renderer.promptError = strings.TrimSpace(err.Error())
+		renderer := runtimebridge.NewTurnRenderer()
+		renderer.SetPromptError(err.Error())
 		_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
 		return err
 	}
@@ -238,7 +241,7 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 		Prompt:    []acp.ContentBlock{acp.TextBlock(w.promptText(evt))},
 		Meta:      cloneMeta(w.binding.PromptMeta),
 	}
-	renderer := newTurnRenderer()
+	renderer := runtimebridge.NewTurnRenderer()
 
 	type promptResult struct {
 		err error
@@ -249,7 +252,6 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 		promptDone <- promptResult{err: err}
 	}()
 
-	var toolMessages []string
 	promptReturned := false
 	settleTimer := time.NewTimer(time.Hour)
 	defer settleTimer.Stop()
@@ -266,47 +268,39 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 			return ctx.Err()
 		case event, ok := <-runtimeEvents:
 			if !ok {
-				return fmt.Errorf("codex event sink closed")
+				return fmt.Errorf("runtime event sink closed")
 			}
 			if !matchesSession(event, w.binding.RuntimeID, sessionID) {
 				continue
 			}
-			for _, text := range renderer.Apply(event) {
-				toolMessages = append(toolMessages, text)
+			if renderedActivity, ok := renderer.RenderActivity(event, localChannel, evt.RoomID, w.binding.BotID); ok {
+				if err := w.sendActivity(ctx, evt.RoomID, evt.ThreadRootID, renderedActivity); err != nil {
+					return err
+				}
 			}
+			renderer.ApplyText(event)
 			if isTerminalEvent(event.Kind) && promptReturned {
-				return w.flushTurnWithToolAttachments(ctx, evt, renderer, toolMessages)
+				_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
+				return err
 			}
 		case result := <-promptDone:
 			promptReturned = true
 			if result.err != nil {
-				renderer.promptError = strings.TrimSpace(result.err.Error())
-				return w.flushTurnWithToolAttachments(ctx, evt, renderer, toolMessages)
+				renderer.SetPromptError(result.err.Error())
+				_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
+				return err
 			}
 			settleTimer.Reset(w.service.promptSettle)
 		case <-settleTimer.C:
 			if promptReturned {
-				return w.flushTurnWithToolAttachments(ctx, evt, renderer, toolMessages)
+				_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
+				return err
 			}
 		}
 	}
 }
 
-func (w *worker) flushTurnWithToolAttachments(ctx context.Context, evt BotEvent, renderer *turnRenderer, toolMessages []string) error {
-	responseMessageID, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
-	if err != nil {
-		return err
-	}
-	threadRootID := toolAttachmentThreadRootID(evt, responseMessageID)
-	for _, text := range toolMessages {
-		if _, err := w.sendMessage(ctx, evt.RoomID, threadRootID, text); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (w *worker) flushTurn(ctx context.Context, roomID, threadRootID string, renderer *turnRenderer) (string, error) {
+func (w *worker) flushTurn(ctx context.Context, roomID, threadRootID string, renderer *runtimebridge.TurnRenderer) (string, error) {
 	var firstMessageID string
 	for _, text := range renderer.FinalMessages() {
 		messageID, err := w.sendMessage(ctx, roomID, threadRootID, text)
@@ -321,29 +315,35 @@ func (w *worker) flushTurn(ctx context.Context, roomID, threadRootID string, ren
 }
 
 func (w *worker) sendMessage(ctx context.Context, roomID, threadRootID, text string) (string, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return "", nil
-	}
-	resp, err := w.service.client.SendMessage(ctx, w.binding.BotID, SendMessageRequest{
+	return w.sendMessageRequest(ctx, SendMessageRequest{
 		RoomID:       roomID,
 		Text:         text,
 		ThreadRootID: strings.TrimSpace(threadRootID),
 	})
+}
+
+func (w *worker) sendActivity(ctx context.Context, roomID, threadRootID string, activity runtimebridge.RenderedActivity) error {
+	_, err := w.sendMessageRequest(ctx, SendMessageRequest{
+		RoomID:       roomID,
+		Text:         activity.Text,
+		MessageID:    activity.MessageID,
+		ThreadRootID: strings.TrimSpace(threadRootID),
+	})
+	return err
+}
+
+func (w *worker) sendMessageRequest(ctx context.Context, req SendMessageRequest) (string, error) {
+	req.Text = strings.TrimSpace(req.Text)
+	req.MessageID = strings.TrimSpace(req.MessageID)
+	req.ThreadRootID = strings.TrimSpace(req.ThreadRootID)
+	if req.Text == "" {
+		return "", nil
+	}
+	resp, err := w.service.client.SendMessage(ctx, w.binding.BotID, req)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(resp.MessageID), nil
-}
-
-func toolAttachmentThreadRootID(evt BotEvent, responseMessageID string) string {
-	if rootID := strings.TrimSpace(evt.ThreadRootID); rootID != "" {
-		return rootID
-	}
-	if responseID := strings.TrimSpace(responseMessageID); responseID != "" {
-		return responseID
-	}
-	return strings.TrimSpace(evt.MessageID)
 }
 
 func (w *worker) sessionID(ctx context.Context, evt BotEvent) (string, error) {

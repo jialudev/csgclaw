@@ -93,8 +93,9 @@ func (h *Handler) registerChannelRoutes(router chi.Router) {
 			r.Patch("/", h.handleBotByID)
 			r.Delete("/", h.deleteBot)
 		})
+		r.Post("/{channel}/activities/{activity_id}:decide", h.handleChannelActivityDecision)
 
-		// Channel-specific bot actions (not exposed on generic /{channel}/bots/{id}).
+		// Channel-specific bot operations (not exposed on generic /{channel}/bots/{id}).
 		r.Post("/csgclaw/bots/{id}/notifications", h.pushNotificationBot)
 		r.Get("/feishu/bots/{id}/events", h.getFeishuBotEvents)
 

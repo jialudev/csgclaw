@@ -7,12 +7,14 @@ import {
   formatEventMessage,
   formatMessagePreviewText,
   isAgentRosterEvent,
+  isToolCallMessage,
   latestAt,
   removeUserFromData,
   sortConversations,
   THREAD_RELATION_TYPE,
   userDisplayName,
 } from "@/models/conversations";
+import { AgentActivityMsgTypes, CSGCLAW_AGENT_ACTIVITY_TYPE } from "@/shared/constants/messages";
 import type { IMConversation, IMMessage } from "@/models/conversations";
 
 const t = (key: string) => key;
@@ -118,11 +120,17 @@ describe("conversation model helpers", () => {
     expect(next.rooms[0].messages.map((item) => item.id)).toContain("old-new-message");
 
     const duplicate = applyIMEvent(next, {
-      message: message("old-new-message", "2026-05-16T00:00:00Z"),
+      message: {
+        ...message("old-new-message", "2026-05-16T00:00:00Z"),
+        content: "updated message content",
+      },
       room_id: "old",
       type: "message.created",
     });
     expect(duplicate.rooms[0].messages.filter((item) => item.id === "old-new-message")).toHaveLength(1);
+    expect(duplicate.rooms[0].messages.find((item) => item.id === "old-new-message")?.content).toBe(
+      "updated message content",
+    );
   });
 
   it("keeps thread replies out of the main timeline", () => {
@@ -214,5 +222,33 @@ describe("conversation model helpers", () => {
         (item) => item.id,
       ),
     ).toEqual(["new", "old"]);
+  });
+
+  it("classifies legacy and structured tool-call messages", () => {
+    expect(isToolCallMessage("🔧 Running tool")).toBe(true);
+    expect(
+      isToolCallMessage({
+        content: JSON.stringify({
+          type: CSGCLAW_AGENT_ACTIVITY_TYPE,
+          content: {
+            msgtype: AgentActivityMsgTypes.tool,
+            body: "Running tool",
+            tool: { id: "tool-1", status: "running", title: "Run shell command" },
+          },
+        }),
+      }),
+    ).toBe(true);
+    expect(
+      isToolCallMessage({
+        content: JSON.stringify({
+          type: CSGCLAW_AGENT_ACTIVITY_TYPE,
+          content: {
+            msgtype: AgentActivityMsgTypes.action,
+            body: "Codex wants permission",
+            action: { id: "perm-1", status: "pending", title: "Run shell command" },
+          },
+        }),
+      }),
+    ).toBe(false);
   });
 });
