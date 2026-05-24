@@ -8,7 +8,7 @@
 #
 # Required CI/CD variables:
 #   REMOTE_SSH – e.g. root@cdn.example.com
-#   ACR_REGISTRY – registry hostname only (no scheme); CI image is ${ACR_REGISTRY}/opencsg_public/golang:bookworm
+#   ACR_REGISTRY – registry hostname only (no scheme); CI images are mirrored under ${ACR_REGISTRY}/opencsg_public/
 #
 # Recommended:
 #   SSH_PRIVATE_KEY – PEM text (Variable) OR GitLab “File” variable (value is a path in the job; script copies to ~/.ssh/id_rsa)
@@ -43,6 +43,7 @@ variables:
   DEBIAN_APT_MIRROR_SEC: "http://mirrors.aliyun.com/debian-security"
 
 stages:
+  - web
   - build
   - upload
 
@@ -54,12 +55,41 @@ stages:
   image:
     name: ${ACR_REGISTRY}/opencsg_public/golang:bookworm
 
+web-build:
+  extends:
+    - .release_image
+    - .release_rules
+  stage: web
+  before_script:
+    - chmod +x .gitlab/bookworm-mirror.sh
+    - bash .gitlab/bookworm-mirror.sh
+    - apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+    - curl -fsSL https://nodejs.org/dist/v22.13.0/node-v22.13.0-linux-x64.tar.xz -o /tmp/node-v22.13.0-linux-x64.tar.xz
+    - tar -xJf /tmp/node-v22.13.0-linux-x64.tar.xz -C /tmp
+    - export PATH="/tmp/node-v22.13.0-linux-x64/bin:$PATH"
+    - npm install -g pnpm@11.1.3
+    - hash -r
+    - node --version
+    - pnpm --version
+  script:
+    - pnpm --dir web/app install --frozen-lockfile
+    - mkdir -p web/static-dist
+    - pnpm --dir web/app build
+    - test -f web/static-dist/index.html
+  artifacts:
+    paths:
+      - web/static-dist/
+    expire_in: 1 day
+
 # Must match scripts/release-platforms.txt (order need not match; set must match).
 release-build:
   extends:
     - .release_image
     - .release_rules
   stage: build
+  needs:
+    - job: web-build
+      artifacts: true
   parallel:
     matrix:
       - GOOS: linux
