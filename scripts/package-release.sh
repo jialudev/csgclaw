@@ -21,12 +21,32 @@ INCLUDE_BOXLITE="${INCLUDE_BOXLITE:-}"
 VERSION_PKG="${VERSION_PKG:-csgclaw/internal/version}"
 BOXLITE_CLI_VERSION="${BOXLITE_CLI_VERSION:-v0.9.0}"
 BOXLITE_CLI_BASE_URL="${BOXLITE_CLI_BASE_URL:-https://github.com/boxlite-ai/boxlite/releases/download}"
+WEB_STATIC_DIST_DIR="${WEB_STATIC_DIST_DIR:-web/static-dist}"
 LDFLAGS="-X ${VERSION_PKG}.Version=${VERSION} -X ${VERSION_PKG}.Commit=${COMMIT} -X ${VERSION_PKG}.BuildTime=${BUILD_TIME}"
 if [ "$APP" = "csgclaw-cli" ]; then
   LDFLAGS="-s -w ${LDFLAGS}"
 fi
 
 mkdir -p "$DIST_DIR"
+
+require_web_assets() {
+  if [ "$APP" != "csgclaw" ]; then
+    return
+  fi
+
+  if [ -f "${WEB_STATIC_DIST_DIR}/index.html" ]; then
+    return
+  fi
+
+  cat >&2 <<EOF
+missing Web UI build output: ${WEB_STATIC_DIST_DIR}/index.html
+
+Build the embedded Web UI assets before packaging ${APP}.
+- Local release flow: run 'make build-web' first.
+- CI release flow: download the built web/static-dist artifact before running this script.
+EOF
+  exit 1
+}
 
 supports_boxlite_bundle() {
   case "$1/$2" in
@@ -99,6 +119,8 @@ if [ "$APP" = "csgclaw" ] && [ "$INCLUDE_BOXLITE" = "1" ] && ! supports_boxlite_
   echo "bundled boxlite is not supported for ${GOOS_TARGET}/${GOARCH_TARGET}" >&2
   exit 1
 fi
+
+require_web_assets
 
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
