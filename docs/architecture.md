@@ -4,35 +4,108 @@
 
 The following diagram shows the relationships among the main CSGClaw concepts.
 
-![CSGClaw concepts relationship diagram](../assets/concepts.png)
+```
++----------------------------------------------------------------------------------------+
+| Channel                                                                                |
+|                                                                                        |
+|   +----------------+      +----------------+      +----------------------+             |
+|   | CSGClaw IM     |      | Feishu / Lark  |      | Matrix     (planned) |             |
+|   +-------|--------+      +-------|--------+      +-----------|----------+             |
++-----------|-----------------------|--------------------------|-------------------------+
+            |                       |                          |
+            | control               | control                  | control
+            v                       v                          v
++----------------------------------------------------------------------------------------+
+| Room                                                                                   |
+|                                                                                        |
+|   +----------------+      +----------------+                 +----------------+         |
+|   | Room 1         |      | Room 2         |       ...       | Room N         |         |
+|   |                |      |                |                 |                |         |
+|   |   Manager      |      |   Manager      |                 |   Manager      |         |
+|   |  /   |   \     |      |  /   |   \     |                 |  /   |   \     |         |
+|   | W1   W2  WN    |      | W1   W2  WN    |                 | W1   W2  WN    |         |
+|   +----------------+      +----------------+                 +----------------+         |
++----------------------------------------------------------------------------------------+
+              |
+              | dependency
+              v
++----------------------------------------------------------------------------------------+
+| Bot                                                                                    |
+|                                                                                        |
+|  +--------------------------+  +----------------------------+  +--------------------+    |
+|  | Normal Bot               |  | Notification Bot           |  | A2A Bot  (planned) |    |
+|  |                          |  |                            |  |                    |    |
+|  |  User <-------> Agent    |  |  User <-------> Pull/Push   |  | User <----> A2A    |    |
+|  |                 |        |  |        Notification        |  |          Agent     |    |
+|  +-----------------|--------+  +----------------------------+  +--------------------+    |
++--------------------|-------------------------------------------------------------------+
+                     |
+                     | dependency
+                     v
++----------------------------------------------------------------------------------------+
+| Runtime                                                                                |
+|                                                                                        |
+|        +------------------+        +------------------+        +------------------+     |
+|        | PicoClaw Sandbox |        | OpenClaw Sandbox |        | Codex            |     |
+|        +--------|---------+        +--------|---------+        +------------------+     |
++-----------------|--------------------------|-------------------------------------------+
+                  | dependency               | dependency
+                  v                          v
++----------------------------------------------------------------------------------------+
+| Sandbox                                                                                |
+|                                                                                        |
+|        +------------------+        +------------------+        +------------------+     |
+|        | BoxLite          |        | Docker           |        | CSGHub           |     |
+|        +------------------+        +------------------+        +------------------+     |
++----------------------------------------------------------------------------------------+
+```
 
-CSGClaw is a Go-based local multi-agent platform. It runs a single local HTTP server, serves the Web UI, exposes REST/SSE/WebSocket APIs, and manages agents, bots, rooms, users, and messages.
+<details>
+<summary>View the colored version</summary>
 
-The main runtime concepts are:
+![CSGClaw concepts relationship diagram](../assets/architecture.png)
 
-- **Agent**: the executable runtime unit, backed by the configured sandbox provider. BoxLite is the default provider.
-- **Channel**: a messaging backend, such as the built-in `csgclaw` IM or Feishu.
-- **User**: a channel-scoped messaging identity.
-- **Bot**: the product-level identity that connects one agent to one channel user.
+</details>
 
-A bot can be a `manager` or a `worker`.
+CSGClaw is a Go-based local multi-agent platform. It runs a single local HTTP server, serves the Web UI, exposes REST/SSE/WebSocket APIs, and manages channels, rooms, bots, runtimes, sandboxes, users, and messages.
+
+The ASCII diagram describes the system as five layers:
+
+- **Channel**: the external or built-in interaction surface, such as `csgclaw` IM, Feishu / Lark, or a planned Matrix integration.
+- **Room**: the collaboration container controlled by a channel. Each room typically contains one `manager` bot and multiple `worker` bots.
+- **Bot**: the product-facing identity inside a room. Current bot shapes are a normal bot and a notification bot, with A2A bot support planned.
+- **Runtime**: the executable agent runtime behind a bot, such as PicoClaw Sandbox, OpenClaw Sandbox, or Codex.
+- **Sandbox**: the isolation backend used by a runtime, such as BoxLite, Docker, or CSGHub.
+
+The dependency direction in the diagram is intentional:
+
+```text
+channel -> room -> bot -> runtime -> sandbox
+```
+
+Each upper layer orchestrates the layer below it. A channel controls rooms, a room coordinates manager and worker bots, a bot delegates execution to a runtime, and the runtime relies on a sandbox provider for isolation.
+
+Within that model, a bot remains the stable binding object exposed to users:
 
 ```text
 bot
  ├─ role: manager | worker
- ├─ agent_id  ─────────► agent runtime in sandbox
- └─ channel + user_id ─► user identity in csgclaw IM or Feishu
+ ├─ room_id   ───────────► collaboration context in a channel room
+ ├─ agent_id  ───────────► runtime instance
+ └─ channel + user_id ───► user identity in the selected channel
 ```
 
-This keeps execution concerns in `agent`, messaging concerns in `im` / `channel`, and cross-domain bot lifecycle logic in `bot`.
+This keeps channel messaging in `internal/im` and `internal/channel`, room-level collaboration in the room and message services, bot lifecycle logic in `internal/bot`, runtime execution in `internal/runtime` / `internal/agent`, and sandbox integration behind the runtime and sandbox packages.
 
----
+In the current codebase, those layers map roughly as follows:
 
-## Architecture
+- **Channel layer**: implemented by the built-in `internal/im` services and external adapters under `internal/channel/*`.
+- **Room layer**: represented by room, membership, message, and thread flows exposed through the IM and channel APIs.
+- **Bot layer**: implemented by `internal/bot`, including normal bot and notification bot lifecycle.
+- **Runtime layer**: implemented primarily by `internal/runtime/*` and `internal/agent`.
+- **Sandbox layer**: implemented by sandbox backends such as `internal/sandbox/boxlitecli`, plus runtime-specific sandbox integration paths.
 
-![CSGClaw architecture](../assets/architecture.png)
-
-The Web UI is served by the local HTTP server and uses the same API surface as the CLIs. At the implementation level, `internal/server` owns server lifecycle and static UI wiring, while `internal/api` owns route registration and request/response handling.
+The local HTTP server and Web UI sit beside these layers as operator and user entrypoints. `internal/server` owns server lifecycle and static UI wiring, while `internal/api` owns route registration and request/response handling over the same underlying domains.
 
 ---
 
