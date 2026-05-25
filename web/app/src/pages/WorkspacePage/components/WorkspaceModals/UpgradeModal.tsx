@@ -40,11 +40,16 @@ export function UpgradeModal({
         <div className={`upgrade-status-card ${upgradePhase}`}>
           <span className="upgrade-status-dot" aria-hidden="true"></span>
           <p>
-            {upgradePhase === "done"
-              ? t("upgradeDoneBody")
-              : upgradePhase === "restarting" || upgradePhase === "starting" || upgradeBusy || upgradeStatus?.upgrading
-                ? t("upgradeContinueUsing")
-                : t("upgradeConfirmBody")}
+            {upgradePhase === "manual_restart" || upgradeStatus?.manual_restart_required
+              ? t("upgradeManualRestartBody")
+              : upgradePhase === "done"
+                ? t("upgradeDoneBody")
+                : upgradePhase === "restarting" ||
+                    upgradePhase === "starting" ||
+                    upgradeBusy ||
+                    upgradeStatus?.upgrading
+                  ? t("upgradeContinueUsing")
+                  : t("upgradeConfirmBody")}
           </p>
         </div>
         {upgradeError || upgradeStatus?.last_error ? (
@@ -54,6 +59,10 @@ export function UpgradeModal({
           {upgradePhase === "done" ? (
             <Button variant="primary" className="send-button" onClick={() => window.location.reload()}>
               {t("upgradeRefresh")}
+            </Button>
+          ) : upgradePhase === "manual_restart" || upgradeStatus?.manual_restart_required ? (
+            <Button className="secondary-button" onClick={onClose}>
+              {t("close")}
             </Button>
           ) : (
             <>
