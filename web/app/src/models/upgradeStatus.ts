@@ -60,7 +60,6 @@ export function hasUpgradeAttention(
   return Boolean(
     status?.update_available ||
     status?.upgrading ||
-    status?.last_error ||
     busy ||
     phase === "done" ||
     phase === "error",

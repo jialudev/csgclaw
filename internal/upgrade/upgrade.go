@@ -50,7 +50,7 @@ type CheckResult struct {
 func (c Client) Check(ctx context.Context, currentVersion string) (CheckResult, error) {
 	currentVersion = strings.TrimSpace(currentVersion)
 	if !isSemver(currentVersion) {
-		return CheckResult{}, fmt.Errorf("current version %q is not a valid semver release", currentVersion)
+		return CheckResult{CurrentVersion: currentVersion}, nil
 	}
 
 	release, err := c.FetchLatest(ctx)

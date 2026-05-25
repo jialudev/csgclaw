@@ -101,11 +101,20 @@ func TestClientCheckNoUpdate(t *testing.T) {
 	}
 }
 
-func TestClientCheckRejectsInvalidCurrentVersion(t *testing.T) {
+func TestClientCheckSkipsInvalidCurrentVersion(t *testing.T) {
 	client := Client{LatestURL: "https://example.test/releases/latest"}
-	_, err := client.Check(context.Background(), "dev")
-	if err == nil || !strings.Contains(err.Error(), "not a valid semver release") {
-		t.Fatalf("Check() error = %v, want semver validation error", err)
+	result, err := client.Check(context.Background(), "dev")
+	if err != nil {
+		t.Fatalf("Check() error = %v, want nil", err)
+	}
+	if got, want := result.CurrentVersion, "dev"; got != want {
+		t.Fatalf("CurrentVersion = %q, want %q", got, want)
+	}
+	if result.UpdateAvailable {
+		t.Fatal("UpdateAvailable = true, want false")
+	}
+	if got := result.LatestVersion; got != "" {
+		t.Fatalf("LatestVersion = %q, want empty", got)
 	}
 }
 

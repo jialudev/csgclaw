@@ -50,7 +50,7 @@ describe("upgrade status helpers", () => {
     expect(hasUpgradeAttention(null, "idle")).toBe(false);
     expect(hasUpgradeAttention({ ...baseUpgradeStatus, update_available: true }, "idle")).toBe(true);
     expect(hasUpgradeAttention({ ...baseUpgradeStatus, upgrading: true }, "idle")).toBe(true);
-    expect(hasUpgradeAttention({ ...baseUpgradeStatus, last_error: "boom" }, "idle")).toBe(true);
+    expect(hasUpgradeAttention({ ...baseUpgradeStatus, last_error: "boom" }, "idle")).toBe(false);
     expect(hasUpgradeAttention(baseUpgradeStatus, "done")).toBe(true);
     expect(hasUpgradeAttention(baseUpgradeStatus, "error")).toBe(true);
     expect(hasUpgradeAttention(baseUpgradeStatus, "idle", true)).toBe(true);
