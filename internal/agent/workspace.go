@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	runtimecodex "csgclaw/internal/runtime/codex"
+	"csgclaw/internal/runtime/openclawsandbox"
+	"csgclaw/internal/runtime/picoclawsandbox"
 	"csgclaw/internal/templates"
 )
 
@@ -45,7 +48,7 @@ func runtimeTemplateWorkspacePath(templateRoot string) string {
 }
 
 func ensureAgentWorkspace(agentName, template string) (string, error) {
-	hostRoot, err := agentWorkspaceRoot(agentName)
+	hostRoot, err := agentWorkspaceRoot(agentName, RuntimeKindPicoClawSandbox)
 	if err != nil {
 		return "", err
 	}
@@ -65,12 +68,21 @@ func ensureWorkspaceAtRoot(hostRoot, template string) (string, error) {
 	return hostRoot, nil
 }
 
-func agentWorkspaceRoot(agentName string) (string, error) {
+func agentWorkspaceRoot(agentName, runtimeKind string) (string, error) {
 	agentHome, err := agentHomeDir(agentName)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(agentHome, hostWorkspaceDir), nil
+	switch strings.TrimSpace(runtimeKind) {
+	case RuntimeKindPicoClawSandbox:
+		return picoclawsandbox.WorkspaceRoot(agentHome), nil
+	case RuntimeKindOpenClawSandbox:
+		return openclawsandbox.WorkspaceRoot(agentHome), nil
+	case RuntimeKindCodex:
+		return runtimecodex.WorkspaceRoot(agentHome), nil
+	default:
+		return "", fmt.Errorf("unsupported runtime_kind %q for agent workspace", runtimeKind)
+	}
 }
 
 func copyEmbeddedTree(templateRoot, dstRoot string) error {
