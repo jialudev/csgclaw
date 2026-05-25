@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui";
-import { upgradeStatusLabel } from "@/models/upgradeStatus";
+import { formatSidebarVersionLabel, upgradeStatusLabel } from "@/models/upgradeStatus";
 
 export function UpgradeModal({
   t,
@@ -26,11 +26,15 @@ export function UpgradeModal({
         <div className="upgrade-summary">
           <div className="upgrade-summary-row">
             <span>{t("upgradeCurrentVersion")}</span>
-            <strong>{upgradeStatus?.current_version || appVersion || "dev"}</strong>
+            <strong>{formatSidebarVersionLabel(upgradeStatus?.current_version || appVersion || "dev")}</strong>
           </div>
           <div className="upgrade-summary-row">
             <span>{t("upgradeLatestVersion")}</span>
-            <strong>{upgradeStatus?.latest_version || t("upgradeNoLatest")}</strong>
+            <strong>
+              {upgradeStatus?.latest_version
+                ? formatSidebarVersionLabel(upgradeStatus.latest_version)
+                : t("upgradeNoLatest")}
+            </strong>
           </div>
           <div className="upgrade-summary-row">
             <span>{t("upgradeStatus")}</span>

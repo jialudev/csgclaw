@@ -1,4 +1,4 @@
-// API returns Version from git describe (e.g. "v0.2.1-5-gabc-dirty") or "dev"; avoid "vv" in the UI.
+// API returns Version from git describe (e.g. "v0.2.1-5-gabc-dirty") or "dev"; keep the UI label plain.
 import type { TranslateFn } from "@/models/conversations";
 
 export type UpgradeStatus = {
@@ -17,9 +17,9 @@ export type UpgradePhase = "idle" | "starting" | "restarting" | "manual_restart"
 export function formatSidebarVersionLabel(version: unknown): string {
   const raw = typeof version === "string" ? version.trim() : "";
   if (!raw) {
-    return "csgclaw dev";
+    return "dev";
   }
-  return raw.startsWith("v") ? `csgclaw ${raw}` : `csgclaw v${raw}`;
+  return raw.startsWith("v") ? raw : `v${raw}`;
 }
 
 export function normalizeUpgradeStatus(status: unknown): UpgradeStatus | null {

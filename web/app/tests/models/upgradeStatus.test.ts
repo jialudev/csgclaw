@@ -7,10 +7,10 @@ import {
 import type { UpgradeStatus } from "@/models/upgradeStatus";
 
 describe("upgrade status helpers", () => {
-  it("formats sidebar versions without duplicating the v prefix", () => {
-    expect(formatSidebarVersionLabel("")).toBe("csgclaw dev");
-    expect(formatSidebarVersionLabel("v0.2.1")).toBe("csgclaw v0.2.1");
-    expect(formatSidebarVersionLabel("0.2.1")).toBe("csgclaw v0.2.1");
+  it("formats sidebar versions as plain semver labels", () => {
+    expect(formatSidebarVersionLabel("")).toBe("dev");
+    expect(formatSidebarVersionLabel("v0.2.1")).toBe("v0.2.1");
+    expect(formatSidebarVersionLabel("0.2.1")).toBe("v0.2.1");
   });
 
   it("normalizes loose upgrade status payloads", () => {
