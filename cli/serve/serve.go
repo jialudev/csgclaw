@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -654,21 +653,7 @@ func openBrowser(rawURL string) error {
 }
 
 func apiBaseURL(server config.ServerConfig) string {
-	if server.AdvertiseBaseURL != "" {
-		return strings.TrimRight(server.AdvertiseBaseURL, "/")
-	}
-
-	port := config.ListenPort(server.ListenAddr)
-	if server.ListenAddr == "" {
-		return config.DefaultAPIBaseURL()
-	}
-	host := "127.0.0.1"
-	if parsedHost, _, err := net.SplitHostPort(server.ListenAddr); err == nil {
-		if parsedHost != "" && parsedHost != "0.0.0.0" && parsedHost != "::" {
-			host = parsedHost
-		}
-	}
-	return fmt.Sprintf("http://%s:%s", host, port)
+	return config.ResolveAdvertiseBaseURL(server)
 }
 
 func printEffectiveConfig(run *command.Context, cfg config.Config, output string) {
