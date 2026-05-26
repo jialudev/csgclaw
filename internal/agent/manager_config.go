@@ -13,6 +13,22 @@ import (
 
 const managerAgentsDirName = "agents"
 
+type localIPDetector struct {
+	listInterfaces func() ([]net.Interface, error)
+	interfaceAddrs func(iface net.Interface) ([]net.Addr, error)
+	dialUDP4       func() (net.Conn, error)
+}
+
+var defaultLocalIPDetector = localIPDetector{
+	listInterfaces: net.Interfaces,
+	interfaceAddrs: func(iface net.Interface) ([]net.Addr, error) {
+		return iface.Addrs()
+	},
+	dialUDP4: func() (net.Conn, error) {
+		return net.Dial("udp4", "8.8.8.8:80")
+	},
+}
+
 func ensureManagerPicoClawConfig(server config.ServerConfig, model config.ModelConfig) (string, error) {
 	return ensureAgentPicoClawConfig(ManagerName, "u-manager", server, model)
 }
@@ -65,14 +81,21 @@ func resolveManagerBaseURL(server config.ServerConfig) string {
 }
 
 func localIPv4() string {
-	if ip := outboundIPv4(); ip != "" {
-		return ip
-	}
-	return interfaceIPv4()
+	return defaultLocalIPDetector.localIPv4()
 }
 
-func outboundIPv4() string {
-	conn, err := net.Dial("udp4", "8.8.8.8:80")
+func (d localIPDetector) localIPv4() string {
+	if ip := d.interfaceIPv4(); ip != "" {
+		return ip
+	}
+	return d.outboundIPv4()
+}
+
+func (d localIPDetector) outboundIPv4() string {
+	if d.dialUDP4 == nil {
+		return ""
+	}
+	conn, err := d.dialUDP4()
 	if err != nil {
 		return ""
 	}
@@ -89,26 +112,41 @@ func outboundIPv4() string {
 	return ip.String()
 }
 
-func interfaceIPv4() string {
-	ifaces, err := net.Interfaces()
+func (d localIPDetector) interfaceIPv4() string {
+	if d.listInterfaces == nil || d.interfaceAddrs == nil {
+		return ""
+	}
+	ifaces, err := d.listInterfaces()
 	if err != nil {
 		return ""
 	}
+	bestFallback := ""
 	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagPointToPoint != 0 {
 			continue
 		}
-		addrs, err := iface.Addrs()
+		addrs, err := d.interfaceAddrs(iface)
 		if err != nil {
 			continue
 		}
 		for _, addr := range addrs {
-			if ip := ipv4FromAddr(addr); ip != "" {
+			ip := ipv4FromAddr(addr)
+			if ip == "" {
+				continue
+			}
+			parsed := net.ParseIP(ip)
+			if parsed == nil {
+				continue
+			}
+			if parsed.IsPrivate() {
 				return ip
+			}
+			if bestFallback == "" {
+				bestFallback = ip
 			}
 		}
 	}
-	return ""
+	return bestFallback
 }
 
 func ipv4FromAddr(addr net.Addr) string {
