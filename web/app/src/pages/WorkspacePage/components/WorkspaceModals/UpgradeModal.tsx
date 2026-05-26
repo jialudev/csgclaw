@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui";
-import { formatSidebarVersionLabel, upgradeStatusLabel } from "@/models/upgradeStatus";
+import { formatSidebarVersionLabel, isLocalBuildVersion, upgradeStatusLabel } from "@/models/upgradeStatus";
 
 export function UpgradeModal({
   t,
@@ -11,6 +11,10 @@ export function UpgradeModal({
   onClose,
   onApply,
 }) {
+  const currentVersion = upgradeStatus?.current_version || appVersion || "dev";
+  const statusLabel = isLocalBuildVersion(currentVersion)
+    ? t("upgradeStatusLocal")
+    : upgradeStatusLabel(upgradePhase, t);
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card upgrade-modal" onClick={(event) => event.stopPropagation()}>
@@ -26,7 +30,7 @@ export function UpgradeModal({
         <div className="upgrade-summary">
           <div className="upgrade-summary-row">
             <span>{t("upgradeCurrentVersion")}</span>
-            <strong>{formatSidebarVersionLabel(upgradeStatus?.current_version || appVersion || "dev")}</strong>
+            <strong>{formatSidebarVersionLabel(currentVersion)}</strong>
           </div>
           <div className="upgrade-summary-row">
             <span>{t("upgradeLatestVersion")}</span>
@@ -38,7 +42,7 @@ export function UpgradeModal({
           </div>
           <div className="upgrade-summary-row">
             <span>{t("upgradeStatus")}</span>
-            <strong>{upgradeStatusLabel(upgradePhase, t)}</strong>
+            <strong>{statusLabel}</strong>
           </div>
         </div>
         <div className={`upgrade-status-card ${upgradePhase}`}>

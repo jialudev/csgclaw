@@ -4,7 +4,7 @@ import { Button } from "@/components/ui";
 import { MoonIcon, SunIcon } from "@/components/ui/Icons";
 import type { LocaleCode, TranslateFn } from "@/models/conversations";
 import type { UpgradePhase, UpgradeStatus } from "@/models/upgradeStatus";
-import { formatSidebarVersionLabel, hasUpgradeAttention, upgradeStatusLabel } from "@/models/upgradeStatus";
+import { formatSidebarVersionLabel, hasUpgradeAttention, isLocalBuildVersion, upgradeStatusLabel } from "@/models/upgradeStatus";
 import { classNames } from "@/shared/lib/classNames";
 import type { ThemeMode } from "@/shared/theme/theme";
 
@@ -46,6 +46,7 @@ export function SidebarUserButton({
     running: upgradeRunning,
     issue: upgradeIssue,
     known: Boolean(upgradeStatus),
+    currentVersion: upgradeStatus?.current_version || appVersion,
     manualRestartRequired: Boolean(upgradeStatus?.manual_restart_required),
     updateAvailable: Boolean(upgradeStatus?.update_available),
     t,
@@ -195,6 +196,7 @@ function upgradeStatusText({
   running,
   issue,
   known,
+  currentVersion,
   manualRestartRequired,
   updateAvailable,
   t,
@@ -203,6 +205,7 @@ function upgradeStatusText({
   running: boolean;
   issue: string;
   known: boolean;
+  currentVersion: string;
   manualRestartRequired: boolean;
   updateAvailable: boolean;
   t: TranslateFn;
@@ -221,6 +224,9 @@ function upgradeStatusText({
   }
   if (!known) {
     return t("upgradeNoLatest");
+  }
+  if (isLocalBuildVersion(currentVersion)) {
+    return t("upgradeStatusLocal");
   }
   return updateAvailable ? t("upgradeAction") : t("upgradeUpToDate");
 }

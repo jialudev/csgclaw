@@ -22,6 +22,11 @@ export function formatSidebarVersionLabel(version: unknown): string {
   return raw.startsWith("v") ? raw : `v${raw}`;
 }
 
+export function isLocalBuildVersion(version: unknown): boolean {
+  const raw = typeof version === "string" ? version.trim() : "";
+  return raw.length > 0 && raw !== "dev" && raw.endsWith("+local");
+}
+
 export function normalizeUpgradeStatus(status: unknown): UpgradeStatus | null {
   if (!status || typeof status !== "object") {
     return null;

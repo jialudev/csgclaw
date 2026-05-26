@@ -49,7 +49,21 @@ type CheckResult struct {
 
 func (c Client) Check(ctx context.Context, currentVersion string) (CheckResult, error) {
 	currentVersion = strings.TrimSpace(currentVersion)
-	if !isSemver(currentVersion) {
+	if isLocalBuildVersion(currentVersion) {
+		release, err := c.FetchLatest(ctx)
+		if err != nil {
+			return CheckResult{}, err
+		}
+		latestVersion := strings.TrimSpace(release.Name)
+		if !isSemver(latestVersion) {
+			return CheckResult{}, fmt.Errorf("latest version %q is not a valid semver release", latestVersion)
+		}
+		return CheckResult{
+			CurrentVersion: currentVersion,
+			LatestVersion:  normalizeSemver(latestVersion),
+		}, nil
+	}
+	if !isUpdatableReleaseVersion(currentVersion) {
 		return CheckResult{CurrentVersion: currentVersion}, nil
 	}
 
@@ -169,6 +183,19 @@ func absolutizeURL(baseURL, raw string) string {
 func isSemver(version string) bool {
 	_, ok := parseSemver(version)
 	return ok
+}
+
+func isUpdatableReleaseVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	if _, ok := parseSemver(version); !ok {
+		return false
+	}
+	return !isLocalBuildVersion(version)
+}
+
+func isLocalBuildVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	return version != "" && version != "dev" && strings.HasSuffix(version, "+local")
 }
 
 func normalizeSemver(version string) string {

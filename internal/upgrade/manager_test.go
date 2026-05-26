@@ -141,6 +141,39 @@ func TestManagerRefreshSkipsLocalDevVersionWithoutError(t *testing.T) {
 	}
 }
 
+func TestManagerRefreshSkipsLocalVersionWithoutError(t *testing.T) {
+	now := time.Date(2026, 5, 26, 16, 0, 0, 0, time.UTC)
+	manager := NewManager(fakeChecker{
+		check: func(_ context.Context, currentVersion string) (CheckResult, error) {
+			if got, want := currentVersion, "v0.3.5-test6+local"; got != want {
+				t.Fatalf("currentVersion = %q, want %q", got, want)
+			}
+			return CheckResult{CurrentVersion: currentVersion}, nil
+		},
+	}, "v0.3.5-test6+local", ManagerOptions{
+		Now: func() time.Time { return now },
+	})
+
+	manager.Refresh(context.Background())
+
+	status := manager.Status()
+	if got, want := status.CurrentVersion, "v0.3.5-test6+local"; got != want {
+		t.Fatalf("CurrentVersion = %q, want %q", got, want)
+	}
+	if got := status.LatestVersion; got != "" {
+		t.Fatalf("LatestVersion = %q, want empty", got)
+	}
+	if status.UpdateAvailable {
+		t.Fatal("UpdateAvailable = true, want false")
+	}
+	if got := status.LastError; got != "" {
+		t.Fatalf("LastError = %q, want empty", got)
+	}
+	if status.LastCheckedAt == nil || !status.LastCheckedAt.Equal(now) {
+		t.Fatalf("LastCheckedAt = %v, want %v", status.LastCheckedAt, now)
+	}
+}
+
 func TestManagerStartChecksImmediatelyAndPeriodically(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
