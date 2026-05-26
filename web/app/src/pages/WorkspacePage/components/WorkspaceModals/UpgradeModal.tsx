@@ -65,7 +65,7 @@ export function UpgradeModal({
               {t("upgradeRefresh")}
             </Button>
           ) : upgradePhase === "manual_restart" || upgradeStatus?.manual_restart_required ? (
-            <Button className="secondary-button" onClick={onClose}>
+            <Button variant="secondaryGray" size="md" onClick={onClose}>
               {t("close")}
             </Button>
           ) : (
