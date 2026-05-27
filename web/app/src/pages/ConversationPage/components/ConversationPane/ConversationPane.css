@@ -1002,6 +1002,109 @@
   border-color: var(--panel);
 }
 
+.agent-logs-backdrop {
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.csg-dialog-content.agent-logs-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1440px, calc(100vw - 64px));
+  height: min(860px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in oklab, var(--panel) 96%, transparent);
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-header .csg-dialog-description {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-header-actions .icon-button {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 12px 0 0;
+  background: var(--surface);
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-error {
+  margin: 0 18px;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-viewer {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 0;
+  border-top: 1px solid color-mix(in oklab, var(--line) 72%, transparent);
+  border-radius: 0;
+  background: #101828;
+  color: #e4e7ec;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-viewer::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-viewer::-webkit-scrollbar-track {
+  background: #1d2939;
+}
+
+.csg-dialog-content.agent-logs-modal .agent-logs-viewer::-webkit-scrollbar-thumb {
+  border: 2px solid #1d2939;
+  border-radius: 999px;
+  background: #667085;
+}
+
+:root[data-theme="dark"] .agent-logs-backdrop {
+  background: rgba(2, 6, 23, 0.58);
+}
+
+:root[data-theme="dark"] .csg-dialog-content.agent-logs-modal .agent-logs-viewer {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: #0f172a;
+  color: #dbeafe;
+}
+
 .messages,
 :root[data-theme="light"] .messages {
   padding: 26px 28px 24px;

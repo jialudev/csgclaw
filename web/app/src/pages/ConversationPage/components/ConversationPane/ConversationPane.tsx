@@ -1,8 +1,19 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Logs, RefreshCw, X } from "lucide-react";
+import { fetchAgentLogsRequest } from "@/api/agents";
+import { errorMessage } from "@/api/client";
 import { CLIProxyAuthControl } from "@/components/business/ProfileControls";
 import { MessageContent } from "@/components/business/MessageContent";
-import { Button } from "@/components/ui";
+import {
+  Button,
+  DialogBody,
+  DialogCloseButton,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
+} from "@/components/ui";
 import { AddUserIcon, IconImage, TrashIcon, UsersIcon, WrenchIcon } from "@/components/ui/Icons";
 import {
   insertComposerSegmentsAtSelection,
@@ -40,6 +51,7 @@ export function ConversationPane({
   t,
   theme,
   selectedMessageCount,
+  logAgent,
   conversationMembers,
   showMemberList,
   onToggleMemberList,
@@ -87,6 +99,39 @@ export function ConversationPane({
 }) {
   const description = getConversationDescription(conversation, currentUserID, usersById, locale, t);
   const managerProvider = normalizeAuthProviderName(managerProfile?.provider);
+  const [logModalOpen, setLogModalOpen] = useState(false);
+  const [logContent, setLogContent] = useState("");
+  const [logError, setLogError] = useState("");
+  const [logLoading, setLogLoading] = useState(false);
+  const logAgentID = logAgent?.id || "";
+  const logAgentName = logAgent?.name || conversation.title;
+
+  useEffect(() => {
+    setLogModalOpen(false);
+    setLogContent("");
+    setLogError("");
+    setLogLoading(false);
+  }, [conversation.id, logAgentID]);
+
+  async function refreshAgentLogs() {
+    if (!logAgentID) {
+      return;
+    }
+    setLogLoading(true);
+    setLogError("");
+    try {
+      setLogContent(await fetchAgentLogsRequest(logAgentID, { lines: 400 }));
+    } catch (err) {
+      setLogError(errorMessage(err, t("agentLogsLoadFailed")));
+    } finally {
+      setLogLoading(false);
+    }
+  }
+
+  function openAgentLogs() {
+    setLogModalOpen(true);
+    void refreshAgentLogs();
+  }
 
   return (
     <>
@@ -149,6 +194,19 @@ export function ConversationPane({
               </div>
             </div>
             <div className="chat-title-actions">
+              {logAgent ? (
+                <Button
+                  className="icon-button"
+                  active={logModalOpen}
+                  aria-label={t("agentLogs")}
+                  title={t("agentLogs")}
+                  onClick={openAgentLogs}
+                >
+                  <span className="icon-button-mark" aria-hidden="true">
+                    <Logs size={18} strokeWidth={2} />
+                  </span>
+                </Button>
+              ) : null}
               <div ref={channelToolsRef} className="header-menu tools-menu">
                 <Button
                   className="icon-button"
@@ -395,6 +453,17 @@ export function ConversationPane({
           onSend={onSendThreadReply}
         />
       ) : null}
+      {logModalOpen && logAgent ? (
+        <AgentLogsDialog
+          agentName={logAgentName}
+          content={logContent}
+          error={logError}
+          loading={logLoading}
+          t={t}
+          onClose={() => setLogModalOpen(false)}
+          onRefresh={refreshAgentLogs}
+        />
+      ) : null}
     </>
   );
 }
@@ -432,6 +501,60 @@ function MentionPicker({ users = [], activeIndex = 0, className = "", showRole =
         </button>
       ))}
     </div>
+  );
+}
+
+function AgentLogsDialog({ agentName, content, error, loading, t, onClose, onRefresh }) {
+  const logsViewerRef = useRef<HTMLPreElement | null>(null);
+  const displayContent = content || (loading ? t("agentLogsLoading") : t("agentLogsEmpty"));
+
+  useLayoutEffect(() => {
+    const viewer = logsViewerRef.current;
+    if (!viewer) {
+      return;
+    }
+    viewer.scrollTop = viewer.scrollHeight;
+  }, [content, error, loading]);
+
+  return (
+    <DialogRoot
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="agent-logs-modal" overlayClassName="agent-logs-backdrop">
+        <DialogHeader className="agent-logs-header">
+          <div>
+            <DialogTitle>{t("agentLogsTitle")}</DialogTitle>
+            <DialogDescription>{agentName}</DialogDescription>
+          </div>
+          <div className="agent-logs-header-actions">
+            <Button
+              className="icon-button agent-logs-refresh"
+              aria-label={t("refreshLogs")}
+              title={t("refreshLogs")}
+              loading={loading}
+              loadingLabel={t("agentLogsLoading")}
+              onClick={onRefresh}
+            >
+              <span className="icon-button-mark" aria-hidden="true">
+                <RefreshCw size={18} strokeWidth={2} />
+              </span>
+            </Button>
+            <DialogCloseButton className="icon-button" label={t("close")} />
+          </div>
+        </DialogHeader>
+        <DialogBody className="agent-logs-body">
+          {error ? <div className="form-error agent-logs-error">{error}</div> : null}
+          <pre ref={logsViewerRef} className="agent-logs-viewer">
+            {displayContent}
+          </pre>
+        </DialogBody>
+      </DialogContent>
+    </DialogRoot>
   );
 }
 
