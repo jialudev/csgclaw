@@ -10,8 +10,9 @@ import {
   getMentionCandidates,
   normalizeTextMentions,
 } from "@/models/composer";
-import { normalizeAuthProviderName, providerNeedsAuth } from "@/models/agents";
+import { isAgentRunning, normalizeAuthProviderName, providerNeedsAuth } from "@/models/agents";
 import {
+  agentMatchesUser,
   formatEventMessage,
   formatMessagePreviewText,
   formatThreadReplyCount,
@@ -34,6 +35,7 @@ export function ConversationPane({
   visibleMessages,
   currentUserID,
   usersById,
+  agents = [],
   locale,
   t,
   theme,
@@ -238,6 +240,8 @@ export function ConversationPane({
           }
           const own = message.sender_id === currentUserID;
           const isAdmin = user?.role === "admin";
+          const messageAgent = agents.find((item) => agentMatchesUser(item, user));
+          const messageAgentRunning = isAgentRunning(messageAgent);
           const threadSummary = message.thread;
           const latestThreadReply = threadSummary?.latest_reply;
           return (
@@ -250,6 +254,9 @@ export function ConversationPane({
                 onClick={(event) => onPreviewUser(user, event.currentTarget)}
               >
                 {user.avatar}
+                {messageAgent ? (
+                  <span className={`message-avatar-status ${messageAgentRunning ? "online" : ""}`} aria-hidden="true" />
+                ) : null}
               </button>
               <div className="message-card">
                 <div className="message-hover-actions">
