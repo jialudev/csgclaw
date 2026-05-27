@@ -178,6 +178,7 @@ export function useWorkspaceController() {
   const conversation = useConversationController({
     activeConversationId,
     activePane,
+    agents,
     authBusyProvider: agent.cliproxyAuthBusy,
     authStatuses: agent.cliproxyAuthStatuses,
     data: displayData,

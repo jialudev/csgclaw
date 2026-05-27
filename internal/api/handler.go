@@ -49,10 +49,9 @@ type Handler struct {
 	activityDecider     ActivityDecider
 }
 
-const (
-	createOperationTimeout = 10 * time.Minute
-	sseHeartbeatInterval   = 15 * time.Second
-)
+const createOperationTimeout = 10 * time.Minute
+
+var sseHeartbeatInterval = 15 * time.Second
 
 func detachedCreateContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {

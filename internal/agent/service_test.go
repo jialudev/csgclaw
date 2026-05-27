@@ -5313,10 +5313,11 @@ func withTestPicoClawSandboxRuntime(apps ...map[string]feishu.AppConfig) Service
 func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, provider feishu.BotCredentialProvider, newRuntime func(sandboxgateway.Dependencies) agentruntime.Runtime) ServiceOption {
 	return func(s *Service) error {
 		return WithRuntime(newRuntime(sandboxgateway.Dependencies{
-			FeishuProvider: provider,
-			EnsureRuntime:  host.EnsureRuntime,
-			RuntimeHome:    host.RuntimeHome,
-			CloseRuntime:   host.CloseRuntime,
+			FeishuProvider:      provider,
+			SandboxProviderName: host.SandboxProviderName,
+			EnsureRuntime:       host.EnsureRuntime,
+			RuntimeHome:         host.RuntimeHome,
+			CloseRuntime:        host.CloseRuntime,
 			ResolveBox: func(ctx context.Context, rt sandbox.Runtime, got sandboxgateway.AgentRef) (sandbox.Instance, string, error) {
 				return host.ResolveBox(ctx, rt, Agent{
 					ID:        got.ID,

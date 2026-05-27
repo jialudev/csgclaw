@@ -16,7 +16,6 @@ type WorkspaceLayout = sandboxgateway.WorkspaceLayout
 
 type Runtime struct {
 	*sandboxgateway.Runtime
-	deps Dependencies
 }
 
 var _ agentruntime.Provisioner = (*Runtime)(nil)
@@ -31,10 +30,13 @@ func New(deps Dependencies) *Runtime {
 	if deps.GatewayCommand == nil {
 		deps.GatewayCommand = GatewayRunCommand
 	}
-	return &Runtime{
-		Runtime: sandboxgateway.New(deps),
-		deps:    deps,
+	if strings.TrimSpace(deps.ReadinessProbe.Name) == "" {
+		deps.ReadinessProbe = sandboxgateway.GatewayReadinessProbe{
+			Name: "node",
+			Args: []string{"-e", "const url='http://127.0.0.1:18789/readyz';const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),1500);fetch(url,{signal:ctl.signal}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1)).finally(()=>clearTimeout(t));"},
+		}
 	}
+	return &Runtime{Runtime: sandboxgateway.New(deps)}
 }
 
 func (r *Runtime) Provision(_ context.Context, req agentruntime.ProvisionRequest) error {
@@ -53,7 +55,7 @@ func (r *Runtime) Provision(_ context.Context, req agentruntime.ProvisionRequest
 	if agentHome == "" {
 		return fmt.Errorf("gateway agent home is required")
 	}
-	if _, err := EnsureConfig(agentHome, req.AgentID, gateway.Server, configModelFromProfile(profile), fixedBaseURL(gateway.ManagerBaseURL)); err != nil {
+	if _, err := EnsureConfig(agentHome, req.AgentID, gateway.Server, configModelFromProfile(profile), fixedBaseURL(gateway.ManagerBaseURL), r.CurrentFeishuProvider()); err != nil {
 		return err
 	}
 	workspaceRoot := WorkspaceRoot(agentHome)

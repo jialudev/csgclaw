@@ -1,6 +1,6 @@
 ---
 name: basics
-description: Handle the most common basic CSGClaw CLI administration tasks. Use when the Manager needs to create a room, list bots, create a bot, inspect room members, add a bot into a room, or perform similar direct `csgclaw-cli` operations for routine room, bot, and membership management.
+description: Handle the most common basic CSGClaw CLI administration tasks. Use when the Manager needs to create a room or Feishu group/chat, list bots, create a bot, inspect room members, add a bot into a room, or perform similar direct `csgclaw-cli` operations for routine room, bot, and membership management.
 ---
 
 # CSGClaw CLI Basics
@@ -13,6 +13,7 @@ Prefer this skill whenever the user is asking for basic room, bot, or member man
 This skill covers direct CLI actions such as:
 
 - create a room
+- create a Feishu group/chat through CSGClaw
 - list rooms
 - list all bots
 - create a bot
@@ -37,13 +38,23 @@ Do not use this skill when the task requires any of the following:
 
 ## Common Commands
 
-Create a room:
+Create a local CSGClaw room with CSGClaw bot IDs:
 
 ```bash
-csgclaw-cli room create --title test-room --creator-id u-manager --member-ids u-manager,u-dev --channel <current_channel>
+csgclaw-cli room create --title test-room --creator-id u-manager --member-ids u-manager,u-dev --channel csgclaw
 ```
 
-Use CSGClaw bot IDs in room, member, and message commands.
+For Feishu rooms, create the room first without bot members. Do not pass CSGClaw bot IDs such as `u-dev`, bot app IDs, or bot open IDs through `--member-ids`:
+
+```bash
+csgclaw-cli room create --title dev-ui-group --creator-id <manager_or_admin_open_id> --channel feishu
+```
+
+Then add configured CSGClaw bots with `member create`. That path converts CSGClaw bot IDs to Feishu bot app IDs before calling Feishu:
+
+```bash
+csgclaw-cli member create --room-id oc_xxx --user-id u-dev --inviter-id u-manager --channel feishu
+```
 
 List rooms and check whether a room is direct:
 
@@ -85,14 +96,16 @@ csgclaw-cli room create \
   --channel <current_channel>
 ```
 
-For Feishu, keep the same bot ID parameters:
+For Feishu, do not use `--member-ids` for this direct-room upgrade. Create the room first, then add each bot with `member create`:
 
 ```bash
 csgclaw-cli room create \
   --title "manager-dev-alex" \
-  --creator-id u-manager \
-  --member-ids u-manager,u-dev,u-alex \
+  --creator-id <manager_or_admin_open_id> \
   --channel feishu
+
+csgclaw-cli member create --room-id oc_xxx --user-id u-dev --inviter-id u-manager --channel feishu
+csgclaw-cli member create --room-id oc_xxx --user-id u-alex --inviter-id u-manager --channel feishu
 ```
 
 Send a message with a mention. Use the mentioned bot ID for `--mention-id`:
@@ -107,7 +120,8 @@ csgclaw-cli message create --room-id oc_xxx --sender-id u-manager --content "Ple
 - Use `bot list` before creating a new bot if the user may be referring to an existing one.
 - When creating a bot, always pass a meaningful `--description` so later matching and reuse remain clear.
 - Verify room membership with `member list` after adding a member when room presence matters.
-- A direct room cannot accept an added bot as a new member. Create a new room with `--member-ids` containing the existing DM bots and the new bot.
-- Keep `csgclaw-cli` parameters bot-facing across channels: use bot IDs such as `u-manager`, `u-dev`, and `u-alex`.
+- A direct room cannot accept an added bot as a new member. In the local `csgclaw` channel, create a new room with `--member-ids` containing the existing DM bots and the new bot.
+- In Feishu channel, never use `room create --member-ids` to add CSGClaw bots. Create the room first, then add each configured bot with `member create`, which uses configured Feishu bot app IDs.
+- Keep `member`, `bot`, and `message` CLI parameters bot-facing across channels: use bot IDs such as `u-manager`, `u-dev`, and `u-alex`.
 - Keep the response focused on the concrete CLI result instead of introducing external planning artifacts.
 - Hand off to `manager-worker-dispatch` only if the user explicitly needs manager orchestration or multi-worker sequencing.
