@@ -147,6 +147,7 @@ function renderThreadPane({
         editorRef={createRef<HTMLDivElement>()}
         inviteActionLabel="Invite"
         locale="zh"
+        logAgent={null}
         managerProfile={null}
         managerProfileIncomplete={false}
         memberMenuRef={createRef<HTMLDivElement>()}
