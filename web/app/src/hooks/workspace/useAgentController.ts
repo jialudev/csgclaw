@@ -28,6 +28,7 @@ import {
   WORKER_AGENT_ROLE,
 } from "@/shared/constants/agents";
 import { ACTION_REBUILD_MANAGER } from "@/shared/constants/messages";
+import { firstWorkspaceFilePath, hasWorkspaceFilePath } from "@/models/workspace";
 import {
   applyTemplateToDraft,
   advanceAgentProgress,
@@ -68,6 +69,7 @@ import { isDirectConversation } from "@/models/conversations";
 import { WorkspacePaneTypes } from "@/models/routing";
 import { useCLIProxyAuthStatuses } from "./useCLIProxyAuthStatuses";
 import { useProfileModelOptions } from "./useProfileModelOptions";
+import { useWorkspaceAgentWorkspaceFileQuery, useWorkspaceAgentWorkspaceQuery } from "./workspaceQueries";
 import type { MessageAction, MessageActionError, MessageLike } from "@/components/business/MessageContent/types";
 import type { IMConversation } from "@/models/conversations";
 import type { UseAgentControllerArgs } from "./types";
@@ -132,6 +134,7 @@ export function useAgentController({
   const [agentPageBusy, setAgentPageBusy] = useState(false);
   const [agentPagePublishBusy, setAgentPagePublishBusy] = useState(false);
   const [agentPageError, setAgentPageError] = useState("");
+  const [selectedAgentWorkspacePath, setSelectedAgentWorkspacePath] = useState("");
   const managerProfileIncomplete = managerProfile && managerProfile.profile_complete === false;
   const managerAgent = agents.find((item) => item.role === MANAGER_AGENT_ROLE || item.id === MANAGER_AGENT_ID);
   const { workerAgentItems, notificationAgentItems } = partitionWorkspaceAgentItems(agents, MANAGER_AGENT_ID);
@@ -147,6 +150,43 @@ export function useAgentController({
     }
     return agents.find((item) => item.id === activePane.id) ?? null;
   }, [agents, activePane]);
+  const selectedAgentWorkspaceSupported = useMemo(() => {
+    const runtimeKind = normalizeRuntimeKind(selectedAgentForPage?.runtime_kind);
+    return runtimeKind === "openclaw_sandbox" || runtimeKind === "picoclaw_sandbox";
+  }, [selectedAgentForPage?.runtime_kind]);
+  const workspaceAgentID = selectedAgentWorkspaceSupported ? selectedAgentForPage?.id || "" : "";
+  const agentWorkspaceQuery = useWorkspaceAgentWorkspaceQuery(workspaceAgentID);
+  const agentWorkspaceEntries = agentWorkspaceQuery.data?.entries ?? null;
+  const agentWorkspaceError = agentWorkspaceQuery.error
+    ? errorMessage(agentWorkspaceQuery.error, t("agentWorkspaceLoadFailed"))
+    : "";
+  const selectedAgentWorkspaceFilePath = hasWorkspaceFilePath(agentWorkspaceEntries, selectedAgentWorkspacePath)
+    ? selectedAgentWorkspacePath
+    : "";
+  const agentWorkspaceFileQuery = useWorkspaceAgentWorkspaceFileQuery(workspaceAgentID, selectedAgentWorkspaceFilePath);
+  const agentWorkspaceFileError = agentWorkspaceFileQuery.error
+    ? errorMessage(agentWorkspaceFileQuery.error, t("agentWorkspaceFileLoadFailed"))
+    : "";
+  useEffect(() => {
+    const entries = agentWorkspaceEntries ?? [];
+    if (!selectedAgentWorkspaceSupported || !selectedAgentForPage?.id || !entries.length) {
+      if (selectedAgentWorkspacePath) {
+        setSelectedAgentWorkspacePath("");
+      }
+      return;
+    }
+    if (!hasWorkspaceFilePath(entries, selectedAgentWorkspacePath)) {
+      const nextPath = firstWorkspaceFilePath(entries);
+      if (nextPath !== selectedAgentWorkspacePath) {
+        setSelectedAgentWorkspacePath(nextPath);
+      }
+    }
+  }, [
+    agentWorkspaceEntries,
+    selectedAgentForPage?.id,
+    selectedAgentWorkspacePath,
+    selectedAgentWorkspaceSupported,
+  ]);
   const activeConversation = useMemo(
     () => data?.rooms.find((item) => item.id === activeConversationId) ?? null,
     [data, activeConversationId],
@@ -878,6 +918,15 @@ export function useAgentController({
       authStatuses: cliproxyAuthStatuses,
       authBusyProvider: cliproxyAuthBusy,
       notifierWebhookPublicOrigin,
+      workspaceEntries: agentWorkspaceQuery.data?.entries ?? [],
+      workspaceLoading: agentWorkspaceQuery.isFetching,
+      workspaceError: agentWorkspaceError,
+      workspaceSupported: selectedAgentWorkspaceSupported,
+      selectedWorkspacePath: selectedAgentWorkspacePath,
+      workspaceFile: agentWorkspaceFileQuery.data ?? null,
+      workspaceFileLoading: agentWorkspaceFileQuery.isFetching,
+      workspaceFileError: agentWorkspaceFileError,
+      onSelectWorkspaceFile: setSelectedAgentWorkspacePath,
       onDraftChange: setAgentPageDraft,
       onSave: saveAgentPage,
       onPublish: publishAgentPage,
