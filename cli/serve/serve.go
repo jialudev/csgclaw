@@ -749,9 +749,22 @@ func partiallyMaskSecret(value string) string {
 
 func loadConfig(path string) (config.Config, error) {
 	if path == "" {
-		return config.LoadDefault()
+		defaultPath, err := config.DefaultPath()
+		if err != nil {
+			return config.Config{}, err
+		}
+		path = defaultPath
 	}
-	return config.Load(path)
+	cfg, err := config.Load(path)
+	if err != nil {
+		return config.Config{}, err
+	}
+	if cfg.NeedsMigrationRewrite() {
+		if err := cfg.Save(path); err != nil {
+			return config.Config{}, err
+		}
+	}
+	return cfg, nil
 }
 
 func validateModelConfig(cfg config.Config) error {

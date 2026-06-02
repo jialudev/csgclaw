@@ -72,6 +72,9 @@ func ensureConfigState(path string) (config.Config, error) {
 	if hasExistingConfig && configNeedsCompletion(existingContent) {
 		needsSave = true
 	}
+	if hasExistingConfig && cfg.NeedsMigrationRewrite() {
+		needsSave = true
+	}
 	if needsSave {
 		if err := cfg.Save(path); err != nil {
 			return config.Config{}, err

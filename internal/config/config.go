@@ -54,14 +54,14 @@ type BootstrapConfig struct {
 }
 
 func (c BootstrapConfig) ResolvedDefaultManagerTemplate() string {
-	if template := strings.TrimSpace(c.DefaultManagerTemplate); template != "" {
+	if template := normalizeBootstrapTemplateRef(c.DefaultManagerTemplate); template != "" {
 		return template
 	}
 	return DefaultBootstrapManagerTemplate
 }
 
 func (c BootstrapConfig) ResolvedDefaultWorkerTemplate() string {
-	if template := strings.TrimSpace(c.DefaultWorkerTemplate); template != "" {
+	if template := normalizeBootstrapTemplateRef(c.DefaultWorkerTemplate); template != "" {
 		return template
 	}
 	return DefaultBootstrapWorkerTemplate
@@ -236,12 +236,18 @@ func (c SandboxConfig) EffectiveDockerCLIPath() string {
 type rawConfigValues struct {
 	server        ServerConfig
 	bootstrap     BootstrapConfig
+	bootstrapMeta rawBootstrapConfigMeta
 	sandbox       SandboxConfig
 	hub           rawHubConfig
 	skill         rawSkillConfig
 	modelsDefault string
 	models        map[string]rawProviderConfig
 	resolved      *rawConfigValues
+}
+
+type rawBootstrapConfigMeta struct {
+	LegacyManagerTemplateSlash bool
+	LegacyWorkerTemplateSlash  bool
 }
 
 type rawProviderConfig struct {
@@ -285,8 +291,8 @@ const (
 	DefaultHubPublishRegistry       = "local"
 	DefaultOfficialHubRegistryName  = "official"
 	DefaultOfficialHubRegistryURL   = "https://csgclaw.opencsg.com"
-	DefaultBootstrapManagerTemplate = "builtin/picoclaw-manager"
-	DefaultBootstrapWorkerTemplate  = "builtin/picoclaw-worker"
+	DefaultBootstrapManagerTemplate = "builtin.picoclaw-manager"
+	DefaultBootstrapWorkerTemplate  = "builtin.picoclaw-worker"
 	HubRegistryKindBuiltin          = "builtin"
 	HubRegistryKindLocal            = "local"
 	HubRegistryKindRemote           = "remote"
@@ -501,11 +507,15 @@ func Load(path string) (Config, error) {
 		case section == "bootstrap":
 			switch key {
 			case "default_manager_template":
-				cfg.raw.bootstrap.DefaultManagerTemplate = parseRawStringValue(rawValue)
-				cfg.Bootstrap.DefaultManagerTemplate = value
+				raw := parseRawStringValue(rawValue)
+				cfg.raw.bootstrap.DefaultManagerTemplate = normalizeBootstrapTemplateRef(raw)
+				cfg.raw.bootstrapMeta.LegacyManagerTemplateSlash = bootstrapTemplateRefUsesLegacySlash(raw)
+				cfg.Bootstrap.DefaultManagerTemplate = normalizeBootstrapTemplateRef(value)
 			case "default_worker_template":
-				cfg.raw.bootstrap.DefaultWorkerTemplate = parseRawStringValue(rawValue)
-				cfg.Bootstrap.DefaultWorkerTemplate = value
+				raw := parseRawStringValue(rawValue)
+				cfg.raw.bootstrap.DefaultWorkerTemplate = normalizeBootstrapTemplateRef(raw)
+				cfg.raw.bootstrapMeta.LegacyWorkerTemplateSlash = bootstrapTemplateRefUsesLegacySlash(raw)
+				cfg.Bootstrap.DefaultWorkerTemplate = normalizeBootstrapTemplateRef(value)
 			case "manager_image_override", "manager_image", "runtime_kind":
 				// Keep loading legacy bootstrap keys for compatibility, but do not
 				// surface them in the public config model anymore.
@@ -684,9 +694,9 @@ no_auth = %t
 show_upgrade = %t
 
 [bootstrap]
-default_manager_template = %q
-default_worker_template = %q
-`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Server.ShowUpgrade, cfg.rawOrResolvedString(cfg.raw.bootstrap.DefaultManagerTemplate, loadedRaw.bootstrap.DefaultManagerTemplate, cfg.Bootstrap.ResolvedDefaultManagerTemplate()), cfg.rawOrResolvedString(cfg.raw.bootstrap.DefaultWorkerTemplate, loadedRaw.bootstrap.DefaultWorkerTemplate, cfg.Bootstrap.ResolvedDefaultWorkerTemplate()))
+`, cfg.rawOrResolvedString(cfg.raw.server.ListenAddr, loadedRaw.server.ListenAddr, cfg.Server.ListenAddr), cfg.rawOrResolvedString(cfg.raw.server.AdvertiseBaseURL, loadedRaw.server.AdvertiseBaseURL, cfg.Server.AdvertiseBaseURL), cfg.rawOrResolvedString(cfg.raw.server.AccessToken, loadedRaw.server.AccessToken, cfg.Server.AccessToken), cfg.Server.NoAuth, cfg.Server.ShowUpgrade)
+	fmt.Fprintf(&b, "default_manager_template = %q\n", cfg.rawOrResolvedString(cfg.raw.bootstrap.DefaultManagerTemplate, loadedRaw.bootstrap.DefaultManagerTemplate, cfg.Bootstrap.ResolvedDefaultManagerTemplate()))
+	fmt.Fprintf(&b, "default_worker_template = %q\n", cfg.rawOrResolvedString(cfg.raw.bootstrap.DefaultWorkerTemplate, loadedRaw.bootstrap.DefaultWorkerTemplate, cfg.Bootstrap.ResolvedDefaultWorkerTemplate()))
 	sandboxSection := fmt.Sprintf(`
 [sandbox]
 provider = %q
@@ -769,6 +779,13 @@ models = %s
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+func (c Config) NeedsMigrationRewrite() bool {
+	// Transitional compatibility for legacy slash-separated bootstrap template refs.
+	// After old configs are no longer supported in the field, remove this rewrite
+	// trigger together with the slash-to-dot normalization path.
+	return c.raw.bootstrapMeta.LegacyManagerTemplateSlash || c.raw.bootstrapMeta.LegacyWorkerTemplateSlash
 }
 
 func (c Config) hasStaticLLMConfig() bool {
@@ -1065,11 +1082,12 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 		out.server.AccessToken = c.Server.AccessToken
 	}
 	if c.raw.bootstrap.DefaultManagerTemplate != "" {
-		out.bootstrap.DefaultManagerTemplate = c.Bootstrap.DefaultManagerTemplate
+		out.bootstrap.DefaultManagerTemplate = normalizeBootstrapTemplateRef(c.Bootstrap.DefaultManagerTemplate)
 	}
 	if c.raw.bootstrap.DefaultWorkerTemplate != "" {
-		out.bootstrap.DefaultWorkerTemplate = c.Bootstrap.DefaultWorkerTemplate
+		out.bootstrap.DefaultWorkerTemplate = normalizeBootstrapTemplateRef(c.Bootstrap.DefaultWorkerTemplate)
 	}
+	out.bootstrapMeta = c.raw.bootstrapMeta
 	if c.raw.sandbox.Provider != "" {
 		out.sandbox.Provider = c.Sandbox.Provider
 	}
@@ -1151,4 +1169,27 @@ func (c Config) resolvedRawValues() *rawConfigValues {
 	}
 
 	return &out
+}
+
+func normalizeBootstrapTemplateRef(value string) string {
+	value = strings.TrimSpace(value)
+	if !bootstrapTemplateRefUsesLegacySlash(value) {
+		return value
+	}
+	left, right, _ := strings.Cut(value, "/")
+	return strings.TrimSpace(left) + "." + strings.TrimSpace(right)
+}
+
+func bootstrapTemplateRefUsesLegacySlash(value string) bool {
+	value = strings.TrimSpace(value)
+	left, right, ok := strings.Cut(value, "/")
+	if !ok {
+		return false
+	}
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return false
+	}
+	return !strings.Contains(left, "/") && !strings.Contains(right, "/")
 }

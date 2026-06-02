@@ -89,8 +89,8 @@ func TestServeRunAutoBootstrapsWhenStateIncomplete(t *testing.T) {
 			ConfigPath: configPath,
 			Config: config.Config{
 				Bootstrap: config.BootstrapConfig{
-					DefaultManagerTemplate: "builtin/picoclaw-manager",
-					DefaultWorkerTemplate:  "builtin/picoclaw-worker",
+					DefaultManagerTemplate: "builtin.picoclaw-manager",
+					DefaultWorkerTemplate:  "builtin.picoclaw-worker",
 				},
 			},
 		}, nil
@@ -572,8 +572,8 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 			ModelID: "model-test",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			DefaultManagerTemplate: "builtin/picoclaw-manager",
-			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
+			DefaultManagerTemplate: "builtin.picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin.picoclaw-worker",
 		},
 	}
 
@@ -928,15 +928,15 @@ func TestServeForegroundPreservesBootstrapDefaultTemplates(t *testing.T) {
 			ModelID: "model-test",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			DefaultManagerTemplate: "local/review-manager",
-			DefaultWorkerTemplate:  "local/review-worker",
+			DefaultManagerTemplate: "local.review-manager",
+			DefaultWorkerTemplate:  "local.review-worker",
 		},
 	}
 	NewAgentService = func(got config.Config, _ feishu.BotCredentialProvider) (*agent.Service, error) {
-		if got.Bootstrap.DefaultManagerTemplate != "local/review-manager" {
+		if got.Bootstrap.DefaultManagerTemplate != "local.review-manager" {
 			t.Fatalf("default manager template = %q, want preserved template", got.Bootstrap.DefaultManagerTemplate)
 		}
-		if got.Bootstrap.DefaultWorkerTemplate != "local/review-worker" {
+		if got.Bootstrap.DefaultWorkerTemplate != "local.review-worker" {
 			t.Fatalf("default worker template = %q, want preserved template", got.Bootstrap.DefaultWorkerTemplate)
 		}
 		return &agent.Service{}, nil
@@ -986,8 +986,8 @@ models = ["${MODEL_ID}"]
 		`advertise_base_url = "http://1.2.3.4:18080"`,
 		`access_token = "pc*********et"`,
 		`no_auth = true`,
-		`default_manager_template = "builtin/picoclaw-manager"`,
-		`default_worker_template = "builtin/picoclaw-worker"`,
+		`default_manager_template = "builtin.picoclaw-manager"`,
+		`default_worker_template = "builtin.picoclaw-worker"`,
 		`default = "remote.gpt-env"`,
 		`base_url = "https://models.example.test/v1"`,
 		`api_key = "sk*********et"`,
@@ -1010,6 +1010,54 @@ models = ["${MODEL_ID}"]
 	}
 }
 
+func TestLoadConfigRewritesLegacyBootstrapTemplateRefs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[bootstrap]
+default_manager_template = "builtin/picoclaw-manager"
+default_worker_template = "builtin/picoclaw-worker"
+
+[models]
+default = "default.gpt-test"
+
+[models.providers.default]
+base_url = "http://127.0.0.1:4000"
+api_key = "sk"
+models = ["gpt-test"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v", err)
+	}
+	if got, want := cfg.Bootstrap.DefaultManagerTemplate, "builtin.picoclaw-manager"; got != want {
+		t.Fatalf("cfg.Bootstrap.DefaultManagerTemplate = %q, want %q", got, want)
+	}
+	if got, want := cfg.Bootstrap.DefaultWorkerTemplate, "builtin.picoclaw-worker"; got != want {
+		t.Fatalf("cfg.Bootstrap.DefaultWorkerTemplate = %q, want %q", got, want)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	saved := string(data)
+	for _, want := range []string{
+		`default_manager_template = "builtin.picoclaw-manager"`,
+		`default_worker_template = "builtin.picoclaw-worker"`,
+	} {
+		if !strings.Contains(saved, want) {
+			t.Fatalf("saved config missing %q:\n%s", want, saved)
+		}
+	}
+}
+
 func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T) {
 	cfg := config.Config{
 		Server: config.ServerConfig{
@@ -1025,8 +1073,8 @@ func TestFormatEffectiveConfigFormatsSectionsWithoutExtraWhitespace(t *testing.T
 			ModelID: "local.minimax-m2.5",
 		}),
 		Bootstrap: config.BootstrapConfig{
-			DefaultManagerTemplate: "builtin/picoclaw-manager",
-			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
+			DefaultManagerTemplate: "builtin.picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin.picoclaw-worker",
 		},
 		Sandbox: config.SandboxConfig{
 			Provider: config.BoxLiteProvider,
@@ -1060,8 +1108,8 @@ no_auth = true
 show_upgrade = true
 
 [bootstrap]
-default_manager_template = "builtin/picoclaw-manager"
-default_worker_template = "builtin/picoclaw-worker"
+default_manager_template = "builtin.picoclaw-manager"
+default_worker_template = "builtin.picoclaw-worker"
 
 [sandbox]
 provider = "boxlite"
@@ -1118,8 +1166,8 @@ func TestFormatEffectiveConfigIncludesDefaultHubRegistriesWhenOmitted(t *testing
 			ShowUpgrade:      true,
 		},
 		Bootstrap: config.BootstrapConfig{
-			DefaultManagerTemplate: "builtin/picoclaw-manager",
-			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
+			DefaultManagerTemplate: "builtin.picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin.picoclaw-worker",
 		},
 		Sandbox: config.SandboxConfig{
 			Provider: config.BoxLiteProvider,
@@ -1236,8 +1284,8 @@ func csgHubLiteServeConfig(baseURL string) config.Config {
 			},
 		},
 		Bootstrap: config.BootstrapConfig{
-			DefaultManagerTemplate: "builtin/picoclaw-manager",
-			DefaultWorkerTemplate:  "builtin/picoclaw-worker",
+			DefaultManagerTemplate: "builtin.picoclaw-manager",
+			DefaultWorkerTemplate:  "builtin.picoclaw-worker",
 		},
 	}
 }

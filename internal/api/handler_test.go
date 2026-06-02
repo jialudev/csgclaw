@@ -1797,7 +1797,7 @@ func TestAgentCreateRequestFromAPIIncludesFromTemplate(t *testing.T) {
 	got := agentCreateRequestFromAPI(apitypes.CreateAgentRequest{
 		Name:         "alice",
 		RuntimeKind:  agent.RuntimeKindCodex,
-		FromTemplate: "builtin/frontend-alice",
+		FromTemplate: "builtin.frontend-alice",
 		Profile:      "codex-fast",
 	})
 
@@ -1807,8 +1807,8 @@ func TestAgentCreateRequestFromAPIIncludesFromTemplate(t *testing.T) {
 	if got.Spec.RuntimeKind != agent.RuntimeKindCodex {
 		t.Fatalf("Spec.RuntimeKind = %q, want %q", got.Spec.RuntimeKind, agent.RuntimeKindCodex)
 	}
-	if got.Spec.FromTemplate != "builtin/frontend-alice" {
-		t.Fatalf("Spec.FromTemplate = %q, want %q", got.Spec.FromTemplate, "builtin/frontend-alice")
+	if got.Spec.FromTemplate != "builtin.frontend-alice" {
+		t.Fatalf("Spec.FromTemplate = %q, want %q", got.Spec.FromTemplate, "builtin.frontend-alice")
 	}
 	if got.Spec.Profile != "codex-fast" {
 		t.Fatalf("Spec.Profile = %q, want %q", got.Spec.Profile, "codex-fast")
@@ -1844,7 +1844,7 @@ func TestHandleHubTemplatesListsAggregatedTemplates(t *testing.T) {
 	}
 }
 
-func TestHandleHubTemplateByRegistryNameReturnsTemplate(t *testing.T) {
+func TestHandleHubTemplateByIDReturnsTemplate(t *testing.T) {
 	hubSvc := mustNewLocalTemplateHubService(t, "review-bot", hub.Template{
 		ID:          "review-bot",
 		Name:        "review-bot",
@@ -1854,7 +1854,7 @@ func TestHandleHubTemplateByRegistryNameReturnsTemplate(t *testing.T) {
 	})
 	srv := &Handler{}
 	srv.SetHubService(hubSvc)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local.review-bot", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -1866,8 +1866,8 @@ func TestHandleHubTemplateByRegistryNameReturnsTemplate(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.ID != "local/review-bot" {
-		t.Fatalf("template id = %q, want %q", got.ID, "local/review-bot")
+	if got.ID != "local.review-bot" {
+		t.Fatalf("template id = %q, want %q", got.ID, "local.review-bot")
 	}
 	if got.Source.Name != "local" || got.Source.Kind != "local" {
 		t.Fatalf("template source = %+v, want local/local", got.Source)
@@ -1893,7 +1893,7 @@ func TestHandleHubTemplateByRegistryNameReturnsTemplate(t *testing.T) {
 	}
 }
 
-func TestHandleHubTemplateWorkspaceFileByRegistryNameReturnsContent(t *testing.T) {
+func TestHandleHubTemplateWorkspaceFileByIDReturnsContent(t *testing.T) {
 	hubSvc := mustNewLocalTemplateHubService(t, "review-bot", hub.Template{
 		ID:          "review-bot",
 		Name:        "review-bot",
@@ -1903,7 +1903,7 @@ func TestHandleHubTemplateWorkspaceFileByRegistryNameReturnsContent(t *testing.T
 	})
 	srv := &Handler{}
 	srv.SetHubService(hubSvc)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot/workspace/file?path=skills/custom/SKILL.md", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local.review-bot/workspace/file?path=skills/custom/SKILL.md", nil)
 	rec := httptest.NewRecorder()
 
 	srv.Routes().ServeHTTP(rec, req)
@@ -1982,7 +1982,7 @@ func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.
 	srv := &Handler{}
 	srv.SetHubService(hubSvc)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local.review-bot", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
@@ -1997,7 +1997,7 @@ func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.
 		t.Fatalf("workspace entries = %#v, want empty", detail.Workspace.Entries)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local/review-bot/workspace/file?path=USER.md", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/hub/templates/local.review-bot/workspace/file?path=USER.md", nil)
 	rec = httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -2056,8 +2056,8 @@ func TestHandleHubTemplatesPublishesAgentSnapshot(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.ID != "local/alice" {
-		t.Fatalf("template id = %q, want %q", got.ID, "local/alice")
+	if got.ID != "local.alice" {
+		t.Fatalf("template id = %q, want %q", got.ID, "local.alice")
 	}
 	if got.Role != hub.TemplateRoleWorker {
 		t.Fatalf("template role = %q, want %q", got.Role, hub.TemplateRoleWorker)
@@ -2121,8 +2121,8 @@ func TestHandleHubTemplatesPublishesAgentSnapshotToDefaultRegistryWhenOmitted(t 
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got.ID != "local/alice" {
-		t.Fatalf("template id = %q, want %q", got.ID, "local/alice")
+	if got.ID != "local.alice" {
+		t.Fatalf("template id = %q, want %q", got.ID, "local.alice")
 	}
 	if got.Role != hub.TemplateRoleWorker {
 		t.Fatalf("template role = %q, want %q", got.Role, hub.TemplateRoleWorker)

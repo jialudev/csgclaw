@@ -80,14 +80,14 @@ func TestExecuteHubListAcceptsOutputShorthand(t *testing.T) {
 			if req.URL.String() != "http://example.test/api/v1/hub/templates" {
 				t.Fatalf("url = %q, want hub templates route", req.URL.String())
 			}
-			return jsonResponse(http.StatusOK, `[{"id":"builtin/gitlab-worker","name":"gitlab-worker","source":{"name":"builtin","kind":"builtin"}}]`), nil
+			return jsonResponse(http.StatusOK, `[{"id":"builtin.gitlab-worker","name":"gitlab-worker","source":{"name":"builtin","kind":"builtin"}}]`), nil
 		}),
 	}
 
 	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "-o", "json", "hub", "list"}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), `"id": "builtin/gitlab-worker"`) {
+	if !strings.Contains(stdout.String(), `"id": "builtin.gitlab-worker"`) {
 		t.Fatalf("stdout = %q, want JSON hub template payload", stdout.String())
 	}
 }

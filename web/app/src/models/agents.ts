@@ -671,17 +671,17 @@ export function pickDefaultAgentTemplate(
   }
   if (requestedRuntime === "openclaw_sandbox") {
     return (
-      candidates.find((item) => item.id === "builtin/openclaw-worker") ||
+      candidates.find((item) => item.id === "builtin.openclaw-worker") ||
       candidates.find((item) => item.name === "openclaw-worker") ||
-      candidates.find((item) => String(item.id || "").endsWith("/openclaw-worker")) ||
+      candidates.find((item) => String(item.id || "").endsWith(".openclaw-worker")) ||
       candidates[0]
     );
   }
   if (requestedRuntime === DEFAULT_RUNTIME_KIND || !requestedRuntime) {
     return (
-      candidates.find((item) => item.id === "builtin/picoclaw-worker") ||
+      candidates.find((item) => item.id === "builtin.picoclaw-worker") ||
       candidates.find((item) => item.name === "picoclaw-worker") ||
-      candidates.find((item) => String(item.id || "").endsWith("/picoclaw-worker")) ||
+      candidates.find((item) => String(item.id || "").endsWith(".picoclaw-worker")) ||
       candidates[0]
     );
   }

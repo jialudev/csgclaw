@@ -3675,7 +3675,7 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 	got, err := svc.Create(context.Background(), CreateRequest{
 		Spec: CreateAgentSpec{
 			Name:         "alice",
-			FromTemplate: "local/frontend-worker",
+			FromTemplate: "local.frontend-worker",
 		},
 	})
 	if err != nil {
@@ -3771,7 +3771,7 @@ func TestCreateWorkerFromTemplateAppliesImageEnvToSandbox(t *testing.T) {
 	_, err = svc.Create(context.Background(), CreateRequest{
 		Spec: CreateAgentSpec{
 			Name:         "gitlab",
-			FromTemplate: "local/gitlab-assistant",
+			FromTemplate: "local.gitlab-assistant",
 			AgentProfile: AgentProfile{
 				Env: map[string]string{"GITLAB_TOKEN": "secret-token"},
 			},
@@ -3816,7 +3816,7 @@ func TestCreateOpenClawWorkerFromTemplateOverlaysOpenClawWorkspace(t *testing.T)
 	got, err := svc.CreateWorker(context.Background(), CreateAgentSpec{
 		Name:         "alice",
 		RuntimeKind:  RuntimeKindOpenClawSandbox,
-		FromTemplate: "local/openclaw-manager",
+		FromTemplate: "local.openclaw-manager",
 	})
 	if err != nil {
 		t.Fatalf("CreateWorker() error = %v", err)
@@ -3855,7 +3855,7 @@ func TestCreateWorkerUsesConfiguredDefaultTemplate(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local.frontend-worker"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -3906,7 +3906,7 @@ func TestCreateWorkerRejectsMissingDefaultTemplate(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/missing"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local.missing"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -3916,7 +3916,7 @@ func TestCreateWorkerRejectsMissingDefaultTemplate(t *testing.T) {
 	if err == nil {
 		t.Fatal("CreateWorker() error = nil, want missing default template")
 	}
-	if !strings.Contains(err.Error(), `resolve default worker template "local/missing"`) {
+	if !strings.Contains(err.Error(), `resolve default worker template "local.missing"`) {
 		t.Fatalf("CreateWorker() error = %v, want default worker template context", err)
 	}
 }
@@ -3939,7 +3939,7 @@ func TestCreateWorkerRejectsDefaultTemplateRoleMismatch(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/review-manager"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local.review-manager"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -3949,7 +3949,7 @@ func TestCreateWorkerRejectsDefaultTemplateRoleMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("CreateWorker() error = nil, want role mismatch")
 	}
-	if !strings.Contains(err.Error(), `default worker template "local/review-manager" points to a manager template`) {
+	if !strings.Contains(err.Error(), `default worker template "local.review-manager" points to a manager template`) {
 		t.Fatalf("CreateWorker() error = %v, want worker/manager mismatch", err)
 	}
 }
@@ -3970,7 +3970,7 @@ func TestCreateWorkerSkipsDefaultTemplateRuntimeMismatch(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local.frontend-worker"}),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -4018,7 +4018,7 @@ func TestCreateWorkerAppliesTemplateDefaultsWithoutWorkspace(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local.frontend-worker"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -4062,7 +4062,7 @@ func TestCreateRejectsDefaultManagerTemplateRoleMismatch(t *testing.T) {
 		"manager-image:1",
 		"",
 		WithHubService(hubSvc),
-		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultManagerTemplate: "local/review-worker"}),
+		WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultManagerTemplate: "local.review-worker"}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -4074,7 +4074,7 @@ func TestCreateRejectsDefaultManagerTemplateRoleMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("Create() error = nil, want role mismatch")
 	}
-	if !strings.Contains(err.Error(), `default manager template "local/review-worker" points to a worker template`) {
+	if !strings.Contains(err.Error(), `default manager template "local.review-worker" points to a worker template`) {
 		t.Fatalf("Create() error = %v, want manager/worker mismatch", err)
 	}
 }
@@ -5269,6 +5269,7 @@ func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) 
 	}); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}
+	appendTemplateImageEnvContracts(t, filepath.Join(registryRoot, "templates", id, "agent.toml"), item.ImageEnv)
 
 	svc, err := hub.NewService(config.HubConfig{
 		DefaultRegistry: "local",
@@ -5280,6 +5281,31 @@ func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) 
 		t.Fatalf("hub.NewService() error = %v", err)
 	}
 	return svc
+}
+
+func appendTemplateImageEnvContracts(t *testing.T, manifestPath string, items []apitypes.ImageEnvContract) {
+	t.Helper()
+	if len(items) == 0 {
+		return
+	}
+	content, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%s) error = %v", manifestPath, err)
+	}
+	var b strings.Builder
+	b.WriteString(strings.Replace(string(content), "env = []\n", "", 1))
+	for _, item := range items {
+		fmt.Fprintf(&b, "\n[[image.env]]\nname = %q\nrequired = %t\nsecret = %t\n", item.Name, item.Required, item.Secret)
+		if item.Default != "" {
+			fmt.Fprintf(&b, "default = %q\n", item.Default)
+		}
+		if item.Description != "" {
+			fmt.Fprintf(&b, "description = %q\n", item.Description)
+		}
+	}
+	if err := os.WriteFile(manifestPath, []byte(b.String()), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s) error = %v", manifestPath, err)
+	}
 }
 
 func mustNewLocalTemplateHubServiceWithoutWorkspace(t *testing.T, id string, item hub.Template) *hub.Service {

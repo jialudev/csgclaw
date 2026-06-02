@@ -17,6 +17,8 @@ var (
 	ErrRegistryNotWritable  = errors.New("hub registry is not writable")
 )
 
+const templateIDNamespaceSeparator = "."
+
 type Store interface {
 	List(ctx context.Context) ([]Template, error)
 	Get(ctx context.Context, id string) (Template, error)
@@ -147,7 +149,7 @@ func (s *Service) Publish(ctx context.Context, spec PublishSpec) (Template, erro
 }
 
 func (s *Service) resolveRead(id string) (configuredStore, string, error) {
-	registryName, templateID := splitTemplateRef(id)
+	registryName, templateID := s.splitTemplateRef(id)
 	if registryName == "" {
 		registryName = s.defaultRegistry
 	}
@@ -172,23 +174,46 @@ func localTemplateID(registryName string, item Template) string {
 	if id == "" {
 		id = strings.TrimSpace(item.Name)
 	}
-	prefix := strings.TrimSpace(registryName) + "/"
-	if strings.HasPrefix(id, prefix) {
-		return strings.TrimPrefix(id, prefix)
+	registryName = strings.TrimSpace(registryName)
+	for _, prefix := range []string{registryName + templateIDNamespaceSeparator, registryName + "/"} {
+		if registryName != "" && strings.HasPrefix(id, prefix) {
+			return strings.TrimPrefix(id, prefix)
+		}
 	}
 	return id
 }
 
-func splitTemplateRef(id string) (string, string) {
+func (s *Service) splitTemplateRef(id string) (string, string) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return "", ""
 	}
-	left, right, ok := strings.Cut(id, "/")
-	if !ok {
+	var (
+		matchRegistry string
+		matchTemplate string
+	)
+	for registryName := range s.stores {
+		registryName = strings.TrimSpace(registryName)
+		if registryName == "" {
+			continue
+		}
+		prefix := registryName + templateIDNamespaceSeparator
+		if !strings.HasPrefix(id, prefix) {
+			continue
+		}
+		templateID := strings.TrimSpace(strings.TrimPrefix(id, prefix))
+		if templateID == "" {
+			continue
+		}
+		if len(registryName) > len(matchRegistry) {
+			matchRegistry = registryName
+			matchTemplate = templateID
+		}
+	}
+	if matchRegistry == "" {
 		return "", id
 	}
-	return strings.TrimSpace(left), strings.TrimSpace(right)
+	return matchRegistry, matchTemplate
 }
 
 func namespacedTemplateID(registryName, templateID string) string {
@@ -198,9 +223,9 @@ func namespacedTemplateID(registryName, templateID string) string {
 		return templateID
 	}
 	if templateID == "" {
-		return registryName + "/"
+		return registryName + templateIDNamespaceSeparator
 	}
-	return registryName + "/" + templateID
+	return registryName + templateIDNamespaceSeparator + templateID
 }
 
 func normalizeRegistryKind(kind string) string {

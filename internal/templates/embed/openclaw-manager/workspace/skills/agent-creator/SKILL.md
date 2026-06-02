@@ -76,7 +76,7 @@ csgclaw-cli bot create \
 
 ```bash
 csgclaw-cli --output json hub list
-csgclaw-cli --output json hub get builtin/gitlab-worker
+csgclaw-cli --output json hub get builtin.gitlab-worker
 csgclaw-cli bot list --channel <current_channel>
 csgclaw-cli bot create --from-template <id> --env KEY=VALUE ... --channel <current_channel>
 ```

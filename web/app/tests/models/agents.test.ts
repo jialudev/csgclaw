@@ -121,8 +121,8 @@ describe("agent model helpers", () => {
   it("selects runtime-specific templates and images", () => {
     const templates = [
       { id: "custom/worker", name: "custom-worker", runtime_kind: "picoclaw_sandbox" },
-      { id: "builtin/openclaw-worker", name: "openclaw-worker", runtime_kind: "openclaw_sandbox" },
-      { id: "builtin/picoclaw-worker", name: "picoclaw-worker", runtime_kind: "picoclaw_sandbox" },
+      { id: "builtin.openclaw-worker", name: "openclaw-worker", runtime_kind: "openclaw_sandbox" },
+      { id: "builtin.picoclaw-worker", name: "picoclaw-worker", runtime_kind: "picoclaw_sandbox" },
     ];
     const bootstrapConfig = {
       default_worker_template: "custom/worker",
@@ -136,7 +136,7 @@ describe("agent model helpers", () => {
 
     expect(pickDefaultAgentTemplate(templates, "picoclaw_sandbox", bootstrapConfig)?.id).toBe("custom/worker");
     expect(pickDefaultAgentTemplate(templates, "openclaw_sandbox", bootstrapConfig)?.id).toBe(
-      "builtin/openclaw-worker",
+      "builtin.openclaw-worker",
     );
     expect(pickDefaultAgentTemplate(templates, "notification", bootstrapConfig)).toBeNull();
     expect(runtimeImageForKind("openclaw_sandbox", bootstrapConfig, "fallback:worker")).toBe("openclaw:worker");
@@ -163,7 +163,7 @@ describe("agent model helpers", () => {
         bootstrapConfig,
       ),
     ).toMatchObject({
-      from_template: "builtin/openclaw-worker",
+      from_template: "builtin.openclaw-worker",
       image: "openclaw:worker",
       runtime_kind: "openclaw_sandbox",
       template_name: "openclaw-worker",
@@ -220,25 +220,25 @@ describe("agent model helpers", () => {
   it("uses manager template variants for manager rebuild runtime and image choices", () => {
     const variants = collectManagerTemplateVariants([
       {
-        id: "builtin/picoclaw-manager",
+        id: "builtin.picoclaw-manager",
         role: "manager",
         runtime_kind: "picoclaw_sandbox",
         image: "picoclaw:manager",
       },
       {
-        id: "builtin/openclaw-manager",
+        id: "builtin.openclaw-manager",
         role: "manager",
         runtime_kind: "openclaw_sandbox",
         image: "openclaw:manager",
       },
       {
-        id: "builtin/openclaw-worker",
+        id: "builtin.openclaw-worker",
         role: "worker",
         runtime_kind: "openclaw_sandbox",
         image: "openclaw:worker",
       },
       {
-        id: "duplicate/openclaw-manager",
+        id: "duplicate.openclaw-manager",
         role: "manager",
         runtime_kind: "openclaw_sandbox",
         image: "openclaw:manager",
@@ -334,8 +334,8 @@ describe("agent model helpers", () => {
 
   it("locks runtime and image on create when a template is selected", () => {
     expect(agentCreateTemplateLocked({ from_template: "" }, "create")).toBe(false);
-    expect(agentCreateTemplateLocked({ from_template: "builtin/picoclaw-worker" }, "create")).toBe(true);
-    expect(agentCreateTemplateLocked({ from_template: "builtin/picoclaw-worker" }, "edit")).toBe(false);
+    expect(agentCreateTemplateLocked({ from_template: "builtin.picoclaw-worker" }, "create")).toBe(true);
+    expect(agentCreateTemplateLocked({ from_template: "builtin.picoclaw-worker" }, "edit")).toBe(false);
   });
 
   it("builds notifier pull subscriptions and route previews", () => {

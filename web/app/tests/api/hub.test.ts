@@ -13,21 +13,21 @@ describe("hub API", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses registry/name paths for namespaced template detail requests", async () => {
+  it("uses single-id paths for namespaced template detail requests", async () => {
     const fetchMock = mockFetch();
 
-    await fetchHubTemplate("builtin/openclaw-manager");
+    await fetchHubTemplate("builtin.openclaw-manager");
 
-    expect(fetchMock).toHaveBeenCalledWith("api/v1/hub/templates/builtin/openclaw-manager", expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith("api/v1/hub/templates/builtin.openclaw-manager", expect.any(Object));
   });
 
-  it("uses registry/name paths for namespaced workspace file requests", async () => {
+  it("uses single-id paths for namespaced workspace file requests", async () => {
     const fetchMock = mockFetch();
 
-    await fetchHubWorkspaceFile("builtin/openclaw-manager", "skills/custom/SKILL.md");
+    await fetchHubWorkspaceFile("builtin.openclaw-manager", "skills/custom/SKILL.md");
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "api/v1/hub/templates/builtin/openclaw-manager/workspace/file?path=skills%2Fcustom%2FSKILL.md",
+      "api/v1/hub/templates/builtin.openclaw-manager/workspace/file?path=skills%2Fcustom%2FSKILL.md",
       expect.any(Object),
     );
   });

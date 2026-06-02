@@ -29,9 +29,5 @@ export function publishAgentTemplateRequest(agentID: string): Promise<HubTemplat
 }
 
 function hubTemplatePath(templateID: string): string {
-  const id = String(templateID || "");
-  const separator = id.indexOf("/");
-  const registry = id.slice(0, separator);
-  const name = id.slice(separator + 1);
-  return `${HUB_TEMPLATES_PATH}/${registry}/${name}`;
+  return `${HUB_TEMPLATES_PATH}/${encodeURIComponent(String(templateID || "").trim())}`;
 }

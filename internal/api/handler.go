@@ -966,8 +966,8 @@ func (h *Handler) handleHubTemplates(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) handleHubTemplateByRegistryName(w http.ResponseWriter, r *http.Request) {
-	h.handleHubTemplateByResolvedID(w, r, hubTemplateIDFromRegistryNamePathValues(r))
+func (h *Handler) handleHubTemplateByID(w http.ResponseWriter, r *http.Request) {
+	h.handleHubTemplateByResolvedID(w, r, pathValue(r, "id"))
 }
 
 func (h *Handler) handleHubTemplateByResolvedID(w http.ResponseWriter, r *http.Request, id string) {
@@ -1004,9 +1004,8 @@ func (h *Handler) handleHubTemplateByResolvedID(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, presented)
 }
 
-func (h *Handler) handleHubTemplateWorkspaceFileByRegistryName(w http.ResponseWriter, r *http.Request) {
-	id := hubTemplateIDFromRegistryNamePathValues(r)
-	h.handleHubTemplateWorkspaceFile(w, r, id)
+func (h *Handler) handleHubTemplateWorkspaceFileByID(w http.ResponseWriter, r *http.Request) {
+	h.handleHubTemplateWorkspaceFile(w, r, pathValue(r, "id"))
 }
 
 func presentHubTemplates(items []hub.Template) []apitypes.HubTemplate {
@@ -1786,15 +1785,6 @@ func (r addRoomMembersRequest) toServiceRequest() (im.AddRoomMembersRequest, err
 		UserIDs:   r.UserIDs,
 		Locale:    r.Locale,
 	}, nil
-}
-
-func hubTemplateIDFromRegistryNamePathValues(r *http.Request) string {
-	registry := pathValue(r, "registry")
-	name := pathValue(r, "name")
-	if registry == "" || name == "" {
-		return ""
-	}
-	return registry + "/" + name
 }
 
 func (h *Handler) reloadIM() error {

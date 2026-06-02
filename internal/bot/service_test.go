@@ -1367,7 +1367,7 @@ func TestServiceCreateWorkerUsesFromTemplateWorkspace(t *testing.T) {
 		Name:         "alice",
 		Role:         string(RoleWorker),
 		Channel:      string(ChannelCSGClaw),
-		FromTemplate: "local/frontend-worker",
+		FromTemplate: "local.frontend-worker",
 	}); err != nil {
 		t.Fatalf("Create(worker) error = %v", err)
 	}
