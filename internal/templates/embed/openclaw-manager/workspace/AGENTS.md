@@ -72,6 +72,8 @@ or identity onboarding.
 - Local skills live under `skills/<skill-name>/SKILL.md`.
 - Before using a skill, check the local `skills/` directory and read the
   matching `SKILL.md`.
+- If a task begins with `<slash-command name="use-skill" arg="<slug>"></slash-command>`,
+  treat `<slug>` as the required skill slug and the remaining text as the task instruction.
 - Prefer local workspace skills over external discovery.
 - **Agent creation first:** if the user wants to create/add/set up/provision an
   agent, bot, robot, or worker—or needs a new capability-specific worker—read

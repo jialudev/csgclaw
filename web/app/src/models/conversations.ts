@@ -1,5 +1,6 @@
 import { flattenMentionText } from "@/components/business/MessageContent/mentions";
 import { isToolActivityMessage } from "@/models/agentActivity";
+import { renderSlashCommandPreviewText } from "@/models/slashCommands";
 
 export type LocaleCode = "zh" | "en" | string;
 export type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
@@ -153,7 +154,41 @@ export function formatConversationPreview(
 }
 
 export function formatMessagePreviewText(content: unknown): string {
-  return collapsePreviewWhitespace(stripPreviewCodeFence(flattenMentionText(content)));
+  return collapsePreviewWhitespace(stripPreviewCodeFence(flattenMentionText(renderSlashCommandPreviewText(content))));
+}
+
+export type MessagePreviewTextToken = {
+  text: string;
+  type: "text" | "mention" | "slash";
+};
+
+const previewTokenPattern = /(^|[\s])\/[A-Za-z0-9._-]+(?!\/)|@[\w.-]+/g;
+
+export function splitMessagePreviewText(content: unknown): MessagePreviewTextToken[] {
+  const text = formatMessagePreviewText(content);
+  if (!text) {
+    return [];
+  }
+  const tokens: MessagePreviewTextToken[] = [];
+  let last = 0;
+  for (const match of text.matchAll(previewTokenPattern)) {
+    const fullMatch = match[0] || "";
+    if (!fullMatch) {
+      continue;
+    }
+    const matchText = fullMatch.trimStart();
+    const start = (match.index || 0) + (fullMatch.length - matchText.length);
+    if (start > last) {
+      tokens.push({ text: text.slice(last, start), type: "text" });
+    }
+    const type: MessagePreviewTextToken["type"] = matchText.startsWith("/") ? "slash" : "mention";
+    tokens.push({ text: matchText, type });
+    last = Math.max(last, start + matchText.length);
+  }
+  if (last < text.length) {
+    tokens.push({ text: text.slice(last), type: "text" });
+  }
+  return tokens.length > 0 ? tokens : [{ text, type: "text" }];
 }
 
 function stripPreviewCodeFence(content: string): string {
