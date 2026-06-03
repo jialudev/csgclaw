@@ -193,6 +193,7 @@ export type UseAgentControllerArgs = {
   bootstrapConfig: RuntimeBootstrapConfig | null;
   data: IMData | null;
   hubTemplates: HubTemplate[];
+  localRuntimeImages: string[];
   locale: LocaleCode;
   managerProfile: AgentProfileLike | null;
   refreshHubTemplates: () => Promise<void>;
@@ -204,6 +205,7 @@ export type UseAgentControllerArgs = {
   selectComputer: WorkspaceNavigationController["selectComputer"];
   selectConversation: WorkspaceNavigationController["selectConversation"];
   selectHub: WorkspaceNavigationController["selectHub"];
+  setAgentsData: WorkspaceQuerySetter<AgentLike[]>;
   setManagerProfileData: WorkspaceQuerySetter<AgentProfileLike | null>;
   setSelectedHubTemplateId: WorkspaceUiState["setSelectedHubTemplateId"];
   t: TranslateFn;

@@ -17,6 +17,7 @@ import {
   formatRuntimeKindLabel,
   isAgentIncomplete,
   isAgentRestartNeeded,
+  isAgentUpgradeNeeded,
   isAgentRunning,
   isNotifierRuntimeDraftOnAgentPage,
   normalizeAuthProviderName,
@@ -57,6 +58,7 @@ export function AgentDetailPane({
   onStart,
   onStop,
   onRecreate,
+  onUpgrade,
   onDelete,
   onInvite,
   onOpenDM,
@@ -66,6 +68,7 @@ export function AgentDetailPane({
   const draftBelongsToItem = Boolean(draft) && String(draft?.agent_id ?? "").trim() === String(item?.id ?? "").trim();
   const incomplete = isAgentIncomplete(item, draftBelongsToItem ? draft : undefined);
   const restartNeeded = isAgentRestartNeeded(item);
+  const upgradeNeeded = isAgentUpgradeNeeded(item);
   const busyPrefix = `${item.id}:`;
   const provider = item.provider || item.agent_profile?.provider;
   const runtimeKind = normalizeRuntimeKind(item.runtime_kind);
@@ -84,6 +87,9 @@ export function AgentDetailPane({
             <span className={`status-pill profile-state-pill ${incomplete ? "warn" : "ready"}`}>
               {incomplete ? t("profileIncompleteBadge") : t("profileCompleteBadge")}
             </span>
+            {upgradeNeeded ? (
+              <span className="status-pill profile-state-pill warn">{t("profileUpgradeRequired")}</span>
+            ) : null}
             {restartNeeded ? (
               <span className="status-pill profile-state-pill warn">{t("profileRestartRequired")}</span>
             ) : null}
@@ -123,6 +129,14 @@ export function AgentDetailPane({
             onClick={() => onOpenDM(item)}
           >
             {t("openDM")}
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            disabled={busyKey.startsWith(busyPrefix) || incomplete}
+            onClick={() => onUpgrade?.(item)}
+          >
+            {t("agentUpgrade")}
           </Button>
           <Button
             variant="danger"
@@ -210,10 +224,12 @@ export function AgentDetailPane({
                 <input value={draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
               </label>
               {!isNotifierRuntimeDraftOnAgentPage(draft, item) ? (
-                <label className="field">
+                <label className="field span-2 agent-image-field">
                   <span>{t("agentImage")}</span>
                   <input
+                    className="long-image-input"
                     value={draft.image}
+                    title={draft.image}
                     readOnly
                     disabled
                     onInput={(event) => updateDraft({ image: event.currentTarget.value })}

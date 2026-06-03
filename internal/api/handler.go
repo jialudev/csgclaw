@@ -23,6 +23,8 @@ import (
 	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	"csgclaw/internal/sandbox"
+	"csgclaw/internal/sandboxproviders"
 	"csgclaw/internal/team"
 	"csgclaw/internal/upgrade"
 	"csgclaw/internal/utils"
@@ -48,6 +50,7 @@ type Handler struct {
 	upgradeManager      *upgrade.Manager
 	upgradeConfigPath   string
 	upgradeApply        func(upgrade.ApplyHelperOptions) error
+	localRuntimeImages  func(context.Context, config.Config) ([]string, error)
 	notificationDeliver notification_bot.Fanouter
 	activityDecider     ActivityDecider
 }
@@ -167,6 +170,50 @@ func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *Handler) listAgentImageCandidates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, _, err := h.loadBootstrapConfig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lister := h.localRuntimeImages
+	if lister == nil {
+		lister = listLocalRuntimeImages
+	}
+	images, err := lister(r.Context(), cfg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if images == nil {
+		images = []string{}
+	}
+	writeJSON(w, http.StatusOK, images)
+}
+
+func listLocalRuntimeImages(ctx context.Context, cfg config.Config) ([]string, error) {
+	provider, err := sandboxproviders.Provider(cfg.Sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return listLocalRuntimeImagesWithProvider(ctx, provider)
+}
+
+func listLocalRuntimeImagesWithProvider(ctx context.Context, provider sandbox.Provider) ([]string, error) {
+	if provider == nil {
+		return []string{}, nil
+	}
+	homeDir, err := agent.SandboxRuntimeHome(agent.ManagerName)
+	if err != nil {
+		return nil, err
+	}
+	return provider.ListImages(ctx, homeDir)
 }
 
 func (h *Handler) loadBootstrapConfig() (config.Config, string, error) {
@@ -652,6 +699,15 @@ func (h *Handler) handleAgentRecreateByID(w http.ResponseWriter, r *http.Request
 	h.handleAgentRecreate(w, r, id)
 }
 
+func (h *Handler) handleAgentUpgradeByID(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleAgentUpgrade(w, r, id)
+}
+
 func (h *Handler) handleAgentProfile(w http.ResponseWriter, r *http.Request, id string) {
 	if h.svc == nil {
 		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
@@ -700,6 +756,27 @@ func (h *Handler) handleAgentRecreate(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 	recreated, err := h.svc.Recreate(r.Context(), id)
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, http.StatusOK, presentAgent(recreated))
+}
+
+func (h *Handler) handleAgentUpgrade(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.svc == nil {
+		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	recreated, err := h.svc.Upgrade(r.Context(), id)
 	if err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "not found") {

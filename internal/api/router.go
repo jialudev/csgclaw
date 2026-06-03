@@ -35,6 +35,7 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 					r.Put("/", h.updateAgentProfile)
 				})
 				r.Post("/recreate", h.recreateAgent)
+				r.Post("/upgrade", h.upgradeAgent)
 			})
 		})
 		r.Route("/hub/templates", func(r chi.Router) {
@@ -50,6 +51,7 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 		})
 		r.Post("/agent-profiles/models", h.handleAgentProfileModels)
 		r.Get("/agent-profile-defaults", h.handleAgentProfileDefaults)
+		r.Get("/agents/image-candidates", h.listAgentImageCandidates)
 		r.Route("/config/bootstrap", func(r chi.Router) {
 			r.Get("/", h.getBootstrapConfig)
 			r.Put("/", h.updateBootstrapConfig)

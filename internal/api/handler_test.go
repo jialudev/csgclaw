@@ -265,6 +265,73 @@ func TestBootstrapConfigViewUsesServerUpgradeVisibility(t *testing.T) {
 	}
 }
 
+func TestHandleAgentImageCandidatesReturnsLocalSandboxImages(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := (config.Config{
+		Server: config.ServerConfig{
+			ListenAddr:  "127.0.0.1:18080",
+			AccessToken: "token",
+		},
+		Sandbox: config.SandboxConfig{
+			Provider:      config.DockerProvider,
+			DockerCLIPath: "/custom/docker",
+		},
+	}).Save(configPath); err != nil {
+		t.Fatalf("Save(config) error = %v", err)
+	}
+
+	srv := &Handler{
+		configPath: configPath,
+		localRuntimeImages: func(_ context.Context, cfg config.Config) ([]string, error) {
+			if got, want := cfg.Sandbox.Provider, config.DockerProvider; got != want {
+				t.Fatalf("cfg.Sandbox.Provider = %q, want %q", got, want)
+			}
+			if got, want := cfg.Sandbox.DockerCLIPath, "/custom/docker"; got != want {
+				t.Fatalf("cfg.Sandbox.DockerCLIPath = %q, want %q", got, want)
+			}
+			return []string{"registry.example/picoclaw:2026.5.27", "registry.example/picoclaw:2026.5.22"}, nil
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/agents/image-candidates", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got []string
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := []string{"registry.example/picoclaw:2026.5.27", "registry.example/picoclaw:2026.5.22"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("agent image candidates = %#v, want %#v", got, want)
+	}
+}
+
+func TestListLocalRuntimeImagesUsesSandboxProviderCapability(t *testing.T) {
+	var gotHome string
+	provider := &sandboxtest.Provider{
+		Images: []string{"registry.example/picoclaw:2026.5.27"},
+		ListImagesFunc: func(_ context.Context, homeDir string) ([]string, error) {
+			gotHome = homeDir
+			return []string{"registry.example/picoclaw:2026.5.27"}, nil
+		},
+	}
+
+	got, err := listLocalRuntimeImagesWithProvider(context.Background(), provider)
+	if err != nil {
+		t.Fatalf("listLocalRuntimeImagesWithProvider() error = %v", err)
+	}
+	want := []string{"registry.example/picoclaw:2026.5.27"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("listLocalRuntimeImagesWithProvider() = %#v, want %#v", got, want)
+	}
+	wantHomeSuffix := filepath.Join(config.AppDirName, "agents", agent.ManagerName, config.RuntimeHomeDirName)
+	if !strings.HasSuffix(gotHome, wantHomeSuffix) {
+		t.Fatalf("sandbox home = %q, want suffix %q", gotHome, wantHomeSuffix)
+	}
+}
+
 func TestHandleFeishuRoomsMembers(t *testing.T) {
 	feishuSvc := feishu.NewServiceWithCreateChatAndAddMembers(
 		map[string]feishu.AppConfig{
@@ -1093,6 +1160,73 @@ func TestHandleAgentsGetByIDReturnsAgent(t *testing.T) {
 	}
 	if got.ID != "u-alice" || got.Name != "alice" || got.Role != agent.RoleWorker {
 		t.Fatalf("agent = %+v, want u-alice/alice/worker", got)
+	}
+}
+
+func TestHandleAgentUpgradeUsesLatestDefaultImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	hubSvc := mustNewLocalTemplateHubServiceWithoutWorkspace(t, "frontend-worker", hub.Template{
+		ID:          "frontend-worker",
+		Name:        "frontend-worker",
+		Description: "frontend worker",
+		Role:        hub.TemplateRoleWorker,
+		RuntimeKind: agent.RuntimeKindPicoClawSandbox,
+		Image:       "registry.example/picoclaw-worker:2026.06.03",
+	})
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{
+			ID:           "u-alice",
+			Name:         "alice",
+			RuntimeID:    "rt-u-alice",
+			RuntimeKind:  agent.RuntimeKindPicoClawSandbox,
+			Image:        "custom.example/alice-worker:2026.05.27",
+			BoxID:        "box-alice-old",
+			Role:         agent.RoleWorker,
+			Status:       string(agentruntime.StateRunning),
+			AgentProfile: agent.AgentProfile{Name: "alice", Provider: agent.ProviderCodex, ModelID: "gpt-5.5", ProfileComplete: true},
+			CreatedAt:    time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC),
+		},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+	var newImage string
+	svc, err := agent.NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"manager-image:test",
+		statePath,
+		agent.WithHubService(hubSvc),
+		agent.WithBootstrapDefaultTemplates(config.BootstrapConfig{DefaultWorkerTemplate: "local/frontend-worker"}),
+		agent.WithRuntime(fakeCompatRuntime{
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				newImage = spec.Image
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "box-alice-new"}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/u-alice/upgrade", nil)
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if newImage != "registry.example/picoclaw-worker:2026.06.03" {
+		t.Fatalf("runtime New() image = %q, want latest default image", newImage)
+	}
+	var got agent.Agent
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Image != "registry.example/picoclaw-worker:2026.06.03" {
+		t.Fatalf("response Image = %q, want latest default image", got.Image)
 	}
 }
 

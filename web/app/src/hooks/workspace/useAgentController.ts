@@ -32,6 +32,7 @@ import { firstWorkspaceFilePath, hasWorkspaceFilePath } from "@/models/workspace
 import {
   applyTemplateToDraft,
   advanceAgentProgress,
+  agentDraftWithRuntimeFieldsFromAgent,
   agentToDraft,
   availableManagerRebuildImageOptions,
   availableManagerRebuildRuntimeOptions,
@@ -46,6 +47,7 @@ import {
   isNotificationBotDraftContext,
   isNotifierRuntimeDraft,
   isNotifierRuntimeDraftOnAgentPage,
+  mergeAgentIntoList,
   normalizeAuthProviderName,
   partitionWorkspaceAgentItems,
   normalizeRuntimeKind,
@@ -80,7 +82,7 @@ type ManagerRebuildOptions = {
 };
 
 type AgentModalMode = "create" | "edit";
-type AgentAction = "delete" | "recreate" | "start" | "stop";
+type AgentAction = "delete" | "recreate" | "start" | "stop" | "upgrade";
 
 type AgentWithProfile = {
   agent: AgentLike;
@@ -96,6 +98,7 @@ export function useAgentController({
   bootstrapConfig,
   data,
   hubTemplates,
+  localRuntimeImages,
   locale,
   managerProfile,
   refreshHubTemplates,
@@ -107,6 +110,7 @@ export function useAgentController({
   selectComputer,
   selectConversation,
   selectHub,
+  setAgentsData,
   setManagerProfileData,
   setSelectedHubTemplateId,
   t,
@@ -201,7 +205,9 @@ export function useAgentController({
   const managerRebuildImageOptions = availableManagerRebuildImageOptions(
     managerTemplateVariants,
     managerRebuildRuntimeKind,
+    bootstrapConfig,
     managerAgent?.image,
+    localRuntimeImages,
   );
   const agentsDisplayError =
     agentsError || (agentsQuery.isError ? errorMessage(agentsQuery.error, t("agentActionFailed")) : "");
@@ -351,9 +357,12 @@ export function useAgentController({
       ? initialRuntimeKind
       : fallbackRuntimeKind;
     const currentImage = String(item?.image ?? managerAgent?.image ?? "").trim();
-    const resolvedImage =
-      currentImage ||
-      defaultManagerRebuildImageForRuntime(managerTemplateVariants, resolvedRuntimeKind, bootstrapConfig, "");
+    const resolvedImage = defaultManagerRebuildImageForRuntime(
+      managerTemplateVariants,
+      resolvedRuntimeKind,
+      bootstrapConfig,
+      currentImage,
+    );
     setManagerRebuildRuntimeKind(resolvedRuntimeKind);
     setManagerRebuildImage(resolvedImage);
     setShowManagerRebuildModal(true);
@@ -367,11 +376,11 @@ export function useAgentController({
         managerRuntimeOptions[0]?.value,
     );
     const image = String(options.image ?? managerAgent?.image ?? "").trim();
-    await createManagerAgentRequest({
+    const rebuiltAgent = await createManagerAgentRequest({
       runtime_kind: runtimeKind,
       image,
     });
-    await refreshAgents();
+    await refreshAgentsWithUpdatedAgent(rebuiltAgent);
     await refreshManagerProfile();
     await refreshWorkspaceBootstrapConfig();
   }
@@ -456,6 +465,16 @@ export function useAgentController({
     } catch (err) {
       if (!options.silent) {
         setAgentsError(errorMessage(err, t("agentActionFailed")));
+      }
+    }
+  }
+
+  async function refreshAgentsWithUpdatedAgent(updatedAgent: AgentLike | null | undefined): Promise<void> {
+    await refreshAgents();
+    if (updatedAgent?.id) {
+      setAgentsData((current) => mergeAgentIntoList(current, updatedAgent));
+      if (activePane.type === WorkspacePaneTypes.agent && activePane.id === updatedAgent.id) {
+        setAgentPageDraft((current) => agentDraftWithRuntimeFieldsFromAgent(current, updatedAgent));
       }
     }
   }
@@ -756,7 +775,7 @@ export function useAgentController({
     if (!item?.id || agentActionBusy) {
       return;
     }
-    if (isNotificationBotAgent(item) && (action === "recreate" || action === "start" || action === "stop")) {
+    if (isNotificationBotAgent(item) && (action === "recreate" || action === "start" || action === "stop" || action === "upgrade")) {
       return;
     }
     if (action === "recreate" && isManagerAgent(item)) {
@@ -769,12 +788,13 @@ export function useAgentController({
     setAgentActionBusy(`${item.id}:${action}`);
     setAgentsError("");
     try {
+      let updatedAgent: AgentLike | null = null;
       if (action === "delete") {
         await deleteBotRequest(item.id);
       } else {
-        await runAgentActionRequest(item.id, action);
+        updatedAgent = await runAgentActionRequest(item.id, action);
       }
-      await refreshAgents();
+      await refreshAgentsWithUpdatedAgent(updatedAgent);
       if (item.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
       }
@@ -934,6 +954,7 @@ export function useAgentController({
       onStart: (item: AgentLike | null | undefined) => runAgentAction(item, "start"),
       onStop: (item: AgentLike | null | undefined) => runAgentAction(item, "stop"),
       onRecreate: (item: AgentLike | null | undefined) => runAgentAction(item, "recreate"),
+      onUpgrade: (item: AgentLike | null | undefined) => runAgentAction(item, "upgrade"),
       onDelete: (item: AgentLike | null | undefined) => runAgentAction(item, "delete"),
       onInvite: inviteAgentToRoom,
       onOpenDM: openAgentDirectMessage,

@@ -47,6 +47,7 @@ export type AgentProfileLike = {
   env?: JSONRecord | null;
   env_restart_required?: boolean | null;
   headers?: JSONRecord | null;
+  image_upgrade_required?: boolean | null;
   model_id?: string | null;
   profile_complete?: boolean | null;
   provider?: ProviderName | null;
@@ -227,6 +228,57 @@ export function partitionWorkspaceAgentItems(
   const notificationAgentItems = rest.filter((item) => isNotificationBotAgent(item));
   const workerAgentItems = [manager, ...rest.filter((item) => !isNotificationBotAgent(item))].filter(Boolean);
   return { workerAgentItems, notificationAgentItems };
+}
+
+export function mergeAgentIntoList(
+  items: readonly AgentLike[] | null | undefined,
+  updated: AgentLike | null | undefined,
+): AgentLike[] {
+  const currentItems = [...(items ?? [])];
+  const id = String(updated?.id ?? "").trim();
+  if (!id || !updated) {
+    return currentItems;
+  }
+
+  let found = false;
+  const next = currentItems.map((item) => {
+    if (String(item?.id ?? "").trim() !== id) {
+      return item;
+    }
+    found = true;
+    const merged: AgentLike = { ...item, ...updated };
+    if (item?.agent_profile || updated.agent_profile) {
+      merged.agent_profile = { ...(item.agent_profile ?? {}), ...(updated.agent_profile ?? {}) };
+    }
+    return merged;
+  });
+
+  return found ? next : [...next, updated];
+}
+
+export function agentDraftWithRuntimeFieldsFromAgent(
+  draft: AgentDraft | null | undefined,
+  updated: AgentLike | null | undefined,
+): AgentDraft | null {
+  if (!draft) {
+    return null;
+  }
+  const agentID = String(updated?.id ?? "").trim();
+  const draftID = String(draft.agent_id ?? "").trim();
+  if (!agentID || (draftID && draftID !== agentID)) {
+    return draft;
+  }
+
+  const next: AgentDraft = { ...draft, agent_id: draftID || agentID };
+  if (updated?.image != null) {
+    const image = String(updated.image).trim();
+    next.image = image;
+    next.default_image = image;
+  }
+  if (updated?.runtime_kind != null) {
+    next.runtime_kind = normalizeRuntimeKind(updated.runtime_kind || next.runtime_kind);
+  }
+  return next;
 }
 
 export function notificationBotStatusLabel(item: AgentLike | null | undefined, t: TranslateFn): string {
@@ -921,6 +973,10 @@ export function isAgentRestartNeeded(item: AgentLike | null | undefined): boolea
   return Boolean(item?.env_restart_required || item?.agent_profile?.env_restart_required);
 }
 
+export function isAgentUpgradeNeeded(item: AgentLike | null | undefined): boolean {
+  return Boolean(item?.image_upgrade_required || item?.agent_profile?.image_upgrade_required);
+}
+
 export function agentModelID(item: AgentLike | null | undefined): string {
   return item?.model_id || item?.agent_profile?.model_id || "no model";
 }
@@ -1145,7 +1201,9 @@ export function availableManagerRebuildRuntimeOptions(
 export function availableManagerRebuildImageOptions(
   variants: readonly ManagerTemplateVariant[] | null | undefined,
   runtimeKind: unknown,
+  bootstrapConfig: RuntimeBootstrapConfig | null | undefined,
   currentImage = "",
+  localImages: readonly string[] | null | undefined = [],
 ): string[] {
   const images: string[] = [];
   const seen = new Set<string>();
@@ -1157,7 +1215,7 @@ export function availableManagerRebuildImageOptions(
     seen.add(trimmed);
     images.push(trimmed);
   };
-  push(currentImage);
+  push(defaultManagerRebuildImageForRuntime(variants, runtimeKind, bootstrapConfig, ""));
   const selectedRuntime = normalizeRuntimeKind(runtimeKind);
   if (Array.isArray(variants)) {
     for (const item of variants) {
@@ -1167,6 +1225,12 @@ export function availableManagerRebuildImageOptions(
       push(item?.image);
     }
   }
+  if (Array.isArray(localImages)) {
+    for (const image of localImages) {
+      push(image);
+    }
+  }
+  push(currentImage);
   return images;
 }
 
@@ -1176,11 +1240,23 @@ export function defaultManagerRebuildImageForRuntime(
   bootstrapConfig: RuntimeBootstrapConfig | null | undefined,
   fallbackImage = "",
 ): string {
-  const images = availableManagerRebuildImageOptions(variants, runtimeKind);
-  if (images.length > 0) {
-    return images[0];
+  const runtimeDefault = runtimeImageForKind(runtimeKind, bootstrapConfig, "");
+  if (runtimeDefault) {
+    return runtimeDefault;
   }
-  return runtimeImageForKind(runtimeKind, bootstrapConfig, fallbackImage);
+  const selectedRuntime = normalizeRuntimeKind(runtimeKind);
+  if (Array.isArray(variants)) {
+    for (const item of variants) {
+      if (selectedRuntime && normalizeRuntimeKind(item?.runtimeKind) !== selectedRuntime) {
+        continue;
+      }
+      const image = String(item?.image ?? "").trim();
+      if (image) {
+        return image;
+      }
+    }
+  }
+  return String(fallbackImage ?? "").trim();
 }
 
 export function agentCreateProgressSteps(runtimeKind: unknown): AgentCreateProgressStep[] {
