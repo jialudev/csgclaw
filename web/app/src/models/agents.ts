@@ -15,6 +15,7 @@ import {
   RUNTIME_KIND_OPTIONS,
   WORKER_AGENT_ROLE,
 } from "@/shared/constants/agents";
+import { avatarFallbackText } from "@/shared/avatar";
 
 export type RuntimeKind = "picoclaw_sandbox" | "openclaw_sandbox" | "codex" | string;
 export type BotType = typeof BOT_TYPE_NORMAL | typeof BOT_TYPE_NOTIFICATION | string;
@@ -68,12 +69,21 @@ export type AgentLike = AgentProfileLike & {
   id?: string | null;
   type?: BotType | null;
   available?: boolean | null;
+  avatar?: string | null;
   image?: string | null;
   name?: string | null;
   role?: string | null;
   runtime_options?: JSONRecord | null;
   status?: string | null;
   template_name?: string | null;
+  user_id?: string | null;
+};
+
+export type AvatarLikeUser = {
+  avatar?: string | null;
+  handle?: string | null;
+  id: string;
+  name?: string | null;
 };
 
 export type AgentDraft = {
@@ -81,6 +91,7 @@ export type AgentDraft = {
   api_key: string;
   api_key_preview: string;
   api_key_set: boolean;
+  avatar?: string;
   base_url: string;
   default_image?: string;
   description?: string;
@@ -216,7 +227,38 @@ export function normalizeBotType(value: unknown): BotType {
 }
 
 export function isNotificationBotAgent(item: AgentLike | null | undefined): boolean {
-  return normalizeBotType(item?.type) === BOT_TYPE_NOTIFICATION;
+  return normalizeBotType(item?.bot_type ?? item?.type) === BOT_TYPE_NOTIFICATION;
+}
+
+export function resolveAgentAvatarSource(
+  agent: AgentLike | null | undefined,
+  usersById?: Map<string, AvatarLikeUser> | null,
+): string {
+  const agentAvatar = String(agent?.avatar ?? "").trim();
+  const candidateUserIDs = [agent?.user_id, agent?.id].map((value) => String(value ?? "").trim()).filter(Boolean);
+
+  for (const userID of candidateUserIDs) {
+    const userAvatar = String(usersById?.get(userID)?.avatar ?? "").trim();
+    if (userAvatar) {
+      return userAvatar;
+    }
+  }
+
+  return agentAvatar;
+}
+
+export function resolveAgentAvatarFallback(
+  agent: AgentLike | null | undefined,
+  usersById?: Map<string, AvatarLikeUser> | null,
+): string {
+  const candidateUserIDs = [agent?.user_id, agent?.id].map((value) => String(value ?? "").trim()).filter(Boolean);
+  for (const userID of candidateUserIDs) {
+    const user = usersById?.get(userID);
+    if (user) {
+      return avatarFallbackText(user.avatar, user.name, user.handle, user.id);
+    }
+  }
+  return avatarFallbackText(agent?.avatar, agent?.name, agent?.handle, agent?.id);
 }
 
 export function partitionWorkspaceAgentItems(
@@ -672,6 +714,7 @@ export function agentToDraft(agent: AgentDraftSource | null | undefined): AgentD
     role: agent?.role || WORKER_AGENT_ROLE,
     bot_type: botType,
     description: agent?.description || profile.description || "",
+    avatar: agent?.avatar || "",
     default_image: agent?.image || "",
     image: agent?.image || "",
     from_template: agent?.from_template || "",

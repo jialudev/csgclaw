@@ -435,6 +435,19 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 	if s == nil {
 		return Agent{}, fmt.Errorf("agent service is required")
 	}
+	managerAvatar := ""
+	s.mu.RLock()
+	if existing, ok := s.agents[ManagerUserID]; ok {
+		managerAvatar = strings.TrimSpace(existing.Avatar)
+	} else {
+		for _, existing := range s.agents {
+			if isManagerAgent(existing) {
+				managerAvatar = strings.TrimSpace(existing.Avatar)
+				break
+			}
+		}
+	}
+	s.mu.RUnlock()
 	runtimeKind := runtimeKindForGatewayRuntime(runtimeOverride)
 	if strings.TrimSpace(runtimeOverride) != "" && runtimeKind == "" {
 		return Agent{}, fmt.Errorf("gateway runtime %q is not supported", runtimeOverride)
@@ -526,6 +539,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 				RuntimeID:   runtimeIDForAgentID(ManagerUserID),
 				RuntimeKind: runtimeKind,
 				Image:       managerImage,
+				Avatar:      managerAvatar,
 				Status:      "profile_incomplete",
 				CreatedAt:   now,
 				Role:        RoleManager,
@@ -604,6 +618,7 @@ func (s *Service) ensureManager(ctx context.Context, forceRecreate bool, imageOv
 		RuntimeID:        runtimeIDForAgentID(ManagerUserID),
 		RuntimeKind:      s.gatewayRuntimeKind(),
 		Image:            managerImage,
+		Avatar:           managerAvatar,
 		BoxID:            info.ID,
 		Status:           string(info.State),
 		CreatedAt:        info.CreatedAt.UTC(),
@@ -968,6 +983,9 @@ func (s *Service) replace(ctx context.Context, req CreateRequest) (Agent, error)
 		if strings.TrimSpace(spec.Image) == "" {
 			spec.Image = existing.Image
 		}
+		if strings.TrimSpace(spec.Avatar) == "" {
+			spec.Avatar = existing.Avatar
+		}
 		if strings.TrimSpace(spec.RuntimeKind) == "" {
 			spec.RuntimeKind = existing.RuntimeKind
 		}
@@ -1029,6 +1047,7 @@ func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) 
 		Name:           existing.Name,
 		Description:    existing.Description,
 		Image:          existing.Image,
+		Avatar:         existing.Avatar,
 		RuntimeKind:    existing.RuntimeKind,
 		Role:           existing.Role,
 		Status:         existing.Status,
@@ -1050,6 +1069,8 @@ func mergeReplaceSpec(existing Agent, next CreateAgentSpec, fieldMask []string) 
 			merged.Description = next.Description
 		case "image":
 			merged.Image = next.Image
+		case "avatar":
+			merged.Avatar = next.Avatar
 		case "runtime_kind":
 			merged.RuntimeKind = next.RuntimeKind
 		case "role":
@@ -1468,6 +1489,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	name := strings.TrimSpace(spec.Name)
 	description := strings.TrimSpace(spec.Description)
 	image := strings.TrimSpace(spec.Image)
+	avatar := strings.TrimSpace(spec.Avatar)
 	runtimeKind := strings.TrimSpace(spec.RuntimeKind)
 	switch {
 	case name == "":
@@ -1540,14 +1562,14 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		defer func() {
 			_ = s.closeBox(box)
 		}()
-		return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, spec.RuntimeOptions, agentruntime.Info{
+		return s.persistCreatedWorker(ctx, id, name, description, image, avatar, runtimeKind, resolvedProfile, spec.RuntimeOptions, agentruntime.Info{
 			HandleID:  strings.TrimSpace(info.ID),
 			State:     agentruntime.State(info.State),
 			CreatedAt: info.CreatedAt.UTC(),
 		})
 	}
 	if runtimeKind == RuntimeKindCodex {
-		if err := s.persistStartingWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, spec.RuntimeOptions); err != nil {
+		if err := s.persistStartingWorker(ctx, id, name, description, image, avatar, runtimeKind, resolvedProfile, spec.RuntimeOptions); err != nil {
 			return Agent{}, err
 		}
 		defer func() {
@@ -1572,10 +1594,10 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 		CreatedAt: time.Now().UTC(),
 	}
 
-	return s.persistCreatedWorker(ctx, id, name, description, image, runtimeKind, resolvedProfile, spec.RuntimeOptions, info)
+	return s.persistCreatedWorker(ctx, id, name, description, image, avatar, runtimeKind, resolvedProfile, spec.RuntimeOptions, info)
 }
 
-func (s *Service) persistStartingWorker(ctx context.Context, id, name, description, image, runtimeKind string, profile AgentProfile, runtimeOptions map[string]any) error {
+func (s *Service) persistStartingWorker(ctx context.Context, id, name, description, image, avatar, runtimeKind string, profile AgentProfile, runtimeOptions map[string]any) error {
 	s.mu.Lock()
 
 	if _, ok := s.agents[id]; ok {
@@ -1587,7 +1609,7 @@ func (s *Service) persistStartingWorker(ctx context.Context, id, name, descripti
 		return fmt.Errorf("agent name %q already exists", name)
 	}
 
-	worker := newWorkerAgent(id, name, description, image, runtimeKind, profile, runtimeOptions, agentruntime.Info{
+	worker := newWorkerAgent(id, name, description, image, avatar, runtimeKind, profile, runtimeOptions, agentruntime.Info{
 		State:     agentruntime.StateCreated,
 		CreatedAt: time.Now().UTC(),
 	})
@@ -1614,7 +1636,7 @@ func (s *Service) removeStartingWorker(ctx context.Context, id string) error {
 	return err
 }
 
-func (s *Service) persistCreatedWorker(ctx context.Context, id, name, description, image, runtimeKind string, profile AgentProfile, createRuntimeExt map[string]any, info agentruntime.Info) (Agent, error) {
+func (s *Service) persistCreatedWorker(ctx context.Context, id, name, description, image, avatar, runtimeKind string, profile AgentProfile, createRuntimeExt map[string]any, info agentruntime.Info) (Agent, error) {
 	s.mu.Lock()
 
 	if existing, ok := s.agents[id]; ok && !isStartingWorker(existing) {
@@ -1626,7 +1648,7 @@ func (s *Service) persistCreatedWorker(ctx context.Context, id, name, descriptio
 		return Agent{}, fmt.Errorf("agent name %q already exists", name)
 	}
 
-	worker := newWorkerAgent(id, name, description, image, runtimeKind, profile, createRuntimeExt, info)
+	worker := newWorkerAgent(id, name, description, image, avatar, runtimeKind, profile, createRuntimeExt, info)
 	s.agents[worker.ID] = worker
 	s.syncRuntimeRecordLocked(worker)
 	if worker.AgentProfile.ProfileComplete {
@@ -1646,7 +1668,7 @@ func (s *Service) persistCreatedWorker(ctx context.Context, id, name, descriptio
 	return created, nil
 }
 
-func newWorkerAgent(id, name, description, image, runtimeKind string, profile AgentProfile, runtimeOptions map[string]any, info agentruntime.Info) Agent {
+func newWorkerAgent(id, name, description, image, avatar, runtimeKind string, profile AgentProfile, runtimeOptions map[string]any, info agentruntime.Info) Agent {
 	createdAt := info.CreatedAt.UTC()
 	if info.CreatedAt.IsZero() {
 		createdAt = time.Now().UTC()
@@ -1666,6 +1688,7 @@ func newWorkerAgent(id, name, description, image, runtimeKind string, profile Ag
 		RuntimeID:       runtimeIDForAgentID(id),
 		RuntimeKind:     runtimeKind,
 		Image:           image,
+		Avatar:          strings.TrimSpace(avatar),
 		BoxID:           strings.TrimSpace(info.HandleID),
 		Description:     description,
 		Status:          string(state),

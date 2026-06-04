@@ -11,7 +11,8 @@ import {
   isAgentRunning,
 } from "@/models/agents";
 import { localizeRole } from "@/shared/i18n";
-import { AgentIcon } from "@/components/ui/Icons";
+import { AgentAvatarContent } from "@/components/business/AgentAvatar";
+import { avatarFallbackText } from "@/shared/avatar";
 import { Button, IconButton } from "@/components/ui";
 
 function clamp(value, min, max) {
@@ -103,6 +104,8 @@ export function ProfilePreviewPopover({
       className="profile-preview-popover"
       style={profilePreviewStyle(anchorRect, cardHeight)}
       aria-label={t("profilePreview")}
+      role="dialog"
+      aria-modal="false"
     >
       <div className="preview-header">
         <div className="preview-title">{t("profilePreview")}</div>
@@ -118,14 +121,11 @@ export function ProfilePreviewPopover({
       <div className="preview-hero">
         {agent ? (
           <div className="entity-avatar preview-avatar">
-            <AgentIcon />
+            <AgentAvatarContent avatar={agent.avatar} fallback={avatarFallbackText(agent.avatar, displayName, agent.id)} alt="" />
           </div>
         ) : (
-          <div
-            className="avatar preview-avatar"
-            style={{ background: `linear-gradient(135deg, ${user.accent_hex}, #10233f)` }}
-          >
-            {user.avatar}
+          <div className="avatar preview-avatar">
+            <AgentAvatarContent avatar={user.avatar} fallback={avatarFallbackText(user.avatar, user.name, user.handle, user.id)} />
           </div>
         )}
         <div className="preview-identity">

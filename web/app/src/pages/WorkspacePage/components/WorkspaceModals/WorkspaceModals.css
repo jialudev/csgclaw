@@ -32,6 +32,485 @@
   font-weight: 650;
 }
 
+.create-room-modal {
+  --create-room-modal-bg: var(--portal-white);
+  --create-room-title-color: var(--portal-gray-900);
+  --create-room-subtitle-color: var(--portal-gray-600);
+
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: min(770px, calc(100dvh - 40px));
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  background: var(--create-room-modal-bg);
+  box-shadow:
+    0 20px 24px -4px rgba(16, 24, 40, 0.08),
+    0 8px 8px -4px rgba(16, 24, 40, 0.03);
+}
+
+.create-room-modal .modal-header {
+  flex: 0 0 auto;
+  min-height: auto;
+  padding: 0;
+  margin: 0 2px;
+  border: 0;
+  background: var(--create-room-modal-bg);
+}
+
+.create-room-modal .modal-title {
+  color: var(--create-room-title-color);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.create-room-modal .modal-subtitle {
+  margin-top: 4px;
+  color: var(--create-room-subtitle-color);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
+}
+
+.create-room-modal-content {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 24px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  margin-top: 20px;
+}
+
+.create-room-section {
+  display: grid;
+  gap: 16px;
+}
+
+.create-room-section-title {
+  color: var(--portal-gray-700);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.create-room-modal .create-room-field {
+  gap: 6px;
+  margin-top: 0;
+}
+
+.create-room-modal .create-room-field span,
+.create-room-modal .create-room-field .field-label {
+  color: var(--portal-gray-700);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.create-room-modal .field-required-star {
+  order: -1;
+  color: var(--portal-error-400);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.create-room-modal .field input {
+  height: 44px;
+}
+
+.create-room-modal .field textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.create-room-member-list {
+  gap: 12px;
+}
+
+.create-room-modal .create-room-member-row {
+  grid-template-columns: auto auto minmax(0, 1fr);
+  min-height: 68px;
+  gap: 14px;
+  padding: 12px 14px;
+  border-color: var(--portal-gray-300);
+  border-radius: 8px;
+  background: var(--portal-white);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+}
+
+.create-room-modal .create-room-member-row:hover {
+  border-color: var(--portal-gray-400);
+}
+
+.create-room-modal .create-room-member-row:has(input:focus-visible) {
+  border-color: var(--portal-brand-300);
+  box-shadow: var(--shadow-xs), var(--focus-ring);
+}
+
+.create-room-modal .create-room-member-row:has(input:checked) {
+  border-color: var(--portal-brand-300);
+}
+
+.create-room-modal .create-room-member-row > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  accent-color: var(--portal-brand-600);
+}
+
+.create-room-member-copy {
+  display: grid;
+  min-width: 0;
+  color: var(--portal-gray-600);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
+}
+
+.create-room-member-copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--portal-gray-700);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-room-member-copy small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--portal-gray-600);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-room-avatar {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+  font-weight: var(--avatar-default-weight);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.create-room-avatar.compact,
+.create-room-avatar-more {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  border: 1.5px solid var(--portal-white);
+  font-size: 12px;
+}
+
+.create-room-avatar .agent-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.create-room-avatar[data-avatar-index="1"] {
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+}
+
+.create-room-avatar[data-avatar-index="2"] {
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+}
+
+.create-room-avatar[data-avatar-index="3"] {
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+}
+
+.create-room-avatar[data-avatar-index="4"] {
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+}
+
+.create-room-avatar[data-avatar-index="5"] {
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+}
+
+.create-room-avatar-stack {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.create-room-modal .create-room-avatar-stack .create-room-avatar,
+.create-room-modal .create-room-avatar-stack .create-room-avatar-more {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  flex: 0 0 36px;
+}
+
+.create-room-avatar-stack .create-room-avatar,
+.create-room-avatar-more {
+  margin-right: -4px;
+}
+
+.create-room-avatar-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+  font-weight: var(--avatar-default-weight);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.create-room-error {
+  margin-top: 0;
+}
+
+.create-room-modal .modal-actions {
+  flex: 0 0 auto;
+  gap: 12px;
+  margin-top: 0;
+  padding: 24px 0 0;
+  border: 0;
+}
+
+.create-room-modal .modal-actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 44px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.create-room-modal .modal-header .modal-close {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: -8px -8px 0 0;
+  color: var(--portal-gray-400);
+}
+
+@media (max-width: 680px) {
+  .create-room-modal {
+    max-height: calc(100dvh - 24px);
+  }
+
+  .create-room-modal-content,
+  .create-room-modal .modal-header,
+  .create-room-modal .modal-actions {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .create-room-modal .modal-actions {
+    padding-top: 24px;
+  }
+}
+
+:root[data-theme="dark"] .create-room-modal {
+  --create-room-modal-bg: var(--panel);
+  --create-room-title-color: var(--text);
+  --create-room-subtitle-color: var(--muted);
+}
+
+:root[data-theme="dark"] .create-room-modal .create-room-section-title {
+  color: #98a2b3;
+}
+
+:root[data-theme="dark"] .create-room-modal .create-room-member-copy strong {
+  color: #eaecf0;
+}
+
+:root[data-theme="dark"] .create-room-modal .create-room-member-copy small {
+  color: #98a2b3;
+}
+
+:root[data-theme="dark"] .create-room-modal .modal-header .modal-close {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .create-room-modal .modal-header .modal-close:hover:not(:disabled),
+:root[data-theme="dark"] .create-room-modal .modal-header .modal-close:active:not(:disabled),
+:root[data-theme="dark"] .create-room-modal .modal-header .modal-close:focus-visible {
+  color: var(--text);
+}
+
+.invite-members-modal {
+  --invite-modal-bg: var(--portal-white);
+  --invite-title-color: var(--portal-gray-900);
+  --invite-subtitle-color: var(--portal-gray-600);
+  width: min(640px, 100%);
+  max-height: min(770px, calc(100dvh - 40px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  background: var(--invite-modal-bg);
+  box-shadow:
+    0 20px 24px -4px rgba(16, 24, 40, 0.08),
+    0 8px 8px -4px rgba(16, 24, 40, 0.03);
+}
+
+.invite-members-modal .modal-header {
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  align-items: flex-start;
+  background: var(--invite-modal-bg);
+}
+
+.invite-members-modal .modal-title {
+  color: var(--invite-title-color);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.invite-members-modal .modal-subtitle {
+  margin-top: 4px;
+  color: var(--invite-subtitle-color);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
+}
+
+.invite-members-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.invite-members-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.invite-members-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.invite-members-content::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 6px;
+}
+
+.invite-members-content.is-scrolling {
+  scrollbar-color: var(--portal-gray-400) transparent;
+}
+
+.invite-members-content.is-scrolling::-webkit-scrollbar-thumb {
+  background-color: var(--portal-gray-400);
+}
+
+.invite-members-content .field {
+  gap: 16px;
+  padding-top: 20px;
+  margin-top: 0;
+}
+
+.invite-members-content .field > span {
+  color: var(--portal-gray-700);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.invite-members-modal .selection-list {
+  gap: 16px;
+}
+
+.invite-members-modal .create-room-avatar-stack .create-room-avatar,
+.invite-members-modal .create-room-avatar-stack .create-room-avatar-more {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  flex: 0 0 36px;
+}
+
+.invite-members-modal .create-room-member-row {
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 68px;
+}
+
+.invite-members-modal .create-room-member-row:hover {
+  border-color: var(--portal-gray-400);
+}
+
+.invite-members-modal .create-room-member-row:has(input:focus-visible) {
+  border-color: var(--portal-brand-300);
+  box-shadow: var(--shadow-xs), var(--focus-ring);
+}
+
+.invite-members-modal .create-room-member-row:has(input:checked) {
+  border-color: var(--portal-brand-300);
+}
+
+.invite-members-modal .create-room-member-row > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  accent-color: var(--portal-brand-600);
+}
+
+.invite-members-modal .create-room-member-row > input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.invite-members-modal .modal-actions {
+  flex: 0 0 auto;
+  margin-top: 24px;
+  padding: 0;
+  border: 0;
+  gap: 12px;
+}
+
+.invite-members-modal .modal-actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 44px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+:root[data-theme="dark"] .invite-members-modal {
+  --invite-modal-bg: var(--panel);
+  --invite-title-color: var(--text);
+  --invite-subtitle-color: var(--muted);
+}
+
 .agent-create-progress {
   display: grid;
   gap: 8px;
@@ -167,6 +646,7 @@
   height: 34px;
   min-height: 34px;
   padding: 0;
+  margin: 0 2px;
   border: 0;
   background: transparent;
   color: var(--portal-gray-500);
@@ -749,6 +1229,7 @@
   min-width: 34px;
   min-height: 34px;
   padding: 0;
+  margin: 0 2px;
   border: 0;
   background: transparent;
   color: var(--portal-gray-500);
@@ -875,6 +1356,7 @@
 .manager-rebuild-modal {
   width: min(880px, calc(100vw - 48px));
   padding: 0;
+  margin: 0 2px;
   overflow: hidden;
 }
 

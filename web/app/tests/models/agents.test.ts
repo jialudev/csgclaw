@@ -29,6 +29,7 @@ import {
   pickDefaultAgentTemplate,
   providerNeedsAuth,
   resolvedNotifierWebhookOrigin,
+  resolveAgentAvatarSource,
   runtimeImageForKind,
 } from "@/models/agents";
 
@@ -284,6 +285,24 @@ describe("agent model helpers", () => {
     ]);
   });
 
+  it("prefers a user-set avatar over the agent avatar when available", () => {
+    const usersById = new Map([
+      ["u-gitlab", { id: "u-gitlab", avatar: "avatar/cartoon-3.png", name: "GitLab Assistant" }],
+    ]);
+
+    expect(
+      resolveAgentAvatarSource(
+        {
+          id: "u-gitlab",
+          avatar: "GI",
+          name: "GitLab Assistant",
+          role: "worker",
+        },
+        usersById,
+      ),
+    ).toBe("avatar/cartoon-3.png");
+  });
+
   it("uses manager template variants for manager rebuild runtime and image choices", () => {
     const variants = collectManagerTemplateVariants([
       {
@@ -467,6 +486,7 @@ describe("agent model helpers", () => {
     expect(workerAgentItems.map((item) => item.id)).toEqual(["u-manager", "u-worker"]);
     expect(notificationAgentItems.map((item) => item.id)).toEqual(["u-notify"]);
     expect(isNotificationBotAgent({ type: "notification" })).toBe(true);
+    expect(isNotificationBotAgent({ bot_type: "notification" })).toBe(true);
   });
 
   it("uses bootstrap advertise_base_url for notifier webhook origin", () => {

@@ -157,6 +157,9 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 	if req.Image != nil {
 		current.Image = strings.TrimSpace(*req.Image)
 	}
+	if req.Avatar != nil {
+		current.Avatar = strings.TrimSpace(*req.Avatar)
+	}
 	if req.AgentProfile != nil || req.RuntimeOptions != nil {
 		profileUpdated = true
 		profile := current.AgentProfile

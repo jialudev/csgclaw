@@ -5,6 +5,8 @@ import { fetchAgentLogsRequest } from "@/api/agents";
 import { errorMessage } from "@/api/client";
 import { CLIProxyAuthControl } from "@/components/business/ProfileControls";
 import { MessageContent, MessagePreviewText } from "@/components/business/MessageContent";
+import { AgentAvatarContent } from "@/components/business/AgentAvatar";
+import { avatarFallbackText } from "@/shared/avatar";
 import {
   Button,
   DialogBody,
@@ -209,11 +211,13 @@ export function ConversationPane({
                             <button
                               type="button"
                               className="avatar avatar-button"
-                              style={{ background: `linear-gradient(135deg, ${user.accent_hex}, #10233f)` }}
                               aria-label={`${t("profilePreview")} ${user.name}`}
                               onClick={(event) => onPreviewUser(user, event.currentTarget)}
                             >
-                              {user.avatar}
+                              <AgentAvatarContent
+                                avatar={user.avatar}
+                                fallback={avatarFallbackText(user.avatar, user.name, user.handle, user.id)}
+                              />
                             </button>
                             <div className="member-row-main">
                               <div className="member-row-name">{user.name}</div>
@@ -352,11 +356,13 @@ export function ConversationPane({
                 <button
                   type="button"
                   className="avatar avatar-button"
-                  style={{ background: `linear-gradient(135deg, ${user.accent_hex}, #10233f)` }}
                   aria-label={`${t("profilePreview")} ${user.name}`}
                   onClick={(event) => onPreviewUser(user, event.currentTarget)}
                 >
-                  {user.avatar}
+                  <AgentAvatarContent
+                    avatar={user.avatar}
+                    fallback={avatarFallbackText(user.avatar, user.name, user.handle, user.id)}
+                  />
                   {messageAgent ? (
                     <span
                       className={`message-avatar-status ${messageAgentRunning ? "online" : ""}`}
@@ -604,8 +610,11 @@ function MentionPicker({ users = [], activeIndex = 0, className = "", showRole =
             onSelect(user);
           }}
         >
-          <span className="avatar" style={{ background: `linear-gradient(135deg, ${user.accent_hex}, #10233f)` }}>
-            {user.avatar}
+          <span className="avatar">
+            <AgentAvatarContent
+              avatar={user.avatar}
+              fallback={avatarFallbackText(user.avatar, user.name, user.handle, user.id)}
+            />
           </span>
           <div>
             <div className="message-author">{user.name}</div>
@@ -1038,7 +1047,6 @@ function ThreadMessage({ message, usersById, locale, theme, t, onPreviewUser, co
   const fallbackName = message.sender_id || "";
   const avatar = user?.avatar || fallbackName.slice(0, 1).toUpperCase();
   const name = user?.name || user?.handle || fallbackName;
-  const avatarStyle = { background: `linear-gradient(135deg, ${user?.accent_hex || "#4d6ad6"}, #10233f)` };
   const timestampParts = formatMessageTimestampParts(message.created_at, locale, t);
 
   return (
@@ -1047,15 +1055,14 @@ function ThreadMessage({ message, usersById, locale, theme, t, onPreviewUser, co
         <button
           type="button"
           className="thread-message-avatar"
-          style={avatarStyle}
           aria-label={`${t("profilePreview")} ${name}`}
           onClick={(event) => onPreviewUser(user, event.currentTarget)}
         >
-          {avatar}
+          <AgentAvatarContent avatar={avatar} fallback={avatar} />
         </button>
       ) : (
-        <div className="thread-message-avatar" style={avatarStyle} aria-hidden="true">
-          {avatar}
+        <div className="thread-message-avatar" aria-hidden="true">
+          <AgentAvatarContent avatar={avatar} fallback={avatar} />
         </div>
       )}
       <div className="thread-message-main">

@@ -51,6 +51,7 @@ import {
   mergeAgentIntoList,
   normalizeAuthProviderName,
   partitionWorkspaceAgentItems,
+  resolveAgentAvatarSource,
   normalizeRuntimeKind,
   normalizeTemplateSelection,
   pickDefaultAgentTemplate,
@@ -149,9 +150,24 @@ export function useAgentController({
       agentPageHasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname,
   );
   const managerProfileIncomplete = managerProfile && managerProfile.profile_complete === false;
-  const managerAgent = agents.find((item) => item.role === MANAGER_AGENT_ROLE || item.id === MANAGER_AGENT_ID);
-  const { workerAgentItems, notificationAgentItems } = partitionWorkspaceAgentItems(agents, MANAGER_AGENT_ID);
-  const agentItems = [...workerAgentItems, ...notificationAgentItems];
+  const usersById = useMemo(() => {
+    const result = new Map<
+      string,
+      { avatar?: string | null; handle?: string | null; id: string; name?: string | null }
+    >();
+    data?.users.forEach((user) => result.set(user.id, user));
+    return result;
+  }, [data?.users]);
+  const agentItems = useMemo(
+    () =>
+      agents.map((item) => ({
+        ...item,
+        avatar: resolveAgentAvatarSource(item, usersById),
+      })),
+    [agents, usersById],
+  );
+  const managerAgent = agentItems.find((item) => item.role === MANAGER_AGENT_ROLE || item.id === MANAGER_AGENT_ID);
+  const { workerAgentItems, notificationAgentItems } = partitionWorkspaceAgentItems(agentItems, MANAGER_AGENT_ID);
   const runningAgentCount = agentItems.filter(isAgentRunning).length;
   const notifierWebhookPublicOrigin = useMemo(
     () => resolvedNotifierWebhookOrigin(bootstrapConfig),
@@ -161,8 +177,8 @@ export function useAgentController({
     if (activePane.type !== WorkspacePaneTypes.agent) {
       return null;
     }
-    return agents.find((item) => item.id === activePane.id) ?? null;
-  }, [agents, activePane]);
+    return agentItems.find((item) => item.id === activePane.id) ?? null;
+  }, [agentItems, activePane]);
   const selectedAgentWorkspaceSupported = useMemo(() => {
     const runtimeKind = normalizeRuntimeKind(selectedAgentForPage?.runtime_kind);
     return runtimeKind === "openclaw_sandbox" || runtimeKind === "picoclaw_sandbox";
@@ -194,12 +210,7 @@ export function useAgentController({
         setSelectedAgentWorkspacePath(nextPath);
       }
     }
-  }, [
-    agentWorkspaceEntries,
-    selectedAgentForPage?.id,
-    selectedAgentWorkspacePath,
-    selectedAgentWorkspaceSupported,
-  ]);
+  }, [agentWorkspaceEntries, selectedAgentForPage?.id, selectedAgentWorkspacePath, selectedAgentWorkspaceSupported]);
   const activeConversation = useMemo(
     () => data?.rooms.find((item) => item.id === activeConversationId) ?? null,
     [data, activeConversationId],
@@ -558,6 +569,7 @@ export function useAgentController({
       agentToDraft({
         name: "",
         description: "",
+        avatar: "",
         bot_type: BOT_TYPE_NOTIFICATION,
       }),
     );
@@ -585,6 +597,7 @@ export function useAgentController({
           selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "",
         ) || DEFAULT_RUNTIME_KIND;
       let draft = agentToDraft({
+        avatar: "",
         image: runtimeImageForKind(runtimeKind, bootstrapConfig, managerAgent?.image || ""),
         runtime_kind: runtimeKind,
         bot_type: BOT_TYPE_NORMAL,
@@ -599,6 +612,7 @@ export function useAgentController({
           selectedTemplate?.runtime_kind || bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "",
         ) || DEFAULT_RUNTIME_KIND;
       let draft = agentToDraft({
+        avatar: "",
         image: runtimeImageForKind(runtimeKind, bootstrapConfig, managerAgent?.image || ""),
         runtime_kind: runtimeKind,
         bot_type: BOT_TYPE_NORMAL,
@@ -644,6 +658,53 @@ export function useAgentController({
     }
   }
 
+  function normalizeDraftForCompare(draft: AgentDraft | null | undefined): AgentDraft | null {
+    if (!draft) {
+      return null;
+    }
+    return ensureNotifierPullSubscriptionDraft(draft);
+  }
+
+  function profilePayloadForCompare(draft: AgentDraft | null | undefined): string {
+    const normalized = normalizeDraftForCompare(draft);
+    if (!normalized) {
+      return "";
+    }
+    return JSON.stringify(
+      draftToProfile(normalized, {
+        name: normalized.name,
+        description: normalized.description,
+      }),
+    );
+  }
+
+  function runtimeOptionsPayloadForCompare(draft: AgentDraft | null | undefined): string {
+    const normalized = normalizeDraftForCompare(draft);
+    if (!normalized) {
+      return "";
+    }
+    const runtimeOptions = draftNotifierRuntimeOptionsForSave(normalized, {
+      mergeNotifier: false,
+    });
+    return JSON.stringify(runtimeOptions || {});
+  }
+
+  function hasObjectValues(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
+  }
+
+  function debugAgentPageSavePayload(mode: "meta-only" | "full", payload: AgentUpdatePayload): void {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+    // Dev-only trace to verify whether avatar-only saves include profile/runtime payloads.
+    console.info("[agent-page-save]", {
+      agent_id: selectedAgentForPage?.id || "",
+      mode,
+      payload,
+    });
+  }
+
   async function saveAgentPage(): Promise<void> {
     if (!agentPageDraft || !selectedAgentForPage?.id) {
       return;
@@ -656,6 +717,7 @@ export function useAgentController({
         const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, { mergeNotifier: true });
         const payload: AgentUpdatePayload = {
           name: agentPageDraft.name,
+          avatar: agentPageDraft.avatar,
           description: agentPageDraft.description,
         };
         if (runtimeOptions) {
@@ -663,6 +725,7 @@ export function useAgentController({
         }
         const saved = await patchNotificationBotRequest(selectedAgentForPage.id, payload);
         await refreshAgents();
+        await refreshWorkspaceBootstrap();
         const savedDraft = agentToDraft(saved);
         setAgentPageDraft(savedDraft);
         setAgentPageSavedDraft(savedDraft);
@@ -675,16 +738,39 @@ export function useAgentController({
       const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, {
         mergeNotifier: false,
       });
+      const profileChanged = profilePayloadForCompare(agentPageDraft) !== profilePayloadForCompare(agentPageSavedDraft);
+      const runtimeOptionsChanged =
+        runtimeOptionsPayloadForCompare(agentPageDraft) !== runtimeOptionsPayloadForCompare(agentPageSavedDraft);
+      const hasProfileOrRuntimeChange = profileChanged || (runtimeOptionsChanged && hasObjectValues(runtimeOptions));
+
       const payload: AgentUpdatePayload = {
         name: agentPageDraft.name,
+        avatar: agentPageDraft.avatar,
         description: agentPageDraft.description,
-        agent_profile: profile,
       };
-      if (runtimeOptions) {
+      if (profileChanged) {
+        payload.agent_profile = profile;
+      }
+      if (runtimeOptionsChanged && hasObjectValues(runtimeOptions)) {
         payload.runtime_options = runtimeOptions;
       }
+      if (!hasProfileOrRuntimeChange) {
+        debugAgentPageSavePayload("meta-only", payload);
+        const savedMetaOnly = await updateAgentRequest(selectedAgentForPage.id, payload);
+        await refreshAgents();
+        await refreshWorkspaceBootstrap();
+        if (savedMetaOnly.id === MANAGER_AGENT_ID) {
+          await refreshManagerProfile();
+        }
+        const nextDraft = await agentDraftFromItem(savedMetaOnly);
+        setAgentPageDraft(nextDraft);
+        setAgentPageSavedDraft(nextDraft);
+        return;
+      }
+      debugAgentPageSavePayload("full", payload);
       const saved = await updateAgentRequest(selectedAgentForPage.id, payload);
       await refreshAgents();
+      await refreshWorkspaceBootstrap();
       if (saved.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
       }
@@ -738,15 +824,17 @@ export function useAgentController({
         const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, { mergeNotifier: true });
         const payload: AgentUpdatePayload = {
           name: agentDraft.name,
+          avatar: agentDraft.avatar,
           description: agentDraft.description,
         };
         if (runtimeOptions) {
           payload.runtime_options = runtimeOptions;
         }
-        const saved = isCreate
-          ? await createNotificationBotRequest(payload)
-          : await patchNotificationBotRequest(editingAgent!.id, payload);
+        await (isCreate
+          ? createNotificationBotRequest(payload)
+          : patchNotificationBotRequest(editingAgent!.id, payload));
         await refreshAgents();
+        await refreshWorkspaceBootstrap();
         if (isCreate) {
           setAgentProgress((current) =>
             current
@@ -768,6 +856,7 @@ export function useAgentController({
       });
       const payload: AgentUpdatePayload = {
         name: agentDraft.name,
+        avatar: agentDraft.avatar,
         role: WORKER_AGENT_ROLE,
         description: agentDraft.description,
         image: agentDraft.image,
@@ -782,14 +871,13 @@ export function useAgentController({
         ? await createBotRequest(payload)
         : await updateAgentRequest(editingAgent!.id, {
             name: payload.name,
+            avatar: payload.avatar,
             description: payload.description,
             agent_profile: payload.agent_profile,
             ...(payload.runtime_options ? { runtime_options: payload.runtime_options } : {}),
           });
       await refreshAgents();
-      if (isCreate) {
-        await refreshWorkspaceBootstrap();
-      }
+      await refreshWorkspaceBootstrap();
       if (saved.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
       }
@@ -815,7 +903,10 @@ export function useAgentController({
     if (!item?.id || agentActionBusy) {
       return;
     }
-    if (isNotificationBotAgent(item) && (action === "recreate" || action === "start" || action === "stop" || action === "upgrade")) {
+    if (
+      isNotificationBotAgent(item) &&
+      (action === "recreate" || action === "start" || action === "stop" || action === "upgrade")
+    ) {
       return;
     }
     if (action === "recreate" && isManagerAgent(item)) {

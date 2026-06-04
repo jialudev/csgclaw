@@ -25,7 +25,8 @@ import {
   normalizeRuntimeKind,
   notifierFormIsComplete,
 } from "@/models/agents";
-import { AgentIcon } from "@/components/ui/Icons";
+import { AgentAvatarContent, AgentAvatarPicker } from "@/components/business/AgentAvatar";
+import { avatarFallbackText } from "@/shared/avatar";
 import {
   Button,
   DropdownMenuContent,
@@ -97,7 +98,10 @@ export function AgentDetailPane({
     <section className="entity-pane agent-detail-pane">
       <header className="entity-header">
         <div className="entity-avatar">
-          <AgentIcon />
+          <AgentAvatarContent
+            avatar={item.avatar}
+            fallback={avatarFallbackText(item.avatar, item.name, item.handle, item.id)}
+          />
         </div>
         <div className="entity-heading">
           <div className="entity-title-row">
@@ -222,6 +226,10 @@ export function AgentDetailPane({
                   />
                 </label>
               ) : null}
+              <div className="field span-2 agent-avatar-field">
+                <span>{t("agentAvatar")}</span>
+                <AgentAvatarPicker value={draft.avatar} t={t} onChange={(avatar) => updateDraft({ avatar })} />
+              </div>
               <label className="field span-2">
                 <span>{t("agentDescription")}</span>
                 <textarea

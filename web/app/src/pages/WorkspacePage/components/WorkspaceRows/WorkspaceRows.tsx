@@ -19,6 +19,9 @@ import {
 import { MessagePreviewText } from "@/components/business/MessageContent";
 import { AgentIcon, ChevronIcon, ComputerIcon, RoomPlusIcon, RoomsIcon } from "@/components/ui/Icons";
 import { Button } from "@/components/ui";
+import { AgentAvatarContent } from "@/components/business/AgentAvatar";
+import { avatarFallbackText } from "@/shared/avatar";
+import { RoomAvatar, resolveRoomAvatarMembers } from "@/components/business/RoomAvatar";
 import type { DragEvent, ReactNode } from "react";
 
 export type WorkspaceGroupProps = {
@@ -159,7 +162,7 @@ export function WorkspaceAgentRow({ item, active, t, onSelect, onPreview, notifi
           }
         }}
       >
-        <AgentIcon />
+        <AgentAvatarContent avatar={item.avatar} fallback={avatarFallbackText(item.avatar, item.name, item.handle, item.id)} />
       </span>
       <span className="workspace-row-main">
         <span className="workspace-row-title-line">
@@ -194,7 +197,7 @@ export function WorkspaceConversationRow({
   const directAgent = isDirect && displayUser ? agents.find((item) => agentMatchesUser(item, displayUser)) : null;
   const directAgentRunning = isAgentRunning(directAgent);
   const title = isDirect && displayUser ? displayUser.name : conversation.title;
-  const icon = isDirect && displayUser ? displayUser.avatar : "#";
+  const roomAvatarMembers = resolveRoomAvatarMembers(conversation, usersById, currentUserID);
   const preview = formatConversationPreview(lastMessage, conversation, currentUserID, usersById, locale, t);
   return (
     <button
@@ -226,7 +229,14 @@ export function WorkspaceConversationRow({
             : undefined
         }
       >
-        {icon}
+        {isDirect && displayUser ? (
+          <AgentAvatarContent
+            avatar={displayUser.avatar}
+            fallback={avatarFallbackText(displayUser.avatar, displayUser.name, displayUser.handle, displayUser.id)}
+          />
+        ) : (
+          <RoomAvatar members={roomAvatarMembers} count={conversation.members.length} />
+        )}
       </span>
       <span className="workspace-row-main">
         <span className="workspace-row-title-line">

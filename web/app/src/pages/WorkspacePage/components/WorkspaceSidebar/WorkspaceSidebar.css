@@ -680,6 +680,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
   color: var(--primary-strong);
   font-size: 13px;
   font-weight: 780;
@@ -691,8 +692,9 @@
 }
 
 .workspace-row-icon.avatar-icon {
-  background: var(--panel-soft);
-  color: var(--text);
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+  border-radius: 50%;
 }
 
 .workspace-row-main {
@@ -2836,7 +2838,7 @@
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 50%;
   background: transparent;
   color: var(--portal-gray-500);
   font-size: 12px;
@@ -2853,6 +2855,8 @@
 .workspace-row-icon.avatar-icon {
   background: var(--portal-gray-100);
   color: var(--portal-gray-700);
+  font-weight: var(--avatar-default-weight);
+  border-radius: 50%;
 }
 
 .workspace-row-main {
@@ -2963,8 +2967,8 @@
 }
 
 :root[data-theme="dark"] .workspace-row-icon.avatar-icon {
-  background: rgba(208, 213, 221, 0.1);
-  color: var(--portal-gray-300);
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
 }
 
 :root[data-theme="dark"] .workspace-row-meta,

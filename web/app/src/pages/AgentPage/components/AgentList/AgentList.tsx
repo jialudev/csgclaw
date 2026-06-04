@@ -11,6 +11,8 @@ import {
 } from "@/models/agents";
 import { AgentIcon, PlayIcon, StopIcon, TrashIcon, WrenchIcon } from "@/components/ui/Icons";
 import { Button } from "@/components/ui";
+import { AgentAvatarContent } from "@/components/business/AgentAvatar";
+import { avatarFallbackText } from "@/shared/avatar";
 
 export function AgentSection({
   title,
@@ -94,7 +96,7 @@ export function AgentRow({
   return (
     <div className={`agent-row ${isManager ? "manager" : ""} ${incomplete ? "incomplete" : ""}`.trim()}>
       <div className="agent-avatar" aria-hidden="true">
-        <AgentIcon />
+        <AgentAvatarContent avatar={item.avatar} fallback={avatarFallbackText(item.avatar, item.name, item.handle, item.id)} />
       </div>
       <div className="agent-row-main">
         <div className="agent-row-top">

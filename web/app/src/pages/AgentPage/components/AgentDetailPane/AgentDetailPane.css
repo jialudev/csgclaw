@@ -97,13 +97,32 @@
 .agent-detail-pane .entity-avatar {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
+  font-weight: var(--avatar-default-weight);
+  box-shadow: none;
 }
 
 .agent-detail-pane .entity-avatar svg,
 .agent-detail-pane .entity-avatar .svg-icon {
   width: 24px;
   height: 24px;
+}
+
+.agent-detail-pane .entity-avatar .agent-avatar-image {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+:root[data-theme="dark"] .agent-detail-pane .entity-avatar {
+  background: var(--avatar-default-bg);
+  color: var(--avatar-default-fg);
 }
 
 .agent-detail-pane .entity-title-row h1 {
@@ -260,6 +279,18 @@
   min-width: 34px;
   height: 34px;
   min-height: 34px;
+}
+
+.agent-detail-pane .agent-avatar-option {
+  width: 54px;
+  min-width: 54px;
+  height: 54px;
+  min-height: 54px;
+}
+
+.agent-detail-pane .agent-avatar-option img {
+  width: 48px;
+  height: 48px;
 }
 
 :root[data-theme="dark"] .agent-detail-pane {
