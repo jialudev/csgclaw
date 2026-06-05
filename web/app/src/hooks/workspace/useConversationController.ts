@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { errorMessage } from "@/api/client";
 import {
+  clearRoomMessagesRequest,
   createRoomRequest,
   deleteRoomRequest,
   fetchThreadRequest,
@@ -70,6 +71,20 @@ type OpenCreateRoomOptions = {
   preselectedMemberIDs?: string[];
   title?: string;
 };
+
+function clearThreadDraftsForConversation(current: DraftsByThreadKey, conversationID: string): DraftsByThreadKey {
+  const prefix = `${conversationID}:`;
+  let changed = false;
+  const next: DraftsByThreadKey = {};
+  for (const [key, value] of Object.entries(current)) {
+    if (key.startsWith(prefix)) {
+      changed = true;
+      continue;
+    }
+    next[key] = value;
+  }
+  return changed ? next : current;
+}
 
 export function useConversationController({
   activeConversationId,
@@ -755,6 +770,28 @@ export function useConversationController({
     }
   }
 
+  async function clearRoomMessages(roomID: string): Promise<void> {
+    if (!data || !roomID) {
+      return;
+    }
+
+    let clearedRoom;
+    try {
+      clearedRoom = await clearRoomMessagesRequest(roomID);
+    } catch (err) {
+      setComposerError(localizeError(err.message, t));
+      return;
+    }
+
+    setBootstrapData((current) => upsertConversationInData(current, clearedRoom));
+    setThreadDraftsByKey((current) => clearThreadDraftsForConversation(current, roomID));
+    setComposerError("");
+    setSubmitError("");
+    if (activeConversationId === roomID) {
+      closeThread();
+    }
+  }
+
   function applyMention(user: IMUser | null | undefined) {
     const editor = editorRef.current;
     const state = getComposerMentionState(editor);
@@ -972,6 +1009,7 @@ export function useConversationController({
       messageListRef,
       editorRef,
       onDeleteRoom: deleteRoom,
+      onClearRoomMessages: clearRoomMessages,
       inviteActionLabel,
       onInviteAction: handleInviteAction,
       mentionCandidates,

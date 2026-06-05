@@ -1461,6 +1461,29 @@ func (h *Handler) handleLocalRoomByID(w http.ResponseWriter, r *http.Request, id
 	}
 }
 
+func (h *Handler) handleClearRoomMessages(w http.ResponseWriter, r *http.Request) {
+	roomID := strings.TrimSpace(pathValue(r, "id"))
+	if roomID == "" {
+		http.Error(w, "room_id is required", http.StatusBadRequest)
+		return
+	}
+	if h == nil || h.im == nil {
+		http.Error(w, "im service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	room, err := h.im.ClearRoomMessages(roomID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, "room not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, room)
+}
+
 func (h *Handler) handleRoomMembersByIDPath(w http.ResponseWriter, r *http.Request) {
 	id := pathValue(r, "id")
 	if id == "" {

@@ -63,6 +63,10 @@ export function deleteRoomRequest(roomID: string): Promise<void> {
   return del(`api/v1/rooms/${encodeURIComponent(roomID)}`);
 }
 
+export function clearRoomMessagesRequest(roomID: string): Promise<IMConversation> {
+  return post(`api/v1/rooms/${encodeURIComponent(roomID)}:clearMessages`, {});
+}
+
 export function joinAgentToRoomRequest(payload: JoinAgentToRoomPayload): Promise<IMConversation> {
   return post("api/v1/im/agents/join", payload);
 }

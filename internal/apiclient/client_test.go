@@ -29,7 +29,7 @@ func (c *recordingHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-func TestClientUsesCsgclawChannelRoutes(t *testing.T) {
+func TestClientUsesExpectedRoutes(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
 		name   string
@@ -98,6 +98,15 @@ func TestClientUsesCsgclawChannelRoutes(t *testing.T) {
 			want:   "DELETE /api/v1/channels/csgclaw/rooms/room-1",
 			call: func(c *Client) error {
 				return c.DeleteRoom(ctx, "csgclaw", "room-1")
+			},
+		},
+		{
+			name: "clear room messages",
+			body: `{"id":"room-1","messages":[]}`,
+			want: "POST /api/v1/rooms/room-1:clearMessages",
+			call: func(c *Client) error {
+				_, err := c.ClearRoomMessages(ctx, "room-1")
+				return err
 			},
 		},
 		{

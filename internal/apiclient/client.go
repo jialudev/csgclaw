@@ -173,6 +173,18 @@ func (c *Client) DeleteRoom(ctx context.Context, channel, id string) error {
 	return c.DoNoContent(ctx, http.MethodDelete, path)
 }
 
+func (c *Client) ClearRoomMessages(ctx context.Context, roomID string) (apitypes.Room, error) {
+	var room apitypes.Room
+	path, err := roomClearMessagesPath(roomID)
+	if err != nil {
+		return apitypes.Room{}, err
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, path, nil, &room); err != nil {
+		return apitypes.Room{}, err
+	}
+	return room, nil
+}
+
 func (c *Client) ListUsers(ctx context.Context) ([]apitypes.User, error) {
 	return c.ListUsersByChannel(ctx, "csgclaw")
 }
@@ -528,6 +540,14 @@ func roomDeletePath(channelName, roomID string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported channel %q", channelName)
 	}
+}
+
+func roomClearMessagesPath(roomID string) (string, error) {
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		return "", fmt.Errorf("room_id is required")
+	}
+	return "/api/v1/rooms/" + url.PathEscape(roomID) + ":clearMessages", nil
 }
 
 func userDeletePath(channelName, userID string) (string, error) {

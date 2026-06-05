@@ -246,6 +246,18 @@ func (s *Service) Reload() error {
 func SaveBootstrap(path string, state Bootstrap) error {
 	state = normalizeBootstrap(state)
 
+	if err := ensureBootstrapDirs(path); err != nil {
+		return err
+	}
+
+	persisted, err := savePersistedBootstrap(path, state)
+	if err != nil {
+		return err
+	}
+	return writePersistedBootstrap(path, persisted)
+}
+
+func ensureBootstrapDirs(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create im state dir: %w", err)
 	}
@@ -254,12 +266,10 @@ func SaveBootstrap(path string, state Bootstrap) error {
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		return fmt.Errorf("create im sessions dir: %w", err)
 	}
+	return nil
+}
 
-	persisted, err := savePersistedBootstrap(path, state)
-	if err != nil {
-		return err
-	}
-
+func writePersistedBootstrap(path string, persisted persistedBootstrap) error {
 	data, err := json.MarshalIndent(persisted, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode im bootstrap: %w", err)
@@ -325,11 +335,7 @@ func loadRoomMessages(statePath, roomID, relativePath string) ([]Message, error)
 }
 
 func savePersistedBootstrap(statePath string, state Bootstrap) (persistedBootstrap, error) {
-	persisted := persistedBootstrap{
-		CurrentUserID:      state.CurrentUserID,
-		Users:              append([]User(nil), state.Users...),
-		InviteDraftUserIDs: append([]string(nil), state.InviteDraftUserIDs...),
-	}
+	persisted := persistedBootstrapFromState(state)
 
 	rooms, err := savePersistedRooms(statePath, state.Rooms)
 	if err != nil {
@@ -343,6 +349,21 @@ func savePersistedBootstrap(statePath string, state Bootstrap) (persistedBootstr
 	return persisted, nil
 }
 
+func persistedBootstrapFromState(state Bootstrap) persistedBootstrap {
+	persisted := persistedBootstrap{
+		CurrentUserID:      state.CurrentUserID,
+		Users:              append([]User(nil), state.Users...),
+		InviteDraftUserIDs: append([]string(nil), state.InviteDraftUserIDs...),
+	}
+	if len(state.Rooms) > 0 {
+		persisted.Rooms = make([]persistedRoom, 0, len(state.Rooms))
+		for _, room := range state.Rooms {
+			persisted.Rooms = append(persisted.Rooms, persistedRoomFromRoom(room))
+		}
+	}
+	return persisted
+}
+
 func savePersistedRooms(statePath string, rooms []Room) ([]persistedRoom, error) {
 	if len(rooms) == 0 {
 		return nil, nil
@@ -350,22 +371,30 @@ func savePersistedRooms(statePath string, rooms []Room) ([]persistedRoom, error)
 
 	persisted := make([]persistedRoom, 0, len(rooms))
 	for _, room := range rooms {
-		relativePath := sessionRelativePath(room.ID)
-		if err := saveMessagesJSONL(filepath.Join(filepath.Dir(statePath), filepath.FromSlash(relativePath)), room.ID, room.Messages); err != nil {
+		if err := saveRoomMessagesForState(statePath, room); err != nil {
 			return nil, err
 		}
-		persisted = append(persisted, persistedRoom{
-			ID:          room.ID,
-			Title:       room.Title,
-			Subtitle:    room.Subtitle,
-			Description: room.Description,
-			IsDirect:    room.IsDirect,
-			Members:     append([]string(nil), room.Members...),
-			Messages:    relativePath,
-			Threads:     cloneThreadStates(room.Threads),
-		})
+		persisted = append(persisted, persistedRoomFromRoom(room))
 	}
 	return persisted, nil
+}
+
+func saveRoomMessagesForState(statePath string, room Room) error {
+	relativePath := sessionRelativePath(room.ID)
+	return saveMessagesJSONL(filepath.Join(filepath.Dir(statePath), filepath.FromSlash(relativePath)), room.ID, room.Messages)
+}
+
+func persistedRoomFromRoom(room Room) persistedRoom {
+	return persistedRoom{
+		ID:          room.ID,
+		Title:       room.Title,
+		Subtitle:    room.Subtitle,
+		Description: room.Description,
+		IsDirect:    room.IsDirect,
+		Members:     append([]string(nil), room.Members...),
+		Messages:    sessionRelativePath(room.ID),
+		Threads:     cloneThreadStates(room.Threads),
+	}
 }
 
 func cleanupSessionFiles(statePath string, rooms []persistedRoom) error {
@@ -882,6 +911,39 @@ func (s *Service) DeleteRoom(roomID string) error {
 
 func (s *Service) DeleteConversation(conversationID string) error {
 	return s.DeleteRoom(conversationID)
+}
+
+func (s *Service) ClearRoomMessages(roomID string) (Room, error) {
+	roomID = strings.TrimSpace(roomID)
+	if roomID == "" {
+		return Room{}, fmt.Errorf("room_id is required")
+	}
+
+	s.mu.Lock()
+	room, ok := s.rooms[roomID]
+	if !ok {
+		s.mu.Unlock()
+		return Room{}, fmt.Errorf("room not found")
+	}
+	room.Messages = []Message{}
+	room.Threads = []ThreadState{}
+	if err := s.saveRoomLocked(*room); err != nil {
+		s.mu.Unlock()
+		return Room{}, err
+	}
+	presented := s.presentRoomLocked(*room)
+	bus := s.bus
+	s.mu.Unlock()
+
+	if bus != nil {
+		roomCopy := presented
+		bus.Publish(Event{
+			Type:   EventTypeRoomMessagesCleared,
+			RoomID: presented.ID,
+			Room:   &roomCopy,
+		})
+	}
+	return presented, nil
 }
 
 func (s *Service) DeleteUser(userID string) error {
@@ -2016,6 +2078,19 @@ func (s *Service) saveLocked() error {
 		return nil
 	}
 	return SaveBootstrap(s.statePath, s.bootstrapLocked())
+}
+
+func (s *Service) saveRoomLocked(room Room) error {
+	if s.statePath == "" {
+		return nil
+	}
+	if err := ensureBootstrapDirs(s.statePath); err != nil {
+		return err
+	}
+	if err := saveRoomMessagesForState(s.statePath, room); err != nil {
+		return err
+	}
+	return writePersistedBootstrap(s.statePath, persistedBootstrapFromState(s.bootstrapLocked()))
 }
 
 func (s *Service) replaceState(state Bootstrap) {
