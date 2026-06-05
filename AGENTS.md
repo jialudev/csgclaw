@@ -1,9 +1,9 @@
 # CSGCLAW KNOWLEDGE BASE
 
-## Reply Format (Required)
+## Communication
 
-- Every first reply must begin with: "I have followed the instructions in AGENTS.md."
-- Immediately follow with a concise, natural-English refinement of the user's query to aid English learning.
+- Reply in the user's language unless asked otherwise.
+- Keep responses concise and task-focused.
 
 ## Overview
 
@@ -47,6 +47,13 @@ make release
 - Do not change BoxLite sandbox integration or packaging paths unless the task is about sandbox/runtime integration.
 - When changing config fields or defaults, update loader, saver, onboard flow, tests, and docs together.
 - Never hardcode or print real secrets; startup and logs must keep tokens redacted.
+
+## Git And PRs
+
+- Use Conventional Commits for commit messages and PR titles.
+- Keep PR bodies compatible with `.github/workflows/pr-message.yml`: each line starts with `- `, no blank lines, no `Co-authored-by:` trailers.
+- Keep PR bodies short and focused on summary, validation, impact, related issues, and notes.
+- Check PR CI before requesting review or merge.
 
 ## Verification
 
