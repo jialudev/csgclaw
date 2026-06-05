@@ -13,13 +13,6 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 )
 
-var builtinRuntimeTemplates = map[string]string{
-	"openclaw-manager": templates.OpenClawManagerRoot,
-	"openclaw-worker":  templates.OpenClawWorkerRoot,
-	"picoclaw-manager": templates.PicoClawManagerRoot,
-	"picoclaw-worker":  templates.PicoClawWorkerRoot,
-}
-
 type BuiltinStore struct{}
 
 func NewBuiltinStore() *BuiltinStore {
@@ -27,9 +20,10 @@ func NewBuiltinStore() *BuiltinStore {
 }
 
 func (s *BuiltinStore) List(context.Context) ([]Template, error) {
-	ids := make([]string, 0, len(builtinRuntimeTemplates))
-	for id := range builtinRuntimeTemplates {
-		id = strings.TrimSpace(id)
+	builtins := templates.Builtins()
+	ids := make([]string, 0, len(builtins))
+	for _, item := range builtins {
+		id := strings.TrimSpace(item.ID)
 		if err := validateLocalTemplateID(id); err != nil {
 			return nil, fmt.Errorf("invalid builtin hub template %q: %w", id, err)
 		}
@@ -125,19 +119,19 @@ func (s *BuiltinStore) loadManifest(id string) (templateManifest, error) {
 }
 
 func (s *BuiltinStore) manifestPath(id string) string {
-	root, ok := builtinRuntimeTemplates[strings.TrimSpace(id)]
+	item, ok := templates.LookupBuiltin(id)
 	if !ok {
 		return filepath.ToSlash(filepath.Join("builtin", id, localManifestFileName))
 	}
-	return templates.ManifestPath(root)
+	return templates.ManifestPath(item.Root)
 }
 
 func (s *BuiltinStore) workspacePath(id string) string {
-	root, ok := builtinRuntimeTemplates[strings.TrimSpace(id)]
+	item, ok := templates.LookupBuiltin(id)
 	if !ok {
 		return filepath.ToSlash(filepath.Join("builtin", id, localWorkspaceDirName))
 	}
-	return templates.WorkspacePath(root)
+	return templates.WorkspacePath(item.Root)
 }
 
 func (s *BuiltinStore) workspaceRef(id string) WorkspaceRef {
