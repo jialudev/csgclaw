@@ -24,6 +24,7 @@ import (
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/runtime/openclawsandbox"
 	"csgclaw/internal/runtime/picoclawsandbox"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/sandboxtest"
@@ -66,6 +67,19 @@ func (f fakeCompatRuntime) Kind() string {
 		return strings.TrimSpace(f.kind)
 	}
 	return agent.RuntimeKindPicoClawSandbox
+}
+
+func (f fakeCompatRuntime) WorkspaceRoot(agentHome string) string {
+	switch f.Kind() {
+	case agent.RuntimeKindPicoClawSandbox:
+		return filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+	case agent.RuntimeKindOpenClawSandbox:
+		return filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+	case agent.RuntimeKindCodex:
+		return filepath.Join(agentHome, ".codex", "workspace")
+	default:
+		return ""
+	}
 }
 
 func (f fakeCompatRuntime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -2174,7 +2188,7 @@ func TestHandleAgentWorkspaceFileReturnsContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	workspaceRoot, err := agent.WorkspaceRoot(created.Name, created.RuntimeKind)
+	workspaceRoot, err := svc.WorkspaceRoot(created.Name)
 	if err != nil {
 		t.Fatalf("WorkspaceRoot() error = %v", err)
 	}

@@ -116,6 +116,10 @@ func (r *Runtime) Kind() string {
 	return "sandbox_gateway"
 }
 
+func (r *Runtime) WorkspaceRoot(string) string {
+	return ""
+}
+
 func (r *Runtime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 	agentName := strings.TrimSpace(spec.AgentName)
 	agentID := strings.TrimSpace(spec.AgentID)

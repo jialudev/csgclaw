@@ -9,6 +9,7 @@ import (
 type runtimeOnlyStub struct{}
 
 func (runtimeOnlyStub) Kind() string                              { return "stub" }
+func (runtimeOnlyStub) WorkspaceRoot(agentHome string) string     { return agentHome }
 func (runtimeOnlyStub) New(context.Context, Spec) (Handle, error) { return Handle{}, nil }
 func (runtimeOnlyStub) Start(context.Context, Handle) (State, error) {
 	return StateRunning, nil
@@ -24,10 +25,19 @@ type provisioningStub struct {
 	got    ProvisionRequest
 }
 
+type workspaceRootStub struct {
+	runtimeOnlyStub
+	root string
+}
+
 func (p *provisioningStub) Provision(_ context.Context, req ProvisionRequest) error {
 	p.called = true
 	p.got = req
 	return nil
+}
+
+func (w workspaceRootStub) WorkspaceRoot(string) string {
+	return w.root
 }
 
 func TestProvisionerCapabilityIsOptional(t *testing.T) {
@@ -66,5 +76,15 @@ func TestProvisionerCanBeDiscoveredSeparatelyFromRuntime(t *testing.T) {
 	}
 	if !reflect.DeepEqual(rt.got, req) {
 		t.Fatalf("Provision() request = %#v, want %#v", rt.got, req)
+	}
+}
+
+func TestRuntimeExposesWorkspaceRoot(t *testing.T) {
+	t.Parallel()
+
+	var rt Runtime = workspaceRootStub{root: "/tmp/custom-workspace"}
+	got := rt.WorkspaceRoot("/tmp/agent")
+	if got != "/tmp/custom-workspace" {
+		t.Fatalf("WorkspaceRoot() = %q, want %q", got, "/tmp/custom-workspace")
 	}
 }

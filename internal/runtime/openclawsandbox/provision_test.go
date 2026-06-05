@@ -72,14 +72,14 @@ func TestProvisionPreparesGatewayAssets(t *testing.T) {
 	if len(wildcard.Allowlist) != 1 || wildcard.Allowlist[0].Pattern != "*" {
 		t.Fatalf("openclaw approvals agents.*.allowlist = %#v, want wildcard pattern", wildcard.Allowlist)
 	}
-	data, err := os.ReadFile(filepath.Join(WorkspaceRoot(agentHome), "USER.md"))
+	data, err := os.ReadFile(filepath.Join(workspaceRoot(agentHome), "USER.md"))
 	if err != nil {
 		t.Fatalf("ReadFile(USER.md) error = %v", err)
 	}
 	if got, want := string(data), "overlay user\n"; got != want {
 		t.Fatalf("USER.md = %q, want %q", got, want)
 	}
-	if info, err := os.Stat(filepath.Join(WorkspaceRoot(agentHome), "projects")); err != nil {
+	if info, err := os.Stat(filepath.Join(workspaceRoot(agentHome), "projects")); err != nil {
 		t.Fatalf("stat workspace projects mountpoint: %v", err)
 	} else if !info.IsDir() {
 		t.Fatalf("workspace projects mountpoint is not a directory")

@@ -155,6 +155,14 @@ func (s *Service) Runtime(kind string) (agentruntime.Runtime, error) {
 	return s.runtimeForKind(kind)
 }
 
+func (s *Service) WorkspaceRoot(agentName string) (string, error) {
+	got, ok := s.agentSnapshotByName(agentName)
+	if !ok {
+		return "", fmt.Errorf("agent %q not found", strings.TrimSpace(agentName))
+	}
+	return s.agentWorkspaceRoot(got.Name, got.RuntimeKind)
+}
+
 func runtimeHandleForAgent(a Agent) agentruntime.Handle {
 	return agentruntime.Handle{
 		RuntimeID: normalizeRuntimeID(a.RuntimeID, a.ID),

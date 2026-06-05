@@ -171,7 +171,11 @@ func TestEnsureAgentWorkspaceCopiesEmbeddedTemplate(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	root, err := ensureAgentWorkspace("alice", templates.PicoClawWorkerRoot)
+	root, err := testBuiltinWorkspaceRoot("alice", RuntimeKindPicoClawSandbox)
+	if err != nil {
+		t.Fatalf("testBuiltinWorkspaceRoot(worker) error = %v", err)
+	}
+	root, err = ensureWorkspaceAtRoot(root, templates.PicoClawWorkerRoot)
 	if err != nil {
 		t.Fatalf("ensureAgentWorkspace(worker) error = %v", err)
 	}
@@ -194,7 +198,11 @@ func TestEnsureAgentWorkspaceCopiesEmbeddedTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveRuntimeTemplateRoot(manager) error = %v", err)
 	}
-	managerRoot, err := ensureAgentWorkspace("manager", managerTemplate)
+	managerRoot, err := testBuiltinWorkspaceRoot("manager", RuntimeKindPicoClawSandbox)
+	if err != nil {
+		t.Fatalf("testBuiltinWorkspaceRoot(manager) error = %v", err)
+	}
+	managerRoot, err = ensureWorkspaceAtRoot(managerRoot, managerTemplate)
 	if err != nil {
 		t.Fatalf("ensureAgentWorkspace(manager) error = %v", err)
 	}

@@ -39,6 +39,10 @@ func New(deps Dependencies) *Runtime {
 	return &Runtime{Runtime: sandboxgateway.New(deps)}
 }
 
+func (r *Runtime) WorkspaceRoot(agentHome string) string {
+	return workspaceRoot(agentHome)
+}
+
 func (r *Runtime) Provision(_ context.Context, req agentruntime.ProvisionRequest) error {
 	if r == nil {
 		return nil
@@ -58,7 +62,7 @@ func (r *Runtime) Provision(_ context.Context, req agentruntime.ProvisionRequest
 	if _, err := EnsureConfig(agentHome, req.AgentID, gateway.Server, configModelFromProfile(profile), fixedBaseURL(gateway.ManagerBaseURL), r.CurrentFeishuProvider()); err != nil {
 		return err
 	}
-	workspaceRoot := WorkspaceRoot(agentHome)
+	workspaceRoot := r.WorkspaceRoot(agentHome)
 	if err := sandboxgateway.EnsureEmbeddedWorkspace(gateway.WorkspaceTemplate, workspaceRoot); err != nil {
 		return err
 	}

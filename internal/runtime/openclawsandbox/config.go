@@ -35,7 +35,7 @@ func Root(agentHome string) string {
 	return filepath.Join(agentHome, HostDir)
 }
 
-func WorkspaceRoot(agentHome string) string {
+func workspaceRoot(agentHome string) string {
 	return filepath.Join(Root(agentHome), HostWorkspaceDir)
 }
 

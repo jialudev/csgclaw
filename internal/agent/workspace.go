@@ -9,9 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	runtimecodex "csgclaw/internal/runtime/codex"
-	"csgclaw/internal/runtime/openclawsandbox"
-	"csgclaw/internal/runtime/picoclawsandbox"
 	"csgclaw/internal/templates"
 )
 
@@ -47,14 +44,6 @@ func runtimeTemplateWorkspacePath(templateRoot string) string {
 	return templates.WorkspacePath(templateRoot)
 }
 
-func ensureAgentWorkspace(agentName, template string) (string, error) {
-	hostRoot, err := agentWorkspaceRoot(agentName, RuntimeKindPicoClawSandbox)
-	if err != nil {
-		return "", err
-	}
-	return ensureWorkspaceAtRoot(hostRoot, template)
-}
-
 func ensureWorkspaceAtRoot(hostRoot, template string) (string, error) {
 	if strings.TrimSpace(template) == "" {
 		return "", fmt.Errorf("workspace template is required")
@@ -68,26 +57,20 @@ func ensureWorkspaceAtRoot(hostRoot, template string) (string, error) {
 	return hostRoot, nil
 }
 
-// WorkspaceRoot returns the agent workspace directory for the given runtime kind.
-func WorkspaceRoot(agentName, runtimeKind string) (string, error) {
-	return agentWorkspaceRoot(agentName, runtimeKind)
-}
-
-func agentWorkspaceRoot(agentName, runtimeKind string) (string, error) {
+func (s *Service) agentWorkspaceRoot(agentName, runtimeKind string) (string, error) {
 	agentHome, err := agentHomeDir(agentName)
 	if err != nil {
 		return "", err
 	}
-	switch strings.TrimSpace(runtimeKind) {
-	case RuntimeKindPicoClawSandbox:
-		return picoclawsandbox.WorkspaceRoot(agentHome), nil
-	case RuntimeKindOpenClawSandbox:
-		return openclawsandbox.WorkspaceRoot(agentHome), nil
-	case RuntimeKindCodex:
-		return runtimecodex.WorkspaceRoot(agentHome), nil
-	default:
-		return "", fmt.Errorf("unsupported runtime_kind %q for agent workspace", runtimeKind)
+	rt, err := s.runtimeForKind(strings.TrimSpace(runtimeKind))
+	if err != nil {
+		return "", err
 	}
+	root := rt.WorkspaceRoot(agentHome)
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("runtime %q returned empty workspace root", rt.Kind())
+	}
+	return root, nil
 }
 
 func copyEmbeddedTree(templateRoot, dstRoot string) error {
@@ -119,7 +102,7 @@ func overlayWorkspaceTree(srcRoot, dstRoot string) error {
 	return copyWorkspaceFS(os.DirFS(srcRoot), ".", dstRoot, "workspace", true)
 }
 
-func prepareWorkspaceSkillsPreservation(agentName, sourceRuntimeKind, targetRuntimeKind, role string) (func() error, func(), error) {
+func (s *Service) prepareWorkspaceSkillsPreservation(agentName, sourceRuntimeKind, targetRuntimeKind, role string) (func() error, func(), error) {
 	sourceRuntimeKind = strings.TrimSpace(sourceRuntimeKind)
 	targetRuntimeKind = strings.TrimSpace(targetRuntimeKind)
 	if sourceRuntimeKind == "" {
@@ -128,7 +111,7 @@ func prepareWorkspaceSkillsPreservation(agentName, sourceRuntimeKind, targetRunt
 	if targetRuntimeKind == "" {
 		targetRuntimeKind = sourceRuntimeKind
 	}
-	sourceWorkspace, err := agentWorkspaceRoot(agentName, sourceRuntimeKind)
+	sourceWorkspace, err := s.agentWorkspaceRoot(agentName, sourceRuntimeKind)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -177,7 +160,7 @@ func prepareWorkspaceSkillsPreservation(agentName, sourceRuntimeKind, targetRunt
 		if empty, err := directoryEmpty(preservedSkills); err != nil || empty {
 			return err
 		}
-		targetWorkspace, err := agentWorkspaceRoot(agentName, targetRuntimeKind)
+		targetWorkspace, err := s.agentWorkspaceRoot(agentName, targetRuntimeKind)
 		if err != nil {
 			return err
 		}
@@ -190,12 +173,12 @@ func prepareWorkspaceSkillsPreservation(agentName, sourceRuntimeKind, targetRunt
 	return restore, cleanup, nil
 }
 
-func refreshGatewayTemplateSkills(agentName, runtimeKind, role string) error {
+func (s *Service) refreshGatewayTemplateSkills(agentName, runtimeKind, role string) error {
 	runtimeKind = strings.TrimSpace(runtimeKind)
 	if !isGatewayRuntimeKind(runtimeKind) {
 		return nil
 	}
-	workspaceRoot, err := agentWorkspaceRoot(agentName, runtimeKind)
+	workspaceRoot, err := s.agentWorkspaceRoot(agentName, runtimeKind)
 	if err != nil {
 		return err
 	}

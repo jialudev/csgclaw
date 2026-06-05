@@ -140,8 +140,12 @@ func (r *Runtime) Kind() string {
 	return agentruntime.KindCodex
 }
 
-func WorkspaceRoot(agentHome string) string {
+func workspaceRoot(agentHome string) string {
 	return filepath.Join(agentHome, filepath.FromSlash(hostStateDirName), workspaceDirName)
+}
+
+func (r *Runtime) WorkspaceRoot(agentHome string) string {
+	return workspaceRoot(agentHome)
 }
 
 func (r *Runtime) SessionManager() Manager {

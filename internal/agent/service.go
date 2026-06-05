@@ -198,7 +198,7 @@ func (s *Service) HubPublishSpec(agentID string) (hub.PublishSpec, error) {
 	if !ok {
 		return hub.PublishSpec{}, fmt.Errorf("agent %q not found", strings.TrimSpace(agentID))
 	}
-	workspaceRoot, err := agentWorkspaceRoot(got.Name, got.RuntimeKind)
+	workspaceRoot, err := s.agentWorkspaceRoot(got.Name, got.RuntimeKind)
 	if err != nil {
 		return hub.PublishSpec{}, err
 	}
@@ -670,7 +670,7 @@ func (s *Service) cleanupBootstrapManagerForRecreate(ctx context.Context, rt san
 		return nil, err
 	}
 	sourceRuntimeKind := s.managerSkillPreservationSourceRuntimeKind(runtimeKind)
-	restoreSkills, cleanupSkills, err := prepareWorkspaceSkillsPreservation(ManagerName, sourceRuntimeKind, runtimeKind, RoleManager)
+	restoreSkills, cleanupSkills, err := s.prepareWorkspaceSkillsPreservation(ManagerName, sourceRuntimeKind, runtimeKind, RoleManager)
 	if err != nil {
 		return nil, fmt.Errorf("prepare bootstrap manager skills preservation: %w", err)
 	}
@@ -1137,6 +1137,24 @@ func (s *Service) agentSnapshot(id string) (Agent, bool) {
 		return Agent{}, false
 	}
 	return *cloneAgent(&a), true
+}
+
+func (s *Service) agentSnapshotByName(name string) (Agent, bool) {
+	if s == nil {
+		return Agent{}, false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Agent{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, a := range s.agents {
+		if strings.EqualFold(strings.TrimSpace(a.Name), name) {
+			return *cloneAgent(&a), true
+		}
+	}
+	return Agent{}, false
 }
 
 func (s *Service) resolveAgentBox(ctx context.Context, rt sandbox.Runtime, got Agent) (sandbox.Instance, string, error) {

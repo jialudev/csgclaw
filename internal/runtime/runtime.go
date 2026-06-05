@@ -21,6 +21,7 @@ const (
 // the optional Provisioner capability instead of being folded into New.
 type Runtime interface {
 	Kind() string
+	WorkspaceRoot(agentHome string) string
 
 	New(ctx context.Context, spec Spec) (Handle, error)
 	Start(ctx context.Context, h Handle) (State, error)

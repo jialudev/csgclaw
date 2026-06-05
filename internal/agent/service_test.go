@@ -96,6 +96,7 @@ func (f *fakeInstance) Close() error {
 
 type fakeAgentRuntime struct {
 	kind       string
+	workspace  func(string) string
 	provision  func(context.Context, agentruntime.ProvisionRequest) error
 	new        func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
@@ -108,6 +109,22 @@ type fakeAgentRuntime struct {
 
 func (f fakeAgentRuntime) Kind() string {
 	return f.kind
+}
+
+func (f fakeAgentRuntime) WorkspaceRoot(agentHome string) string {
+	if f.workspace != nil {
+		return f.workspace(agentHome)
+	}
+	switch strings.TrimSpace(f.kind) {
+	case RuntimeKindPicoClawSandbox:
+		return filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+	case RuntimeKindOpenClawSandbox:
+		return filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+	case RuntimeKindCodex:
+		return filepath.Join(agentHome, ".codex", "workspace")
+	default:
+		return ""
+	}
 }
 
 func (f fakeAgentRuntime) Provision(ctx context.Context, req agentruntime.ProvisionRequest) error {
@@ -173,6 +190,19 @@ type fakeAgentRuntimeNoLogs struct {
 
 func (f fakeAgentRuntimeNoLogs) Kind() string {
 	return f.kind
+}
+
+func (f fakeAgentRuntimeNoLogs) WorkspaceRoot(agentHome string) string {
+	switch strings.TrimSpace(f.kind) {
+	case RuntimeKindPicoClawSandbox:
+		return filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+	case RuntimeKindOpenClawSandbox:
+		return filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+	case RuntimeKindCodex:
+		return filepath.Join(agentHome, ".codex", "workspace")
+	default:
+		return ""
+	}
 }
 
 func (f fakeAgentRuntimeNoLogs) New(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
@@ -1869,7 +1899,7 @@ func TestCreateReplaceManagerReprovisionsWorkspaceAfterHomeRemoval(t *testing.T)
 	if replaced.Image != "manager-image:2" {
 		t.Fatalf("Create() image = %q, want requested image", replaced.Image)
 	}
-	workspaceRoot, err := agentWorkspaceRoot(ManagerName, RuntimeKindPicoClawSandbox)
+	workspaceRoot, err := testBuiltinWorkspaceRoot(ManagerName, RuntimeKindPicoClawSandbox)
 	if err != nil {
 		t.Fatalf("agentWorkspaceRoot() error = %v", err)
 	}
@@ -3793,7 +3823,7 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 		t.Fatalf("RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
 	}
 
-	workspaceRoot, err := agentWorkspaceRoot("alice", RuntimeKindPicoClawSandbox)
+	workspaceRoot, err := testBuiltinWorkspaceRoot("alice", RuntimeKindPicoClawSandbox)
 	if err != nil {
 		t.Fatalf("agentWorkspaceRoot() error = %v", err)
 	}
@@ -3928,7 +3958,7 @@ func TestCreateOpenClawWorkerFromTemplateOverlaysOpenClawWorkspace(t *testing.T)
 	}
 
 	agentHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice")
-	openclawWorkspace := openclawsandbox.WorkspaceRoot(agentHome)
+	openclawWorkspace := filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
 	if _, err := os.Stat(filepath.Join(openclawWorkspace, "skills", "custom", "SKILL.md")); err != nil {
 		t.Fatalf("template skill missing from OpenClaw workspace after overlay: %v", err)
 	}
@@ -3977,7 +4007,7 @@ func TestCreateWorkerUsesConfiguredDefaultTemplate(t *testing.T) {
 		t.Fatalf("RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
 	}
 
-	workspaceRoot, err := agentWorkspaceRoot("alice", RuntimeKindPicoClawSandbox)
+	workspaceRoot, err := testBuiltinWorkspaceRoot("alice", RuntimeKindPicoClawSandbox)
 	if err != nil {
 		t.Fatalf("agentWorkspaceRoot() error = %v", err)
 	}
@@ -4300,7 +4330,7 @@ func TestRecreateRefreshesBuiltInSkillsAndPreservesUserSkills(t *testing.T) {
 		ProfileComplete: true,
 	}
 
-	workspaceRoot, err := agentWorkspaceRoot(ManagerName, RuntimeKindPicoClawSandbox)
+	workspaceRoot, err := testBuiltinWorkspaceRoot(ManagerName, RuntimeKindPicoClawSandbox)
 	if err != nil {
 		t.Fatalf("agentWorkspaceRoot() error = %v", err)
 	}
@@ -4498,7 +4528,7 @@ func TestCreateWorkerAppliesTemplateDefaultsWithoutWorkspace(t *testing.T) {
 		t.Fatalf("Image = %q, want %q", got.Image, "worker-image:1")
 	}
 
-	workspaceRoot, err := agentWorkspaceRoot("alice", RuntimeKindPicoClawSandbox)
+	workspaceRoot, err := testBuiltinWorkspaceRoot("alice", RuntimeKindPicoClawSandbox)
 	if err != nil {
 		t.Fatalf("agentWorkspaceRoot() error = %v", err)
 	}
@@ -4565,7 +4595,7 @@ func TestHubPublishSpecUsesAgentWorkspaceSnapshot(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	workspaceRoot, err := agentWorkspaceRoot(created.Name, created.RuntimeKind)
+	workspaceRoot, err := testBuiltinWorkspaceRoot(created.Name, created.RuntimeKind)
 	if err != nil {
 		t.Fatalf("agentWorkspaceRoot() error = %v", err)
 	}
@@ -4624,7 +4654,7 @@ func TestHubPublishSpecUsesOpenClawWorkspaceSnapshot(t *testing.T) {
 	}
 
 	agentHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, created.Name)
-	workspaceRoot := openclawsandbox.WorkspaceRoot(agentHome)
+	workspaceRoot := filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
 	if err := os.WriteFile(filepath.Join(workspaceRoot, "PLAYBOOK.md"), []byte("openclaw workspace snapshot\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(PLAYBOOK.md) error = %v", err)
 	}
@@ -4639,7 +4669,7 @@ func TestHubPublishSpecUsesOpenClawWorkspaceSnapshot(t *testing.T) {
 	if spec.WorkspaceRef.Path != workspaceRoot {
 		t.Fatalf("WorkspaceRef.Path = %q, want %q", spec.WorkspaceRef.Path, workspaceRoot)
 	}
-	if spec.WorkspaceRef.Path == picoclawsandbox.WorkspaceRoot(agentHome) {
+	if spec.WorkspaceRef.Path == filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir) {
 		t.Fatalf("WorkspaceRef.Path = %q, want OpenClaw workspace root", spec.WorkspaceRef.Path)
 	}
 }
@@ -5085,7 +5115,7 @@ func TestEnsureBootstrapStateForceRecreateResetsManagerHomeBeforeCreate(t *testi
 	if err := os.WriteFile(stalePath, []byte("stale"), 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	currentSkillPath := filepath.Join(picoclawsandbox.WorkspaceRoot(managerHome), "skills", "say-hello", "SKILL.md")
+	currentSkillPath := filepath.Join(filepath.Join(picoclawsandbox.Root(managerHome), picoclawsandbox.HostWorkspaceDir), "skills", "say-hello", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(currentSkillPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll(current skill) error = %v", err)
 	}
@@ -5600,7 +5630,7 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 
 	wantAgentHome := filepath.Join(homeDir, config.AppDirName, managerAgentsDirName, "alice")
 	wantPicoClawRoot := picoclawsandbox.Root(wantAgentHome)
-	wantWorkspaceRoot := picoclawsandbox.WorkspaceRoot(wantAgentHome)
+	wantWorkspaceRoot := filepath.Join(picoclawsandbox.Root(wantAgentHome), picoclawsandbox.HostWorkspaceDir)
 	wantConfigRoot := wantPicoClawRoot
 	wantProjectsRoot := filepath.Join(homeDir, config.AppDirName, hostProjectsDir)
 	if len(spec.Mounts) != 2 {
@@ -5774,8 +5804,30 @@ func appendTemplateImageEnvContracts(t *testing.T, manifestPath string, items []
 	}
 }
 
+func testBuiltinWorkspaceRoot(agentName, runtimeKind string) (string, error) {
+	agentHome, err := agentHomeDir(agentName)
+	if err != nil {
+		return "", err
+	}
+	var root string
+	switch strings.TrimSpace(runtimeKind) {
+	case RuntimeKindPicoClawSandbox:
+		root = filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+	case RuntimeKindOpenClawSandbox:
+		root = filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+	case RuntimeKindCodex:
+		root = filepath.Join(agentHome, ".codex", "workspace")
+	default:
+		return "", fmt.Errorf("unsupported runtime_kind %q for agent workspace", runtimeKind)
+	}
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("runtime %q returned empty workspace root", runtimeKind)
+	}
+	return root, nil
+}
+
 func agentSkillPath(agentName, runtimeKind, skillName string) (string, error) {
-	workspaceRoot, err := agentWorkspaceRoot(agentName, runtimeKind)
+	workspaceRoot, err := testBuiltinWorkspaceRoot(agentName, runtimeKind)
 	if err != nil {
 		return "", err
 	}
@@ -5865,6 +5917,40 @@ func TestPicoclawSandboxRuntimeKind(t *testing.T) {
 	}
 	if got, want := rt.Kind(), RuntimeKindPicoClawSandbox; got != want {
 		t.Fatalf("runtime kind = %q, want %q", got, want)
+	}
+}
+
+func TestServiceWorkspaceRootUsesRegisteredRuntimeCapability(t *testing.T) {
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	const runtimeKind = "custom_runtime"
+	if err := WithRuntime(fakeAgentRuntime{
+		kind: runtimeKind,
+		workspace: func(agentHome string) string {
+			return filepath.Join(agentHome, ".custom", "workspace")
+		},
+	})(svc); err != nil {
+		t.Fatalf("WithRuntime() error = %v", err)
+	}
+
+	svc.mu.Lock()
+	svc.agents["u-alice"] = Agent{ID: "u-alice", Name: "alice", RuntimeKind: runtimeKind}
+	svc.mu.Unlock()
+
+	got, err := svc.WorkspaceRoot("alice")
+	if err != nil {
+		t.Fatalf("WorkspaceRoot() error = %v", err)
+	}
+	agentHome, err := agentHomeDir("alice")
+	if err != nil {
+		t.Fatalf("agentHomeDir() error = %v", err)
+	}
+	want := filepath.Join(agentHome, ".custom", "workspace")
+	if got != want {
+		t.Fatalf("WorkspaceRoot() = %q, want %q", got, want)
 	}
 }
 

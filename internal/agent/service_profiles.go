@@ -395,7 +395,7 @@ func (s *Service) recreate(ctx context.Context, id string, imageFor func(context
 		Image:     image,
 		Profile:   runtimeProfile,
 	}
-	if err := refreshGatewayTemplateSkills(got.Name, runtimeKind, recreateTemplateRole(got)); err != nil {
+	if err := s.refreshGatewayTemplateSkills(got.Name, runtimeKind, recreateTemplateRole(got)); err != nil {
 		return Agent{}, fmt.Errorf("refresh gateway template skills: %w", err)
 	}
 	if err := s.provisionRuntime(ctx, runtimeImpl, runtimeKind, agentruntime.ProvisionRequest{
