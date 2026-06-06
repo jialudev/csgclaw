@@ -33,6 +33,8 @@ import {
   normalizeComposerSegmentsForDisplay,
   segmentsToPlainText,
   normalizeTextMentions,
+  getCollapsedSelectionTextOffset,
+  placeCaretAtEnd,
 } from "@/models/composer";
 import { isAgentRunning, normalizeAuthProviderName, providerNeedsAuth } from "@/models/agents";
 import type { SlashPickerCandidate } from "@/models/slashCommands";
@@ -153,7 +155,13 @@ export function ConversationPane({
     }
     const currentSegments = parseComposerSegments(editor);
     if (!areComposerSegmentsEqual(currentSegments, draftSegments)) {
+      const currentText = segmentsToPlainText(currentSegments);
+      const nextText = segmentsToPlainText(draftSegments);
+      const selectionOffset = getCollapsedSelectionTextOffset(editor);
       renderComposerSegments(editor, draftSegments);
+      if (currentText === nextText && selectionOffset === currentText.length) {
+        placeCaretAtEnd(editor);
+      }
     }
   }, [draftSegments]);
 
@@ -889,7 +897,13 @@ function ThreadPanel({
     }
     const currentSegments = parseComposerSegments(editor);
     if (!areComposerSegmentsEqual(currentSegments, displayDraftSegments)) {
+      const currentText = segmentsToPlainText(currentSegments);
+      const nextText = segmentsToPlainText(displayDraftSegments);
+      const selectionOffset = getCollapsedSelectionTextOffset(editor);
       renderComposerSegments(editor, displayDraftSegments);
+      if (currentText === nextText && selectionOffset === currentText.length) {
+        placeCaretAtEnd(editor);
+      }
     }
   }, [displayDraftSegments]);
 

@@ -1,6 +1,7 @@
 import {
   getComposerMentionState,
   getComposerSlashState,
+  getCollapsedSelectionTextOffset,
   getMentionCandidates,
   createSlashTokenElement,
   isComposerKeyboardEventComposing,
@@ -177,5 +178,22 @@ describe("composer model helpers", () => {
 
     expect(replaced).toBe(true);
     expect(parseComposerSegments(root)).toEqual([{ type: "text", text: "/basis " }]);
+  });
+
+  it("reads the collapsed caret offset across slash tokens", () => {
+    const root = createComposerRoot();
+    renderComposerSegments(root, [
+      { type: "slash", text: "/skill" },
+      { type: "text", text: " test" },
+    ]);
+
+    const range = document.createRange();
+    range.setStart(root, root.childNodes.length);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    expect(getCollapsedSelectionTextOffset(root)).toBe("/skill test".length);
   });
 });

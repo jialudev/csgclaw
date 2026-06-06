@@ -1,10 +1,14 @@
-import { createRef, useState } from "react";
+import { createRef, useRef, useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConversationPane } from "@/pages/ConversationPage/components/ConversationPane/ConversationPane";
 import { AgentActivityMsgTypes, CSGCLAW_AGENT_ACTIVITY_TYPE } from "@/shared/constants/messages";
 import type { IMConversation, IMUser, ThreadView, TranslateFn } from "@/models/conversations";
-import type { ComposerSegment } from "@/models/composer";
+import {
+  getCollapsedSelectionTextOffset,
+  parseComposerSegments,
+  type ComposerSegment,
+} from "@/models/composer";
 
 const users: IMUser[] = [
   {
@@ -220,6 +224,103 @@ function renderThreadPane({
 }
 
 describe("ConversationPane", () => {
+  it("keeps the caret at the end after slash text is tokenized in the main composer", async () => {
+    const user = userEvent.setup();
+    const conversation: IMConversation = {
+      id: "dm-1",
+      is_direct: true,
+      members: users.map((item) => item.id),
+      messages: [],
+      title: "manager",
+    };
+
+    function Harness() {
+      const [showChannelTools, setShowChannelTools] = useState(false);
+      const [showMemberList, setShowMemberList] = useState(false);
+      const [draftSegments, setDraftSegments] = useState<ComposerSegment[]>([]);
+      const editorRef = useRef<HTMLDivElement | null>(null);
+
+      return (
+        <ConversationPane
+          activeThreadRootID=""
+          activeThreadView={null}
+          authBusyProvider=""
+          authStatuses={{}}
+          channelToolsRef={createRef<HTMLDivElement>()}
+          composerError=""
+          conversation={conversation}
+          conversationMembers={users}
+          currentUserID="u-admin"
+          draftSegments={draftSegments}
+          draftText={draftSegments.map((segment) => segment.text ?? "").join("")}
+          editorRef={editorRef}
+          inviteActionLabel="Invite"
+          locale="zh"
+          logAgent={{ id: "u-manager", name: "manager" }}
+          managerProfile={null}
+          managerProfileIncomplete={false}
+          memberMenuRef={createRef<HTMLDivElement>()}
+          mentionCandidates={[]}
+          mentionIndex={0}
+          mentionableUsersByHandle={new Map()}
+          messageActionBusy={false}
+          messageActionError=""
+          messageListRef={createRef<HTMLElement>()}
+          onApplyMention={() => {}}
+          onApplySlashCandidate={() => {}}
+          onClearRoomMessages={() => {}}
+          onCloseThread={() => {}}
+          onComposerCompositionEnd={() => {}}
+          onComposerCompositionStart={() => {}}
+          onComposerKeyDown={() => {}}
+          onDeleteRoom={() => {}}
+          onInviteAction={() => {}}
+          onMessageAction={() => {}}
+          onOpenThread={() => {}}
+          onProviderLogin={() => {}}
+          onPreviewUser={() => {}}
+          onSendMessage={() => {}}
+          onSendThreadReply={() => {}}
+          onSyncComposer={() => {
+            const editor = editorRef.current;
+            if (!editor) {
+              return;
+            }
+            setDraftSegments(parseComposerSegments(editor) as ComposerSegment[]);
+          }}
+          onToggleChannelTools={setShowChannelTools}
+          onToggleMemberList={setShowMemberList}
+          onToggleToolCalls={() => {}}
+          selectedMessageCount={0}
+          showChannelTools={showChannelTools}
+          showMemberList={showMemberList}
+          showToolCalls={false}
+          slashCandidates={[]}
+          slashIndex={0}
+          slashPickerLoading={false}
+          slashPickerOpen={false}
+          t={t}
+          theme="light"
+          threadDraftSegments={[]}
+          threadError=""
+          threadLoading={false}
+          onThreadDraftChange={() => {}}
+          usersById={usersById}
+          visibleMessages={[]}
+        />
+      );
+    }
+
+    render(<Harness />);
+    const editor = screen.getByLabelText("Message");
+
+    await user.click(editor);
+    await user.type(editor, "/abc");
+
+    expect(editor).toHaveTextContent("/abc");
+    expect(getCollapsedSelectionTextOffset(editor)).toBe(4);
+  });
+
   it("shows one date divider per day without times", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-03T12:00:00+08:00"));

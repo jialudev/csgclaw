@@ -539,6 +539,24 @@ export function replaceComposerSlashWithSegments(root, segments) {
   return true;
 }
 
+export function getCollapsedSelectionTextOffset(root) {
+  if (!root) {
+    return null;
+  }
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) {
+    return null;
+  }
+  const range = selection.getRangeAt(0);
+  if (!root.contains(range.startContainer)) {
+    return null;
+  }
+  const prefixRange = range.cloneRange();
+  prefixRange.selectNodeContents(root);
+  prefixRange.setEnd(range.startContainer, range.startOffset);
+  return prefixRange.toString().length;
+}
+
 export function removeAdjacentMentionToken(root, direction) {
   if (!root) {
     return false;
