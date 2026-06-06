@@ -59,33 +59,6 @@ func TestParseRejectsLegacySlashText(t *testing.T) {
 	}
 }
 
-func TestNormalizeFeishuInputConvertsSlashSkillShorthand(t *testing.T) {
-	got, ok, err := NormalizeFeishuInput(`/skill-creator create a review skill`)
-	if err != nil {
-		t.Fatalf("NormalizeFeishuInput() error = %v", err)
-	}
-	if !ok {
-		t.Fatal("NormalizeFeishuInput() ok = false, want true")
-	}
-	want := `<slash-command name="use-skill" arg="skill-creator"></slash-command> create a review skill`
-	if got != want {
-		t.Fatalf("NormalizeFeishuInput() = %q, want %q", got, want)
-	}
-}
-
-func TestParseFeishuShorthandFallsBackOnInvalidSlug(t *testing.T) {
-	cmd, ok, err := ParseFeishuShorthand(`/foo/bar create a review skill`)
-	if err != nil {
-		t.Fatalf("ParseFeishuShorthand() error = %v", err)
-	}
-	if ok {
-		t.Fatalf("ParseFeishuShorthand() ok = true, want false (fallback to plain text)")
-	}
-	if cmd != (Command{}) {
-		t.Fatalf("ParseFeishuShorthand() cmd = %+v, want empty", cmd)
-	}
-}
-
 func TestNormalizeRejectsMalformedSlashCommandPrefix(t *testing.T) {
 	got, ok, err := Normalize(`<slash-command name="use-skill"`)
 	if err == nil {
@@ -102,6 +75,14 @@ func TestNormalizeRejectsMalformedSlashCommandPrefix(t *testing.T) {
 func TestRenderFeishuFallbackConvertsCanonicalUseSkillToSlashText(t *testing.T) {
 	got := RenderFeishuFallback(`<slash-command name="use-skill" arg="skill-creator"></slash-command> create a review skill`)
 	want := `/skill-creator create a review skill`
+	if got != want {
+		t.Fatalf("RenderFeishuFallback() = %q, want %q", got, want)
+	}
+}
+
+func TestRenderFeishuFallbackConvertsCanonicalNewToSlashText(t *testing.T) {
+	got := RenderFeishuFallback(`<slash-command name="new" arg="conversation"></slash-command> reset before rebuild`)
+	want := `/new reset before rebuild`
 	if got != want {
 		t.Fatalf("RenderFeishuFallback() = %q, want %q", got, want)
 	}

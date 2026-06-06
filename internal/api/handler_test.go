@@ -129,6 +129,22 @@ func (f fakeCompatRuntime) ProjectsGuestPath() string {
 	return ""
 }
 
+type fakeConversationRuntime struct {
+	fakeCompatRuntime
+	newConversation func(context.Context, agentruntime.Handle, agentruntime.ConversationStartRequest) (agentruntime.ConversationStartAction, error)
+}
+
+func (f fakeConversationRuntime) NewConversation(ctx context.Context, handle agentruntime.Handle, req agentruntime.ConversationStartRequest) (agentruntime.ConversationStartAction, error) {
+	if f.newConversation != nil {
+		return f.newConversation(ctx, handle, req)
+	}
+	return agentruntime.ConversationStartAction{
+		Mode:         agentruntime.ConversationStartActionInternal,
+		BotEventText: "",
+		AckText:      "",
+	}, nil
+}
+
 type fakeCodexBridgeController struct {
 	ensureCalls []agent.Agent
 	stopCalls   []string
@@ -3313,8 +3329,8 @@ func TestHandleFeishuMessagesPostSendsMessage(t *testing.T) {
 	}
 }
 
-func TestHandleFeishuMessagesPostNormalizesCanonicalSlashCommand(t *testing.T) {
-	wantContent := `<slash-command name="use-skill" arg="skill-creator"></slash-command> create & review`
+func TestHandleFeishuMessagesPostKeepsCanonicalSlashCommandAsPlainMessage(t *testing.T) {
+	wantContent := `<slash-command arg="skill-creator" name="use-skill"/> create & review`
 	feishuSvc := feishu.NewServiceWithSendMessage(
 		map[string]feishu.AppConfig{"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"}},
 		func(_ context.Context, _ feishu.AppConfig, req feishu.SendMessageRequest) (feishu.SendMessageResponse, error) {
@@ -3343,8 +3359,8 @@ func TestHandleFeishuMessagesPostNormalizesCanonicalSlashCommand(t *testing.T) {
 	}
 }
 
-func TestHandleFeishuMessagesPostConvertsSlashShorthandToCanonicalCommand(t *testing.T) {
-	wantContent := `<slash-command name="use-skill" arg="skill-creator"></slash-command> create & review`
+func TestHandleFeishuMessagesPostKeepsSlashShorthandAsPlainMessage(t *testing.T) {
+	wantContent := `/skill-creator create & review`
 	feishuSvc := feishu.NewServiceWithSendMessage(
 		map[string]feishu.AppConfig{"u-manager": {AppID: "cli_manager", AppSecret: "manager-secret"}},
 		func(_ context.Context, _ feishu.AppConfig, req feishu.SendMessageRequest) (feishu.SendMessageResponse, error) {
@@ -4316,6 +4332,86 @@ func TestReplayRecentBotMessagesReplaysUnansweredHumanMessage(t *testing.T) {
 	case evt := <-events:
 		if evt.MessageID != "msg-missed" || evt.Text != "please reply" {
 			t.Fatalf("replayed event = %+v, want msg-missed please reply", evt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("replayRecentBotMessages() timed out waiting for event")
+	}
+}
+
+func TestReplayRecentBotMessagesUsesNewConversationFlow(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	restoreDefault := agent.TestOnlySetDefaultServiceOption(func(s *agent.Service) error {
+		return agent.WithRuntime(fakeConversationRuntime{
+			fakeCompatRuntime: fakeCompatRuntime{kind: agent.RuntimeKindCodex},
+			newConversation: func(_ context.Context, _ agentruntime.Handle, req agentruntime.ConversationStartRequest) (agentruntime.ConversationStartAction, error) {
+				if strings.TrimSpace(req.Channel) != "csgclaw" {
+					t.Fatalf("new conversation request channel = %q, want csgclaw", req.Channel)
+				}
+				if strings.TrimSpace(req.RoomID) != "room-1" {
+					t.Fatalf("new conversation request room_id = %q, want room-1", req.RoomID)
+				}
+				return agentruntime.ConversationStartAction{
+					Mode:         agentruntime.ConversationStartActionBotEvent,
+					BotEventText: "ack: cleared",
+				}, nil
+			},
+		})(s)
+	})
+	t.Cleanup(restoreDefault)
+
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{
+			ID:              "u-manager",
+			Name:            "manager",
+			Role:            agent.RoleManager,
+			RuntimeKind:     agent.RuntimeKindCodex,
+			RuntimeID:       "rt-u-manager",
+			Status:          string(agentruntime.StateRunning),
+			ProfileComplete: true,
+			CreatedAt:       time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
+		},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+	svc, err := agent.NewService(config.ModelConfig{ModelID: "gpt-5.5"}, config.ServerConfig{}, "manager-image:test", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	imSvc := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []im.User{
+			{ID: "u-admin", Name: "admin", Handle: "admin"},
+			{ID: "u-manager", Name: "manager", Handle: "manager"},
+		},
+		Rooms: []im.Room{
+			{
+				ID:       "room-1",
+				IsDirect: true,
+				Members:  []string{"u-admin", "u-manager"},
+				Messages: []im.Message{
+					{
+						ID:        "msg-new-convo",
+						SenderID:  "u-admin",
+						Content:   `<slash-command name="new" arg="conversation"></slash-command> clear all`,
+						CreatedAt: time.Now().UTC(),
+					},
+				},
+			},
+		},
+	})
+	bridge := im.NewBotBridge("")
+	events, cancel := bridge.Subscribe("u-manager")
+	defer cancel()
+
+	srv := &Handler{svc: svc, im: imSvc, botBridge: bridge}
+	srv.replayRecentBotMessages("u-manager", "")
+
+	select {
+	case evt := <-events:
+		if evt.MessageID != "msg-new-convo" || evt.Text != "ack: cleared" {
+			t.Fatalf("replayed event = %+v, want msg-new-convo ack: cleared", evt)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("replayRecentBotMessages() timed out waiting for event")
