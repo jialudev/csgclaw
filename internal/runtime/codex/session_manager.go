@@ -365,6 +365,9 @@ func buildSessionEnv(spec SessionSpec) []string {
 		if !ok {
 			continue
 		}
+		if shouldOmitInheritedSessionEnvKey(key) {
+			continue
+		}
 		envMap[key] = value
 	}
 	envMap["HOME"] = spec.HomeDir
@@ -397,6 +400,17 @@ func buildSessionEnv(spec SessionSpec) []string {
 		out = append(out, key+"="+envMap[key])
 	}
 	return out
+}
+
+func shouldOmitInheritedSessionEnvKey(key string) bool {
+	switch strings.ToUpper(strings.TrimSpace(key)) {
+	case "ZDOTDIR", "BASH_ENV", "ENV":
+		// These variables redirect shell startup files and can make runtime
+		// shells source host dotfiles against the sandbox HOME.
+		return true
+	default:
+		return false
+	}
 }
 
 func isReservedSessionEnvKey(key string) bool {

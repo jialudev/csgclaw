@@ -241,6 +241,9 @@ func TestBuildSessionEnvOnlyInjectsOpenAIAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_BASE_URL", "https://host.example/v1")
 	t.Setenv("OPENAI_API_KEY", "host-key")
 	t.Setenv("OPENAI_MODEL", "host-model")
+	t.Setenv("ZDOTDIR", "/host-zdotdir")
+	t.Setenv("BASH_ENV", "/host-bashenv")
+	t.Setenv("ENV", "/host-env")
 
 	env := buildSessionEnv(SessionSpec{
 		HomeDir:      "/tmp/runtime-home",
@@ -284,6 +287,11 @@ func TestBuildSessionEnvOnlyInjectsOpenAIAPIKey(t *testing.T) {
 	}
 	if got, want := envMap["EXTRA_FLAG"], "1"; got != want {
 		t.Fatalf("EXTRA_FLAG = %q, want %q", got, want)
+	}
+	for _, key := range []string{"ZDOTDIR", "BASH_ENV", "ENV"} {
+		if got, ok := envMap[key]; ok {
+			t.Fatalf("%s = %q, want omitted from runtime env", key, got)
+		}
 	}
 }
 
