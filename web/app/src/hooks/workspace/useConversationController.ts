@@ -200,6 +200,34 @@ export function useConversationController({
     const agent = agents.find((item) => item.id === agentID || agentMatchesUser(item, directUser));
     return agent ?? null;
   }, [agents, data?.current_user_id, selectedConversation, usersById]);
+  const activeConversationAgentMembers = useMemo(() => {
+    if (!selectedConversation) {
+      return [];
+    }
+
+    return selectedConversation.members
+      .filter((memberId) => memberId !== data?.current_user_id)
+      .map((memberId) => ({
+        memberId: memberId,
+        user: usersById.get(memberId),
+      }))
+      .filter((entry) =>
+        agents.some((agent) => agent.id === entry.memberId || (entry.user && agentMatchesUser(agent, entry.user))),
+      )
+      .map((entry) => entry.memberId);
+  }, [agents, data?.current_user_id, selectedConversation, usersById]);
+  const hasActiveConversationAgent = useMemo(() => {
+    return activeConversationAgentMembers.length > 0;
+  }, [activeConversationAgentMembers]);
+  const activeConversationAgentId = useMemo(() => {
+    if (logAgent?.id) {
+      return logAgent.id;
+    }
+    if (activeConversationAgentMembers.length === 1) {
+      return activeConversationAgentMembers[0];
+    }
+    return "";
+  }, [activeConversationAgentMembers, logAgent?.id]);
   const activeConversationMembers = activeConversation
     ? activeConversation.members.map((id) => usersById.get(id)).filter(Boolean)
     : [];
@@ -243,14 +271,15 @@ export function useConversationController({
     [draftsByConversationId, activeConversationId],
   );
   const draftText = useMemo(() => segmentsToPlainText(draftSegments), [draftSegments]);
+  const slashPickerEnabled = Boolean((hasActiveConversationAgent || logAgent?.id) && !slashPickerDismissed);
   const slashPickerState = useMemo(
     () =>
       buildSlashPickerState({
         draftText,
-        enabled: Boolean(logAgent?.id && !slashPickerDismissed),
+        enabled: slashPickerEnabled,
         skillNames,
       }),
-    [draftText, logAgent, slashPickerDismissed, skillNames],
+    [draftText, slashPickerEnabled, skillNames],
   );
   const slashPickerQuery = slashPickerState.query;
   const slashPickerActive = slashPickerState.active;
@@ -263,15 +292,16 @@ export function useConversationController({
     return activeThreadDraftKey ? (threadDraftsByKey[activeThreadDraftKey] ?? []) : [];
   }, [activeThreadDraftKey, threadDraftsByKey]);
   const activeThreadDraft = useMemo(() => segmentsToPlainText(activeThreadDraftSegments), [activeThreadDraftSegments]);
+  const threadSlashPickerEnabled = Boolean((logAgent?.id || hasActiveConversationAgent) && activeThreadDraftKey);
   const threadSlashPickerState = useMemo(
     () =>
       buildSlashPickerState({
         draftText: activeThreadDraft,
-        enabled: Boolean(logAgent?.id && activeThreadDraftKey),
+        enabled: threadSlashPickerEnabled,
         skillNames,
         disabled: threadSlashPickerDismissed,
       }),
-    [activeThreadDraft, logAgent, activeThreadDraftKey, threadSlashPickerDismissed, skillNames],
+    [activeThreadDraft, threadSlashPickerEnabled, threadSlashPickerDismissed, skillNames],
   );
   const threadSlashPickerQuery = threadSlashPickerState.query;
   const threadSlashPickerActive = threadSlashPickerState.active;
@@ -333,14 +363,14 @@ export function useConversationController({
   }, [threadSlashPickerQuery, skillNames]);
 
   useEffect(() => {
-    if (!isAnySlashPickerNeeded || !logAgent?.id) {
+    if (!isAnySlashPickerNeeded || !activeConversationAgentId) {
       setSkillNames([]);
       setSlashPickerLoading(false);
       return;
     }
     let cancelled = false;
     setSlashPickerLoading(true);
-    fetchAgentWorkspace(logAgent.id, "skills")
+    fetchAgentWorkspace(activeConversationAgentId, "skills")
       .then((workspace) => {
         if (cancelled) {
           return;
@@ -360,7 +390,7 @@ export function useConversationController({
     return () => {
       cancelled = true;
     };
-  }, [isAnySlashPickerNeeded, logAgent?.id]);
+  }, [activeConversationAgentId, isAnySlashPickerNeeded]);
 
   useEffect(() => {
     if (!managerProfileIncomplete) {
