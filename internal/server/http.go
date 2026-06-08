@@ -11,38 +11,39 @@ import (
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/api"
-	"csgclaw/internal/bot"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/hub"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
+	"csgclaw/internal/participant"
 	"csgclaw/internal/team"
 	"csgclaw/internal/upgrade"
 )
 
 type Options struct {
-	ListenAddr      string
-	Service         *agent.Service
-	Hub             *hub.Service
-	Bot             *bot.Service
-	IM              *im.Service
-	IMBus           *im.Bus
-	BotBridge       *im.BotBridge
-	Feishu          *feishu.Service
-	LLM             *llm.Service
-	Team            *team.Service
-	TeamAdapter     team.TeamChannelAdapter
-	Upgrade         *upgrade.Manager
-	ActivityDecider api.ActivityDecider
-	ConfigPath      string
-	AccessToken     string
-	NoAuth          bool
-	Context         context.Context
-	OnReady         func(h *api.Handler, router chi.Router)
+	ListenAddr        string
+	Service           *agent.Service
+	Hub               *hub.Service
+	Participant       *participant.Service
+	IM                *im.Service
+	IMBus             *im.Bus
+	ParticipantBridge *im.ParticipantBridge
+	Feishu            *feishu.Service
+	LLM               *llm.Service
+	Team              *team.Service
+	TeamAdapter       team.TeamChannelAdapter
+	Upgrade           *upgrade.Manager
+	ActivityDecider   api.ActivityDecider
+	ConfigPath        string
+	AccessToken       string
+	NoAuth            bool
+	Context           context.Context
+	OnReady           func(h *api.Handler, router chi.Router)
 }
 
 func newHandler(opts Options) *api.Handler {
-	handler := api.NewHandlerWithBotAndAuth(opts.Service, opts.Bot, opts.IM, opts.IMBus, opts.BotBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	handler := api.NewHandlerWithAuth(opts.Service, opts.IM, opts.IMBus, opts.ParticipantBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	handler.SetParticipantService(opts.Participant)
 	handler.SetHubService(opts.Hub)
 	handler.SetTeamService(opts.Team)
 	handler.SetTeamAdapter(opts.TeamAdapter)
@@ -59,7 +60,7 @@ func Run(opts Options) error {
 	}
 	handler := newHandler(opts)
 	router := handler.Routes()
-	router.Handle("/*", uiHandler())
+	router.Handle("/*", uiFallbackHandler())
 
 	httpServer := &http.Server{
 		Addr:              opts.ListenAddr,
@@ -67,7 +68,7 @@ func Run(opts Options) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	if opts.IMBus != nil && opts.BotBridge != nil {
+	if opts.IMBus != nil && opts.ParticipantBridge != nil {
 		events, cancel := opts.IMBus.Subscribe()
 		defer cancel()
 
@@ -80,7 +81,7 @@ func Run(opts Options) error {
 					if !ok {
 						return
 					}
-					handler.PublishBotEvent(evt)
+					handler.PublishParticipantEvent(evt)
 				}
 			}
 		}()

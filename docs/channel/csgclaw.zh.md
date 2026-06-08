@@ -32,6 +32,7 @@
 ### 必填行为
 
 - `type` 必须是 `csgclaw.action_card`。
+- `bot_id` 是现有 setup helper 沿用的旧 payload 字段；其值表示目标 agent ID，不是 participant ID。
 - `actions[0].id` 必须是 `rebuild-manager`。
 - `actions[0].method` 必须是 `manager-bootstrap-replace`。
 - 前端必须将该 payload 直接作为完整聊天内容渲染（不允许附加普通文本、markdown 表格或 markdown 代码块）。
@@ -54,21 +55,21 @@ Content-Type: application/json
 - 不要返回或记录敏感凭证（如 `app_secret`、API key、token）。
 - 若敏感值出现在日志中，应使用掩码形式（例如 `present`）。
 
-## Notification bot（通知机器人）
+## Notification participant（通知参与者）
 
-通知机器人是 `type=notification` 的 channel bot，不创建 backing worker agent；投递配置保存在 `bots.json` 的 `bot.runtime_options` 中。默认 bot id 为 `n-{name}`（与 worker agent 的 `u-{name}` 区分）；创建时也可显式指定 `id`，但不得与已有 agent 或其它 channel bot 冲突。
+通知发送者是 `type=notification` 的 CSGClaw participant，不创建 backing worker agent；投递配置保存在 participant `metadata` 中。默认 participant id 为 `n-{name}`（与 worker agent 的 `u-{name}` 区分）；创建时也可显式指定 `id`，但不得与同 channel 下已有 participant 冲突。
 
-- 列表：`GET /api/v1/channels/csgclaw/bots`（含 `type=notification`；feishu channel 列表不包含通知 bot）
-- 创建：`POST /api/v1/channels/csgclaw/bots`，请求体含 `"type":"notification"` 与扁平 `runtime_options`
-- 更新：`PATCH /api/v1/channels/csgclaw/bots/{id}`
-- 删除：`DELETE /api/v1/channels/csgclaw/bots/{id}`
-- 推送（webhook）：`POST /api/v1/channels/csgclaw/bots/{id}/notifications`，请求头 `Authorization: Bearer <webhook_token>`
+- 列表：`GET /api/v1/channels/csgclaw/participants?type=notification`
+- 创建：`POST /api/v1/channels/csgclaw/participants`，请求体含 `"type":"notification"` 与 `metadata`
+- 更新：`PATCH /api/v1/channels/csgclaw/participants/{id}`
+- 删除：`DELETE /api/v1/channels/csgclaw/participants/{id}`
+- 推送（webhook）：`POST /api/v1/channels/csgclaw/participants/{id}/notifications`，请求头 `Authorization: Bearer <webhook_token>`
 
-实现：`internal/channel/csgclaw/notification_bot/`、`internal/bot/notification.go`。
+实现：`internal/channel/csgclaw/notification/`。
 
 ## `csgclaw.notify_card` 结构
 
-通知投递（GitLab/GitHub webhook 等）到 CSGClaw Web IM 时使用该类型：**整条消息的 `content` 即一段 JSON**，由服务端 `internal/channel/csgclaw/notification_bot` 生成，Web 前端按 `type` 渲染为结构化卡片（标题、徽章、元数据行、可选链接与折叠原始 JSON）。
+通知投递（GitLab/GitHub webhook 等）到 CSGClaw Web IM 时使用该类型：**整条消息的 `content` 即一段 JSON**，由服务端 `internal/channel/csgclaw/notification` 生成，Web 前端按 `type` 渲染为结构化卡片（标题、徽章、元数据行、可选链接与折叠原始 JSON）。
 
 ```json
 {
@@ -105,5 +106,5 @@ Content-Type: application/json
 
 - 前端解析与渲染：`web/app/src/components/business/MessageContent/MessageContent.tsx`、`web/app/src/components/business/MessageContent/structuredMessages.ts`
 - Action card 与 Notifier card 单测：`web/app/tests/legacy-contract.test.ts`、`web/app/tests/components/MessageContent/structuredMessages.test.ts`
-- 通知卡片生成：`internal/channel/csgclaw/notification_bot/notify_card.go`、`internal/channel/csgclaw/notification_bot/notify_webhooks.go`
+- 通知卡片生成：`internal/channel/csgclaw/notification/notify_card.go`、`internal/channel/csgclaw/notification/notify_webhooks.go`
 - Feishu setup 命令输出：`internal/templates/embed/runtimes/picoclaw/manager/workspace/skills/feishu/scripts/feishu_setup/csgclaw.py`

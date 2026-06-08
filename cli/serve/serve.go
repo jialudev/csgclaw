@@ -28,7 +28,6 @@ import (
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/app/channelwiring"
 	"csgclaw/internal/app/runtimewiring"
-	"csgclaw/internal/bot"
 	"csgclaw/internal/channel/codexbridge"
 	csgclawchannel "csgclaw/internal/channel/csgclaw"
 	"csgclaw/internal/channel/feishu"
@@ -39,6 +38,7 @@ import (
 	"csgclaw/internal/llm"
 	"csgclaw/internal/modelprovider"
 	internalonboard "csgclaw/internal/onboard"
+	"csgclaw/internal/participant"
 	agentruntime "csgclaw/internal/runtime"
 	runtimecodex "csgclaw/internal/runtime/codex"
 	"csgclaw/internal/sandboxproviders"
@@ -51,7 +51,6 @@ import (
 var (
 	RunServer          = server.Run
 	NewAgentService    = newAgentService
-	NewBotService      = newBotService
 	NewIMService       = newIMService
 	NewFeishuService   = newFeishuService
 	NewLLMService      = newLLMService
@@ -63,8 +62,14 @@ var (
 	ShutdownCLIProxy = func(ctx context.Context) error {
 		return cliproxy.Default().Shutdown(ctx)
 	}
-	DetectBootstrapState  = internalonboard.DetectState
-	EnsureBootstrapState  = internalonboard.EnsureState
+	DetectBootstrapState   = internalonboard.DetectState
+	EnsureBootstrapState   = internalonboard.EnsureState
+	EnsureBootstrapManager = func(ctx context.Context, svc *agent.Service) error {
+		if svc == nil {
+			return nil
+		}
+		return svc.EnsureBootstrapManager(ctx, false)
+	}
 	StartConfiguredAgents = func(ctx context.Context, svc *agent.Service) error {
 		if svc == nil {
 			return nil
@@ -254,11 +259,7 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	if err != nil {
 		return err
 	}
-	botSvc, err := NewBotService()
-	if err != nil {
-		return err
-	}
-	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, *configPathFlag, globals.Output)
+	return startServerWithConfigPath(ctx, run, cfg, svc, imSvc, imBus, feishuSvc, *configPathFlag, globals.Output)
 }
 
 func serveForeground(ctx context.Context, run *command.Context, cfg config.Config, output string) error {
@@ -277,10 +278,6 @@ func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cf
 		return err
 	}
 	imSvc, err := NewIMService(imBus)
-	if err != nil {
-		return err
-	}
-	botSvc, err := NewBotService()
 	if err != nil {
 		return err
 	}
@@ -303,7 +300,7 @@ func serveForegroundWithConfigPath(ctx context.Context, run *command.Context, cf
 		fmt.Fprintf(run.Stdout, "CSGClaw IM is available at: %s\n", imURL)
 	}
 
-	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, configPath, output)
+	return startServerWithConfigPath(ctx, run, cfg, svc, imSvc, imBus, feishuSvc, configPath, output)
 }
 
 func serveBackground(run *command.Context, cfg config.Config, globals command.GlobalOptions, logPath, pidPath, logLevel string) error {
@@ -410,11 +407,11 @@ func parseServeLogLevel(level string) (slog.Level, error) {
 	}
 }
 
-func startServer(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *feishu.Service, output string) error {
-	return startServerWithConfigPath(ctx, run, cfg, svc, botSvc, imSvc, imBus, feishuSvc, "", output)
+func startServer(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *feishu.Service, output string) error {
+	return startServerWithConfigPath(ctx, run, cfg, svc, imSvc, imBus, feishuSvc, "", output)
 }
 
-func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, botSvc *bot.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *feishu.Service, configPath, output string) error {
+func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg config.Config, svc *agent.Service, imSvc *im.Service, imBus *im.Bus, feishuSvc *feishu.Service, configPath, output string) error {
 	_ = EnsureCLIProxy(ctx)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -431,8 +428,9 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	if codexBridgeMgr != nil {
 		defer codexBridgeMgr.Close()
 	}
-	if botSvc != nil {
-		botSvc.SetDependencies(svc, imSvc, feishuSvc)
+	participantSvc, err := newParticipantService(svc, imSvc)
+	if err != nil {
+		return err
 	}
 	llmSvc, err := NewLLMService(cfg, svc)
 	if err != nil {
@@ -475,25 +473,25 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		return err
 	}
 	return RunServer(server.Options{
-		ListenAddr:      cfg.Server.ListenAddr,
-		Service:         svc,
-		Hub:             hubSvc,
-		Bot:             botSvc,
-		IM:              imSvc,
-		IMBus:           imBus,
-		BotBridge:       im.NewBotBridge(cfg.Server.AccessToken),
-		Feishu:          feishuSvc,
-		LLM:             llmSvc,
-		Team:            teamSvc,
-		TeamAdapter:     teamAdapter,
-		Upgrade:         upgradeManager,
-		ActivityDecider: channelActivityDecider(codexBridgeMgr),
-		ConfigPath:      configPath,
-		AccessToken:     cfg.Server.AccessToken,
-		NoAuth:          cfg.Server.NoAuth,
-		Context:         ctx,
+		ListenAddr:        cfg.Server.ListenAddr,
+		Service:           svc,
+		Hub:               hubSvc,
+		Participant:       participantSvc,
+		IM:                imSvc,
+		IMBus:             imBus,
+		ParticipantBridge: im.NewParticipantBridge(cfg.Server.AccessToken),
+		Feishu:            feishuSvc,
+		LLM:               llmSvc,
+		Team:              teamSvc,
+		TeamAdapter:       teamAdapter,
+		Upgrade:           upgradeManager,
+		ActivityDecider:   channelActivityDecider(codexBridgeMgr),
+		ConfigPath:        configPath,
+		AccessToken:       cfg.Server.AccessToken,
+		NoAuth:            cfg.Server.NoAuth,
+		Context:           ctx,
 		OnReady: func(handler *api.Handler, router chi.Router) {
-			deliver := channelwiring.WireNotificationBotPull(ctx, botSvc, imSvc, apiURL, cfg.Server.AccessToken)
+			deliver := channelwiring.WireNotificationParticipantPull(ctx, participantSvc, imSvc, apiURL, cfg.Server.AccessToken)
 			handler.SetNotificationDeliver(deliver)
 			if output != "json" && run != nil {
 				go func() {
@@ -509,6 +507,9 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 				}()
 			}
 			go func() {
+				if err := EnsureBootstrapManager(ctx, svc); err != nil {
+					slog.Warn("bootstrap manager failed to start", "error", err)
+				}
 				if err := StartConfiguredAgents(ctx, svc); err != nil {
 					slog.Warn("some configured agents failed to start", "error", err)
 				}
@@ -910,11 +911,7 @@ func (m *serveCodexBridgeManager) Start(ctx context.Context) error {
 			startErr = errors.Join(startErr, fmt.Errorf("%s: %w", a.Name, err))
 			continue
 		}
-		if err := m.bridge.StartBot(ctx, codexbridge.Binding{
-			BotID:     a.ID,
-			RuntimeID: strings.TrimSpace(a.RuntimeID),
-			SessionID: session.SessionID,
-		}); err != nil {
+		if err := m.bridge.StartBot(ctx, codexBridgeBindingForAgent(a, session.SessionID)); err != nil {
 			startErr = errors.Join(startErr, fmt.Errorf("%s: %w", a.Name, err))
 		}
 	}
@@ -940,12 +937,16 @@ func (m *serveCodexBridgeManager) EnsureAgent(ctx context.Context, a agent.Agent
 	// Force a fresh bot-event subscription even when the binding is unchanged.
 	// This repairs cases where the bridge worker exists but missed its initial
 	// subscription window and would otherwise be treated as a no-op restart.
-	m.bridge.StopBot(a.ID)
-	return m.bridge.StartBot(ctx, codexbridge.Binding{
-		BotID:     a.ID,
+	m.stopAgentBridge(a)
+	return m.bridge.StartBot(ctx, codexBridgeBindingForAgent(a, session.SessionID))
+}
+
+func codexBridgeBindingForAgent(a agent.Agent, sessionID string) codexbridge.Binding {
+	return codexbridge.Binding{
+		BotID:     agent.ParticipantIDForAgent(a.Name, a.ID),
 		RuntimeID: strings.TrimSpace(a.RuntimeID),
-		SessionID: session.SessionID,
-	})
+		SessionID: strings.TrimSpace(sessionID),
+	}
 }
 
 func (m *serveCodexBridgeManager) beginEnsure(agentID string) bool {
@@ -976,7 +977,22 @@ func (m *serveCodexBridgeManager) StopAgent(agentID string) {
 	if m == nil || m.bridge == nil {
 		return
 	}
-	m.bridge.StopBot(agentID)
+	m.bridge.StopBot(strings.TrimSpace(agentID))
+	participantID := agent.ParticipantIDForAgent("", agentID)
+	if participantID != strings.TrimSpace(agentID) {
+		m.bridge.StopBot(participantID)
+	}
+}
+
+func (m *serveCodexBridgeManager) stopAgentBridge(a agent.Agent) {
+	if m == nil || m.bridge == nil {
+		return
+	}
+	m.bridge.StopBot(strings.TrimSpace(a.ID))
+	participantID := agent.ParticipantIDForAgent(a.Name, a.ID)
+	if participantID != strings.TrimSpace(a.ID) {
+		m.bridge.StopBot(participantID)
+	}
 }
 
 func (m *serveCodexBridgeManager) Close() {
@@ -1042,16 +1058,20 @@ func newIMService(bus *im.Bus) (*im.Service, error) {
 	return im.NewServiceFromPathWithBus(imStatePath, bus)
 }
 
-func newBotService() (*bot.Service, error) {
+func newParticipantService(agentSvc *agent.Service, imSvc *im.Service) (*participant.Service, error) {
 	imStatePath, err := config.DefaultIMStatePath()
 	if err != nil {
 		return nil, err
 	}
-	store, err := bot.NewStore(filepath.Join(filepath.Dir(imStatePath), "bots.json"))
+	store, err := participant.NewStore(filepath.Join(filepath.Dir(imStatePath), "participants.json"))
 	if err != nil {
 		return nil, err
 	}
-	return bot.NewService(store)
+	return participant.NewService(
+		store,
+		participant.WithAgentService(agentSvc),
+		participant.WithIMService(imSvc),
+	), nil
 }
 
 func newTeamService(imSvc *im.Service) (*team.Service, team.TeamChannelAdapter, error) {

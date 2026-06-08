@@ -6,7 +6,7 @@ This document supplements the CLI section in [architecture.md](./architecture.md
 
 `csgclaw` is the full local operator CLI. It manages local server lifecycle, agent runtime operations, and the shared collaboration workflows.
 
-`csgclaw-cli` is the lightweight HTTP client intended for bots, agents, and scripts. It exposes only collaboration-oriented workflows and does not manage config files or server lifecycle.
+`csgclaw-cli` is the lightweight HTTP client intended for participants, agents, and scripts. It exposes only collaboration-oriented workflows and does not manage config files or server lifecycle.
 
 Both CLIs are thin HTTP clients over the local API. They do not talk to BoxLite, stores, or channel SDKs directly.
 
@@ -80,8 +80,9 @@ Top-level commands:
 - `upgrade`
 - `agent`
 - `model`
+- `participant`
+- `pt`
 - `user`
-- `bot`
 - `room`
 - `member`
 - `message`
@@ -432,19 +433,20 @@ csgclaw user list
 csgclaw user list --channel feishu
 csgclaw user create --name Alice --handle alice --role worker
 csgclaw user create --channel feishu --name Alice --handle alice --role manager --avatar AL
-csgclaw user delete u-alice
+csgclaw user delete alice
 ```
 
 ### Shared collaboration groups in `csgclaw`
 
 The following command groups are shared with `csgclaw-cli` and use the same flags and semantics.
 
-#### `bot`
+#### `participant`
 
 Usage:
 
 ```bash
-csgclaw bot <subcommand> [flags]
+csgclaw participant <subcommand> [flags]
+csgclaw pt <subcommand> [flags]
 ```
 
 Subcommands:
@@ -452,28 +454,66 @@ Subcommands:
 - `list`
 - `create`
 - `delete`
+- `config`
 
-`bot list` flags:
+`participant list` flags:
 
 - `--channel string`: `csgclaw` or `feishu`. Default `csgclaw`.
-- `--role string`: filter by `manager` or `worker`.
+- `--type string`: filter by `human`, `agent`, or `notification`.
+- `--agent-id string`: filter by bound agent ID.
 
-`bot create` flags:
+`participant create` flags:
 
-- `--id string`: bot ID.
-- `--name string`: required.
-- `--description string`: bot description.
-- `--role string`: required. `manager` or `worker`.
 - `--channel string`: `csgclaw` or `feishu`. Default `csgclaw`.
-- `--model-id string`: agent model ID.
+- `--id string`: participant ID.
+- `--name string`: required participant display name.
+- `--description string`: participant metadata description and agent description for `--bind create`.
+- `--type string`: `human`, `agent`, or `notification`. Default `agent`.
+- `--channel-user-ref string`: channel user identity, such as a local user ID or Feishu open_id.
+- `--channel-user-kind string`: channel user identity kind, such as `local_user_id` or `open_id`.
+- `--channel-app-ref string`: channel app/config reference, such as a Feishu app_id.
+- `--bind string`: agent binding mode: `create`, `reuse`, or `none`. Default `none`.
+- `--agent-id string`: agent ID for `--bind reuse`, or optional agent ID for `--bind create`.
+- `--role string`: agent role for `--bind create`.
+- `--runtime string`: agent runtime kind for `--bind create`.
+- `--image string`: agent image for `--bind create`.
+- `--from-template string`: hub template for `--bind create`.
+- `--model-id string`: agent model ID for `--bind create`.
+- `--env KEY=VALUE`: agent image environment variable for `--bind create`; repeatable.
 
-`bot delete` usage and flags:
+`participant delete` usage and flags:
 
 ```bash
-csgclaw bot delete <id> [flags]
+csgclaw participant delete <id> [flags]
 ```
 
 - `--channel string`: `csgclaw` or `feishu`. Default `csgclaw`.
+- `--delete-agent string`: agent cleanup mode. Supported value: `if_unreferenced`.
+
+`participant config` manages participant channel configuration through the local HTTP API.
+Only Feishu is currently supported.
+
+`participant config` flags:
+
+- `--channel string`: only `feishu` is supported. Default `feishu`.
+- `--get`: get masked Feishu config.
+- `--set`: set Feishu config.
+- `--reload`: reload Feishu config.
+- `--bot-id string`: Feishu config key used by the current server API.
+- `--app-id string`: Feishu app id. Required with `--set`.
+- `--admin-open-id string`: optional Feishu admin open_id.
+- `--app-secret-file string`: read Feishu app secret from a file.
+- `--app-secret-env string`: read Feishu app secret from an environment variable.
+- `--app-secret-stdin`: read Feishu app secret from stdin.
+- `--no-reload`: write config without reloading the running server.
+
+`participant config` behavior:
+
+- Exactly one of `--get`, `--set`, or `--reload` is required.
+- `--get` and `--set` require `--bot-id`.
+- `--set` requires exactly one app secret source.
+- The returned `app_secret` value is a status marker, not the real secret.
+- `pt config` is equivalent to `participant config`.
 
 #### `room`
 
@@ -498,11 +538,11 @@ Subcommands:
 - `--channel string`: `csgclaw` or `feishu`. Default `csgclaw`.
 - `--title string`: room title.
 - `--description string`: room description.
-- `--creator-id string`: creator bot ID, such as `u-manager`.
-- `--member-ids string`: comma-separated bot IDs, such as `u-manager,u-dev`.
+- `--creator-id string`: creator participant ID, such as `manager`.
+- `--member-ids string`: comma-separated participant IDs, such as `manager,dev`.
 - `--locale string`: room locale.
 
-Design note for `csgclaw-cli`: room creation should expose CSGClaw bot IDs, not channel user IDs, agent IDs, Feishu open IDs, Feishu app IDs, or app credentials. In the Feishu channel, the channel adapter resolves bot IDs to the configured Feishu app credentials and bot identifiers internally. When Feishu group creation needs a real human owner ID, CSGClaw continues to use the configured `admin_open_id` internally; callers should still pass bot IDs at the CLI boundary.
+Design note for `csgclaw-cli`: room creation should expose CSGClaw participant IDs, not channel user IDs, agent IDs, Feishu open IDs, Feishu app IDs, or app credentials. In the Feishu channel, the channel adapter resolves participant IDs to the configured Feishu app credentials and channel identifiers internally. When Feishu group creation needs a real human owner ID, CSGClaw continues to use the configured `admin_open_id` internally; callers should still pass participant IDs at the CLI boundary.
 
 `room delete` usage and flags:
 
@@ -534,14 +574,14 @@ Subcommands:
 
 - `--channel string`: `csgclaw` or `feishu`. Default `csgclaw`.
 - `--room-id string`: target room ID.
-- `--user-id string`: required. Bot ID to add, such as `u-dev`.
-- `--inviter-id string`: inviter bot ID, such as `u-manager`.
+- `--user-id string`: required. Participant ID to add, such as `dev`.
+- `--inviter-id string`: inviter participant ID, such as `manager`.
 - `--locale string`: room locale.
 
 `member create` behavior:
 
 - `--user-id` is required.
-- `csgclaw-cli` room membership commands should use bot IDs consistently across channels. Feishu open IDs and app IDs are channel implementation details.
+- `csgclaw-cli` room membership commands should use participant IDs consistently across channels. Feishu open IDs and app IDs are channel implementation details.
 
 #### `message`
 
@@ -565,9 +605,9 @@ Subcommands:
 
 - `--channel string`: `csgclaw` or `feishu`. Default `csgclaw`.
 - `--room-id string`: required.
-- `--sender-id string`: required sender bot ID.
+- `--sender-id string`: required sender participant ID.
 - `--content string`: required.
-- `--mention-id string`: optional mentioned bot ID.
+- `--mention-id string`: optional mentioned participant ID.
 
 `message list` behavior:
 
@@ -576,12 +616,14 @@ Subcommands:
 Examples:
 
 ```bash
-csgclaw bot list
-csgclaw bot create --name alice --role worker --model-id gpt-5.4-mini
-csgclaw room create --title "release-room" --creator-id u-manager --member-ids u-manager,u-alice
-csgclaw member create --room-id room-1 --user-id u-alice --inviter-id u-manager
+csgclaw participant list
+csgclaw participant create --name alice --bind create --role worker --model-id gpt-5.4-mini
+csgclaw participant config --channel feishu --get --bot-id u-manager
+csgclaw pt config --channel feishu --set --bot-id u-manager --app-id cli_xxx --app-secret-env FEISHU_APP_SECRET
+csgclaw room create --title "release-room" --creator-id manager --member-ids manager,alice
+csgclaw member create --room-id room-1 --user-id alice --inviter-id manager
 csgclaw message list --room-id room-1
-csgclaw message create --channel csgclaw --room-id room-1 --sender-id u-manager --content hello
+csgclaw message create --channel csgclaw --room-id room-1 --sender-id manager --content hello
 ```
 
 ## `csgclaw-cli`
@@ -603,7 +645,8 @@ Global flags:
 
 Top-level commands:
 
-- `bot`
+- `participant`
+- `pt`
 - `room`
 - `member`
 - `message`
@@ -623,9 +666,14 @@ csgclaw-cli completion fish
 
 `csgclaw-cli` reuses the same implementations as `csgclaw` for:
 
-- `bot list`
-- `bot create`
-- `bot delete`
+- `participant list`
+- `participant create`
+- `participant delete`
+- `pt list`
+- `pt create`
+- `pt delete`
+- `participant config`
+- `pt config`
 - `room list`
 - `room create`
 - `room delete`
@@ -639,12 +687,14 @@ That means flags, defaults, validations, and JSON shapes are identical between t
 Examples:
 
 ```bash
-csgclaw-cli bot list --channel feishu
-csgclaw-cli bot create --name manager --role manager --channel feishu
-csgclaw-cli room create --channel feishu --title "ops-room" --creator-id u-manager --member-ids u-manager,u-dev
+csgclaw-cli participant list --channel feishu --type agent
+csgclaw-cli pt create --name manager --channel feishu --type agent --bind create --role manager
+csgclaw-cli participant config --channel feishu --get --bot-id u-manager
+csgclaw-cli pt config --channel feishu --reload
+csgclaw-cli room create --channel feishu --title "ops-room" --creator-id manager --member-ids manager,dev
 csgclaw-cli member list --channel feishu --room-id oc_x
-csgclaw-cli member create --channel feishu --room-id oc_x --user-id u-dev --inviter-id u-manager
-csgclaw-cli message create --channel feishu --room-id oc_x --sender-id u-manager --mention-id u-dev --content hello
+csgclaw-cli member create --channel feishu --room-id oc_x --user-id dev --inviter-id manager
+csgclaw-cli message create --channel feishu --room-id oc_x --sender-id manager --mention-id dev --content hello
 ```
 
-`csgclaw-cli` is the bot-facing CLI. It should not require callers to know or pass agent IDs, Feishu open IDs, Feishu app IDs, App ID/App Secret, or other channel credentials in room, member, or message commands. Channel-specific adapters are responsible for exchanging bot IDs for the identifiers required by the target channel.
+`csgclaw-cli` is the participant-facing CLI. Room, member, and message commands should not require callers to know or pass agent IDs, Feishu open IDs, Feishu app IDs, App ID/App Secret, or other channel credentials. Channel-specific adapters are responsible for exchanging participant IDs for the identifiers required by the target channel.

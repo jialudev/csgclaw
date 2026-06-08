@@ -9,7 +9,7 @@ The skill and CLI use `room` as the user-facing term. Where the underlying HTTP 
 - `CSGCLAW_BASE_URL`: Preferred when the script runs inside a CSGClaw box.
 - `CSGCLAW_ACCESS_TOKEN`: Preferred bearer token when the script runs inside a CSGClaw box.
 - `MANAGER_API_BASE_URL`: Optional. Default: `http://127.0.0.1:18080`
-- `MANAGER_API_TOKEN`: Optional bearer token. Required for `/api/bots/*` when the server enables auth.
+- `MANAGER_API_TOKEN`: Optional bearer token. Required for participant APIs when the server enables auth.
 - `MANAGER_API_TIMEOUT`: Optional request timeout in seconds. Default: `30`
 
 ## Local Config
@@ -21,16 +21,16 @@ When available, load the CSGClaw API settings from `~/.openclaw/openclaw.json`:
 
 ## Expected Endpoints
 
-### Dispatch task by bot message
+### Dispatch task by participant message
 
 - Method: `POST`
-- Path: `/api/bots/{bot_id}/messages/send`
+- Path: `/api/v1/channels/csgclaw/participants/{participant_id}/messages`
 - Request body:
 
 ```json
 {
   "room_id": "room-123",
-  "text": "<at user_id=\"u-bob\">bob</at> 你来写前端代码，实现设置页 UI"
+  "text": "<at user_id=\"bob\">bob</at> 你来写前端代码，实现设置页 UI"
 }
 ```
 
@@ -49,7 +49,7 @@ When available, load the CSGClaw API settings from `~/.openclaw/openclaw.json`:
 ## Notes
 
 - There is no dedicated task-assignment API.
-- Dispatch still means sending a normal bot message in the target room and mentioning the worker.
+- Dispatch still means sending a normal participant message in the target room and mentioning the worker participant.
 - Each task in `todo.json` should carry an `id` task number, increasing in dispatch order such as `1`, `2`, `3`.
 - `start-tracking` watches `todo.json`, room history, and IM bootstrap data.
 - The first task dispatches immediately. Later tasks dispatch only after the previous task both:
