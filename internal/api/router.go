@@ -66,6 +66,12 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Get("/", h.getBootstrapConfig)
 			r.Put("/", h.updateBootstrapConfig)
 		})
+		r.Route("/server", func(r chi.Router) {
+			r.Get("/config", h.getServerConfig)
+			r.Put("/config", h.updateServerConfig)
+			r.Post("/restart", h.postServerRestart)
+			r.Get("/restart/status", h.getServerRestartStatus)
+		})
 		r.Get("/bootstrap", h.getIMBootstrap)
 		r.Get("/events", h.getIMEvents)
 		r.Route("/rooms", func(r chi.Router) {

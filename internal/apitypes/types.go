@@ -175,6 +175,42 @@ type UpgradeActionResponse struct {
 	Message string `json:"message,omitempty"`
 }
 
+type ServerRestartResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+type ServerRestartStatusResponse struct {
+	ManualRestartRequired bool   `json:"manual_restart_required,omitempty"`
+	Message               string `json:"message,omitempty"`
+	LastError             string `json:"last_error,omitempty"`
+}
+
+type ConfigSettingsResponse struct {
+	Path                      string   `json:"path"`
+	ListenAddr                string   `json:"listen_addr"`
+	AdvertiseBaseURL          string   `json:"advertise_base_url,omitempty"`
+	AdvertiseBaseURLEffective string   `json:"advertise_base_url_effective,omitempty"`
+	AccessToken               string   `json:"access_token,omitempty"`
+	AccessTokenSet            bool     `json:"access_token_set,omitempty"`
+	AccessTokenPreview        string   `json:"access_token_preview,omitempty"`
+	ShowUpgrade               bool     `json:"show_upgrade"`
+	SandboxProvider           string   `json:"sandbox_provider"`
+	SupportedSandboxProviders []string `json:"supported_sandbox_providers,omitempty"`
+	DefaultManagerTemplate    string   `json:"default_manager_template"`
+	DefaultWorkerTemplate     string   `json:"default_worker_template"`
+}
+
+type UpdateConfigSettingsRequest struct {
+	ListenAddr             string `json:"listen_addr"`
+	AdvertiseBaseURL       string `json:"advertise_base_url,omitempty"`
+	AccessToken            string `json:"access_token,omitempty"`
+	ShowUpgrade            bool   `json:"show_upgrade"`
+	SandboxProvider        string `json:"sandbox_provider"`
+	DefaultManagerTemplate string `json:"default_manager_template"`
+	DefaultWorkerTemplate  string `json:"default_worker_template"`
+}
+
 // UnmarshalJSON keeps room payload decoding backward-compatible with legacy participants fields.
 func (r *Room) UnmarshalJSON(data []byte) error {
 	type roomAlias Room
