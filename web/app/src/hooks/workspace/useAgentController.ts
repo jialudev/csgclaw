@@ -37,6 +37,7 @@ import {
   applyTemplateToDraft,
   advanceAgentProgress,
   agentDraftWithRuntimeFieldsFromAgent,
+  agentRuntimePollSettled,
   agentToDraft,
   availableManagerRebuildImageOptions,
   availableManagerRebuildRuntimeOptions,
@@ -63,6 +64,7 @@ import {
   resolvedNotifierWebhookOrigin,
   resolveAgentChannelUserID,
   runtimeImageForKind,
+  shouldWaitForManagerRuntimeAfterProfileSave,
   startAgentCreateProgress,
 } from "@/models/agents";
 import type {
@@ -94,6 +96,9 @@ type AgentWithProfile = {
   agent: AgentLike;
   profile?: AgentProfileLike | null;
 };
+
+const AGENT_RUNTIME_SYNC_INTERVAL_MS = 2_000;
+const AGENT_RUNTIME_SYNC_TIMEOUT_MS = 120_000;
 
 export function useAgentController({
   activeConversationId,
@@ -446,6 +451,7 @@ export function useAgentController({
       image,
     });
     await refreshAgentsWithUpdatedAgent(rebuiltAgent);
+    await syncAgentStateUntilRunning(MANAGER_AGENT_ID);
     await refreshManagerProfile();
     await refreshWorkspaceBootstrapConfig();
   }
@@ -516,6 +522,8 @@ export function useAgentController({
       setManagerProfileData(saved);
       setProfileDraft({ ...profileToDraft(saved), agent_id: MANAGER_AGENT_ID });
       await refreshManagerProfile();
+      await syncManagerRuntimeAfterProfileSave(managerAgent, Boolean(managerProfileIncomplete));
+      await refreshWorkspaceBootstrap();
     } catch (err) {
       setProfileError(errorMessage(err, t("sendFailed")));
     } finally {
@@ -547,19 +555,93 @@ export function useAgentController({
     }
   }
 
+  function applyAgentListUpdate(agent: AgentLike | null | undefined) {
+    const agentID = String(agent?.id ?? "").trim();
+    if (!agentID || !agent) {
+      return;
+    }
+    setAgentsData((current) => mergeAgentIntoList(current, agent));
+    if (activePane.type === WorkspacePaneTypes.agent && activePane.id === agentID) {
+      setAgentPageDraft((current) =>
+        agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent),
+      );
+      setAgentPageSavedDraft((current) =>
+        agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent),
+      );
+    }
+  }
+
+  async function refreshAgentState(agentID: string): Promise<AgentLike | null> {
+    try {
+      const latest = await fetchAgent(agentID, { cacheBust: true });
+      applyAgentListUpdate(latest);
+      return latest;
+    } catch {
+      try {
+        await refreshWorkspaceAgents({ silent: true });
+        const latest = await fetchAgent(agentID);
+        applyAgentListUpdate(latest);
+        return latest;
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  async function syncAgentStateUntilRunning(
+    agentID: string,
+    options: { timeoutMs?: number; intervalMs?: number; acceptStopped?: boolean } = {},
+  ): Promise<AgentLike | null> {
+    const timeoutMs = options.timeoutMs ?? AGENT_RUNTIME_SYNC_TIMEOUT_MS;
+    const intervalMs = options.intervalMs ?? AGENT_RUNTIME_SYNC_INTERVAL_MS;
+    const acceptStopped = options.acceptStopped ?? false;
+    const deadline = Date.now() + timeoutMs;
+    let latest: AgentLike | null = null;
+    while (Date.now() < deadline) {
+      try {
+        latest = await fetchAgent(agentID);
+        applyAgentListUpdate(latest);
+        if (isAgentRunning(latest)) {
+          return latest;
+        }
+        if (acceptStopped && agentRuntimePollSettled(latest)) {
+          return latest;
+        }
+      } catch {
+        // Manager sandbox provisioning can lag behind profile save.
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+    }
+    try {
+      await refreshWorkspaceAgents({ silent: true });
+      latest = (await fetchAgent(agentID)) ?? latest;
+      applyAgentListUpdate(latest);
+    } catch {
+      // Best-effort final refresh.
+    }
+    return latest;
+  }
+
+  async function syncManagerRuntimeAfterProfileSave(
+    agentBeforeSave: AgentLike | null | undefined,
+    profileIncompleteBeforeSave = false,
+  ): Promise<void> {
+    if (
+      shouldWaitForManagerRuntimeAfterProfileSave(agentBeforeSave, {
+        profileIncompleteBeforeSave,
+      })
+    ) {
+      await syncAgentStateUntilRunning(MANAGER_AGENT_ID, { acceptStopped: true });
+      return;
+    }
+    await refreshAgentState(MANAGER_AGENT_ID);
+  }
+
   async function refreshAgentsWithUpdatedAgent(updatedAgent: AgentLike | null | undefined): Promise<void> {
     const latestAgent = await fetchLatestActionAgent(updatedAgent);
     await refreshAgents();
     if (latestAgent?.id) {
-      setAgentsData((current) => mergeAgentIntoList(current, latestAgent));
-      if (activePane.type === WorkspacePaneTypes.agent && activePane.id === latestAgent.id) {
-        setAgentPageDraft((current) =>
-          agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(latestAgent), latestAgent),
-        );
-        setAgentPageSavedDraft((current) =>
-          agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(latestAgent), latestAgent),
-        );
-      }
+      applyAgentListUpdate(latestAgent);
     }
   }
 
@@ -814,8 +896,12 @@ export function useAgentController({
         return;
       }
       debugAgentPageSavePayload("full", payload);
+      const managerBeforeSave = selectedAgentForPage;
       const saved = await updateAgentRequest(selectedAgentForPage.id, payload);
-      await refreshAgents();
+      await refreshAgentsWithUpdatedAgent(saved);
+      if (saved.id === MANAGER_AGENT_ID && profileChanged) {
+        await syncManagerRuntimeAfterProfileSave(managerBeforeSave);
+      }
       await refreshWorkspaceBootstrap();
       if (saved.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
@@ -978,6 +1064,9 @@ export function useAgentController({
       await refreshAgentsWithUpdatedAgent(updatedAgent);
       if (item.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
+        if (action === "recreate" || action === "start") {
+          await syncAgentStateUntilRunning(MANAGER_AGENT_ID);
+        }
       }
     } catch (err) {
       setAgentsError(errorMessage(err, t("agentActionFailed")));

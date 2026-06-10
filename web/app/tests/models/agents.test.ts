@@ -9,6 +9,8 @@ import {
   collectManagerTemplateVariants,
   defaultManagerRebuildImageForRuntime,
   agentDraftWithRuntimeFieldsFromAgent,
+  agentRuntimePollSettled,
+  agentStatusLabel,
   draftNotifierRuntimeOptionsForSave,
   draftToProfile,
   ensureNotifierPullSubscriptionDraft,
@@ -32,6 +34,7 @@ import {
   resolveAgentChannelUserID,
   resolveAgentAvatarSource,
   runtimeImageForKind,
+  shouldWaitForManagerRuntimeAfterProfileSave,
 } from "@/models/agents";
 
 describe("agent model helpers", () => {
@@ -468,6 +471,70 @@ describe("agent model helpers", () => {
     expect(notifierFormIsComplete(draft)).toBe(true);
     expect(isAgentIncomplete({ type: "notification", runtime_options: {} })).toBe(true);
     expect(isAgentIncomplete({ type: "notification", available: true, runtime_options: {} })).toBe(false);
+  });
+
+  it("treats a saved profile draft as configured even when profile_complete is false", () => {
+    const draft = agentToDraft({
+      id: "u-manager",
+      profile_complete: false,
+      agent_profile: {
+        profile_complete: false,
+        provider: "api",
+        base_url: "https://api.example/v1",
+        model_id: "glm-5.1",
+      },
+    });
+
+    expect(isAgentIncomplete({ id: "u-manager", profile_complete: false, agent_profile: { profile_complete: false } }, draft)).toBe(
+      false,
+    );
+  });
+
+  it("maps profile_incomplete status to offline label", () => {
+    const t = (key: string) => key;
+    expect(agentStatusLabel("profile_incomplete", t)).toBe("offline");
+    expect(agentStatusLabel("running", t)).toBe("online");
+  });
+
+  it("waits for manager runtime only when profile save may bootstrap sandbox", () => {
+    const runningManager = {
+      id: "u-manager",
+      box_id: "box-manager",
+      profile_complete: true,
+      status: "running",
+    };
+    const stoppedManager = { ...runningManager, status: "stopped" };
+
+    expect(shouldWaitForManagerRuntimeAfterProfileSave(runningManager)).toBe(false);
+    expect(shouldWaitForManagerRuntimeAfterProfileSave(stoppedManager)).toBe(false);
+    expect(
+      shouldWaitForManagerRuntimeAfterProfileSave(runningManager, { profileIncompleteBeforeSave: true }),
+    ).toBe(true);
+    expect(shouldWaitForManagerRuntimeAfterProfileSave({ ...runningManager, box_id: "" })).toBe(true);
+    expect(
+      shouldWaitForManagerRuntimeAfterProfileSave({
+        id: "u-manager",
+        profile_complete: false,
+        status: "profile_incomplete",
+      }),
+    ).toBe(true);
+  });
+
+  it("treats stopped manager with a box as settled for runtime polling", () => {
+    expect(
+      agentRuntimePollSettled({
+        id: "u-manager",
+        box_id: "box-manager",
+        status: "stopped",
+      }),
+    ).toBe(true);
+    expect(
+      agentRuntimePollSettled({
+        id: "u-manager",
+        box_id: "",
+        status: "stopped",
+      }),
+    ).toBe(false);
   });
 
   it("locks runtime and image on create when a template is selected", () => {
