@@ -5,22 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"csgclaw/internal/activity"
-	"csgclaw/internal/codexacp"
 	"csgclaw/internal/codexmodel"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
-
-	acp "github.com/coder/acp-go-sdk"
 )
 
 const (
@@ -83,7 +78,7 @@ type Manager interface {
 	Start(ctx context.Context, spec SessionSpec) (*Session, error)
 	Stop(ctx context.Context, handle SessionHandle) error
 	Session(handle SessionHandle) (*Session, error)
-	Prompt(ctx context.Context, handle SessionHandle, req acp.PromptRequest) (acp.PromptResponse, error)
+	Prompt(ctx context.Context, handle SessionHandle, req PromptRequest) (PromptResponse, error)
 }
 
 type SessionEventKind = activity.RuntimeEventKind
@@ -107,8 +102,12 @@ type SessionEventSink = activity.RuntimeEventSink
 
 type SessionEventSubscriber = activity.RuntimeEventSubscriber
 
+type BinaryProvider interface {
+	Ensure(ctx context.Context) (string, error)
+}
+
 type Dependencies struct {
-	BinaryProvider codexacp.BinaryProvider
+	BinaryProvider BinaryProvider
 	ResolveAgent   func(h agentruntime.Handle) (AgentRef, error)
 	AgentHome      func(agentName string) (string, error)
 	Manager        Manager
@@ -311,7 +310,7 @@ func (r *Runtime) sessionManager() Manager {
 	if r.deps.Manager != nil {
 		return r.deps.Manager
 	}
-	r.deps.Manager = newACPManager(acpManagerDeps{
+	r.deps.Manager = newAppServerManager(managerDeps{
 		EventSink:  r.deps.EventSink,
 		Permission: r.permissionBroker(),
 		OpenFile:   r.openFile,
@@ -358,13 +357,16 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 	}
 	spec.RuntimeDir = dirs.Root
 	spec.WorkspaceDir = dirs.Workspace
-	spec.HomeDir = dirs.Home
+	spec.HomeDir = r.hostSessionHomeDir(dirs.Home)
 	spec.CodexHomeDir = dirs.CodexHome
 	spec.StderrPath = dirs.StderrLog
 	if err := r.seedCodexHomeAuth(spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
 	if err := r.seedCodexHomeConfig(spec.CodexHomeDir, spec.Profile); err != nil {
+		return nil, err
+	}
+	if err := r.seedCodexHomeSkills(spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(spec.BinaryPath) == "" {
@@ -427,34 +429,60 @@ func (r *Runtime) seedCodexHomeConfig(runtimeCodexHome string, profile agentrunt
 	}
 	configPath := filepath.Join(runtimeCodexHome, configFileName)
 	profile = profile.Normalized()
-	slog.Info("codex runtime profile before writing config",
-		"codex_home", runtimeCodexHome,
-		"base_url", profile.BaseURL,
-		"model_id", profile.ModelID,
-	)
-	if profile.BaseURL == "" || profile.ModelID == "" {
+	configRaw, err := r.readFile(configPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read runtime codex config %s: %w", configPath, err)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		hostRaw, hostErr := r.hostCodexConfig()
+		if hostErr == nil {
+			configRaw = hostRaw
+		} else if !errors.Is(hostErr, os.ErrNotExist) {
+			return fmt.Errorf("read host codex config: %w", hostErr)
+		}
+	}
+
+	if profile.BaseURL != "" && profile.ModelID != "" {
+		if err := r.writeModelCatalog(runtimeCodexHome, profile); err != nil {
+			return err
+		}
+	}
+
+	rendered := configureCodexHomeConfig(string(configRaw), profile)
+	if err := r.writeFile(configPath, []byte(rendered), 0o600); err != nil {
+		return fmt.Errorf("write runtime codex config %s: %w", configPath, err)
+	}
+	return nil
+}
+
+func (r *Runtime) seedCodexHomeSkills(runtimeCodexHome string) error {
+	runtimeCodexHome = strings.TrimSpace(runtimeCodexHome)
+	if runtimeCodexHome == "" {
+		return fmt.Errorf("codex home dir is required")
+	}
+
+	targetRoot := filepath.Join(runtimeCodexHome, "skills")
+	if err := r.removeAll(targetRoot); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove runtime codex skills %s: %w", targetRoot, err)
+	}
+
+	sourceRoot, err := hostCodexSkillsPath()
+	if err != nil {
+		return nil
+	}
+	info, err := os.Stat(sourceRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat host codex skills %s: %w", sourceRoot, err)
+	}
+	if !info.IsDir() {
 		return nil
 	}
 
-	if err := r.writeModelCatalog(runtimeCodexHome, profile); err != nil {
-		return err
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "model = %s\n", strconv.Quote(profile.ModelID))
-	fmt.Fprintf(&b, "model_provider = %s\n\n", strconv.Quote(codexProxyProviderName))
-	fmt.Fprintf(&b, "model_catalog_json = %s\n\n", strconv.Quote(modelCatalogFileName))
-	fmt.Fprintf(&b, "[model_providers.%s]\n", codexProxyProviderName)
-	fmt.Fprintf(&b, "name = %s\n", strconv.Quote("OpenAI using LLM proxy"))
-	fmt.Fprintf(&b, "base_url = %s\n", strconv.Quote(profile.BaseURL))
-	fmt.Fprintf(&b, "wire_api = %s\n", strconv.Quote("responses"))
-	fmt.Fprintf(&b, "supports_websockets = false\n")
-	if profile.APIKey != "" {
-		fmt.Fprintf(&b, "env_key = %s\n", strconv.Quote("OPENAI_API_KEY"))
-	}
-
-	if err := r.writeFile(configPath, []byte(b.String()), 0o600); err != nil {
-		return fmt.Errorf("write runtime codex config %s: %w", configPath, err)
+	if err := r.copyDir(sourceRoot, targetRoot); err != nil {
+		return fmt.Errorf("seed runtime codex skills %s: %w", targetRoot, err)
 	}
 	return nil
 }
@@ -487,6 +515,16 @@ func (r *Runtime) ensureRuntimeHome(agentName string) error {
 	return err
 }
 
+func (r *Runtime) hostSessionHomeDir(fallback string) string {
+	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+		return home
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return home
+	}
+	return fallback
+}
+
 func (r *Runtime) ensureRuntimeDirs(agentName string) (runtimeDirs, error) {
 	root, err := r.runtimeDirForAgent(agentName)
 	if err != nil {
@@ -496,8 +534,8 @@ func (r *Runtime) ensureRuntimeDirs(agentName string) (runtimeDirs, error) {
 		Root:      root,
 		Workspace: filepath.Join(root, workspaceDirName),
 		Home:      filepath.Join(root, homeDirName),
-		CodexHome: root,
-		StderrLog: filepath.Join(root, stderrLogFileName),
+		CodexHome: filepath.Join(root, homeDirName),
+		StderrLog: filepath.Join(root, homeDirName, stderrLogFileName),
 	}
 	for _, path := range []string{dirs.Root, dirs.Workspace, dirs.Home} {
 		if err := r.mkdirAll(path, 0o755); err != nil {
@@ -632,6 +670,48 @@ func (r *Runtime) openFile(path string, flag int, mode os.FileMode) (*os.File, e
 	return os.OpenFile(path, flag, mode)
 }
 
+func (r *Runtime) copyDir(srcRoot, dstRoot string) error {
+	srcRoot = strings.TrimSpace(srcRoot)
+	dstRoot = strings.TrimSpace(dstRoot)
+	if srcRoot == "" || dstRoot == "" {
+		return fmt.Errorf("source and destination roots are required")
+	}
+	if err := filepath.WalkDir(srcRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(srcRoot, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return r.mkdirAll(dstRoot, 0o755)
+		}
+		dstPath := filepath.Join(dstRoot, rel)
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return r.mkdirAll(dstPath, info.Mode().Perm())
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := r.mkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+			return err
+		}
+		return r.writeFile(dstPath, data, info.Mode().Perm())
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func hostCodexAuthPath() (string, error) {
 	if home := strings.TrimSpace(os.Getenv("CODEX_HOME")); home != "" {
 		return filepath.Join(home, "auth.json"), nil
@@ -641,6 +721,17 @@ func hostCodexAuthPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".codex", "auth.json"), nil
+}
+
+func hostCodexSkillsPath() (string, error) {
+	if home := strings.TrimSpace(os.Getenv("CODEX_HOME")); home != "" {
+		return filepath.Join(home, "skills"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".codex", "skills"), nil
 }
 
 type runtimeDirs struct {
@@ -782,24 +873,11 @@ func writeJSONFile(writeFile func(string, []byte, os.FileMode) error, path strin
 	return writeFile(path, data, 0o600)
 }
 
-type acpManagerDeps struct {
+type managerDeps struct {
 	EventSink  SessionEventSink
 	Permission PermissionBroker
 	OpenFile   func(string, int, os.FileMode) (*os.File, error)
 	WriteFile  func(string, []byte, os.FileMode) error
 	ReadFile   func(string) ([]byte, error)
 	OnExit     func(*Session, int)
-}
-
-type acpManager struct {
-	deps     acpManagerDeps
-	mu       sync.RWMutex
-	sessions map[string]*liveSession
-}
-
-func newACPManager(deps acpManagerDeps) *acpManager {
-	return &acpManager{
-		deps:     deps,
-		sessions: make(map[string]*liveSession),
-	}
 }

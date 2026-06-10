@@ -367,6 +367,11 @@ csgclaw agent delete agent-alice
 csgclaw agent delete --all --force
 ```
 
+说明：
+
+- `--runtime codex` 依赖本地已安装且支持 `app-server --listen stdio://` 的 `codex` CLI。
+- 默认从 `PATH` 查找二进制，也可以用 `CSGCLAW_CODEX_PATH` 显式覆盖。
+
 ### `csgclaw user`
 
 管理渠道用户。
