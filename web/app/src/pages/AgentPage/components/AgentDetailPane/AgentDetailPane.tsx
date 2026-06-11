@@ -59,6 +59,7 @@ export type AgentDetailPaneProps = {
   notifierWebhookPublicOrigin?: string;
   onDelete: AgentActionHandler;
   onDraftChange?: (draft: AgentDraft) => void;
+  onAvatarSave?: (avatar: string) => VoidOrPromise;
   onInvite: AgentActionHandler;
   onOpenDM: AgentActionHandler;
   onProviderLogin?: (provider: string) => VoidOrPromise;
@@ -112,6 +113,7 @@ export function AgentDetailPane({
   workspaceFileError = "",
   onSelectWorkspaceFile = () => {},
   onDraftChange,
+  onAvatarSave,
   onSave,
   onPublish,
   onProviderLogin,
@@ -145,12 +147,29 @@ export function AgentDetailPane({
   return (
     <section className="entity-pane agent-detail-pane">
       <header className="entity-header">
-        <div className="entity-avatar">
-          <AgentAvatarContent
-            avatar={item.avatar}
-            fallback={avatarFallbackText(item.avatar, item.name, item.handle, item.id)}
-          />
-        </div>
+        {draft ? (
+          <div className="entity-avatar agent-header-avatar-picker">
+            <AgentAvatarPicker
+              value={draft.avatar || item.avatar}
+              t={t}
+              mode="edit"
+              onChange={(avatar) => {
+                if (onAvatarSave) {
+                  void onAvatarSave(avatar);
+                  return;
+                }
+                updateDraft({ avatar });
+              }}
+            />
+          </div>
+        ) : (
+          <div className="entity-avatar">
+            <AgentAvatarContent
+              avatar={item.avatar}
+              fallback={avatarFallbackText(item.avatar, item.name, item.handle, item.id)}
+            />
+          </div>
+        )}
         <div className="entity-heading">
           <div className="entity-title-row">
             <h1>{item.name}</h1>
@@ -289,10 +308,6 @@ export function AgentDetailPane({
                   />
                 </label>
               ) : null}
-              <div className="field span-2 agent-avatar-field">
-                <span>{t("agentAvatar")}</span>
-                <AgentAvatarPicker value={draft.avatar} t={t} onChange={(avatar) => updateDraft({ avatar })} />
-              </div>
               <label className="field span-2">
                 <span>{t("agentDescription")}</span>
                 <textarea
