@@ -118,6 +118,20 @@ export function fetchAgentWorkspaceFile(agentID: string, workspacePath: string):
   return get(`api/v1/agents/${encodeURIComponent(agentID)}/workspace/file?${params.toString()}`);
 }
 
+export function fetchAgentSkills(agentID: string, skillsPath = ""): Promise<WorkspaceListing> {
+  const params = new URLSearchParams();
+  if (skillsPath.trim()) {
+    params.set("path", skillsPath.trim());
+  }
+  const query = params.toString();
+  return get(`api/v1/agents/${encodeURIComponent(agentID)}/skills${query ? `?${query}` : ""}`);
+}
+
+export function fetchAgentSkillsFile(agentID: string, skillsPath: string): Promise<WorkspaceFile> {
+  const params = new URLSearchParams({ path: skillsPath });
+  return get(`api/v1/agents/${encodeURIComponent(agentID)}/skills/file?${params.toString()}`);
+}
+
 export function createManagerAgentRequest(options: CreateManagerAgentOptions = {}): Promise<AgentLike> {
   const payload: { id: string; replace: boolean; runtime_kind?: RuntimeKind } = {
     id: MANAGER_AGENT_ID, // Legacy contract: id: "u-manager",

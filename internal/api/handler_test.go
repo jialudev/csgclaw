@@ -1878,6 +1878,97 @@ func TestHandleAgentWorkspaceFileReturnsContent(t *testing.T) {
 	}
 }
 
+func TestHandleAgentSkillsReturnsContentFromSkillsRoot(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc, err := hub.NewService(config.HubConfig{}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+
+	svc, err := agent.NewService(config.ModelConfig{
+		Provider: config.ProviderLLMAPI,
+		BaseURL:  "http://127.0.0.1:4000",
+		APIKey:   "sk-test",
+		ModelID:  "model-1",
+	}, config.ServerConfig{}, "manager-image:test", "",
+		agent.WithHubService(hubSvc),
+		agent.WithBootstrapDefaultTemplates(config.BootstrapConfig{
+			DefaultManagerTemplate: config.DefaultBootstrapManagerTemplate,
+			DefaultWorkerTemplate:  config.DefaultBootstrapWorkerTemplate,
+		}),
+		agent.WithRuntime(fakeCompatRuntime{kind: agent.RuntimeKindCodex}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			Name:        "alice",
+			Role:        agent.RoleWorker,
+			RuntimeKind: agent.RuntimeKindCodex,
+			Image:       "worker-image:test",
+			AgentProfile: agent.AgentProfile{
+				ProfileComplete: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	skillsRoot, err := svc.SkillsRoot(created.Name)
+	if err != nil {
+		t.Fatalf("SkillsRoot() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillsRoot, "custom"), 0o755); err != nil {
+		t.Fatalf("create skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "custom", "SKILL.md"), []byte("# Custom\n"), 0o644); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/"+created.ID+"/skills", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var listing apitypes.WorkspaceListing
+	if err := json.NewDecoder(rec.Body).Decode(&listing); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	paths := make([]string, 0, len(listing.Entries))
+	for _, entry := range listing.Entries {
+		paths = append(paths, entry.Path)
+	}
+	if !slices.Contains(paths, "custom") || !slices.Contains(paths, "custom/SKILL.md") {
+		t.Fatalf("skills paths = %#v, want custom and custom/SKILL.md", paths)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/agents/"+created.ID+"/skills/file?path=custom/SKILL.md", nil)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("file status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var file apitypes.WorkspaceFile
+	if err := json.NewDecoder(rec.Body).Decode(&file); err != nil {
+		t.Fatalf("decode file response: %v", err)
+	}
+	if got, want := file.Path, "custom/SKILL.md"; got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+	if strings.TrimSpace(file.Content) != "# Custom" {
+		t.Fatalf("content = %q, want %q", strings.TrimSpace(file.Content), "# Custom")
+	}
+}
+
 func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.T) {
 	hubSvc := mustNewLocalTemplateHubServiceWithoutWorkspace(t, "review-bot", hub.Template{
 		ID:          "review-bot",
