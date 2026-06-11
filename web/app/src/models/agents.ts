@@ -1057,10 +1057,64 @@ export function isAgentProfileDraftComplete(draft: Partial<AgentDraft> | null | 
   if (!String(draft?.model_id ?? "").trim()) {
     return false;
   }
-  if (draft?.provider === "api" && !String(draft.base_url ?? "").trim()) {
-    return false;
+  if (draft?.provider === "api") {
+    if (!String(draft.base_url ?? "").trim()) {
+      return false;
+    }
+    if (!String(draft.api_key ?? "").trim() && !draft.api_key_set) {
+      return false;
+    }
   }
   return true;
+}
+
+export function llmProfilePayloadForCompare(draft: AgentDraft | null | undefined): string {
+  if (!draft) {
+    return "";
+  }
+  const normalized = ensureNotifierPullSubscriptionDraft(draft);
+  const profile = draftToProfile(normalized, {
+    name: normalized.name,
+    description: normalized.description,
+  });
+  return JSON.stringify({
+    provider: profile.provider,
+    base_url: profile.base_url,
+    api_key: profile.api_key,
+    model_id: profile.model_id,
+    reasoning_effort: profile.reasoning_effort,
+    enable_fast_mode: profile.enable_fast_mode,
+    headers: profile.headers,
+    request_options: profile.request_options,
+    env: profile.env,
+  });
+}
+
+export function agentPageLLMProfileChanged(
+  draft: AgentDraft | null | undefined,
+  savedDraft: AgentDraft | null | undefined,
+): boolean {
+  return llmProfilePayloadForCompare(draft) !== llmProfilePayloadForCompare(savedDraft);
+}
+
+export function agentProfilePageSaveDisabled(
+  draft: AgentDraft | null | undefined,
+  item: AgentLike | null | undefined,
+  options: { saving?: boolean; savedDraft?: AgentDraft | null } = {},
+): boolean {
+  if (options.saving || !draft) {
+    return true;
+  }
+  if (!String(draft.name ?? "").trim()) {
+    return true;
+  }
+  if (isNotifierRuntimeDraftOnAgentPage(draft, item)) {
+    return !notifierFormIsComplete(draft, item);
+  }
+  if (!agentPageLLMProfileChanged(draft, options.savedDraft ?? null)) {
+    return false;
+  }
+  return !isAgentProfileDraftComplete(draft);
 }
 
 export function isAgentIncomplete(
@@ -1110,11 +1164,19 @@ export function agentRuntimePollSettled(item: AgentLike | null | undefined): boo
   if (isAgentRunning(item)) {
     return true;
   }
-  if (!String(item?.box_id ?? "").trim()) {
-    return false;
-  }
   const status = String(item?.status ?? "").toLowerCase();
-  return status === "stopped" || status === "offline" || status === "failed" || status === "error";
+  if (status === "stopped" || status === "offline" || status === "failed" || status === "error") {
+    return true;
+  }
+  if (
+    isAgentProfileMarkedComplete(item) &&
+    status !== "profile_incomplete" &&
+    status !== "starting" &&
+    status !== "provisioning"
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function isAgentUpgradeNeeded(item: AgentLike | null | undefined): boolean {

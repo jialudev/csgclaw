@@ -36,8 +36,11 @@ import {
   applyTemplateToDraft,
   advanceAgentProgress,
   agentDraftWithRuntimeFieldsFromAgent,
+  agentPageLLMProfileChanged,
   agentRuntimePollSettled,
   agentToDraft,
+  isAgentProfileDraftComplete,
+  isAgentProfileMarkedComplete,
   availableManagerRebuildRuntimeOptions,
   collectManagerTemplateVariants,
   defaultManagerRebuildImageForRuntime,
@@ -50,6 +53,7 @@ import {
   isNotificationBotDraftContext,
   isNotifierRuntimeDraft,
   isNotifierRuntimeDraftOnAgentPage,
+  notifierFormIsComplete,
   mergeAgentIntoList,
   normalizeAuthProviderName,
   partitionWorkspaceAgentItems,
@@ -259,6 +263,7 @@ export function useAgentController({
   const {
     models: agentPageModels,
     modelBusy: agentPageModelBusy,
+    modelError: agentPageModelError,
     resetModels: resetAgentPageModels,
   } = useProfileModelOptions({
     draft: agentPageDraft,
@@ -830,8 +835,8 @@ export function useAgentController({
     });
   }
 
-  async function saveAgentPage(draftOverride?: AgentDraft): Promise<void> {
-    const draftToSave = draftOverride ?? agentPageDraft;
+  async function saveAgentPage(): Promise<void> {
+    const draftToSave = agentPageDraft;
     if (!draftToSave || !selectedAgentForPage?.id) {
       return;
     }
@@ -840,6 +845,10 @@ export function useAgentController({
     try {
       const draft = ensureNotifierPullSubscriptionDraft(draftToSave);
       if (isNotifierRuntimeDraftOnAgentPage(draftToSave, selectedAgentForPage)) {
+        if (!notifierFormIsComplete(draftToSave, selectedAgentForPage)) {
+          setAgentPageError(t("profileSaveIncompleteError"));
+          return;
+        }
         const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, { mergeNotifier: true });
         const payload: AgentUpdatePayload = {
           name: draftToSave.name,
@@ -895,12 +904,18 @@ export function useAgentController({
         setAgentPageSavedDraft(nextDraft);
         return;
       }
+      const llmProfileChanged = agentPageLLMProfileChanged(draftToSave, agentPageSavedDraft);
+      if (llmProfileChanged && !isAgentProfileDraftComplete(draftToSave)) {
+        setAgentPageError(t("profileSaveIncompleteError"));
+        return;
+      }
       debugAgentPageSavePayload("full", payload);
       const managerBeforeSave = selectedAgentForPage;
+      const profileIncompleteBeforeSave = !isAgentProfileMarkedComplete(agentPageSavedDraft);
       const saved = await updateAgentRequest(selectedAgentForPage.id, payload);
       await refreshAgentsWithUpdatedAgent(saved);
       if (saved.id === MANAGER_AGENT_ID && profileChanged) {
-        await syncManagerRuntimeAfterProfileSave(managerBeforeSave);
+        void syncManagerRuntimeAfterProfileSave(managerBeforeSave, profileIncompleteBeforeSave);
       }
       await refreshWorkspaceBootstrap();
       if (saved.id === MANAGER_AGENT_ID) {
@@ -910,20 +925,20 @@ export function useAgentController({
       const savedDraft = await agentDraftFromItem(saved);
       setAgentPageDraft(savedDraft);
       setAgentPageSavedDraft(savedDraft);
+      if (
+        profileChanged &&
+        saved.id === MANAGER_AGENT_ID &&
+        !isAgentProfileMarkedComplete(saved) &&
+        !isAgentProfileMarkedComplete(savedDraft)
+      ) {
+        setAgentPageError(t("profileSaveIncompleteError"));
+        showAgentPageNotice(t("profileSetupIncompleteAfterSave"));
+      }
     } catch (err) {
       setAgentPageError(errorMessage(err, t("agentActionFailed")));
     } finally {
       setAgentPageBusy(false);
     }
-  }
-
-  async function saveAgentPageAvatar(avatar: string): Promise<void> {
-    if (!agentPageDraft) {
-      return;
-    }
-    const nextDraft = { ...agentPageDraft, avatar };
-    setAgentPageDraft(nextDraft);
-    await saveAgentPage(nextDraft);
   }
 
   async function publishAgentPage(): Promise<void> {
@@ -1298,6 +1313,7 @@ export function useAgentController({
       hasUnsavedChanges: agentPageHasUnsavedChanges,
       models: agentPageModels,
       modelBusy: agentPageModelBusy,
+      modelError: agentPageModelError,
       saving: agentPageBusy,
       publishBusy: agentPagePublishBusy,
       saveError: agentPageError,
@@ -1316,7 +1332,6 @@ export function useAgentController({
       onSelectWorkspaceFile: setSelectedAgentWorkspacePath,
       onDraftChange: setAgentPageDraft,
       onSave: saveAgentPage,
-      onAvatarSave: saveAgentPageAvatar,
       onPublish: publishAgentPage,
       onProviderLogin: loginCLIProxyProvider,
       onStart: (item: AgentLike | null | undefined) => runAgentAction(item, "start"),
