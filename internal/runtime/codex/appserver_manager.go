@@ -28,9 +28,10 @@ var (
 var appServerCommandContext = exec.CommandContext
 
 type appServerManager struct {
-	deps     managerDeps
-	mu       sync.RWMutex
-	sessions map[string]*liveSession
+	deps      managerDeps
+	hydrateMu sync.Mutex
+	mu        sync.RWMutex
+	sessions  map[string]*liveSession
 }
 
 func newAppServerManager(deps managerDeps) *appServerManager {
@@ -181,12 +182,9 @@ func (m *appServerManager) Stop(ctx context.Context, handle SessionHandle) error
 }
 
 func (m *appServerManager) Session(handle SessionHandle) (*Session, error) {
-	runtimeID := strings.TrimSpace(handle.RuntimeID)
-	m.mu.RLock()
-	live := m.sessions[runtimeID]
-	m.mu.RUnlock()
-	if live == nil || live.session == nil {
-		return nil, os.ErrNotExist
+	live, err := m.ensureLiveSession(context.Background(), handle)
+	if err != nil {
+		return nil, err
 	}
 	cloned := *live.session
 	return &cloned, nil
@@ -194,11 +192,9 @@ func (m *appServerManager) Session(handle SessionHandle) (*Session, error) {
 
 func (m *appServerManager) Prompt(ctx context.Context, handle SessionHandle, req PromptRequest) (PromptResponse, error) {
 	runtimeID := strings.TrimSpace(handle.RuntimeID)
-	m.mu.RLock()
-	live := m.sessions[runtimeID]
-	m.mu.RUnlock()
-	if live == nil || live.appClient == nil || live.session == nil {
-		return PromptResponse{}, os.ErrNotExist
+	live, err := m.ensureLiveSession(ctx, handle)
+	if err != nil {
+		return PromptResponse{}, err
 	}
 
 	sessionID := strings.TrimSpace(req.SessionID)
@@ -248,12 +244,9 @@ func (m *appServerManager) Prompt(ctx context.Context, handle SessionHandle, req
 }
 
 func (m *appServerManager) EnsureSession(ctx context.Context, handle SessionHandle, conversationKey string) (string, error) {
-	runtimeID := strings.TrimSpace(handle.RuntimeID)
-	m.mu.RLock()
-	live := m.sessions[runtimeID]
-	m.mu.RUnlock()
-	if live == nil || live.appClient == nil || live.session == nil {
-		return "", os.ErrNotExist
+	live, err := m.ensureLiveSession(ctx, handle)
+	if err != nil {
+		return "", err
 	}
 
 	conversationKey = strings.TrimSpace(conversationKey)
@@ -284,11 +277,9 @@ func (m *appServerManager) ResetConversationHistory(ctx context.Context, handle 
 		return fmt.Errorf("conversation key is required")
 	}
 
-	m.mu.RLock()
-	live := m.sessions[runtimeID]
-	m.mu.RUnlock()
-	if live == nil || live.session == nil {
-		return os.ErrNotExist
+	live, err := m.ensureLiveSession(ctx, handle)
+	if err != nil {
+		return err
 	}
 
 	live.mu.Lock()
@@ -300,6 +291,47 @@ func (m *appServerManager) ResetConversationHistory(ctx context.Context, handle 
 		m.deps.Permission.CancelSession(runtimeID, sessionID)
 	}
 	return nil
+}
+
+func (m *appServerManager) ensureLiveSession(ctx context.Context, handle SessionHandle) (*liveSession, error) {
+	runtimeID := strings.TrimSpace(handle.RuntimeID)
+	if runtimeID == "" {
+		return nil, fmt.Errorf("runtime id is required")
+	}
+	if live := m.liveSession(runtimeID); live != nil {
+		return live, nil
+	}
+	if m.deps.HydrateSession == nil {
+		return nil, os.ErrNotExist
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	m.hydrateMu.Lock()
+	defer m.hydrateMu.Unlock()
+
+	if live := m.liveSession(runtimeID); live != nil {
+		return live, nil
+	}
+	if _, err := m.deps.HydrateSession(ctx, handle); err != nil {
+		return nil, err
+	}
+	if live := m.liveSession(runtimeID); live != nil {
+		return live, nil
+	}
+	return nil, os.ErrNotExist
+}
+
+func (m *appServerManager) liveSession(runtimeID string) *liveSession {
+	runtimeID = strings.TrimSpace(runtimeID)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	live := m.sessions[runtimeID]
+	if live == nil || live.session == nil || live.appClient == nil {
+		return nil
+	}
+	return live
 }
 
 // initializeHandshake performs the JSON-RPC initialize handshake required by

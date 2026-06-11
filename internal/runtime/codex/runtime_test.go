@@ -459,6 +459,77 @@ func TestRuntimeCreateWritesConfigWhenHostAuthIsSeeded(t *testing.T) {
 	assertRuntimeModelCatalog(t, filepath.Join(root, "alice", ".codex", "home", modelCatalogFileName), "gpt-5.5")
 }
 
+func TestRuntimeSessionManagerHydratesPersistedSession(t *testing.T) {
+	withAppServerHelperCommand(t, "resume-success")
+
+	root := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+	deps := Dependencies{
+		BinaryProvider: fakeBinaryProvider{path: "codex"},
+		AgentHome: func(agentName string) (string, error) {
+			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
+			return AgentRef{
+				ID:        "u-alice",
+				Name:      "alice",
+				RuntimeID: h.RuntimeID,
+				Profile: agentruntime.Profile{
+					ModelID:         "gpt-5",
+					BaseURL:         "https://runtime.example/v1",
+					APIKey:          "runtime-key",
+					ReasoningEffort: "medium",
+				},
+			}, nil
+		},
+	}
+
+	rt := New(deps)
+	handle, err := rt.New(context.Background(), agentruntime.Spec{
+		RuntimeID: "rt-u-alice",
+		AgentID:   "u-alice",
+		AgentName: "alice",
+		Profile: agentruntime.Profile{
+			ModelID:         "gpt-5",
+			BaseURL:         "https://runtime.example/v1",
+			APIKey:          "runtime-key",
+			ReasoningEffort: "medium",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if handle.HandleID != "main-thread" {
+		t.Fatalf("initial handle id = %q, want main-thread", handle.HandleID)
+	}
+
+	reloaded := New(deps)
+	manager := reloaded.SessionManager()
+	session, err := manager.Session(SessionHandle{RuntimeID: "rt-u-alice"})
+	if err != nil {
+		t.Fatalf("Session() after reload error = %v", err)
+	}
+	if session.SessionID != "resumed-thread" {
+		t.Fatalf("hydrated session id = %q, want resumed-thread", session.SessionID)
+	}
+
+	resp, err := manager.Prompt(context.Background(), SessionHandle{RuntimeID: "rt-u-alice"}, PromptRequest{
+		SessionID: session.SessionID,
+		Prompt:    []PromptContentBlock{TextBlock("hello again")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() after reload error = %v", err)
+	}
+	if resp.StopReason != StopReasonEndTurn {
+		t.Fatalf("StopReason = %q, want %q", resp.StopReason, StopReasonEndTurn)
+	}
+
+	if _, err := reloaded.Stop(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
+		t.Fatalf("Stop() after reload error = %v", err)
+	}
+}
+
 func TestRuntimeCreateWritesConfigWithoutAuth(t *testing.T) {
 	root := t.TempDir()
 	hostHome := t.TempDir()

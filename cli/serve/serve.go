@@ -957,7 +957,7 @@ func (m *serveCodexBridgeManager) Start(ctx context.Context) error {
 	agents := m.svc.List()
 	var startErr error
 	for _, a := range agents {
-		if !shouldStartCodexBridge(a) {
+		if !shouldRestoreCodexBridgeOnStartup(a) {
 			continue
 		}
 		session, err := m.ensureSession(ctx, a)
@@ -1098,6 +1098,19 @@ func shouldStartCodexBridge(a agent.Agent) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(a.Status), string(agentruntime.StateRunning))
+}
+
+func shouldRestoreCodexBridgeOnStartup(a agent.Agent) bool {
+	if !strings.EqualFold(strings.TrimSpace(a.Role), agent.RoleWorker) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(a.RuntimeKind), agent.RuntimeKindCodex) {
+		return false
+	}
+	if !(a.ProfileComplete || a.AgentProfile.ProfileComplete) {
+		return false
+	}
+	return !strings.EqualFold(strings.TrimSpace(a.Status), string(agentruntime.StateStopped))
 }
 
 func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, error) {

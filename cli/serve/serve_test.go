@@ -1089,6 +1089,53 @@ func TestShouldStartCodexBridge(t *testing.T) {
 	}
 }
 
+func TestShouldRestoreCodexBridgeOnStartup(t *testing.T) {
+	cases := []struct {
+		name  string
+		agent agent.Agent
+		want  bool
+	}{
+		{
+			name: "running codex worker is restored",
+			agent: agent.Agent{
+				ID:              "u-alice",
+				Role:            agent.RoleWorker,
+				RuntimeKind:     agent.RuntimeKindCodex,
+				Status:          string(agentruntime.StateRunning),
+				ProfileComplete: true,
+			},
+			want: true,
+		},
+		{
+			name: "exited codex worker is restored",
+			agent: agent.Agent{
+				ID:              "u-alice",
+				Role:            agent.RoleWorker,
+				RuntimeKind:     agent.RuntimeKindCodex,
+				Status:          string(agentruntime.StateExited),
+				ProfileComplete: true,
+			},
+			want: true,
+		},
+		{
+			name: "stopped codex worker stays stopped",
+			agent: agent.Agent{
+				ID:              "u-alice",
+				Role:            agent.RoleWorker,
+				RuntimeKind:     agent.RuntimeKindCodex,
+				Status:          string(agentruntime.StateStopped),
+				ProfileComplete: true,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		if got := shouldRestoreCodexBridgeOnStartup(tc.agent); got != tc.want {
+			t.Fatalf("%s: shouldRestoreCodexBridgeOnStartup() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestCodexBridgeBindingUsesParticipantIDForWorker(t *testing.T) {
 	binding := codexBridgeBindingForAgent(agent.Agent{
 		ID:          "u-agent-3l6htd",

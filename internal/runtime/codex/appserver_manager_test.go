@@ -614,6 +614,27 @@ func TestAppServerManagerHelperProcess(t *testing.T) {
 				return nil, false
 			}
 		})
+	case "resume-success":
+		runAppServerHelper(t, func(index int, msg map[string]any) (map[string]any, bool) {
+			switch msg["method"] {
+			case "thread/resume":
+				return rpcResult(msg["id"], map[string]any{"threadId": "resumed-thread"}), true
+			case "thread/start":
+				return rpcResult(msg["id"], map[string]any{"threadId": "main-thread"}), true
+			case "turn/start":
+				params, _ := msg["params"].(map[string]any)
+				threadID, _ := params["threadId"].(string)
+				if threadID == "" {
+					t.Fatalf("turn/start threadId missing in %#v", params)
+				}
+				writeRPCNotification(t, "turn/started", map[string]any{"threadId": threadID, "turn": map[string]any{"id": "turn-1"}})
+				writeRPCNotification(t, "item/completed", map[string]any{"threadId": threadID, "item": map[string]any{"id": "item-1", "type": "agentMessage", "text": "done"}})
+				writeRPCNotification(t, "turn/completed", map[string]any{"threadId": threadID, "turn": map[string]any{"id": "turn-1", "status": "completed"}})
+				return rpcResult(msg["id"], map[string]any{"turnId": "turn-1"}), true
+			default:
+				return nil, false
+			}
+		})
 	case "conversation-thread":
 		runAppServerHelper(t, func(index int, msg map[string]any) (map[string]any, bool) {
 			if msg["method"] != "thread/start" {
@@ -785,11 +806,24 @@ func runAppServerHelper(t *testing.T, handle func(index int, msg map[string]any)
 	scanner := bufio.NewScanner(os.Stdin)
 	index := 0
 	for scanner.Scan() {
-		index++
 		var msg map[string]any
 		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
 			t.Fatalf("helper unmarshal request: %v", err)
 		}
+		if method, _ := msg["method"].(string); method == "initialize" {
+			resp := rpcResult(msg["id"], map[string]any{
+				"capabilities": map[string]any{"experimentalApi": true},
+			})
+			data, err := json.Marshal(resp)
+			if err != nil {
+				t.Fatalf("helper marshal initialize response: %v", err)
+			}
+			_, _ = fmt.Fprintln(os.Stdout, string(data))
+			continue
+		} else if method == "initialized" {
+			continue
+		}
+		index++
 		resp, ok := handle(index, msg)
 		if !ok {
 			continue

@@ -319,7 +319,7 @@ func (r *Runtime) sessionManager() Manager {
 	if r.deps.Manager != nil {
 		return r.deps.Manager
 	}
-	r.deps.Manager = newAppServerManager(managerDeps{
+	manager := newAppServerManager(managerDeps{
 		EventSink:  r.deps.EventSink,
 		Permission: r.permissionBroker(),
 		OpenFile:   r.openFile,
@@ -341,6 +341,10 @@ func (r *Runtime) sessionManager() Manager {
 			_ = writeJSONFile(r.writeFile, filepath.Join(session.RuntimeDir, runtimeFileName), meta)
 		},
 	})
+	manager.deps.HydrateSession = func(ctx context.Context, handle SessionHandle) (*Session, error) {
+		return r.hydratePersistedSession(ctx, manager, handle)
+	}
+	r.deps.Manager = manager
 	return r.deps.Manager
 }
 
@@ -399,6 +403,77 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 		return nil, err
 	}
 	return session, nil
+}
+
+func (r *Runtime) hydratePersistedSession(ctx context.Context, manager *appServerManager, handle SessionHandle) (*Session, error) {
+	if manager == nil {
+		return nil, os.ErrNotExist
+	}
+	runtimeID := strings.TrimSpace(handle.RuntimeID)
+	if runtimeID == "" {
+		return nil, fmt.Errorf("runtime id is required")
+	}
+	meta, err := r.readRuntimeMetadata(runtimeID)
+	if err != nil {
+		return nil, err
+	}
+	sessionMeta, err := r.readSessionMetadata(runtimeID)
+	if err != nil {
+		return nil, err
+	}
+	runtimeDir, err := r.runtimeDirForHandle(agentruntime.Handle{RuntimeID: runtimeID})
+	if err != nil {
+		return nil, err
+	}
+	agentRef, err := r.resolveAgent(agentruntime.Handle{RuntimeID: runtimeID})
+	if err != nil {
+		return nil, err
+	}
+	if meta.ProcessID > 0 && processAlive(meta.ProcessID) {
+		if err := stopProcess(meta.ProcessID); err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ESRCH) {
+			return nil, err
+		}
+	}
+
+	spec := SessionSpec{
+		RuntimeID:    runtimeID,
+		AgentID:      firstNonEmpty(agentRef.ID, meta.AgentID),
+		AgentName:    firstNonEmpty(agentRef.Name, meta.AgentName),
+		BinaryPath:   strings.TrimSpace(meta.BinaryPath),
+		RuntimeDir:   runtimeDir,
+		WorkspaceDir: strings.TrimSpace(sessionMeta.WorkspaceDir),
+		HomeDir:      strings.TrimSpace(sessionMeta.HomeDir),
+		CodexHomeDir: strings.TrimSpace(sessionMeta.CodexHomeDir),
+		StderrPath:   filepath.Join(runtimeDir, homeDirName, stderrLogFileName),
+		Profile:      agentRef.Profile.Normalized(),
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	session, err := manager.Start(context.WithoutCancel(ctx), spec)
+	if err != nil {
+		return nil, err
+	}
+	if !meta.CreatedAt.IsZero() {
+		session.CreatedAt = meta.CreatedAt.UTC()
+	}
+	if err := r.writeSessionMetadata(sessionToSessionMetadata(session)); err != nil {
+		return nil, err
+	}
+	if err := r.writeMetadata(sessionToRuntimeMetadata(session)); err != nil {
+		return nil, err
+	}
+	return session, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (r *Runtime) seedCodexHomeAuth(runtimeCodexHome string) error {
@@ -619,6 +694,18 @@ func (r *Runtime) readRuntimeMetadata(runtimeID string) (runtimeMetadata, error)
 		return runtimeMetadata{}, err
 	}
 	return normalizeRuntimeMetadata(meta), nil
+}
+
+func (r *Runtime) readSessionMetadata(runtimeID string) (sessionMetadata, error) {
+	path, err := r.sessionMetadataPath(runtimeID)
+	if err != nil {
+		return sessionMetadata{}, err
+	}
+	var meta sessionMetadata
+	if err := readJSONFile(r.readFile, path, &meta); err != nil {
+		return sessionMetadata{}, err
+	}
+	return normalizeSessionMetadata(meta), nil
 }
 
 func (r *Runtime) writeMetadata(meta runtimeMetadata) error {
@@ -894,10 +981,11 @@ func writeJSONFile(writeFile func(string, []byte, os.FileMode) error, path strin
 }
 
 type managerDeps struct {
-	EventSink  SessionEventSink
-	Permission PermissionBroker
-	OpenFile   func(string, int, os.FileMode) (*os.File, error)
-	WriteFile  func(string, []byte, os.FileMode) error
-	ReadFile   func(string) ([]byte, error)
-	OnExit     func(*Session, int)
+	EventSink      SessionEventSink
+	Permission     PermissionBroker
+	OpenFile       func(string, int, os.FileMode) (*os.File, error)
+	WriteFile      func(string, []byte, os.FileMode) error
+	ReadFile       func(string) ([]byte, error)
+	OnExit         func(*Session, int)
+	HydrateSession func(context.Context, SessionHandle) (*Session, error)
 }
