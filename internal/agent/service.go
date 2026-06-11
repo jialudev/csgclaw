@@ -18,7 +18,6 @@ import (
 	"csgclaw/internal/config"
 	"csgclaw/internal/hub"
 	agentruntime "csgclaw/internal/runtime"
-	"csgclaw/internal/runtime/picoclawsandbox"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/utils"
 )
@@ -339,10 +338,6 @@ func (s *Service) SetGatewayRuntime(runtime, managerImage string) error {
 		s.managerImage = managerImage
 	}
 	return nil
-}
-
-func (s *Service) useOpenClawGateway() bool {
-	return s != nil && s.gatewayRuntimeKind() == RuntimeKindOpenClawSandbox
 }
 
 func NewService(model config.ModelConfig, server config.ServerConfig, managerImage, statePath string, opts ...ServiceOption) (*Service, error) {
@@ -1883,14 +1878,6 @@ func (s *Service) StreamLogs(ctx context.Context, id string, follow bool, lines 
 	})
 }
 
-func streamHostGatewayLog(ctx context.Context, agentName string, follow bool, lines int, w io.Writer) error {
-	logPath, err := agentGatewayLogPath(agentName)
-	if err != nil {
-		return err
-	}
-	return streamHostGatewayLogPaths(ctx, []string{logPath}, follow, lines, w)
-}
-
 func streamHostGatewayLogPaths(ctx context.Context, logPaths []string, follow bool, lines int, w io.Writer) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1902,14 +1889,6 @@ func streamHostGatewayLogPaths(ctx context.Context, logPaths []string, follow bo
 		return err
 	}
 	return nil
-}
-
-func agentGatewayLogPath(agentName string) (string, error) {
-	agentHome, err := agentHomeDir(agentName)
-	if err != nil {
-		return "", err
-	}
-	return picoclawsandbox.HostGatewayLogPath(agentHome), nil
 }
 
 func streamGatewayLogFile(ctx context.Context, logPaths []string, follow bool, lines int, w io.Writer) error {

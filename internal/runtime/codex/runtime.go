@@ -145,7 +145,16 @@ func workspaceRoot(agentHome string) string {
 }
 
 func (r *Runtime) WorkspaceRoot(agentHome string) string {
-	return workspaceRoot(agentHome)
+	return r.Layout(agentHome).WorkspaceRoot
+}
+
+func (r *Runtime) Layout(agentHome string) agentruntime.Layout {
+	root := filepath.Join(agentHome, filepath.FromSlash(hostStateDirName))
+	return agentruntime.Layout{
+		WorkspaceRoot: filepath.Join(root, workspaceDirName),
+		SkillsRoot:    filepath.Join(root, homeDirName, "skills"),
+		HostLogPaths:  []string{filepath.Join(root, homeDirName, stderrLogFileName)},
+	}
 }
 
 func (r *Runtime) SessionManager() Manager {
@@ -565,11 +574,22 @@ func (r *Runtime) runtimeDirForAgent(agentName string) (string, error) {
 }
 
 func (r *Runtime) stderrLogPath(h agentruntime.Handle) (string, error) {
-	root, err := r.runtimeDirForHandle(h)
+	agentRef, err := r.resolveAgent(h)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, stderrLogFileName), nil
+	if r.deps.AgentHome == nil {
+		return "", fmt.Errorf("agent home resolver is required")
+	}
+	agentHome, err := r.deps.AgentHome(strings.TrimSpace(agentRef.Name))
+	if err != nil {
+		return "", err
+	}
+	layout := r.Layout(agentHome)
+	if len(layout.HostLogPaths) == 0 {
+		return "", fmt.Errorf("codex runtime host log path is required")
+	}
+	return layout.HostLogPaths[0], nil
 }
 
 func (r *Runtime) resolveAgent(h agentruntime.Handle) (AgentRef, error) {

@@ -98,6 +98,8 @@ func (f *fakeInstance) Close() error {
 type fakeAgentRuntime struct {
 	kind       string
 	workspace  func(string) string
+	skills     func(string) string
+	hostLogs   func(string) []string
 	provision  func(context.Context, agentruntime.ProvisionRequest) error
 	new        func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
@@ -112,19 +114,44 @@ func (f fakeAgentRuntime) Kind() string {
 	return f.kind
 }
 
-func (f fakeAgentRuntime) WorkspaceRoot(agentHome string) string {
+func (f fakeAgentRuntime) Layout(agentHome string) agentruntime.Layout {
 	if f.workspace != nil {
-		return f.workspace(agentHome)
+		workspace := f.workspace(agentHome)
+		layout := agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+		}
+		if f.skills != nil {
+			layout.SkillsRoot = f.skills(agentHome)
+		}
+		if f.hostLogs != nil {
+			layout.HostLogPaths = f.hostLogs(agentHome)
+		}
+		return layout
 	}
 	switch strings.TrimSpace(f.kind) {
 	case RuntimeKindPicoClawSandbox:
-		return filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+		workspace := filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{picoclawsandbox.HostGatewayLogPath(agentHome)},
+		}
 	case RuntimeKindOpenClawSandbox:
-		return filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+		workspace := filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{openclawsandbox.HostGatewayLogPath(agentHome)},
+		}
 	case RuntimeKindCodex:
-		return filepath.Join(agentHome, ".codex", "workspace")
+		return agentruntime.Layout{
+			WorkspaceRoot: filepath.Join(agentHome, ".codex", "workspace"),
+			SkillsRoot:    filepath.Join(agentHome, ".codex", "home", "skills"),
+			HostLogPaths:  []string{filepath.Join(agentHome, ".codex", "home", "stderr.log")},
+		}
 	default:
-		return ""
+		return agentruntime.Layout{}
 	}
 }
 
@@ -193,16 +220,30 @@ func (f fakeAgentRuntimeNoLogs) Kind() string {
 	return f.kind
 }
 
-func (f fakeAgentRuntimeNoLogs) WorkspaceRoot(agentHome string) string {
+func (f fakeAgentRuntimeNoLogs) Layout(agentHome string) agentruntime.Layout {
 	switch strings.TrimSpace(f.kind) {
 	case RuntimeKindPicoClawSandbox:
-		return filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+		workspace := filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{picoclawsandbox.HostGatewayLogPath(agentHome)},
+		}
 	case RuntimeKindOpenClawSandbox:
-		return filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+		workspace := filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{openclawsandbox.HostGatewayLogPath(agentHome)},
+		}
 	case RuntimeKindCodex:
-		return filepath.Join(agentHome, ".codex", "workspace")
+		return agentruntime.Layout{
+			WorkspaceRoot: filepath.Join(agentHome, ".codex", "workspace"),
+			SkillsRoot:    filepath.Join(agentHome, ".codex", "home", "skills"),
+			HostLogPaths:  []string{filepath.Join(agentHome, ".codex", "home", "stderr.log")},
+		}
 	default:
-		return ""
+		return agentruntime.Layout{}
 	}
 }
 
@@ -1486,9 +1527,13 @@ func TestBoxLiteProviderGatewayLifecycle(t *testing.T) {
 		t.Fatalf("CreateWorker().RuntimeKind = %q, want %q", worker.RuntimeKind, RuntimeKindPicoClawSandbox)
 	}
 
-	logPath, err := agentGatewayLogPath("alice")
+	layout, err := testBuiltinLayout("alice", RuntimeKindPicoClawSandbox)
 	if err != nil {
-		t.Fatalf("agentGatewayLogPath() error = %v", err)
+		t.Fatalf("testBuiltinLayout() error = %v", err)
+	}
+	logPath := layout.HostLogPaths[0]
+	if logPath == "" {
+		t.Fatal("testBuiltinLayout() returned empty host log path")
 	}
 	if err := os.WriteFile(logPath, []byte("old line\nnew line\ngateway line\n"), 0o600); err != nil {
 		t.Fatalf("write gateway log: %v", err)
@@ -3358,9 +3403,13 @@ func TestStreamLogsFollowUsesHostGatewayLogWithoutSandboxRuntime(t *testing.T) {
 		Status:      "running",
 		CreatedAt:   time.Date(2026, 4, 1, 11, 0, 0, 0, time.UTC),
 	}
-	logPath, err := agentGatewayLogPath("alice")
+	layout, err := testBuiltinLayout("alice", RuntimeKindPicoClawSandbox)
 	if err != nil {
-		t.Fatalf("agentGatewayLogPath() error = %v", err)
+		t.Fatalf("testBuiltinLayout() error = %v", err)
+	}
+	logPath := layout.HostLogPaths[0]
+	if logPath == "" {
+		t.Fatal("testBuiltinLayout() returned empty host log path")
 	}
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		t.Fatalf("create log dir: %v", err)
@@ -6182,34 +6231,54 @@ func appendTemplateImageEnvContracts(t *testing.T, manifestPath string, items []
 	}
 }
 
-func testBuiltinWorkspaceRoot(agentName, runtimeKind string) (string, error) {
+func testBuiltinLayout(agentName, runtimeKind string) (agentruntime.Layout, error) {
 	agentHome, err := agentHomeDir(agentName)
+	if err != nil {
+		return agentruntime.Layout{}, err
+	}
+	switch strings.TrimSpace(runtimeKind) {
+	case RuntimeKindPicoClawSandbox:
+		workspace := filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{picoclawsandbox.HostGatewayLogPath(agentHome)},
+		}, nil
+	case RuntimeKindOpenClawSandbox:
+		workspace := filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{openclawsandbox.HostGatewayLogPath(agentHome)},
+		}, nil
+	case RuntimeKindCodex:
+		return agentruntime.Layout{
+			WorkspaceRoot: filepath.Join(agentHome, ".codex", "workspace"),
+			SkillsRoot:    filepath.Join(agentHome, ".codex", "home", "skills"),
+			HostLogPaths:  []string{filepath.Join(agentHome, ".codex", "home", "stderr.log")},
+		}, nil
+	default:
+		return agentruntime.Layout{}, fmt.Errorf("unsupported runtime_kind %q for agent workspace", runtimeKind)
+	}
+}
+
+func testBuiltinWorkspaceRoot(agentName, runtimeKind string) (string, error) {
+	layout, err := testBuiltinLayout(agentName, runtimeKind)
 	if err != nil {
 		return "", err
 	}
-	var root string
-	switch strings.TrimSpace(runtimeKind) {
-	case RuntimeKindPicoClawSandbox:
-		root = filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
-	case RuntimeKindOpenClawSandbox:
-		root = filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
-	case RuntimeKindCodex:
-		root = filepath.Join(agentHome, ".codex", "workspace")
-	default:
-		return "", fmt.Errorf("unsupported runtime_kind %q for agent workspace", runtimeKind)
-	}
-	if strings.TrimSpace(root) == "" {
+	if strings.TrimSpace(layout.WorkspaceRoot) == "" {
 		return "", fmt.Errorf("runtime %q returned empty workspace root", runtimeKind)
 	}
-	return root, nil
+	return layout.WorkspaceRoot, nil
 }
 
 func agentSkillPath(agentName, runtimeKind, skillName string) (string, error) {
-	workspaceRoot, err := testBuiltinWorkspaceRoot(agentName, runtimeKind)
+	layout, err := testBuiltinLayout(agentName, runtimeKind)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(workspaceRoot, "skills", skillName, "SKILL.md"), nil
+	return filepath.Join(layout.SkillsRoot, skillName, "SKILL.md"), nil
 }
 
 func mustNewLocalTemplateHubServiceWithoutWorkspace(t *testing.T, id string, item hub.Template) *hub.Service {
@@ -6330,6 +6399,15 @@ func TestServiceWorkspaceRootUsesRegisteredRuntimeCapability(t *testing.T) {
 	want := filepath.Join(agentHome, ".custom", "workspace")
 	if got != want {
 		t.Fatalf("WorkspaceRoot() = %q, want %q", got, want)
+	}
+
+	skillsRoot, err := svc.SkillsRoot("alice")
+	if err != nil {
+		t.Fatalf("SkillsRoot() error = %v", err)
+	}
+	wantSkills := filepath.Join(want, "skills")
+	if skillsRoot != wantSkills {
+		t.Fatalf("SkillsRoot() = %q, want %q", skillsRoot, wantSkills)
 	}
 }
 

@@ -69,16 +69,30 @@ func (f fakeCompatRuntime) Kind() string {
 	return agent.RuntimeKindPicoClawSandbox
 }
 
-func (f fakeCompatRuntime) WorkspaceRoot(agentHome string) string {
+func (f fakeCompatRuntime) Layout(agentHome string) agentruntime.Layout {
 	switch f.Kind() {
 	case agent.RuntimeKindPicoClawSandbox:
-		return filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+		workspace := filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{picoclawsandbox.HostGatewayLogPath(agentHome)},
+		}
 	case agent.RuntimeKindOpenClawSandbox:
-		return filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+		workspace := filepath.Join(openclawsandbox.Root(agentHome), openclawsandbox.HostWorkspaceDir)
+		return agentruntime.Layout{
+			WorkspaceRoot: workspace,
+			SkillsRoot:    filepath.Join(workspace, "skills"),
+			HostLogPaths:  []string{openclawsandbox.HostGatewayLogPath(agentHome)},
+		}
 	case agent.RuntimeKindCodex:
-		return filepath.Join(agentHome, ".codex", "workspace")
+		return agentruntime.Layout{
+			WorkspaceRoot: filepath.Join(agentHome, ".codex", "workspace"),
+			SkillsRoot:    filepath.Join(agentHome, ".codex", "home", "skills"),
+			HostLogPaths:  []string{filepath.Join(agentHome, ".codex", "home", "stderr.log")},
+		}
 	default:
-		return ""
+		return agentruntime.Layout{}
 	}
 }
 
