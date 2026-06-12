@@ -552,12 +552,8 @@ export function useAgentController({
     }
     setAgentsData((current) => mergeAgentIntoList(current, agent));
     if (activePane.type === WorkspacePaneTypes.agent && activePane.id === agentID) {
-      setAgentPageDraft((current) =>
-        agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent),
-      );
-      setAgentPageSavedDraft((current) =>
-        agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent),
-      );
+      setAgentPageDraft((current) => agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent));
+      setAgentPageSavedDraft((current) => agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent));
     }
   }
 
@@ -854,6 +850,7 @@ export function useAgentController({
           name: draftToSave.name,
           avatar: draftToSave.avatar,
           description: draftToSave.description,
+          instructions: draftToSave.instructions,
         };
         if (runtimeOptions) {
           payload.runtime_options = runtimeOptions;
@@ -883,6 +880,7 @@ export function useAgentController({
         name: draftToSave.name,
         avatar: draftToSave.avatar,
         description: draftToSave.description,
+        instructions: draftToSave.instructions,
       };
       if (profileChanged) {
         payload.agent_profile = profile;
@@ -989,6 +987,7 @@ export function useAgentController({
           name: agentDraft.name,
           avatar: agentDraft.avatar,
           description: agentDraft.description,
+          instructions: agentDraft.instructions,
         };
         if (runtimeOptions) {
           payload.runtime_options = runtimeOptions;
@@ -1026,6 +1025,7 @@ export function useAgentController({
         avatar: agentDraft.avatar,
         role: WORKER_AGENT_ROLE,
         description: agentDraft.description,
+        instructions: agentDraft.instructions,
         image: agentDraft.image,
         runtime_kind: runtimeKind,
         from_template: agentDraft.from_template || "",
@@ -1040,6 +1040,7 @@ export function useAgentController({
             name: payload.name,
             avatar: payload.avatar,
             description: payload.description,
+            instructions: payload.instructions,
             agent_profile: payload.agent_profile,
             ...(payload.runtime_options ? { runtime_options: payload.runtime_options } : {}),
           });

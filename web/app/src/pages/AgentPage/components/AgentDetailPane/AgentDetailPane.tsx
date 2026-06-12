@@ -242,28 +242,34 @@ export function AgentDetailPane({
         </div>
       ) : null}
       {!draft ? (
-        <div className="entity-grid">
-          <div className="entity-field">
-            <span>{t("profileRuntimeKind")}</span>
-            <strong>{formatRuntimeKindLabel(item.runtime_kind, t)}</strong>
+        <>
+          <div className="entity-grid">
+            <div className="entity-field">
+              <span>{t("profileRuntimeKind")}</span>
+              <strong>{formatRuntimeKindLabel(item.runtime_kind, t)}</strong>
+            </div>
+            <div className="entity-field">
+              <span>{t("profileProvider")}</span>
+              <strong>{formatProviderLabel(provider)}</strong>
+            </div>
+            <div className="entity-field">
+              <span>{t("profileModel")}</span>
+              <strong>{agentModelID(item)}</strong>
+            </div>
+            <div className="entity-field">
+              <span>{t("profileReasoning")}</span>
+              <strong>{item.reasoning_effort || item.agent_profile?.reasoning_effort || "medium"}</strong>
+            </div>
+            <div className="entity-field">
+              <span>{t("profileFastMode")}</span>
+              <strong>{item.enable_fast_mode || item.agent_profile?.enable_fast_mode ? "on" : "off"}</strong>
+            </div>
           </div>
-          <div className="entity-field">
-            <span>{t("profileProvider")}</span>
-            <strong>{formatProviderLabel(provider)}</strong>
-          </div>
-          <div className="entity-field">
-            <span>{t("profileModel")}</span>
-            <strong>{agentModelID(item)}</strong>
-          </div>
-          <div className="entity-field">
-            <span>{t("profileReasoning")}</span>
-            <strong>{item.reasoning_effort || item.agent_profile?.reasoning_effort || "medium"}</strong>
-          </div>
-          <div className="entity-field">
-            <span>{t("profileFastMode")}</span>
-            <strong>{item.enable_fast_mode || item.agent_profile?.enable_fast_mode ? "on" : "off"}</strong>
-          </div>
-        </div>
+          <section className="profile-section agent-instructions-section">
+            <div className="profile-section-title">{t("agentInstructions")}</div>
+            <div className="agent-instructions-body">{item.instructions || "-"}</div>
+          </section>
+        </>
       ) : null}
       {draft ? (
         <div className="profile-editor-shell agent-page-editor">
@@ -306,6 +312,14 @@ export function AgentDetailPane({
                   className="compact-textarea"
                   value={draft.description}
                   onInput={(event) => updateDraft({ description: event.currentTarget.value })}
+                />
+              </label>
+              <label className="field span-2">
+                <span>{t("agentInstructions")}</span>
+                <textarea
+                  className="compact-textarea"
+                  value={draft.instructions || ""}
+                  onInput={(event) => updateDraft({ instructions: event.currentTarget.value })}
                 />
               </label>
             </div>

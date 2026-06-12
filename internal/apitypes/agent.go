@@ -3,24 +3,26 @@ package apitypes
 import "time"
 
 type Agent struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	RuntimeID   string    `json:"runtime_id,omitempty"`
-	RuntimeKind string    `json:"runtime_kind,omitempty"`
-	Image       string    `json:"image,omitempty"`
-	Avatar      string    `json:"avatar,omitempty"`
-	BoxID       string    `json:"box_id,omitempty"`
-	Role        string    `json:"role"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	Profile     string    `json:"profile,omitempty"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description,omitempty"`
+	Instructions string    `json:"instructions,omitempty"`
+	RuntimeID    string    `json:"runtime_id,omitempty"`
+	RuntimeKind  string    `json:"runtime_kind,omitempty"`
+	Image        string    `json:"image,omitempty"`
+	Avatar       string    `json:"avatar,omitempty"`
+	BoxID        string    `json:"box_id,omitempty"`
+	Role         string    `json:"role"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"created_at"`
+	Profile      string    `json:"profile,omitempty"`
 }
 
 type CreateAgentRequest struct {
 	ID             string              `json:"id,omitempty"`
 	Name           string              `json:"name"`
 	Description    string              `json:"description,omitempty"`
+	Instructions   string              `json:"instructions,omitempty"`
 	Image          string              `json:"image,omitempty"`
 	Avatar         string              `json:"avatar,omitempty"`
 	RuntimeKind    string              `json:"runtime_kind,omitempty"`

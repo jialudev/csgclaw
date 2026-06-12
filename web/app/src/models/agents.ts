@@ -69,6 +69,7 @@ export type AgentLike = AgentProfileLike & {
   from_template?: string | null;
   handle?: string | null;
   id?: string | null;
+  instructions?: string | null;
   type?: BotType | null;
   available?: boolean | null;
   avatar?: string | null;
@@ -112,6 +113,7 @@ export type AgentDraft = {
   base_url: string;
   default_image?: string;
   description?: string;
+  instructions?: string;
   enable_fast_mode: boolean;
   envRows: EnvKeyValueRow[];
   from_template?: string;
@@ -757,6 +759,7 @@ export function agentToDraft(agent: AgentDraftSource | null | undefined): AgentD
     role: agent?.role || WORKER_AGENT_ROLE,
     bot_type: botType,
     description: agent?.description || profile.description || "",
+    instructions: agent?.instructions || "",
     default_image: agent?.image || "",
     image: agent?.image || "",
     from_template: agent?.from_template || "",

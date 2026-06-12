@@ -345,6 +345,16 @@ export function AgentProfileModal({
                   onInput={(event) => onAgentDraftChange({ ...agentDraft, description: event.currentTarget.value })}
                 />
               </label>
+              {!isNotificationContext ? (
+                <label className="field span-2">
+                  <span>{t("agentInstructions")}</span>
+                  <textarea
+                    className="compact-textarea"
+                    value={agentDraft.instructions || ""}
+                    onInput={(event) => onAgentDraftChange({ ...agentDraft, instructions: event.currentTarget.value })}
+                  />
+                </label>
+              ) : null}
             </div>
           </section>
           {isNotificationContext ? (

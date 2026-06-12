@@ -1703,6 +1703,7 @@ func TestHandleAgentsCreateReplaceFieldMaskMergesInService(t *testing.T) {
 func TestAgentCreateRequestFromAPIIncludesFromTemplate(t *testing.T) {
 	got := agentCreateRequestFromAPI(apitypes.CreateAgentRequest{
 		Name:         "alice",
+		Instructions: "follow AGENTS",
 		RuntimeKind:  agent.RuntimeKindCodex,
 		FromTemplate: "builtin.frontend-alice",
 		Profile:      "codex-fast",
@@ -1719,6 +1720,9 @@ func TestAgentCreateRequestFromAPIIncludesFromTemplate(t *testing.T) {
 	}
 	if got.Spec.Profile != "codex-fast" {
 		t.Fatalf("Spec.Profile = %q, want %q", got.Spec.Profile, "codex-fast")
+	}
+	if got.Spec.Instructions != "follow AGENTS" {
+		t.Fatalf("Spec.Instructions = %q, want %q", got.Spec.Instructions, "follow AGENTS")
 	}
 }
 

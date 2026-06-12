@@ -100,6 +100,7 @@ type fakeAgentRuntime struct {
 	workspace  func(string) string
 	skills     func(string) string
 	hostLogs   func(string) []string
+	refresh    func(context.Context, agentruntime.Handle) error
 	provision  func(context.Context, agentruntime.ProvisionRequest) error
 	new        func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
@@ -167,6 +168,13 @@ func (f fakeAgentRuntime) New(ctx context.Context, spec agentruntime.Spec) (agen
 		return f.new(ctx, spec)
 	}
 	return agentruntime.Handle{}, nil
+}
+
+func (f fakeAgentRuntime) RefreshWorkspaceAgentsFile(ctx context.Context, h agentruntime.Handle) error {
+	if f.refresh != nil {
+		return f.refresh(ctx, h)
+	}
+	return nil
 }
 
 func (f fakeAgentRuntime) Start(ctx context.Context, h agentruntime.Handle) (agentruntime.State, error) {
@@ -1088,6 +1096,89 @@ func TestUpdateAgentProfileCodexRuntimeFallbackRestartsActiveBridge(t *testing.T
 	}
 }
 
+func TestUpdateInstructionsRefreshesCodexWorkspaceAgentsFile(t *testing.T) {
+	var refreshCalls []agentruntime.Handle
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			refresh: func(_ context.Context, h agentruntime.Handle) error {
+				refreshCalls = append(refreshCalls, h)
+				return nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:           "u-dev",
+		Name:         "dev",
+		RuntimeID:    "rt-u-dev",
+		RuntimeKind:  RuntimeKindCodex,
+		Role:         RoleWorker,
+		Status:       string(agentruntime.StateStopped),
+		Instructions: "old instructions",
+		CreatedAt:    time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+
+	nextInstructions := "write AGENTS block"
+	updated, err := svc.Update(context.Background(), "u-dev", UpdateRequest{Instructions: &nextInstructions})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.Instructions != nextInstructions {
+		t.Fatalf("Update().Instructions = %q, want %q", updated.Instructions, nextInstructions)
+	}
+	if len(refreshCalls) != 1 {
+		t.Fatalf("RefreshWorkspaceAgentsFile() calls = %d, want 1", len(refreshCalls))
+	}
+	if got, want := refreshCalls[0].RuntimeID, "rt-u-dev"; got != want {
+		t.Fatalf("RefreshWorkspaceAgentsFile() runtime id = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateInstructionsDoesNotRefreshNonCodexRuntime(t *testing.T) {
+	refreshCalled := false
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindPicoClawSandbox,
+			refresh: func(context.Context, agentruntime.Handle) error {
+				refreshCalled = true
+				return nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:           "u-dev",
+		Name:         "dev",
+		RuntimeID:    "rt-u-dev",
+		RuntimeKind:  RuntimeKindPicoClawSandbox,
+		Role:         RoleWorker,
+		Status:       string(sandbox.StateStopped),
+		Instructions: "old instructions",
+		CreatedAt:    time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+
+	nextInstructions := "do not refresh"
+	if _, err := svc.Update(context.Background(), "u-dev", UpdateRequest{Instructions: &nextInstructions}); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if refreshCalled {
+		t.Fatal("RefreshWorkspaceAgentsFile() called for non-codex runtime, want no call")
+	}
+}
+
 func TestCreateWorkerTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
@@ -1748,11 +1839,12 @@ func TestCreateReplaceFieldMaskMergesExistingAgent(t *testing.T) {
 
 	if _, err := svc.Create(context.Background(), CreateRequest{
 		Spec: CreateAgentSpec{
-			ID:          "u-alice",
-			Name:        "alice",
-			Description: "worker",
-			Image:       "agent-image:v1",
-			RuntimeKind: RuntimeKindPicoClawSandbox,
+			ID:           "u-alice",
+			Name:         "alice",
+			Description:  "worker",
+			Instructions: "existing instructions",
+			Image:        "agent-image:v1",
+			RuntimeKind:  RuntimeKindPicoClawSandbox,
 		},
 	}); err != nil {
 		t.Fatalf("Create() seed error = %v", err)
@@ -1760,10 +1852,11 @@ func TestCreateReplaceFieldMaskMergesExistingAgent(t *testing.T) {
 
 	replaced, err := svc.Create(context.Background(), CreateRequest{
 		Spec: CreateAgentSpec{
-			ID:          "u-alice",
-			Name:        "alice-v2",
-			Description: "",
-			Image:       "agent-image:v2",
+			ID:           "u-alice",
+			Name:         "alice-v2",
+			Description:  "",
+			Instructions: "new instructions",
+			Image:        "agent-image:v2",
 		},
 		Replace:   true,
 		FieldMask: []string{"id", "name"},
@@ -1777,8 +1870,65 @@ func TestCreateReplaceFieldMaskMergesExistingAgent(t *testing.T) {
 	if replaced.Description != "worker" {
 		t.Fatalf("Create() description = %q, want preserved description", replaced.Description)
 	}
+	if replaced.Instructions != "existing instructions" {
+		t.Fatalf("Create() instructions = %q, want preserved instructions", replaced.Instructions)
+	}
 	if replaced.Image != "agent-image:v1" {
 		t.Fatalf("Create() image = %q, want preserved image", replaced.Image)
+	}
+}
+
+func TestUpdateInstructionsPersistsToState(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		statePath,
+		WithRuntime(fakeAgentRuntime{kind: RuntimeKindCodex}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	svc.agents["u-alice"] = Agent{
+		ID:           "u-alice",
+		Name:         "alice",
+		Description:  "worker",
+		Instructions: "old instructions",
+		RuntimeID:    "rt-u-alice",
+		RuntimeKind:  RuntimeKindCodex,
+		Role:         RoleWorker,
+		Status:       string(agentruntime.StateStopped),
+		CreatedAt:    time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC),
+	}
+	svc.mu.Lock()
+	svc.syncRuntimeRecordLocked(svc.agents["u-alice"])
+	if err := svc.saveLocked(); err != nil {
+		svc.mu.Unlock()
+		t.Fatalf("saveLocked() seed error = %v", err)
+	}
+	svc.mu.Unlock()
+
+	nextInstructions := "keep responses short"
+	updated, err := svc.Update(context.Background(), "u-alice", UpdateRequest{Instructions: &nextInstructions})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.Instructions != nextInstructions {
+		t.Fatalf("Update().Instructions = %q, want %q", updated.Instructions, nextInstructions)
+	}
+
+	reloaded, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", statePath)
+	if err != nil {
+		t.Fatalf("NewService() reload error = %v", err)
+	}
+	got, ok := reloaded.Agent("u-alice")
+	if !ok {
+		t.Fatal("Agent() ok = false, want true")
+	}
+	if got.Instructions != nextInstructions {
+		t.Fatalf("reloaded Agent().Instructions = %q, want %q", got.Instructions, nextInstructions)
 	}
 }
 

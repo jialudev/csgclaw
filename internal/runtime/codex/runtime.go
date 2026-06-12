@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"csgclaw/internal/activity"
+	"csgclaw/internal/agent"
 	"csgclaw/internal/codexmodel"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
@@ -33,11 +34,12 @@ const (
 )
 
 type AgentRef struct {
-	ID        string
-	Name      string
-	RuntimeID string
-	HandleID  string
-	Profile   agentruntime.Profile
+	ID           string
+	Name         string
+	RuntimeID    string
+	HandleID     string
+	Instructions string
+	Profile      agentruntime.Profile
 }
 
 type SessionSpec struct {
@@ -382,6 +384,9 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 	if err := r.seedCodexHomeSkills(spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
+	if err := r.refreshCodexWorkspaceAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.WorkspaceDir); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(spec.BinaryPath) == "" {
 		binaryPath, err := r.ensureBinary(ctx)
 		if err != nil {
@@ -446,6 +451,9 @@ func (r *Runtime) hydratePersistedSession(ctx context.Context, manager *appServe
 		CodexHomeDir: strings.TrimSpace(sessionMeta.CodexHomeDir),
 		StderrPath:   filepath.Join(runtimeDir, homeDirName, stderrLogFileName),
 		Profile:      agentRef.Profile.Normalized(),
+	}
+	if err := r.refreshCodexWorkspaceAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.WorkspaceDir); err != nil {
+		return nil, err
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -682,6 +690,87 @@ func (r *Runtime) resolveAgent(h agentruntime.Handle) (AgentRef, error) {
 		return AgentRef{}, fmt.Errorf("resolved agent is incomplete")
 	}
 	return agentRef, nil
+}
+
+func (r *Runtime) RefreshWorkspaceAgentsFile(_ context.Context, h agentruntime.Handle) error {
+	agentRef, err := r.resolveAgent(h)
+	if err != nil {
+		return err
+	}
+	dirs, err := r.ensureRuntimeDirs(agentRef.Name)
+	if err != nil {
+		return err
+	}
+	return r.refreshCodexWorkspaceAgentsFile(h, dirs.Workspace)
+}
+
+func (r *Runtime) refreshCodexWorkspaceAgentsFile(h agentruntime.Handle, workspaceDir string) error {
+	workspaceDir = strings.TrimSpace(workspaceDir)
+	if workspaceDir == "" {
+		return fmt.Errorf("workspace dir is required")
+	}
+	agentRef, err := r.resolveAgent(h)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(workspaceDir, "AGENTS.md")
+	block := agent.RenderAgentsInstructionsBlock(agentRef.Instructions)
+	current, err := r.readFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read codex workspace AGENTS.md %s: %w", path, err)
+	}
+	merged := mergeAgentsInstructionsBlock(string(current), block)
+	if err == nil && string(current) == merged {
+		return nil
+	}
+	if err := r.writeFile(path, []byte(merged), 0o644); err != nil {
+		return fmt.Errorf("write codex workspace AGENTS.md %s: %w", path, err)
+	}
+	return nil
+}
+
+func mergeAgentsInstructionsBlock(current, block string) string {
+	start, end := agent.AgentsInstructionsBlockMarkers()
+	current = strings.ReplaceAll(current, "\r\n", "\n")
+	block = strings.TrimRight(strings.ReplaceAll(block, "\r\n", "\n"), "\n")
+
+	if replaced, ok := replaceAgentsInstructionsBlock(current, start, end, block); ok {
+		return replaced
+	}
+	if strings.TrimSpace(current) == "" {
+		return block + "\n"
+	}
+	return joinAgentsInstructionsSections(current, block, "")
+}
+
+func replaceAgentsInstructionsBlock(current, start, end, block string) (string, bool) {
+	startIdx := strings.Index(current, start)
+	if startIdx < 0 {
+		return "", false
+	}
+	endIdx := strings.Index(current[startIdx:], end)
+	if endIdx < 0 {
+		return joinAgentsInstructionsSections(current[:startIdx], block, ""), true
+	}
+	endPos := startIdx + endIdx + len(end)
+	prefix := current[:startIdx]
+	suffix := current[endPos:]
+	return joinAgentsInstructionsSections(prefix, block, suffix), true
+}
+
+func joinAgentsInstructionsSections(parts ...string) string {
+	sections := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(strings.ReplaceAll(part, "\r\n", "\n"))
+		if part == "" {
+			continue
+		}
+		sections = append(sections, part)
+	}
+	if len(sections) == 0 {
+		return ""
+	}
+	return strings.Join(sections, "\n\n") + "\n"
 }
 
 func (r *Runtime) readRuntimeMetadata(runtimeID string) (runtimeMetadata, error) {

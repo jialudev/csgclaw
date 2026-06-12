@@ -109,6 +109,7 @@ type agentResponse struct {
 	ID               string                         `json:"id"`
 	Name             string                         `json:"name"`
 	Description      string                         `json:"description,omitempty"`
+	Instructions     string                         `json:"instructions,omitempty"`
 	RuntimeID        string                         `json:"runtime_id,omitempty"`
 	RuntimeKind      string                         `json:"runtime_kind,omitempty"`
 	Image            string                         `json:"image,omitempty"`
@@ -893,6 +894,7 @@ func agentCreateRequestFromAPI(req apitypes.CreateAgentRequest) agent.CreateRequ
 			ID:             req.ID,
 			Name:           req.Name,
 			Description:    req.Description,
+			Instructions:   req.Instructions,
 			Image:          req.Image,
 			Avatar:         req.Avatar,
 			RuntimeKind:    req.RuntimeKind,
@@ -1910,6 +1912,7 @@ func presentAgent(item agent.Agent) agentResponse {
 		ID:               item.ID,
 		Name:             item.Name,
 		Description:      item.Description,
+		Instructions:     item.Instructions,
 		RuntimeID:        item.RuntimeID,
 		RuntimeKind:      item.RuntimeKind,
 		Image:            item.Image,

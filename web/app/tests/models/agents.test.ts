@@ -54,6 +54,7 @@ describe("agent model helpers", () => {
       },
       id: "worker-1",
       image: "worker:latest",
+      instructions: "keep answers short",
       name: "Worker",
       role: "worker",
       runtime_kind: "openclaw_sandbox",
@@ -64,6 +65,7 @@ describe("agent model helpers", () => {
       api_key_preview: "sk-...",
       api_key_set: true,
       image: "worker:latest",
+      instructions: "keep answers short",
       model_id: "qwen3",
       name: "Worker",
       provider: "api",
@@ -487,9 +489,12 @@ describe("agent model helpers", () => {
       },
     });
 
-    expect(isAgentIncomplete({ id: "u-manager", profile_complete: false, agent_profile: { profile_complete: false } }, draft)).toBe(
-      false,
-    );
+    expect(
+      isAgentIncomplete(
+        { id: "u-manager", profile_complete: false, agent_profile: { profile_complete: false } },
+        draft,
+      ),
+    ).toBe(false);
   });
 
   it("maps profile_incomplete status to offline label", () => {
@@ -509,9 +514,9 @@ describe("agent model helpers", () => {
 
     expect(shouldWaitForManagerRuntimeAfterProfileSave(runningManager)).toBe(false);
     expect(shouldWaitForManagerRuntimeAfterProfileSave(stoppedManager)).toBe(false);
-    expect(
-      shouldWaitForManagerRuntimeAfterProfileSave(runningManager, { profileIncompleteBeforeSave: true }),
-    ).toBe(true);
+    expect(shouldWaitForManagerRuntimeAfterProfileSave(runningManager, { profileIncompleteBeforeSave: true })).toBe(
+      true,
+    );
     expect(shouldWaitForManagerRuntimeAfterProfileSave({ ...runningManager, box_id: "" })).toBe(true);
     expect(
       shouldWaitForManagerRuntimeAfterProfileSave({

@@ -58,6 +58,34 @@ func (f fakeManager) Prompt(ctx context.Context, handle SessionHandle, req Promp
 	return PromptResponse{}, os.ErrNotExist
 }
 
+func newTestCodexRuntime(root string, resolve func(agentruntime.Handle) (AgentRef, error)) *Runtime {
+	return New(Dependencies{
+		BinaryProvider: fakeBinaryProvider{path: "/tmp/codex"},
+		AgentHome: func(agentName string) (string, error) {
+			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: resolve,
+		Manager: fakeManager{
+			start: func(_ context.Context, spec SessionSpec) (*Session, error) {
+				return &Session{
+					RuntimeID:    spec.RuntimeID,
+					AgentID:      spec.AgentID,
+					AgentName:    spec.AgentName,
+					SessionID:    "sess-test",
+					BinaryPath:   spec.BinaryPath,
+					WorkspaceDir: spec.WorkspaceDir,
+					HomeDir:      spec.HomeDir,
+					CodexHomeDir: spec.CodexHomeDir,
+					StderrPath:   spec.StderrPath,
+					ProcessID:    os.Getpid(),
+					CreatedAt:    time.Now().UTC(),
+					StartedAt:    time.Now().UTC(),
+				}, nil
+			},
+		},
+	})
+}
+
 func TestRuntimeCreateStartAndInfo(t *testing.T) {
 	root := t.TempDir()
 	hostHome := t.TempDir()
@@ -75,9 +103,10 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 		},
 		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
 			return AgentRef{
-				ID:        "u-alice",
-				Name:      "alice",
-				RuntimeID: h.RuntimeID,
+				ID:           "u-alice",
+				Name:         "alice",
+				RuntimeID:    h.RuntimeID,
+				Instructions: "Use concise Go comments.",
 				Profile: agentruntime.Profile{
 					ModelID: "gpt-5.5",
 					BaseURL: "https://runtime.example/v1",
@@ -171,6 +200,148 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 		`supports_websockets = false`,
 	)
 	assertRuntimeModelCatalog(t, filepath.Join(root, "alice", ".codex", "home", modelCatalogFileName), "gpt-5.5")
+	agentsRaw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read workspace AGENTS.md: %v", err)
+	}
+	agentsText := string(agentsRaw)
+	if !strings.Contains(agentsText, "BEGIN CSGCLAW-INSTRUCTIONS (auto-generated; do not edit)") {
+		t.Fatalf("workspace AGENTS.md missing instructions block:\n%s", agentsText)
+	}
+	if !strings.Contains(agentsText, "Use concise Go comments.") {
+		t.Fatalf("workspace AGENTS.md missing agent instructions:\n%s", agentsText)
+	}
+}
+
+func TestRefreshWorkspaceAgentsFileCreatesManagedFileWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "Prefer targeted tests."}, nil
+	})
+
+	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
+		t.Fatalf("RefreshWorkspaceAgentsFile() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, "Prefer targeted tests.") {
+		t.Fatalf("AGENTS.md = %q, want agent instructions", text)
+	}
+	if !strings.Contains(text, "END CSGCLAW-INSTRUCTIONS") {
+		t.Fatalf("AGENTS.md = %q, want instructions block end marker", text)
+	}
+}
+
+func TestRefreshWorkspaceAgentsFileAppendsManagedBlockToExistingUserFile(t *testing.T) {
+	root := t.TempDir()
+	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "Use Chinese in docs."}, nil
+	})
+
+	agentsPath := filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(agentsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentsPath, []byte("# User AGENTS\n\nKeep custom notes here.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
+		t.Fatalf("RefreshWorkspaceAgentsFile() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, "# User AGENTS\n\nKeep custom notes here.") {
+		t.Fatalf("AGENTS.md = %q, want preserved user content", text)
+	}
+	if !strings.Contains(text, "Use Chinese in docs.") {
+		t.Fatalf("AGENTS.md = %q, want appended instructions block", text)
+	}
+}
+
+func TestRefreshWorkspaceAgentsFileReplacesExistingInstructionsBlock(t *testing.T) {
+	root := t.TempDir()
+	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "New instructions."}, nil
+	})
+
+	agentsPath := filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(agentsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldBlock := `<!-- BEGIN CSGCLAW-INSTRUCTIONS (auto-generated; do not edit) -->
+
+# CSGClaw Instructions
+
+old block
+
+<!-- END CSGCLAW-INSTRUCTIONS -->
+`
+	if err := os.WriteFile(agentsPath, []byte("# User AGENTS\n\n"+oldBlock+"\nProject footer.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
+		t.Fatalf("RefreshWorkspaceAgentsFile() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "old block") {
+		t.Fatalf("AGENTS.md = %q, want old instructions block removed", text)
+	}
+	if !strings.Contains(text, "New instructions.") {
+		t.Fatalf("AGENTS.md = %q, want new instructions block inserted", text)
+	}
+	if !strings.Contains(text, "Project footer.") {
+		t.Fatalf("AGENTS.md = %q, want suffix preserved", text)
+	}
+	if !strings.Contains(text, "BEGIN CSGCLAW-INSTRUCTIONS (auto-generated; do not edit)") {
+		t.Fatalf("AGENTS.md = %q, want new marker present", text)
+	}
+}
+
+func TestRefreshWorkspaceAgentsFileIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "Stay focused."}, nil
+	})
+
+	handle := agentruntime.Handle{RuntimeID: "rt-u-alice"}
+	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), handle); err != nil {
+		t.Fatalf("first RefreshWorkspaceAgentsFile() error = %v", err)
+	}
+	agentsPath := filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md")
+	first, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read first AGENTS.md: %v", err)
+	}
+
+	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), handle); err != nil {
+		t.Fatalf("second RefreshWorkspaceAgentsFile() error = %v", err)
+	}
+	second, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("read second AGENTS.md: %v", err)
+	}
+
+	if string(first) != string(second) {
+		t.Fatalf("AGENTS.md changed between refreshes:\nfirst:\n%s\nsecond:\n%s", string(first), string(second))
+	}
+	if got, want := strings.Count(string(second), "BEGIN CSGCLAW-INSTRUCTIONS (auto-generated; do not edit)"), 1; got != want {
+		t.Fatalf("instructions block start count = %d, want %d", got, want)
+	}
 }
 
 func TestRuntimeStopAndDelete(t *testing.T) {
@@ -932,6 +1103,13 @@ func TestRuntimeCreateAlwaysWritesResponsesConfig(t *testing.T) {
 		BinaryProvider: fakeBinaryProvider{path: "/tmp/codex"},
 		AgentHome: func(agentName string) (string, error) {
 			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
+			return AgentRef{
+				ID:        "u-alice",
+				Name:      "alice",
+				RuntimeID: h.RuntimeID,
+			}, nil
 		},
 		Manager: fakeManager{
 			start: func(_ context.Context, spec SessionSpec) (*Session, error) {

@@ -1,0 +1,47 @@
+{{ .StartMarker }}
+
+{{if .HasInstructions}}
+# Agent Instructions
+
+{{ .Instructions }}
+
+{{end}}
+# CSGClaw Rules
+
+### Scope
+
+- Use direct `csgclaw-cli` commands for routine room, participant, member, and message operations after workers already exist.
+- This includes creating rooms, listing rooms or participants, listing room members, adding room members, and sending messages including structured mentions.
+- Do not use this rule set to create a new worker. For new agent provisioning or hub-template creation, use the dedicated agent/template creation flow instead of bare participant-create commands.
+- Do not use this rule set for multi-worker orchestration, cross-worker sequencing, or tracker-style task coordination; use `agent-teams` when team execution is intended.
+
+### Workflow
+
+1. Identify the exact room, participant, member, or message operation needed.
+2. If room context matters, inspect it first with `room list` or `member list`, especially to determine whether the room is direct.
+3. Check the current CLI surface with `csgclaw-cli <entity> -h` or `csgclaw-cli <entity> <verb> -h` before assuming flags.
+4. Execute the smallest direct CLI command that completes the request.
+5. Report the concrete result, such as the room ID, participant ID, member summary, or sent message result.
+
+### Room And Participant Rules
+
+- Use participant IDs at the CLI boundary. For the local CSGClaw manager use `manager`; use `u-manager` only for agent routes or API fields that require an agent ID.
+- Run `participant list` before creating or mentioning a worker if the user may be referring to an existing participant.
+- Verify room membership with `member list` when room presence matters, and after adding a member when membership is part of the task.
+- A direct room cannot accept an added participant as a new member. Create a new room with the complete `--member-ids` set that includes the current DM participants and the new participant instead.
+- Keep channel-specific IDs straight. In the local `csgclaw` channel use CSGClaw participant IDs; in Feishu use the configured Feishu participant IDs.
+
+### Worker Notification Rules
+
+- Workers are `mention_only`: they react to structured mentions, not plain-text `@name`.
+- Notify workers with `csgclaw-cli message create --mention-id <participant-id>` and verify delivery with `message list`.
+- Confirm that the stored message contains a structured `<at user_id="...">` tag; do not assume prose like `@worker-name` wakes the worker.
+- Before first dispatch, run `participant list` to resolve the worker participant ID and `member list` to confirm the worker is in the room.
+
+### Operating Rules
+
+- Prefer direct `csgclaw-cli` commands over ad hoc HTTP calls.
+- Keep the response focused on the concrete CLI result instead of introducing unrelated planning artifacts.
+- Use `agent-teams` for multi-worker team orchestration; use manual room messaging only when direct dispatch is actually intended.
+
+{{ .EndMarker }}

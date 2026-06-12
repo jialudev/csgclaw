@@ -38,6 +38,7 @@ type persistedAgent struct {
 	ID               string                   `json:"id"`
 	Name             string                   `json:"name"`
 	Description      string                   `json:"description,omitempty"`
+	Instructions     string                   `json:"instructions,omitempty"`
 	RuntimeID        string                   `json:"runtime_id,omitempty"`
 	RuntimeKind      string                   `json:"runtime_kind,omitempty"`
 	Image            string                   `json:"image,omitempty"`
@@ -74,6 +75,7 @@ func newPersistedAgent(a Agent) persistedAgent {
 		ID:               a.ID,
 		Name:             a.Name,
 		Description:      a.Description,
+		Instructions:     a.Instructions,
 		RuntimeID:        a.RuntimeID,
 		RuntimeKind:      a.RuntimeKind,
 		Image:            a.Image,
@@ -115,6 +117,7 @@ func (a persistedAgent) toAgent() Agent {
 		ID:               a.ID,
 		Name:             a.Name,
 		Description:      a.Description,
+		Instructions:     a.Instructions,
 		RuntimeID:        a.RuntimeID,
 		RuntimeKind:      a.RuntimeKind,
 		Image:            a.Image,

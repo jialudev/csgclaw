@@ -14,6 +14,10 @@ import (
 	"csgclaw/internal/utils"
 )
 
+type workspaceAgentsFileRefresher interface {
+	RefreshWorkspaceAgentsFile(context.Context, agentruntime.Handle) error
+}
+
 func (s *Service) AgentProfileView(id string) (AgentProfileView, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -225,6 +229,7 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 	ensureProfile := AgentProfile{}
 	shouldEnsureProfile := false
 	profileUpdated := false
+	instructionsUpdated := req.Instructions != nil
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -245,6 +250,9 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 	}
 	if req.Description != nil {
 		current.Description = strings.TrimSpace(*req.Description)
+	}
+	if req.Instructions != nil {
+		current.Instructions = strings.TrimSpace(*req.Instructions)
 	}
 	if req.Image != nil {
 		current.Image = strings.TrimSpace(*req.Image)
@@ -305,6 +313,11 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		return Agent{}, err
 	}
 	s.mu.Unlock()
+	if instructionsUpdated && runtimeKind == RuntimeKindCodex {
+		if err := s.refreshCodexWorkspaceInstructions(ctx, current); err != nil {
+			return Agent{}, err
+		}
+	}
 	if restartRequired && runningCodex {
 		s.stopLifecycleAgent(id)
 	}
@@ -324,6 +337,24 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		}
 	}
 	return updated, nil
+}
+
+func (s *Service) refreshCodexWorkspaceInstructions(ctx context.Context, got Agent) error {
+	if s == nil {
+		return fmt.Errorf("agent service is required")
+	}
+	if strings.TrimSpace(got.RuntimeKind) != RuntimeKindCodex {
+		return nil
+	}
+	runtimeImpl, err := s.runtimeForKind(got.RuntimeKind)
+	if err != nil {
+		return err
+	}
+	refresher, ok := runtimeImpl.(workspaceAgentsFileRefresher)
+	if !ok {
+		return nil
+	}
+	return refresher.RefreshWorkspaceAgentsFile(ctx, runtimeHandleForAgent(got))
 }
 
 func (s *Service) ListModelsForRequest(ctx context.Context, req ProfileModelRequest) ([]string, error) {

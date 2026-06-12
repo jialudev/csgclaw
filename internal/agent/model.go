@@ -18,6 +18,7 @@ type Agent struct {
 	ID               string                   `json:"id"`
 	Name             string                   `json:"name"`
 	Description      string                   `json:"description,omitempty"`
+	Instructions     string                   `json:"instructions,omitempty"`
 	RuntimeID        string                   `json:"runtime_id,omitempty"`
 	RuntimeKind      string                   `json:"runtime_kind,omitempty"`
 	Image            string                   `json:"image,omitempty"`
@@ -37,6 +38,7 @@ type CreateAgentSpec struct {
 	ID             string         `json:"id,omitempty"`
 	Name           string         `json:"name"`
 	Description    string         `json:"description,omitempty"`
+	Instructions   string         `json:"instructions,omitempty"`
 	Image          string         `json:"image,omitempty"`
 	Avatar         string         `json:"avatar,omitempty"`
 	RuntimeKind    string         `json:"runtime_kind,omitempty"`
@@ -52,6 +54,7 @@ type CreateAgentSpec struct {
 type UpdateRequest struct {
 	Name           *string         `json:"name,omitempty"`
 	Description    *string         `json:"description,omitempty"`
+	Instructions   *string         `json:"instructions,omitempty"`
 	Image          *string         `json:"image,omitempty"`
 	Avatar         *string         `json:"avatar,omitempty"`
 	RuntimeOptions *map[string]any `json:"runtime_options,omitempty"`

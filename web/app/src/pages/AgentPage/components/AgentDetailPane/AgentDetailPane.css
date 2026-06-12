@@ -32,6 +32,7 @@
 
 .agent-detail-pane > .entity-header,
 .agent-detail-pane > .entity-grid,
+.agent-detail-pane > .agent-instructions-section,
 .agent-detail-pane > .form-error,
 .agent-detail-pane > .form-warning {
   width: var(--agent-detail-content-width);
@@ -217,6 +218,13 @@
   padding: 14px 16px 16px;
   border-radius: 16px;
   background: var(--surface);
+}
+
+.agent-detail-pane .agent-instructions-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  line-height: 1.6;
 }
 
 .agent-detail-pane .profile-section-title {

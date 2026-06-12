@@ -64,6 +64,7 @@ const oldAgent: AgentLike = {
   },
   id: "u-manager",
   image: oldImage,
+  instructions: "reply briefly",
   model_id: "gpt-test",
   name: "manager",
   profile_complete: true,
@@ -219,6 +220,7 @@ describe("useAgentController", () => {
     expect(updateAgentRequest).toHaveBeenCalledWith(
       "u-manager",
       expect.objectContaining({
+        instructions: "reply briefly",
         name: "manager",
       }),
     );
