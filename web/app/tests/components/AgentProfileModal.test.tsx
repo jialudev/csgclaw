@@ -99,8 +99,8 @@ describe("AgentProfileModal", () => {
     expect(nameInput).toHaveAttribute("readonly");
   });
 
-  it("shows the instructions field for worker agents", () => {
-    render(
+  it("shows the instructions field for worker agents after the model section", () => {
+    const { container } = render(
       <AgentProfileModal
         t={t}
         agentModalMode="edit"
@@ -127,7 +127,83 @@ describe("AgentProfileModal", () => {
       />,
     );
 
-    expect(screen.getByText("Instructions")).toBeInTheDocument();
+    const modelSectionTitle = screen.getByText("Model");
+    const instructionSectionTitle = screen.getAllByText("Instructions")[0];
+    expect(instructionSectionTitle).toBeInTheDocument();
     expect(screen.getByDisplayValue("reply in Chinese")).toBeInTheDocument();
+    expect(modelSectionTitle.compareDocumentPosition(instructionSectionTitle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(container.querySelector(".profile-section .profile-section-title")?.textContent).toBe("Basics");
+  });
+
+  it("places avatar and name above a full-width description before the create-kind tabs", () => {
+    const { container } = render(
+      <AgentProfileModal
+        t={t}
+        agentModalMode="create"
+        editingAgent={null}
+        agentDraft={{ ...agentToDraft(worker), avatar: "", description: "Research and report findings." }}
+        onAgentDraftChange={vi.fn()}
+        onAgentModelsReset={vi.fn()}
+        hubTemplates={[]}
+        bootstrapConfig={{}}
+        managerAgent={null}
+        agentModels={[]}
+        agentModelBusy={false}
+        authStatuses={{}}
+        authBusyProvider=""
+        agentCreateBotKind="worker"
+        onAgentCreateBotKindChange={vi.fn()}
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onProviderLogin={vi.fn()}
+        agentError=""
+        agentProgress={null}
+        agentBusy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    const identityLayout = container.querySelector(".agent-identity-layout");
+    expect(identityLayout).toBeInTheDocument();
+    expect(identityLayout?.querySelector(".agent-avatar-field .agent-avatar-picker")).toBeInTheDocument();
+    expect(identityLayout?.querySelector(".agent-name-field")).toBeInTheDocument();
+    expect(identityLayout?.querySelector(".agent-description-field")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Worker")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Research and report findings.")).toBeInTheDocument();
+    const tabbar = container.querySelector(".agent-create-kind-tabbar");
+    expect(identityLayout?.compareDocumentPosition(tabbar as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("flattens notification bot fields without basics or notifications section titles", () => {
+    render(
+      <AgentProfileModal
+        t={t}
+        agentModalMode="create"
+        editingAgent={null}
+        agentDraft={{ ...agentToDraft(worker), bot_type: "notification", notifier_delivery_mode: "webhook" }}
+        onAgentDraftChange={vi.fn()}
+        onAgentModelsReset={vi.fn()}
+        hubTemplates={[]}
+        bootstrapConfig={{}}
+        managerAgent={null}
+        agentModels={[]}
+        agentModelBusy={false}
+        authStatuses={{}}
+        authBusyProvider=""
+        agentCreateBotKind="notification"
+        onAgentCreateBotKindChange={vi.fn()}
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onProviderLogin={vi.fn()}
+        agentError=""
+        agentProgress={null}
+        agentBusy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Basics")).not.toBeInTheDocument();
+    expect(screen.queryByText("profileNotifierSection")).not.toBeInTheDocument();
+    expect(screen.getByText("notifierDeliveryMode")).toBeInTheDocument();
   });
 });

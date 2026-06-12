@@ -1,4 +1,5 @@
-import { Check, MoreHorizontal } from "lucide-react";
+import { Check, Edit3, MoreHorizontal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/api/client";
 import { PROVIDERS, REASONING_EFFORTS, SHOW_AGENT_LIFECYCLE_ACTIONS } from "@/shared/constants/agents";
 import {
@@ -124,6 +125,8 @@ export function AgentDetailPane({
   onInvite,
   onOpenDM,
 }: AgentDetailPaneProps) {
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const descriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const isManager = item.role === "manager" || item.id === "u-manager";
   const running = isAgentRunning(item);
   const draftBelongsToItem = Boolean(draft) && String(draft?.agent_id ?? "").trim() === String(item?.id ?? "").trim();
@@ -138,6 +141,20 @@ export function AgentDetailPane({
     hasUnsavedChangesProp ?? Boolean(draft && savedDraft && JSON.stringify(draft) !== JSON.stringify(savedDraft));
   const saveDisabled = agentProfilePageSaveDisabled(draft, item, { saving, savedDraft });
   const updateDraft = (patch: Partial<AgentDraft>) => onDraftChange?.({ ...(draft || agentToDraft(item)), ...patch });
+
+  useEffect(() => {
+    if (!draft) {
+      setIsEditingDescription(false);
+    }
+  }, [draft]);
+
+  useEffect(() => {
+    if (!isEditingDescription) {
+      return;
+    }
+    descriptionInputRef.current?.focus();
+  }, [isEditingDescription]);
+
   return (
     <section className="entity-pane agent-detail-pane">
       <header className="entity-header">
@@ -173,6 +190,41 @@ export function AgentDetailPane({
               <span className="status-pill profile-state-pill warn">{t("profileRestartRequired")}</span>
             ) : null}
           </div>
+          {draft ? (
+            isEditingDescription ? (
+              <label className="field entity-description-field">
+                <span className="sr-only">{t("agentDescription")}</span>
+                <textarea
+                  ref={descriptionInputRef}
+                  className="compact-textarea"
+                  value={draft.description}
+                  onBlur={() => setIsEditingDescription(false)}
+                  onInput={(event) => updateDraft({ description: event.currentTarget.value })}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  placeholder={t("agentDescription")}
+                />
+              </label>
+            ) : (
+              <button
+                type="button"
+                className={`entity-description-display ${draft.description ? "" : "is-empty"}`.trim()}
+                aria-label={t("editDescription")}
+                onClick={() => setIsEditingDescription(true)}
+              >
+                <span className="entity-description-display-copy">{draft.description || t("agentDescription")}</span>
+                <span className="entity-description-display-icon" aria-hidden="true">
+                  <Edit3 size={16} strokeWidth={1.8} />
+                </span>
+              </button>
+            )
+          ) : item.description ? (
+            <div className="entity-description-text">{item.description}</div>
+          ) : null}
         </div>
         <div className="entity-toolbar">
           <Button
@@ -276,52 +328,31 @@ export function AgentDetailPane({
           <section className="profile-section">
             <div className="profile-section-title">{t("profileBasics")}</div>
             <div className="profile-grid-compact">
-              <label className="field">
-                {requiredFieldLabel(t("agentName"))}
-                <input
-                  value={draft.name}
-                  readOnly
-                  disabled
-                  required
-                  aria-required="true"
-                  onInput={(event) => updateDraft({ name: event.currentTarget.value })}
-                  placeholder={t("agentNamePlaceholder")}
-                />
-              </label>
-              <label className="field">
-                <span>{t("profileRuntimeKind")}</span>
-                <input value={draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
-              </label>
               {!isNotifierRuntimeDraftOnAgentPage(draft, item) ? (
-                <label className="field span-2 agent-image-field">
-                  <span>{t("agentImage")}</span>
-                  <input
-                    className="long-image-input"
-                    value={draft.image}
-                    title={draft.image}
-                    readOnly
-                    disabled
-                    onInput={(event) => updateDraft({ image: event.currentTarget.value })}
-                    placeholder={t("agentImagePlaceholder")}
-                  />
+                <div className="agent-runtime-image-row span-2">
+                  <label className="field">
+                    <span>{t("profileRuntimeKind")}</span>
+                    <input value={draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
+                  </label>
+                  <label className="field agent-image-field">
+                    <span>{t("agentImage")}</span>
+                    <input
+                      className="long-image-input"
+                      value={draft.image}
+                      title={draft.image}
+                      readOnly
+                      disabled
+                      onInput={(event) => updateDraft({ image: event.currentTarget.value })}
+                      placeholder={t("agentImagePlaceholder")}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <label className="field">
+                  <span>{t("profileRuntimeKind")}</span>
+                  <input value={draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
                 </label>
-              ) : null}
-              <label className="field span-2">
-                <span>{t("agentDescription")}</span>
-                <textarea
-                  className="compact-textarea"
-                  value={draft.description}
-                  onInput={(event) => updateDraft({ description: event.currentTarget.value })}
-                />
-              </label>
-              <label className="field span-2">
-                <span>{t("agentInstructions")}</span>
-                <textarea
-                  className="compact-textarea"
-                  value={draft.instructions || ""}
-                  onInput={(event) => updateDraft({ instructions: event.currentTarget.value })}
-                />
-              </label>
+              )}
             </div>
           </section>
 
@@ -395,6 +426,21 @@ export function AgentDetailPane({
               onPatch={(patch) => updateDraft(patch)}
             />
           )}
+
+          {!isNotifierRuntimeDraftOnAgentPage(draft, item) ? (
+            <section className="profile-section">
+              <div className="profile-grid-compact">
+                <label className="field span-2">
+                  <span>{t("agentInstructions")}</span>
+                  <textarea
+                    className="compact-textarea"
+                    value={draft.instructions || ""}
+                    onInput={(event) => updateDraft({ instructions: event.currentTarget.value })}
+                  />
+                </label>
+              </div>
+            </section>
+          ) : null}
 
           {!isNotifierRuntimeDraftOnAgentPage(draft, item) && draft.provider === "api" ? (
             <section className="profile-section">

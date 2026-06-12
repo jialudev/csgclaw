@@ -739,9 +739,44 @@
   grid-column: 1 / -1;
 }
 
-.agent-basics-grid .agent-avatar-field {
+.agent-identity-section {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.agent-identity-layout {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.agent-identity-section .agent-avatar-field {
+  grid-row: 1;
+  grid-column: 1;
   width: 44px;
   min-width: 44px;
+  margin: 0;
+  padding-top: 28px;
+}
+
+.agent-identity-section .agent-name-field {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+.agent-identity-section .agent-description-field {
+  grid-column: 1 / -1;
+}
+
+.agent-modal .agent-identity-section .agent-avatar-field .agent-avatar-picker,
+.agent-modal .agent-identity-section .agent-avatar-field .agent-avatar-trigger,
+.agent-modal .agent-identity-section .agent-avatar-field .agent-avatar-trigger-image {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
 }
 
 .agent-basics-grid .agent-runtime-image-row {
@@ -1706,6 +1741,10 @@
 
 @media (max-width: 640px) {
   .agent-basics-grid {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .agent-identity-layout {
     grid-template-columns: 44px minmax(0, 1fr);
   }
 

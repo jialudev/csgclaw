@@ -188,6 +188,39 @@ export function AgentProfileModal({
           className={`profile-editor-shell${isEditorScrolling ? " is-scrolling" : ""}`}
           onScroll={onEditorShellScroll}
         >
+          <section className="profile-section agent-identity-section">
+            <div className="agent-identity-layout">
+              <div className="field agent-avatar-field">
+                <span className="sr-only">{t("agentAvatar")}</span>
+                <AgentAvatarPicker
+                  value={agentDraft.avatar}
+                  t={t}
+                  mode="edit"
+                  onChange={(avatar) => onAgentDraftChange({ ...agentDraft, avatar })}
+                />
+              </div>
+              <label className="field agent-name-field">
+                {requiredFieldLabel(t("agentName"))}
+                <input
+                  value={agentDraft.name}
+                  readOnly={agentModalMode === "edit"}
+                  disabled={agentModalMode === "edit"}
+                  required
+                  aria-required="true"
+                  onInput={(event) => onAgentDraftChange({ ...agentDraft, name: event.currentTarget.value })}
+                  placeholder={t("agentNamePlaceholder")}
+                />
+              </label>
+              <label className="field agent-description-field">
+                <span>{t("agentDescription")}</span>
+                <textarea
+                  className="compact-textarea"
+                  value={agentDraft.description}
+                  onInput={(event) => onAgentDraftChange({ ...agentDraft, description: event.currentTarget.value })}
+                />
+              </label>
+            </div>
+          </section>
           {agentModalMode === "create" ? (
             <div
               className="workspace-tabbar agent-create-kind-tabbar"
@@ -218,145 +251,102 @@ export function AgentProfileModal({
               </Button>
             </div>
           ) : null}
-          <section className="profile-section">
-            <div className="profile-section-title">{t("profileBasics")}</div>
-            <div className="profile-grid profile-grid-compact agent-basics-grid">
-              {isWorkerCreate ? (
-                <label className="field span-2">
-                  <span>{t("templateLabel")}</span>
-                  <Select
-                    value={agentDraft.from_template || ""}
-                    onValueChange={(value) => {
-                      const nextTemplate = normalizeTemplateSelection(
-                        hubTemplates.find((item) => item.id === value) || null,
-                      );
-                      onAgentDraftChange((current) =>
-                        current
-                          ? applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || "")
-                          : current,
-                      );
-                    }}
-                    triggerProps={{ "aria-label": t("templateLabel") }}
-                    options={[
-                      { value: "", label: t("templateNone") },
-                      ...hubTemplates
-                        .filter((item) => item.id)
-                        .map((item) => ({ value: item.id || "", label: item.name || item.id || "" })),
-                    ]}
-                  />
-                </label>
-              ) : null}
-              <div className="field agent-avatar-field">
-                <span>{t("agentAvatar")}</span>
-                <AgentAvatarPicker
-                  value={agentDraft.avatar}
-                  t={t}
-                  mode="edit"
-                  onChange={(avatar) => onAgentDraftChange({ ...agentDraft, avatar })}
-                />
-              </div>
-              <label className="field">
-                {requiredFieldLabel(t("agentName"))}
-                <input
-                  value={agentDraft.name}
-                  readOnly={agentModalMode === "edit"}
-                  disabled={agentModalMode === "edit"}
-                  required
-                  aria-required="true"
-                  onInput={(event) => onAgentDraftChange({ ...agentDraft, name: event.currentTarget.value })}
-                  placeholder={t("agentNamePlaceholder")}
-                />
-              </label>
-              {agentModalMode === "create" ? (
-                <label className="field">
-                  <span>{t("roleLabel")}</span>
-                  <input value={agentDraft.role || "worker"} readOnly disabled />
-                </label>
-              ) : null}
-              {isWorkerCreate ? (
-                <div className="agent-runtime-image-row">
-                  <label className="field">
-                    <span>{t("profileRuntimeKind")}</span>
-                    {templateLocked ? (
-                      <input
-                        value={formatRuntimeKindLabel(
-                          normalizeRuntimeKind(agentDraft.runtime_kind) || DEFAULT_RUNTIME_KIND,
-                          t,
-                        )}
-                        readOnly
-                        disabled
-                      />
-                    ) : (
-                      <Select
-                        value={normalizeRuntimeKind(agentDraft.runtime_kind) || DEFAULT_RUNTIME_KIND}
-                        onValueChange={(value) => {
-                          const runtimeKind = normalizeRuntimeKind(value);
-                          const currentTemplate = normalizeTemplateSelection(
-                            hubTemplates.find((item) => item.id === agentDraft.from_template) || null,
-                          );
-                          const nextTemplate = templateMatchesRuntime(currentTemplate, runtimeKind)
-                            ? currentTemplate
-                            : pickDefaultAgentTemplate(hubTemplates, runtimeKind, bootstrapConfig);
-                          let nextDraft: AgentDraft = {
-                            ...agentDraft,
-                            bot_type: BOT_TYPE_NORMAL,
-                            role: "worker",
-                            runtime_kind: runtimeKind,
-                            image: runtimeImageForKind(
-                              runtimeKind,
-                              bootstrapConfig,
-                              agentDraft.default_image || managerAgent?.image || "",
-                            ),
-                          };
-                          nextDraft = applyTemplateToDraft(
-                            nextDraft,
-                            nextTemplate,
-                            bootstrapConfig,
-                            managerAgent?.image || "",
-                          );
-                          onAgentDraftChange(nextDraft);
-                          onAgentModelsReset();
-                        }}
-                        triggerProps={{ "aria-label": t("profileRuntimeKind") }}
-                        options={WORKER_RUNTIME_KIND_OPTIONS.map((option) => ({
-                          value: option.value,
-                          label: formatRuntimeKindLabel(option.value, t),
-                        }))}
-                      />
-                    )}
-                  </label>
-                  <label className="field">
-                    <span>{t("agentImage")}</span>
-                    <input
-                      value={agentDraft.image}
-                      readOnly={templateLocked}
-                      disabled={templateLocked}
-                      onInput={(event) => onAgentDraftChange({ ...agentDraft, image: event.currentTarget.value })}
-                      placeholder={t("agentImagePlaceholder")}
+          {!isNotificationContext ? (
+            <section className="profile-section">
+              <div className="profile-section-title">{t("profileBasics")}</div>
+              <div className="profile-grid profile-grid-compact agent-basics-grid">
+                {isWorkerCreate ? (
+                  <label className="field span-2">
+                    <span>{t("templateLabel")}</span>
+                    <Select
+                      value={agentDraft.from_template || ""}
+                      onValueChange={(value) => {
+                        const nextTemplate = normalizeTemplateSelection(
+                          hubTemplates.find((item) => item.id === value) || null,
+                        );
+                        onAgentDraftChange((current) =>
+                          current
+                            ? applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || "")
+                            : current,
+                        );
+                      }}
+                      triggerProps={{ "aria-label": t("templateLabel") }}
+                      options={[
+                        { value: "", label: t("templateNone") },
+                        ...hubTemplates
+                          .filter((item) => item.id)
+                          .map((item) => ({ value: item.id || "", label: item.name || item.id || "" })),
+                      ]}
                     />
                   </label>
-                </div>
-              ) : null}
-              <label className="field span-2">
-                <span>{t("agentDescription")}</span>
-                <textarea
-                  className="compact-textarea"
-                  value={agentDraft.description}
-                  onInput={(event) => onAgentDraftChange({ ...agentDraft, description: event.currentTarget.value })}
-                />
-              </label>
-              {!isNotificationContext ? (
-                <label className="field span-2">
-                  <span>{t("agentInstructions")}</span>
-                  <textarea
-                    className="compact-textarea"
-                    value={agentDraft.instructions || ""}
-                    onInput={(event) => onAgentDraftChange({ ...agentDraft, instructions: event.currentTarget.value })}
-                  />
-                </label>
-              ) : null}
-            </div>
-          </section>
+                ) : null}
+                {isWorkerCreate ? (
+                  <div className="agent-runtime-image-row">
+                    <label className="field">
+                      <span>{t("profileRuntimeKind")}</span>
+                      {templateLocked ? (
+                        <input
+                          value={formatRuntimeKindLabel(
+                            normalizeRuntimeKind(agentDraft.runtime_kind) || DEFAULT_RUNTIME_KIND,
+                            t,
+                          )}
+                          readOnly
+                          disabled
+                        />
+                      ) : (
+                        <Select
+                          value={normalizeRuntimeKind(agentDraft.runtime_kind) || DEFAULT_RUNTIME_KIND}
+                          onValueChange={(value) => {
+                            const runtimeKind = normalizeRuntimeKind(value);
+                            const currentTemplate = normalizeTemplateSelection(
+                              hubTemplates.find((item) => item.id === agentDraft.from_template) || null,
+                            );
+                            const nextTemplate = templateMatchesRuntime(currentTemplate, runtimeKind)
+                              ? currentTemplate
+                              : pickDefaultAgentTemplate(hubTemplates, runtimeKind, bootstrapConfig);
+                            let nextDraft: AgentDraft = {
+                              ...agentDraft,
+                              bot_type: BOT_TYPE_NORMAL,
+                              role: "worker",
+                              runtime_kind: runtimeKind,
+                              image: runtimeImageForKind(
+                                runtimeKind,
+                                bootstrapConfig,
+                                agentDraft.default_image || managerAgent?.image || "",
+                              ),
+                            };
+                            nextDraft = applyTemplateToDraft(
+                              nextDraft,
+                              nextTemplate,
+                              bootstrapConfig,
+                              managerAgent?.image || "",
+                            );
+                            onAgentDraftChange(nextDraft);
+                            onAgentModelsReset();
+                          }}
+                          triggerProps={{ "aria-label": t("profileRuntimeKind") }}
+                          options={WORKER_RUNTIME_KIND_OPTIONS.map((option) => ({
+                            value: option.value,
+                            label: formatRuntimeKindLabel(option.value, t),
+                          }))}
+                        />
+                      )}
+                    </label>
+                    <label className="field">
+                      <span>{t("agentImage")}</span>
+                      <input
+                        value={agentDraft.image}
+                        readOnly={templateLocked}
+                        disabled={templateLocked}
+                        onInput={(event) => onAgentDraftChange({ ...agentDraft, image: event.currentTarget.value })}
+                        placeholder={t("agentImagePlaceholder")}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
           {isNotificationContext ? (
             <NotifierControls
               agentID={agentModalMode === "edit" ? editingAgent?.id || "" : ""}
@@ -431,6 +421,18 @@ export function AgentProfileModal({
                   busy={authBusyProvider === normalizeAuthProviderName(agentDraft.provider)}
                   onLogin={onProviderLogin}
                 />
+              </section>
+              <section className="profile-section">
+                <div className="profile-grid-compact">
+                  <label className="field span-2">
+                    <span>{t("agentInstructions")}</span>
+                    <textarea
+                      className="compact-textarea"
+                      value={agentDraft.instructions || ""}
+                      onInput={(event) => onAgentDraftChange({ ...agentDraft, instructions: event.currentTarget.value })}
+                    />
+                  </label>
+                </div>
               </section>
               {agentDraft.provider === "api" ? (
                 <section className="profile-section">

@@ -53,8 +53,7 @@ export function NotifierControls({ agentID, draft, onPatch, t, webhookPublicOrig
   }
 
   return (
-    <section className="profile-section">
-      <div className="profile-section-title">{t("profileNotifierSection")}</div>
+    <div className="profile-section">
       <div className="profile-grid profile-grid-compact">
         <label className="field span-2">
           <span>{t("notifierDeliveryMode")}</span>
@@ -152,6 +151,6 @@ export function NotifierControls({ agentID, draft, onPatch, t, webhookPublicOrig
           </>
         ) : null}
       </div>
-    </section>
+    </div>
   );
 }

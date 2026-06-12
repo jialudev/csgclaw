@@ -1,11 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AgentDetailPane, AgentRow } from "@/pages/AgentPage/components";
+import { AgentDetailPane, AgentRow, NotificationParticipantDetailPane } from "@/pages/AgentPage/components";
 import { agentToDraft } from "@/models/agents";
 
 const labels: Record<string, string> = {
   agentDelete: "Delete",
+  agentInstructions: "Instructions",
   agentModel: "Model",
+  editDescription: "Edit description",
   agentRecreate: "Recreate",
   agentStart: "Start",
   agentStop: "Stop",
@@ -18,6 +20,7 @@ const labels: Record<string, string> = {
   profileCompleteBadge: "Complete",
   profileFastMode: "Fast mode",
   profileModel: "Model",
+  profileModelSection: "Model",
   profileProvider: "Provider",
   profileReasoning: "Reasoning",
   profileRestartRequired: "Recreate required",
@@ -35,6 +38,7 @@ function t(key: string): string {
 const worker = {
   id: "worker-1",
   name: "Worker",
+  description: "Agent description",
   role: "worker",
   runtime_kind: "picoclaw_sandbox",
   status: "running",
@@ -300,8 +304,9 @@ describe("agent action visibility", () => {
     expect(screen.getByRole("menuitem", { name: "Recreate" })).not.toHaveAttribute("data-disabled");
   });
 
-  it("keeps the agent detail name read-only while editing", () => {
-    render(
+  it("keeps header description compact until entering edit mode and removes duplicate basics fields", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
       <AgentDetailPane
         item={worker}
         t={t}
@@ -330,9 +335,53 @@ describe("agent action visibility", () => {
       />,
     );
 
-    const nameInput = screen.getByDisplayValue("Worker");
-    expect(nameInput).toBeDisabled();
-    expect(nameInput).toHaveAttribute("readonly");
+    expect(screen.getByRole("heading", { name: "Worker" })).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Agent description")).not.toBeInTheDocument();
+    const descriptionTrigger = screen.getByRole("button", { name: "Edit description" });
+    expect(descriptionTrigger).toHaveTextContent("Agent description");
+    expect(container.querySelector('input[value="Worker"]')).not.toBeInTheDocument();
+    expect(screen.queryByText("Description")).not.toBeInTheDocument();
+
+    await user.click(descriptionTrigger);
+    const descriptionInput = screen.getByDisplayValue("Agent description");
+    expect(descriptionInput).toBeInTheDocument();
+    expect(descriptionInput.tagName).toBe("TEXTAREA");
+  });
+
+  it("places instructions below the model section in the profile editor", () => {
+    render(
+      <AgentDetailPane
+        item={worker}
+        t={t}
+        activeRoom={null}
+        busyKey=""
+        error=""
+        draft={{ ...agentToDraft(worker), instructions: "reply in Chinese" }}
+        models={[]}
+        modelBusy={false}
+        saving={false}
+        publishBusy={false}
+        saveError=""
+        authStatuses={{}}
+        authBusyProvider=""
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onDraftChange={vi.fn()}
+        onSave={vi.fn()}
+        onPublish={vi.fn()}
+        onProviderLogin={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRecreate={vi.fn()}
+        onDelete={vi.fn()}
+        onInvite={vi.fn()}
+        onOpenDM={vi.fn()}
+      />,
+    );
+
+    const modelSectionTitle = screen.getAllByText("Model")[0];
+    const instructionSectionTitle = screen.getAllByText("Instructions")[0];
+    expect(screen.getByDisplayValue("reply in Chinese")).toBeInTheDocument();
+    expect(modelSectionTitle.compareDocumentPosition(instructionSectionTitle)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("shows long agent image values with full hover text and full-row alignment", () => {
@@ -370,7 +419,8 @@ describe("agent action visibility", () => {
     expect(imageInput).toHaveValue(image);
     expect(imageInput).toHaveAttribute("title", image);
     expect(imageInput).toHaveClass("long-image-input");
-    expect(imageInput.closest("label")).toHaveClass("span-2", "agent-image-field");
+    expect(imageInput.closest("label")).toHaveClass("agent-image-field");
+    expect(imageInput.closest(".agent-runtime-image-row")).toBeInTheDocument();
   });
 
   it("shows a saved status instead of a save button when the draft is unchanged", () => {
@@ -407,6 +457,51 @@ describe("agent action visibility", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Saved");
     expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+  });
+
+  it("matches the notification bot profile header interaction and keeps actions on the right", async () => {
+    const user = userEvent.setup();
+    const notifier = {
+      ...worker,
+      id: "notifier-1",
+      name: "Notifier",
+      description: "Notifier description",
+      type: "notification",
+      bot_type: "notification",
+      runtime_kind: "notifier",
+    };
+    const { container } = render(
+      <NotificationParticipantDetailPane
+        item={notifier}
+        t={t}
+        busyKey=""
+        error=""
+        saveError=""
+        draft={{ ...agentToDraft(notifier), notifier_delivery_mode: "webhook" }}
+        saving={false}
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onDraftChange={vi.fn()}
+        onSave={vi.fn()}
+        onOpenDM={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Basics")).not.toBeInTheDocument();
+    expect(screen.queryByText("profileNotifierSection")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Notifier" })).toBeInTheDocument();
+    const descriptionTrigger = screen.getByRole("button", { name: "Edit description" });
+    expect(descriptionTrigger).toHaveTextContent("Notifier description");
+    expect(descriptionTrigger.closest(".entity-heading")).toBeInTheDocument();
+    const toolbar = container.querySelector(".entity-header .entity-toolbar");
+    expect(toolbar).toBeInTheDocument();
+    expect(toolbar?.textContent).toContain("Save");
+    expect(toolbar?.textContent).toContain("DM");
+    expect(toolbar?.textContent).toContain("Delete");
+
+    await user.click(descriptionTrigger);
+    expect(screen.getByDisplayValue("Notifier description")).toBeInTheDocument();
+    expect(screen.getByText("notifierDeliveryMode")).toBeInTheDocument();
   });
 
   it("shows save changes when the draft differs from the saved draft", () => {
