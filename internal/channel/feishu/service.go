@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	feishuManagerBotID = "u-manager"
+	feishuManagerBotID = "manager"
 )
 
 type CreateUserRequest struct {
@@ -73,6 +73,7 @@ type SendMessageRequest struct {
 	Content          string
 	UUID             string
 	MentionID        string
+	MentionOpenID    string
 	MentionAppConfig AppConfig
 }
 
@@ -83,8 +84,6 @@ type SendMessageResponse struct {
 }
 
 type SendMessageFunc func(context.Context, AppConfig, SendMessageRequest) (SendMessageResponse, error)
-
-type ConfigReloadHook func(Snapshot)
 
 type Service struct {
 	mu               sync.RWMutex
@@ -102,7 +101,6 @@ type Service struct {
 	sendMessage      SendMessageFunc
 	messageBus       *MessageBus
 	configProvider   Provider
-	configReloadHook ConfigReloadHook
 }
 
 func NewService(apps ...map[string]AppConfig) *Service {
@@ -209,10 +207,18 @@ func (s *Service) MessageBus() *MessageBus {
 }
 
 func (s *Service) AppConfigs() map[string]AppConfig {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	provider := s.configProvider
+	apps := cloneAppConfigs(s.apps)
+	s.mu.RUnlock()
 
-	return cloneAppConfigs(s.apps)
+	if provider != nil {
+		return AppsFromSnapshot(provider.Snapshot())
+	}
+	return apps
 }
 
 func (s *Service) SetAppConfigs(apps map[string]AppConfig) {
@@ -285,11 +291,8 @@ func (s *Service) CreateUser(req CreateUserRequest) (im.User, error) {
 }
 
 func (s *Service) ListUsers() []im.User {
+	apps := s.AppConfigs()
 	s.mu.RLock()
-	apps := make(map[string]AppConfig, len(s.apps))
-	for botID, app := range s.apps {
-		apps[botID] = app
-	}
 	localUsers := make(map[string]im.User, len(s.users))
 	for id, user := range s.users {
 		localUsers[id] = user
@@ -454,7 +457,7 @@ func (s *Service) CreateRoom(req im.CreateRoomRequest) (im.Room, error) {
 	if err != nil {
 		return im.Room{}, err
 	}
-	adminOpenID := strings.TrimSpace(app.AdminOpenID)
+	adminOpenID := strings.TrimSpace(s.defaultAdminOpenID(app))
 	if adminOpenID == "" {
 		return im.Room{}, fmt.Errorf("feishu admin_open_id is required")
 	}
@@ -928,15 +931,18 @@ func defaultSendMessage(ctx context.Context, app AppConfig, req SendMessageReque
 	mentionID := strings.TrimSpace(req.MentionID)
 	mentionOpenID := ""
 	if mentionID != "" {
-		mentionApp, err := validateAppConfig(req.MentionAppConfig, mentionID)
-		if err != nil {
-			return SendMessageResponse{}, err
+		mentionOpenID = strings.TrimSpace(req.MentionOpenID)
+		if mentionOpenID == "" {
+			mentionApp, err := validateAppConfig(req.MentionAppConfig, mentionID)
+			if err != nil {
+				return SendMessageResponse{}, err
+			}
+			botInfo, err := fetchBotInfo(ctx, mentionApp)
+			if err != nil {
+				return SendMessageResponse{}, err
+			}
+			mentionOpenID = botInfo.OpenID
 		}
-		botInfo, err := fetchBotInfo(ctx, mentionApp)
-		if err != nil {
-			return SendMessageResponse{}, err
-		}
-		mentionOpenID = botInfo.OpenID
 		text = fmt.Sprintf("<at user_id=\"%s\">%s</at> %s", mentionOpenID, mentionID, slashcommand.RenderFeishuFallback(req.Content))
 	}
 
@@ -1026,8 +1032,13 @@ func (s *Service) SendMessage(req im.CreateMessageRequest) (im.Message, error) {
 	app, err := s.appConfigForSenderLocked(senderID)
 	mentionID := strings.TrimSpace(req.MentionID)
 	var mentionApp AppConfig
+	var mentionOpenID string
 	if err == nil && mentionID != "" {
-		mentionApp, err = s.appConfigForMentionLocked(mentionID)
+		if openID, ok := s.participantMentionOpenIDLocked(mentionID); ok {
+			mentionOpenID = openID
+		} else {
+			mentionApp, err = s.appConfigForMentionLocked(mentionID)
+		}
 	}
 	s.mu.RUnlock()
 	if err != nil {
@@ -1040,6 +1051,7 @@ func (s *Service) SendMessage(req im.CreateMessageRequest) (im.Message, error) {
 		Content:          content,
 		UUID:             fallbackID,
 		MentionID:        mentionID,
+		MentionOpenID:    mentionOpenID,
 		MentionAppConfig: mentionApp,
 	})
 	if err != nil {
@@ -1049,8 +1061,11 @@ func (s *Service) SendMessage(req im.CreateMessageRequest) (im.Message, error) {
 	if senderOpenID == "" {
 		return im.Message{}, fmt.Errorf("resolve feishu sender open_id: empty open_id for %q", senderID)
 	}
-	mentionOpenID := strings.TrimSpace(sent.MentionOpenID)
-	if mentionID != "" && mentionOpenID == "" {
+	sentMentionOpenID := strings.TrimSpace(sent.MentionOpenID)
+	if sentMentionOpenID == "" {
+		sentMentionOpenID = mentionOpenID
+	}
+	if mentionID != "" && sentMentionOpenID == "" {
 		return im.Message{}, fmt.Errorf("resolve feishu mention open_id: empty open_id for %q", mentionID)
 	}
 
@@ -1066,8 +1081,8 @@ func (s *Service) SendMessage(req im.CreateMessageRequest) (im.Message, error) {
 		CreatedAt: time.Now().UTC(),
 		Mentions:  nil,
 	}
-	if mentionOpenID != "" {
-		message.Mentions = []im.Mention{{ID: mentionOpenID, Name: mentionID}}
+	if sentMentionOpenID != "" {
+		message.Mentions = []im.Mention{{ID: sentMentionOpenID, Name: mentionID}}
 	}
 
 	s.mu.Lock()
@@ -1098,7 +1113,7 @@ func (s *Service) ResolveBotOpenID(ctx context.Context, botID string) (string, s
 	}
 
 	s.mu.RLock()
-	app, ok := s.apps[botID]
+	app, ok := s.appConfigByIDLocked(botID)
 	s.mu.RUnlock()
 	if !ok {
 		return botID, "", nil
@@ -1322,8 +1337,8 @@ func (s *Service) botIdentityMap(ctx context.Context) (botIdentityMap, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	apps := s.AppConfigs()
 	s.mu.RLock()
-	apps := cloneAppConfigs(s.apps)
 	resolveBotInfo := s.resolveBotInfo
 	s.mu.RUnlock()
 
@@ -1501,25 +1516,60 @@ func (s *Service) appConfigForCreatorLocked(creatorID string) (AppConfig, error)
 }
 
 func (s *Service) appConfigForSenderLocked(senderID string) (AppConfig, error) {
-	if app, ok := s.apps[senderID]; ok {
+	if app, ok := s.appConfigByIDLocked(senderID); ok {
 		return validateAppConfig(app, senderID)
 	}
 	return s.managerAppConfigLocked()
 }
 
 func (s *Service) appConfigForMentionLocked(mention string) (AppConfig, error) {
-	if app, ok := s.apps[mention]; ok {
+	if app, ok := s.appConfigByIDLocked(mention); ok {
 		return validateAppConfig(app, mention)
 	}
 	return AppConfig{}, fmt.Errorf("feishu app is not configured for mention %q", mention)
 }
 
+func (s *Service) participantMentionOpenIDLocked(participantID string) (string, bool) {
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" || s.configProvider == nil {
+		return "", false
+	}
+	openID, ok := s.configProvider.MentionOpenID(participantID)
+	openID = strings.TrimSpace(openID)
+	return openID, ok && openID != ""
+}
+
 func (s *Service) managerAppConfigLocked() (AppConfig, error) {
-	app, ok := s.apps[feishuManagerBotID]
+	app, ok := s.appConfigByIDLocked(feishuManagerBotID)
 	if !ok {
 		return AppConfig{}, fmt.Errorf("feishu app is not configured for %q", feishuManagerBotID)
 	}
 	return validateAppConfig(app, feishuManagerBotID)
+}
+
+func (s *Service) appConfigByIDLocked(participantID string) (AppConfig, bool) {
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" {
+		return AppConfig{}, false
+	}
+	if s.configProvider != nil {
+		return s.configProvider.BotConfig(participantID)
+	}
+	app, ok := s.apps[participantID]
+	return app, ok
+}
+
+func (s *Service) defaultAdminOpenID(app AppConfig) string {
+	provider := s.configProviderSnapshot()
+	if provider != nil {
+		if openID, ok := provider.DefaultAdminOpenID(); ok {
+			return strings.TrimSpace(openID)
+		}
+		if snapshot := provider.Snapshot(); strings.TrimSpace(snapshot.AdminOpenID) != "" {
+			return strings.TrimSpace(snapshot.AdminOpenID)
+		}
+	}
+	return strings.TrimSpace(app.AdminOpenID)
 }
 
 func validateAppConfig(app AppConfig, ownerID string) (AppConfig, error) {
@@ -1548,7 +1598,7 @@ func (s *Service) appIDForMemberLocked(memberID string) (string, error) {
 	if memberID == "" {
 		return "", fmt.Errorf("member_id is required")
 	}
-	app, ok := s.apps[memberID]
+	app, ok := s.appConfigByIDLocked(memberID)
 	if !ok {
 		return "", fmt.Errorf("feishu app is not configured for bot %q", memberID)
 	}
@@ -1708,18 +1758,6 @@ func formatMembers(n int) string {
 	return fmt.Sprintf("%d members", n)
 }
 
-func (s *Service) SetConfigPath(path string) {
-	if s == nil {
-		return
-	}
-	provider, err := NewProvider(NewFileStore(path))
-	if err != nil {
-		s.SetConfigProvider(errorProvider{err: err})
-		return
-	}
-	s.SetConfigProvider(provider)
-}
-
 func (s *Service) SetConfigProvider(provider Provider) {
 	if s == nil {
 		return
@@ -1728,7 +1766,6 @@ func (s *Service) SetConfigProvider(provider Provider) {
 	s.configProvider = provider
 	if provider != nil {
 		s.apps = AppsFromSnapshot(provider.Snapshot())
-		provider.SetReloadHook(s.applyProviderSnapshot)
 	} else {
 		s.apps = nil
 	}
@@ -1744,89 +1781,8 @@ func (s *Service) ConfigProvider() Provider {
 	return s.configProvider
 }
 
-func (s *Service) SetConfigReloadHook(hook ConfigReloadHook) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.configReloadHook = hook
-}
-
-func (s *Service) GetConfig(botID string) (Entry, error) {
-	botID, err := normalizeConfigBotID(botID)
-	if err != nil {
-		return Entry{}, err
-	}
-	provider := s.configProviderSnapshot()
-	if provider == nil {
-		return MaskAppConfig(botID, AppConfig{}, false), nil
-	}
-	app, ok := provider.BotConfig(botID)
-	return MaskAppConfig(botID, app, ok), nil
-}
-
-func (s *Service) UpdateConfig(update Update) (Entry, error) {
-	provider := s.configProviderSnapshot()
-	if provider == nil {
-		return Entry{}, nil
-	}
-	view, _, err := provider.Update(update)
-	return view, err
-}
-
-func (s *Service) ReloadConfig() ([]string, error) {
-	provider := s.configProviderSnapshot()
-	if provider == nil {
-		return nil, nil
-	}
-	snapshot, err := provider.Reload()
-	if err != nil {
-		return nil, err
-	}
-	return sortedSnapshotBotIDs(snapshot), nil
-}
-
-func (s *Service) configReloadHookSnapshot() ConfigReloadHook {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.configReloadHook
-}
-
 func (s *Service) configProviderSnapshot() Provider {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.configProvider
 }
-
-func (s *Service) applyProviderSnapshot(snapshot Snapshot) {
-	if s == nil {
-		return
-	}
-	s.SetAppConfigs(AppsFromSnapshot(snapshot))
-	if hook := s.configReloadHookSnapshot(); hook != nil {
-		hook(cloneSnapshot(snapshot))
-	}
-}
-
-type errorProvider struct {
-	err error
-}
-
-func (p errorProvider) Snapshot() Snapshot {
-	return Snapshot{}
-}
-
-func (p errorProvider) BotConfig(string) (AppConfig, bool) {
-	return AppConfig{}, false
-}
-
-func (p errorProvider) Reload() (Snapshot, error) {
-	return Snapshot{}, p.err
-}
-
-func (p errorProvider) Update(Update) (Entry, Snapshot, error) {
-	return Entry{}, Snapshot{}, p.err
-}
-
-func (p errorProvider) SetReloadHook(func(Snapshot)) {}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,24 +13,48 @@ import (
 	"csgclaw/internal/channel/feishu"
 )
 
-func (h *Handler) handleFeishuBotByID(w http.ResponseWriter, r *http.Request) {
-	botID := pathValue(r, "id")
-	if botID == "" {
-		http.NotFound(w, r)
+func (h *Handler) handleFeishuParticipantEvents(w http.ResponseWriter, r *http.Request, participantID, targetID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	h.handleFeishuEvents(w, r, botID)
+	if !h.validateServerAccessToken(r.Header.Get("Authorization")) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	targetIDs := []string{participantID, targetID}
+	targetIDs = append(targetIDs, h.resolveFeishuParticipantEventOpenIDs(r.Context(), participantID, targetID)...)
+	h.streamFeishuEvents(w, r, feishuEventTarget{IDs: targetIDs})
 }
 
-func (h *Handler) handleFeishuEvents(w http.ResponseWriter, r *http.Request, botID string) {
-	h.streamFeishuEvents(w, r, botID, true)
+type feishuEventTarget struct {
+	IDs []string
 }
 
-func (h *Handler) handleFeishuParticipantEvents(w http.ResponseWriter, r *http.Request, targetID string) {
-	h.streamFeishuEvents(w, r, targetID, false)
+func (h *Handler) resolveFeishuParticipantEventOpenIDs(ctx context.Context, ids ...string) []string {
+	if h == nil || h.feishu == nil {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		openID, _, err := h.feishu.ResolveBotOpenID(ctx, id)
+		if err != nil {
+			continue
+		}
+		openID = strings.TrimSpace(openID)
+		if openID == "" || openID == id {
+			continue
+		}
+		out = append(out, openID)
+	}
+	return out
 }
 
-func (h *Handler) streamFeishuEvents(w http.ResponseWriter, r *http.Request, targetID string, resolveBotOpenID bool) {
+func (h *Handler) streamFeishuEvents(w http.ResponseWriter, r *http.Request, target feishuEventTarget) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -42,15 +67,7 @@ func (h *Handler) streamFeishuEvents(w http.ResponseWriter, r *http.Request, tar
 		http.Error(w, "feishu events are not configured", http.StatusServiceUnavailable)
 		return
 	}
-	targetID = strings.TrimSpace(targetID)
-	if resolveBotOpenID {
-		botOpenID, _, err := h.feishu.ResolveBotOpenID(r.Context(), targetID)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("resolve feishu bot open_id: %v", err), http.StatusBadRequest)
-			return
-		}
-		targetID = strings.TrimSpace(botOpenID)
-	}
+	target.IDs = normalizedFeishuEventTargetIDs(target.IDs...)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -84,7 +101,7 @@ func (h *Handler) streamFeishuEvents(w http.ResponseWriter, r *http.Request, tar
 			if !ok {
 				return
 			}
-			if !feishuEventMentions(evt, targetID) {
+			if !feishuEventMentions(evt, target) {
 				continue
 			}
 			data, err := json.Marshal(evt)
@@ -105,13 +122,50 @@ func (h *Handler) streamFeishuEvents(w http.ResponseWriter, r *http.Request, tar
 	}
 }
 
-func feishuEventMentions(evt feishu.MessageEvent, botOpenID string) bool {
-	botOpenID = strings.TrimSpace(botOpenID)
-	if botOpenID == "" || evt.Message == nil {
+func feishuEventMentions(evt feishu.MessageEvent, target feishuEventTarget) bool {
+	targetIDs := normalizedFeishuEventTargetIDs(target.IDs...)
+	if len(targetIDs) == 0 {
+		return false
+	}
+	if feishuEventTargetMatches(strings.TrimSpace(evt.MentionBotID), targetIDs) {
+		return true
+	}
+	if evt.Message == nil {
 		return false
 	}
 	for _, mention := range evt.Message.Mentions {
-		if strings.TrimSpace(mention.ID) == botOpenID {
+		if feishuEventTargetMatches(strings.TrimSpace(mention.ID), targetIDs) ||
+			feishuEventTargetMatches(strings.TrimSpace(mention.Name), targetIDs) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizedFeishuEventTargetIDs(ids ...string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func feishuEventTargetMatches(value string, targetIDs []string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, id := range targetIDs {
+		if value == id {
 			return true
 		}
 	}
