@@ -553,6 +553,7 @@ func TestRuntimeCreateKeepsExistingRuntimeAuth(t *testing.T) {
 	}
 	assertRuntimeConfigContains(t, filepath.Join(root, "alice", ".codex", "home", configFileName),
 		`sandbox_mode = "workspace-write"`,
+		`sandbox_workspace_write.network_access = true`,
 		`features.multi_agent = false`,
 		`features.memories = false`,
 		`memories.generate_memories = false`,
@@ -1066,13 +1067,20 @@ func TestConfigureCodexHomeConfigReplacesManagedBlocksIdempotently(t *testing.T)
 	}
 	for _, unwanted := range []string{
 		`model = "old-model"`,
-		`sandbox_mode = "danger-full-access"`,
 		`multi_agent = true`,
 		`generate_memories = true`,
 		`use_memories = true`,
 	} {
 		if strings.Contains(first, unwanted) {
 			t.Fatalf("managed config should replace stale directive %q:\n%s", unwanted, first)
+		}
+	}
+	for _, expected := range []string{
+		`sandbox_mode = "workspace-write"`,
+		`sandbox_workspace_write.network_access = true`,
+	} {
+		if !strings.Contains(first, expected) {
+			t.Fatalf("managed config should contain sandbox directive %q:\n%s", expected, first)
 		}
 	}
 }

@@ -170,6 +170,48 @@ func TestAppServerManagerPromptCompletesTurn(t *testing.T) {
 	}
 }
 
+func TestAppServerManagerPromptHandlesLargeCommandOutput(t *testing.T) {
+	withAppServerHelperCommand(t, "prompt-large-command-output")
+	dir := t.TempDir()
+	spec := testAppServerSessionSpec(dir)
+	sink := &recordingSink{}
+	manager := newAppServerManager(testAppServerManagerDepsWithSink(sink))
+	session, err := manager.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() { _ = manager.Stop(context.Background(), SessionHandle{RuntimeID: spec.RuntimeID}) })
+
+	resp, err := manager.Prompt(context.Background(), SessionHandle{RuntimeID: spec.RuntimeID}, PromptRequest{
+		SessionID: session.SessionID,
+		Prompt:    []PromptContentBlock{TextBlock("hello large output")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != StopReasonEndTurn {
+		t.Fatalf("StopReason = %q, want %q", resp.StopReason, StopReasonEndTurn)
+	}
+
+	waitForRuntime(t, func() bool { return len(sink.snapshot()) >= 4 })
+	events := sink.snapshot()
+	if len(events) < 4 {
+		t.Fatalf("events len = %d, want at least 4: %#v", len(events), events)
+	}
+	if events[0].Kind != SessionEventToolCallStart || events[0].ToolCallID != "call-large" {
+		t.Fatalf("first event = %#v, want tool start for call-large", events[0])
+	}
+	if events[1].Kind != SessionEventToolCallUpdate || events[1].ToolStatus != "completed" {
+		t.Fatalf("second event = %#v, want completed tool update", events[1])
+	}
+	if events[2].Kind != SessionEventTextDelta || events[2].Text != "done" {
+		t.Fatalf("third event = %#v, want agent text delta", events[2])
+	}
+	if events[len(events)-1].Kind != SessionEventPromptCompleted {
+		t.Fatalf("last event = %#v, want prompt completed", events[len(events)-1])
+	}
+}
+
 func TestAppServerManagerPromptFailedTurnPublishesFailure(t *testing.T) {
 	withAppServerHelperCommand(t, "prompt-failed")
 	dir := t.TempDir()
@@ -663,6 +705,23 @@ func TestAppServerManagerHelperProcess(t *testing.T) {
 				writeRPCNotification(t, "item/completed", map[string]any{"threadId": "main-thread", "item": map[string]any{"id": "item-1", "type": "agentMessage", "text": "done"}})
 				writeRPCNotification(t, "turn/completed", map[string]any{"threadId": "main-thread", "turn": map[string]any{"id": "turn-1", "status": "completed"}})
 				return rpcResult(msg["id"], map[string]any{"turnId": "turn-1"}), true
+			default:
+				return nil, false
+			}
+		})
+	case "prompt-large-command-output":
+		runAppServerHelper(t, func(index int, msg map[string]any) (map[string]any, bool) {
+			switch msg["method"] {
+			case "thread/start":
+				return rpcResult(msg["id"], map[string]any{"threadId": "main-thread"}), true
+			case "turn/start":
+				largeOutput := strings.Repeat("room-list-line\n", 128*1024)
+				writeRPCNotification(t, "turn/started", map[string]any{"threadId": "main-thread", "turn": map[string]any{"id": "turn-large-output"}})
+				writeRPCNotification(t, "item/started", map[string]any{"threadId": "main-thread", "item": map[string]any{"id": "call-large", "type": "commandExecution", "command": "csgclaw-cli room list"}})
+				writeRPCNotification(t, "item/completed", map[string]any{"threadId": "main-thread", "item": map[string]any{"id": "call-large", "type": "commandExecution", "aggregatedOutput": largeOutput}})
+				writeRPCNotification(t, "item/completed", map[string]any{"threadId": "main-thread", "item": map[string]any{"id": "item-large", "type": "agentMessage", "text": "done"}})
+				writeRPCNotification(t, "turn/completed", map[string]any{"threadId": "main-thread", "turn": map[string]any{"id": "turn-large-output", "status": "completed"}})
+				return rpcResult(msg["id"], map[string]any{"turnId": "turn-large-output"}), true
 			default:
 				return nil, false
 			}

@@ -118,7 +118,10 @@ func (c *appServerClient) handleLine(line string) {
 		c.logDebug("ignore malformed codex app-server json-rpc line", "error", err)
 		return
 	}
+	c.handleMessage(msg)
+}
 
+func (c *appServerClient) handleMessage(msg appServerWireMessage) {
 	hasID := len(msg.ID) > 0
 	hasResult := len(msg.Result) > 0
 	hasError := len(msg.Error) > 0

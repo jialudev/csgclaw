@@ -70,6 +70,12 @@ func TestRuntimeProfileForAgentUsesBridgeForCodex(t *testing.T) {
 	if got, want := profile.Env["EXTRA_FLAG"], "1"; got != want {
 		t.Fatalf("runtimeProfileForAgent().Env[EXTRA_FLAG] = %q, want %q", got, want)
 	}
+	if got, want := profile.Env["CSGCLAW_BASE_URL"], "http://127.0.0.1:18080"; got != want {
+		t.Fatalf("runtimeProfileForAgent().Env[CSGCLAW_BASE_URL] = %q, want %q", got, want)
+	}
+	if got, want := profile.Env["CSGCLAW_ACCESS_TOKEN"], "shared-token"; got != want {
+		t.Fatalf("runtimeProfileForAgent().Env[CSGCLAW_ACCESS_TOKEN] = %q, want %q", got, want)
+	}
 }
 
 func TestRuntimeProfileForKindUsesBridgeForCodexRuntime(t *testing.T) {
@@ -108,6 +114,12 @@ func TestRuntimeProfileForKindUsesBridgeForCodexRuntime(t *testing.T) {
 	if got, want := profile.Env["FEATURE_FLAG"], "on"; got != want {
 		t.Fatalf("runtimeProfileForKind().Env[FEATURE_FLAG] = %q, want %q", got, want)
 	}
+	if got, want := profile.Env["CSGCLAW_BASE_URL"], "http://127.0.0.1:18080"; got != want {
+		t.Fatalf("runtimeProfileForKind().Env[CSGCLAW_BASE_URL] = %q, want %q", got, want)
+	}
+	if got, want := profile.Env["CSGCLAW_ACCESS_TOKEN"], "shared-token"; got != want {
+		t.Fatalf("runtimeProfileForKind().Env[CSGCLAW_ACCESS_TOKEN] = %q, want %q", got, want)
+	}
 }
 
 func TestRuntimeProfileForKindUsesHostReachableBridgeForCodexRuntime(t *testing.T) {
@@ -138,6 +150,12 @@ func TestRuntimeProfileForKindUsesHostReachableBridgeForCodexRuntime(t *testing.
 
 	if got, want := profile.BaseURL, "http://127.0.0.1:18080/api/v1/agents/u-developer/llm"; got != want {
 		t.Fatalf("runtimeProfileForKind().BaseURL = %q, want host-reachable %q", got, want)
+	}
+	if got, want := profile.Env["CSGCLAW_BASE_URL"], "http://127.0.0.1:18080"; got != want {
+		t.Fatalf("runtimeProfileForKind().Env[CSGCLAW_BASE_URL] = %q, want %q", got, want)
+	}
+	if got, want := profile.Env["CSGCLAW_ACCESS_TOKEN"], "shared-token"; got != want {
+		t.Fatalf("runtimeProfileForKind().Env[CSGCLAW_ACCESS_TOKEN] = %q, want %q", got, want)
 	}
 }
 

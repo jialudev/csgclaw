@@ -129,14 +129,23 @@ func (s *Service) runtimeProfileForKind(runtimeKind, agentID, fallbackName, fall
 	profile = normalizeProfile(profile, fallbackName, fallbackDescription)
 	baseURL := profile.BaseURL
 	apiKey := profile.APIKey
+	env := normalizeStringMap(profile.Env)
 
 	if runtimeKind == RuntimeKindCodex {
 		managerBaseURL := config.ResolveAdvertiseBaseURL(s.server)
 		if managerBaseURL != "" {
 			baseURL = llmBridgeBaseURL(managerBaseURL, agentID)
+			if env == nil {
+				env = make(map[string]string)
+			}
+			env["CSGCLAW_BASE_URL"] = managerBaseURL
 		}
 		if token := strings.TrimSpace(s.server.AccessToken); token != "" {
 			apiKey = token
+			if env == nil {
+				env = make(map[string]string)
+			}
+			env["CSGCLAW_ACCESS_TOKEN"] = token
 		}
 	}
 
@@ -146,7 +155,7 @@ func (s *Service) runtimeProfileForKind(runtimeKind, agentID, fallbackName, fall
 		APIKey:          apiKey,
 		ModelID:         profile.ModelID,
 		ReasoningEffort: profile.ReasoningEffort,
-		Env:             normalizeStringMap(profile.Env),
+		Env:             env,
 	}).Normalized()
 }
 

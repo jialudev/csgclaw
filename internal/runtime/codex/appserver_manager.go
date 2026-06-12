@@ -1,7 +1,6 @@
 package codex
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -730,15 +729,21 @@ func (m *appServerManager) appServerTurnTimeoutError(live *liveSession, waiter *
 }
 
 func (m *appServerManager) readAppServerStdout(runtimeID string, live *liveSession, stdout io.Reader) {
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		if live.appClient != nil {
-			live.appClient.handleLine(scanner.Text())
+	decoder := json.NewDecoder(stdout)
+	for {
+		var msg appServerWireMessage
+		if err := decoder.Decode(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			if live.appClient != nil {
+				live.appClient.logDebug("codex app-server stdout decoder stopped", "runtime_id", runtimeID, "error", err)
+			}
+			return
 		}
-	}
-	if err := scanner.Err(); err != nil && live.appClient != nil {
-		live.appClient.logDebug("codex app-server stdout scanner stopped", "runtime_id", runtimeID, "error", err)
+		if live.appClient != nil {
+			live.appClient.handleMessage(msg)
+		}
 	}
 }
 
