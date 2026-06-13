@@ -34,12 +34,13 @@ const (
 )
 
 type AgentRef struct {
-	ID           string
-	Name         string
-	RuntimeID    string
-	HandleID     string
-	Instructions string
-	Profile      agentruntime.Profile
+	ID             string
+	Name           string
+	RuntimeID      string
+	HandleID       string
+	Instructions   string
+	RuntimeOptions map[string]any
+	Profile        agentruntime.Profile
 }
 
 type SessionSpec struct {
@@ -133,6 +134,7 @@ var (
 	_ agentruntime.LogStreamer                 = (*Runtime)(nil)
 	_ agentruntime.ConversationStarter         = (*Runtime)(nil)
 	_ agentruntime.RuntimeOptionSchemaProvider = (*Runtime)(nil)
+	_ agentruntime.RuntimeConfigController     = (*Runtime)(nil)
 )
 
 func New(deps Dependencies) *Runtime {
@@ -149,6 +151,17 @@ func workspaceRoot(agentHome string) string {
 
 func (r *Runtime) WorkspaceRoot(agentHome string) string {
 	return r.Layout(agentHome).WorkspaceRoot
+}
+
+func (r *Runtime) resolveWorkspaceDir(agentName string, runtimeOptions map[string]any) (string, error) {
+	if r.deps.AgentHome == nil {
+		return "", fmt.Errorf("agent home resolver is required")
+	}
+	agentHome, err := r.deps.AgentHome(strings.TrimSpace(agentName))
+	if err != nil {
+		return "", err
+	}
+	return ResolveWorkspaceDir(agentHome, runtimeOptions)
 }
 
 func (r *Runtime) Layout(agentHome string) agentruntime.Layout {
@@ -367,15 +380,26 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 	if strings.TrimSpace(spec.AgentName) == "" || strings.TrimSpace(spec.AgentID) == "" {
 		return nil, fmt.Errorf("agent name and id are required")
 	}
+	agentRef, err := r.resolveAgent(agentruntime.Handle{RuntimeID: runtimeID})
+	if err != nil {
+		return nil, err
+	}
 	dirs, err := r.ensureRuntimeDirs(spec.AgentName)
 	if err != nil {
 		return nil, err
 	}
+	workspaceDir, err := r.resolveWorkspaceDir(spec.AgentName, agentRef.RuntimeOptions)
+	if err != nil {
+		return nil, err
+	}
 	spec.RuntimeDir = dirs.Root
-	spec.WorkspaceDir = dirs.Workspace
+	spec.WorkspaceDir = workspaceDir
 	spec.HomeDir = r.hostSessionHomeDir(dirs.Home)
 	spec.CodexHomeDir = dirs.CodexHome
 	spec.StderrPath = dirs.StderrLog
+	if err := r.mkdirAll(spec.WorkspaceDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create codex workspace dir %s: %w", spec.WorkspaceDir, err)
+	}
 	if err := r.seedCodexHomeAuth(spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
@@ -698,17 +722,20 @@ func (r *Runtime) RefreshWorkspaceAgentsFile(_ context.Context, h agentruntime.H
 	if err != nil {
 		return err
 	}
-	dirs, err := r.ensureRuntimeDirs(agentRef.Name)
+	workspaceDir, err := r.resolveWorkspaceDir(agentRef.Name, agentRef.RuntimeOptions)
 	if err != nil {
 		return err
 	}
-	return r.refreshCodexWorkspaceAgentsFile(h, dirs.Workspace)
+	return r.refreshCodexWorkspaceAgentsFile(h, workspaceDir)
 }
 
 func (r *Runtime) refreshCodexWorkspaceAgentsFile(h agentruntime.Handle, workspaceDir string) error {
 	workspaceDir = strings.TrimSpace(workspaceDir)
 	if workspaceDir == "" {
 		return fmt.Errorf("workspace dir is required")
+	}
+	if err := r.mkdirAll(workspaceDir, 0o755); err != nil {
+		return fmt.Errorf("create codex workspace dir %s: %w", workspaceDir, err)
 	}
 	agentRef, err := r.resolveAgent(h)
 	if err != nil {
@@ -722,6 +749,56 @@ func (r *Runtime) refreshCodexWorkspaceAgentsFile(h agentruntime.Handle, workspa
 	}
 	merged := mergeAgentsInstructionsBlock(string(current), block)
 	if err == nil && string(current) == merged {
+		return nil
+	}
+	if err := r.writeFile(path, []byte(merged), 0o644); err != nil {
+		return fmt.Errorf("write codex workspace AGENTS.md %s: %w", path, err)
+	}
+	return nil
+}
+
+func (r *Runtime) SyncWorkspaceAgentsFile(_ context.Context, h agentruntime.Handle, previousRuntimeOptions map[string]any) error {
+	agentRef, err := r.resolveAgent(h)
+	if err != nil {
+		return err
+	}
+	currentWorkspace, err := r.resolveWorkspaceDir(agentRef.Name, agentRef.RuntimeOptions)
+	if err != nil {
+		return err
+	}
+	previousWorkspace, err := r.resolveWorkspaceDir(agentRef.Name, previousRuntimeOptions)
+	if err != nil {
+		return err
+	}
+	if previousWorkspace != "" && previousWorkspace != currentWorkspace {
+		if err := r.removeCodexWorkspaceAgentsFile(previousWorkspace); err != nil {
+			return err
+		}
+	}
+	return r.refreshCodexWorkspaceAgentsFile(h, currentWorkspace)
+}
+
+func (r *Runtime) removeCodexWorkspaceAgentsFile(workspaceDir string) error {
+	workspaceDir = strings.TrimSpace(workspaceDir)
+	if workspaceDir == "" {
+		return nil
+	}
+	path := filepath.Join(workspaceDir, "AGENTS.md")
+	current, err := r.readFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read codex workspace AGENTS.md %s: %w", path, err)
+	}
+	merged, changed := removeAgentsInstructionsBlock(string(current))
+	if !changed {
+		return nil
+	}
+	if strings.TrimSpace(merged) == "" {
+		if err := r.removeAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove codex workspace AGENTS.md %s: %w", path, err)
+		}
 		return nil
 	}
 	if err := r.writeFile(path, []byte(merged), 0o644); err != nil {
@@ -757,6 +834,21 @@ func replaceAgentsInstructionsBlock(current, start, end, block string) (string, 
 	prefix := current[:startIdx]
 	suffix := current[endPos:]
 	return joinAgentsInstructionsSections(prefix, block, suffix), true
+}
+
+func removeAgentsInstructionsBlock(current string) (string, bool) {
+	start, end := agent.AgentsInstructionsBlockMarkers()
+	current = strings.ReplaceAll(current, "\r\n", "\n")
+	startIdx := strings.Index(current, start)
+	if startIdx < 0 {
+		return "", false
+	}
+	endIdx := strings.Index(current[startIdx:], end)
+	if endIdx < 0 {
+		return joinAgentsInstructionsSections(current[:startIdx]), true
+	}
+	endPos := startIdx + endIdx + len(end)
+	return joinAgentsInstructionsSections(current[:startIdx], current[endPos:]), true
 }
 
 func joinAgentsInstructionsSections(parts ...string) string {

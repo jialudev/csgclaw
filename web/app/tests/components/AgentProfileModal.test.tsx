@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { AgentProfileModal } from "@/pages/WorkspacePage/components";
 import { agentToDraft } from "@/models/agents";
+import * as directoryPicker from "@/components/business/ProfileControls/runtimeOptionDirectoryPicker";
 
 const labels: Record<string, string> = {
   agentDescription: "Description",
@@ -192,6 +194,133 @@ describe("AgentProfileModal", () => {
     expect(screen.getByDisplayValue("/tmp/project")).toBeInTheDocument();
     expect(screen.getByText("本地工作目录")).toBeInTheDocument();
     expect(screen.getByText("留空时使用默认 Agent 工作目录。")).toBeInTheDocument();
+  });
+
+  it("allows choosing a directory runtime option path", async () => {
+    const user = userEvent.setup();
+    const onAgentDraftChange = vi.fn();
+    vi.spyOn(directoryPicker, "pickLocalDirectoryPath").mockResolvedValue("/tmp/selected");
+
+    render(
+      <AgentProfileModal
+        t={t}
+        agentModalMode="create"
+        editingAgent={null}
+        agentDraft={{
+          ...agentToDraft(worker),
+          runtime_kind: "codex",
+          runtime_options: { local_workspace_dir: "" },
+        }}
+        locale="zh"
+        onAgentDraftChange={onAgentDraftChange}
+        onAgentModelsReset={vi.fn()}
+        hubTemplates={[]}
+        bootstrapConfig={{
+          runtime_option_schemas: {
+            codex: [
+              {
+                key: "local_workspace_dir",
+                path: "local_workspace_dir",
+                label: "Local Workspace Dir",
+                label_zh: "本地工作目录",
+                label_en: "Local Workspace Dir",
+                description: "Leave empty to use the default agent workspace.",
+                description_zh: "留空时使用默认 Agent 工作目录。",
+                description_en: "Leave empty to use the default agent workspace.",
+                type: "directory",
+              },
+            ],
+          },
+        }}
+        managerAgent={null}
+        agentModels={[]}
+        agentModelBusy={false}
+        authStatuses={{}}
+        authBusyProvider=""
+        agentCreateBotKind="worker"
+        onAgentCreateBotKindChange={vi.fn()}
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onProviderLogin={vi.fn()}
+        agentError=""
+        agentProgress={null}
+        agentBusy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "选择目录" }));
+
+    expect(onAgentDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtime_options: expect.objectContaining({
+          local_workspace_dir: "/tmp/selected",
+        }),
+      }),
+    );
+  });
+
+  it("allows clearing a directory runtime option path", async () => {
+    const user = userEvent.setup();
+    const onAgentDraftChange = vi.fn();
+
+    render(
+      <AgentProfileModal
+        t={t}
+        agentModalMode="create"
+        editingAgent={null}
+        agentDraft={{
+          ...agentToDraft(worker),
+          runtime_kind: "codex",
+          runtime_options: { local_workspace_dir: "/tmp/project" },
+        }}
+        locale="zh"
+        onAgentDraftChange={onAgentDraftChange}
+        onAgentModelsReset={vi.fn()}
+        hubTemplates={[]}
+        bootstrapConfig={{
+          runtime_option_schemas: {
+            codex: [
+              {
+                key: "local_workspace_dir",
+                path: "local_workspace_dir",
+                label: "Local Workspace Dir",
+                label_zh: "本地工作目录",
+                label_en: "Local Workspace Dir",
+                description: "Leave empty to use the default agent workspace.",
+                description_zh: "留空时使用默认 Agent 工作目录。",
+                description_en: "Leave empty to use the default agent workspace.",
+                type: "directory",
+              },
+            ],
+          },
+        }}
+        managerAgent={null}
+        agentModels={[]}
+        agentModelBusy={false}
+        authStatuses={{}}
+        authBusyProvider=""
+        agentCreateBotKind="worker"
+        onAgentCreateBotKindChange={vi.fn()}
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onProviderLogin={vi.fn()}
+        agentError=""
+        agentProgress={null}
+        agentBusy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "清空" }));
+
+    expect(onAgentDraftChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtime_options: expect.objectContaining({
+          local_workspace_dir: "",
+        }),
+      }),
+    );
   });
 
   it("places avatar and name above a full-width description before the create-kind tabs", () => {

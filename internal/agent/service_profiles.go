@@ -14,10 +14,6 @@ import (
 	"csgclaw/internal/utils"
 )
 
-type workspaceAgentsFileRefresher interface {
-	RefreshWorkspaceAgentsFile(context.Context, agentruntime.Handle) error
-}
-
 func (s *Service) AgentProfileView(id string) (AgentProfileView, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -59,15 +55,19 @@ func (s *Service) UpdateAgentProfile(id string, profile AgentProfile) (AgentProf
 	}
 	previous := current
 	normalized := normalizeProfileForAgentRuntime(profile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, nil)
-	restartRequired := profileRestartRequired(previous, normalized)
 	runtimeKind := strings.TrimSpace(current.RuntimeKind)
-	runningCodex := runtimeKind == RuntimeKindCodex && isRuntimeRunning(current)
+	runtimeRunning := isRuntimeRunning(current)
+	change := runtimeConfigChangeForAgent(previous.AgentProfile, normalized, previous.RuntimeOptions, current.RuntimeOptions)
 	s.mu.Unlock()
 
 	if normalized.ProfileComplete {
-		if err := s.ensureCodexResponsesAPI(context.Background(), runtimeKind, normalized); err != nil {
+		if err := s.validateRuntimeConfig(context.Background(), runtimeKind, change.Current); err != nil {
 			return AgentProfileView{}, err
 		}
+	}
+	restartRequired, err := s.runtimeConfigRestartRequired(runtimeKind, change)
+	if err != nil {
+		return AgentProfileView{}, err
 	}
 
 	s.mu.Lock()
@@ -94,7 +94,7 @@ func (s *Service) UpdateAgentProfile(id string, profile AgentProfile) (AgentProf
 		return AgentProfileView{}, err
 	}
 	s.mu.Unlock()
-	if restartRequired && runningCodex {
+	if restartRequired && runtimeRunning && !isGatewayRuntimeKind(runtimeKind) {
 		s.stopLifecycleAgent(id)
 	}
 	if err := s.syncGatewayAfterProfileChange(context.Background(), id, previous, normalized, restartRequired); err != nil {
@@ -108,29 +108,7 @@ func (s *Service) UpdateAgentProfile(id string, profile AgentProfile) (AgentProf
 }
 
 func profileRestartRequired(current Agent, next AgentProfile) bool {
-	return !profilesEqualEnv(current.AgentProfile, next) ||
-		codexProfileRuntimeRestartRequired(current, next)
-}
-
-func codexProfileRuntimeRestartRequired(current Agent, next AgentProfile) bool {
-	if strings.TrimSpace(current.RuntimeKind) != RuntimeKindCodex {
-		return false
-	}
-	if !isRuntimeRunning(current) {
-		return false
-	}
-	previous := normalizeProfileForAgentRuntime(current.AgentProfile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, nil)
-	return !codexProfileRuntimeInputsEqual(previous, next)
-}
-
-func codexProfileRuntimeInputsEqual(a, b AgentProfile) bool {
-	return strings.TrimSpace(a.Provider) == strings.TrimSpace(b.Provider) &&
-		strings.TrimRight(strings.TrimSpace(a.BaseURL), "/") == strings.TrimRight(strings.TrimSpace(b.BaseURL), "/") &&
-		strings.TrimSpace(a.APIKey) == strings.TrimSpace(b.APIKey) &&
-		strings.TrimSpace(a.ModelID) == strings.TrimSpace(b.ModelID) &&
-		strings.TrimSpace(a.ReasoningEffort) == strings.TrimSpace(b.ReasoningEffort) &&
-		reflect.DeepEqual(a.Headers, b.Headers) &&
-		reflect.DeepEqual(a.RequestOptions, b.RequestOptions)
+	return !profilesEqualEnv(current.AgentProfile, next)
 }
 
 func gatewayProfileRuntimeRestartRequired(current Agent, next AgentProfile) bool {
@@ -138,7 +116,17 @@ func gatewayProfileRuntimeRestartRequired(current Agent, next AgentProfile) bool
 		return false
 	}
 	previous := normalizeProfileForAgentRuntime(current.AgentProfile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, nil)
-	return !codexProfileRuntimeInputsEqual(previous, next)
+	return !profileRuntimeInputsEqual(previous, next)
+}
+
+func profileRuntimeInputsEqual(a, b AgentProfile) bool {
+	return strings.TrimSpace(a.Provider) == strings.TrimSpace(b.Provider) &&
+		strings.TrimRight(strings.TrimSpace(a.BaseURL), "/") == strings.TrimRight(strings.TrimSpace(b.BaseURL), "/") &&
+		strings.TrimSpace(a.APIKey) == strings.TrimSpace(b.APIKey) &&
+		strings.TrimSpace(a.ModelID) == strings.TrimSpace(b.ModelID) &&
+		strings.TrimSpace(a.ReasoningEffort) == strings.TrimSpace(b.ReasoningEffort) &&
+		reflect.DeepEqual(a.Headers, b.Headers) &&
+		reflect.DeepEqual(a.RequestOptions, b.RequestOptions)
 }
 
 func (s *Service) syncGatewayAfterProfileChange(ctx context.Context, id string, previous Agent, normalized AgentProfile, restartRequired bool) error {
@@ -224,12 +212,11 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 	}
 	previous := current
 	runtimeKind := strings.TrimSpace(current.RuntimeKind)
-	runningCodex := runtimeKind == RuntimeKindCodex && isRuntimeRunning(current)
+	runtimeRunning := isRuntimeRunning(current)
 	restartRequired := false
-	ensureProfile := AgentProfile{}
-	shouldEnsureProfile := false
 	profileUpdated := false
 	instructionsUpdated := req.Instructions != nil
+	runtimeOptionsUpdated := req.RuntimeOptions != nil
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -276,7 +263,14 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		mergedFlat := runtimeOptionsAfterPatch(current.RuntimeKind, current.RuntimeOptions, patch)
 		current.RuntimeOptions = nextAgentRuntimeOptions(current.RuntimeKind, current.RuntimeOptions, mergedFlat)
 		normalized := normalizeProfileForAgentRuntime(profile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, mergedFlat)
+		change := runtimeConfigChangeForAgent(previous.AgentProfile, normalized, previous.RuntimeOptions, current.RuntimeOptions)
 		restartRequired = profileRestartRequired(previous, normalized)
+		controllerRestartRequired, err := s.runtimeConfigRestartRequired(runtimeKind, change)
+		if err != nil {
+			s.mu.Unlock()
+			return Agent{}, err
+		}
+		restartRequired = restartRequired || controllerRestartRequired
 		normalized.EnvRestartRequired = restartRequired
 		current.AgentProfile = normalized
 		current.ProfileComplete = normalized.ProfileComplete
@@ -285,21 +279,16 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		if current.ProfileComplete && strings.EqualFold(strings.TrimSpace(current.Status), "profile_incomplete") {
 			current.Status = string(sandbox.StateStopped)
 		}
-		if normalized.ProfileComplete && runtimeKind == RuntimeKindCodex {
-			ensureProfile = normalized
-			shouldEnsureProfile = true
-		}
-	}
-
-	if shouldEnsureProfile {
-		s.mu.Unlock()
-		if err := s.ensureCodexResponsesAPI(ctx, runtimeKind, ensureProfile); err != nil {
-			return Agent{}, err
-		}
-		s.mu.Lock()
-		if _, ok := s.agents[id]; !ok {
+		if normalized.ProfileComplete {
 			s.mu.Unlock()
-			return Agent{}, fmt.Errorf("agent %q not found", id)
+			if err := s.validateRuntimeConfig(ctx, runtimeKind, change.Current); err != nil {
+				return Agent{}, err
+			}
+			s.mu.Lock()
+			if _, ok := s.agents[id]; !ok {
+				s.mu.Unlock()
+				return Agent{}, fmt.Errorf("agent %q not found", id)
+			}
 		}
 	}
 	if profileUpdated && current.ProfileComplete {
@@ -313,12 +302,12 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		return Agent{}, err
 	}
 	s.mu.Unlock()
-	if instructionsUpdated && runtimeKind == RuntimeKindCodex {
-		if err := s.refreshCodexWorkspaceInstructions(ctx, current); err != nil {
+	if instructionsUpdated || runtimeOptionsUpdated {
+		if err := s.reconcileRuntimeConfig(ctx, previous, current); err != nil {
 			return Agent{}, err
 		}
 	}
-	if restartRequired && runningCodex {
+	if restartRequired && runtimeRunning && !isGatewayRuntimeKind(runtimeKind) {
 		s.stopLifecycleAgent(id)
 	}
 
@@ -337,24 +326,6 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		}
 	}
 	return updated, nil
-}
-
-func (s *Service) refreshCodexWorkspaceInstructions(ctx context.Context, got Agent) error {
-	if s == nil {
-		return fmt.Errorf("agent service is required")
-	}
-	if strings.TrimSpace(got.RuntimeKind) != RuntimeKindCodex {
-		return nil
-	}
-	runtimeImpl, err := s.runtimeForKind(got.RuntimeKind)
-	if err != nil {
-		return err
-	}
-	refresher, ok := runtimeImpl.(workspaceAgentsFileRefresher)
-	if !ok {
-		return nil
-	}
-	return refresher.RefreshWorkspaceAgentsFile(ctx, runtimeHandleForAgent(got))
 }
 
 func (s *Service) ListModelsForRequest(ctx context.Context, req ProfileModelRequest) ([]string, error) {
@@ -380,6 +351,85 @@ func (s *Service) ListModelsForRequest(ctx context.Context, req ProfileModelRequ
 		return sortModelIDs(models), nil
 	}
 	return ListModelsForProfile(ctx, profile)
+}
+
+func runtimeConfigChangeForAgent(previousProfile, currentProfile AgentProfile, previousOptions, currentOptions map[string]any) agentruntime.RuntimeConfigChange {
+	return agentruntime.RuntimeConfigChange{
+		Previous: runtimeConfigSnapshotForAgent(previousProfile, previousOptions),
+		Current:  runtimeConfigSnapshotForAgent(currentProfile, currentOptions),
+	}
+}
+
+func runtimeConfigSnapshotForAgent(profile AgentProfile, options map[string]any) agentruntime.RuntimeConfigSnapshot {
+	return agentruntime.RuntimeConfigSnapshot{
+		Profile: agentruntime.RuntimeProfileConfig{
+			Provider:        strings.TrimSpace(profile.Provider),
+			BaseURL:         strings.TrimRight(strings.TrimSpace(profile.BaseURL), "/"),
+			APIKey:          strings.TrimSpace(profile.APIKey),
+			ModelID:         strings.TrimSpace(profile.ModelID),
+			ReasoningEffort: strings.TrimSpace(profile.ReasoningEffort),
+			Headers:         normalizeStringMap(profile.Headers),
+			RequestOptions:  utils.CloneAnyMap(profile.RequestOptions),
+		},
+		Options: utils.CloneAnyMap(options),
+	}
+}
+
+func (s *Service) validateRuntimeConfig(ctx context.Context, runtimeKind string, current agentruntime.RuntimeConfigSnapshot) error {
+	if s == nil {
+		return fmt.Errorf("agent service is required")
+	}
+	runtimeKind = strings.TrimSpace(runtimeKind)
+	if runtimeKind == "" {
+		return nil
+	}
+	rt, err := s.runtimeForKind(runtimeKind)
+	if err != nil {
+		return err
+	}
+	controller, ok := rt.(agentruntime.RuntimeConfigController)
+	if !ok {
+		return nil
+	}
+	return controller.ValidateConfig(ctx, current)
+}
+
+func (s *Service) runtimeConfigRestartRequired(runtimeKind string, change agentruntime.RuntimeConfigChange) (bool, error) {
+	if s == nil {
+		return false, fmt.Errorf("agent service is required")
+	}
+	runtimeKind = strings.TrimSpace(runtimeKind)
+	if runtimeKind == "" {
+		return false, nil
+	}
+	rt, err := s.runtimeForKind(runtimeKind)
+	if err != nil {
+		return false, err
+	}
+	controller, ok := rt.(agentruntime.RuntimeConfigController)
+	if !ok {
+		return false, nil
+	}
+	return controller.RestartRequired(change)
+}
+
+func (s *Service) reconcileRuntimeConfig(ctx context.Context, previous, current Agent) error {
+	if s == nil {
+		return fmt.Errorf("agent service is required")
+	}
+	runtimeKind := strings.TrimSpace(current.RuntimeKind)
+	if runtimeKind == "" {
+		return nil
+	}
+	rt, err := s.runtimeForKind(runtimeKind)
+	if err != nil {
+		return err
+	}
+	controller, ok := rt.(agentruntime.RuntimeConfigController)
+	if !ok {
+		return nil
+	}
+	return controller.ReconcileConfig(ctx, runtimeHandleForAgent(current), runtimeConfigChangeForAgent(previous.AgentProfile, current.AgentProfile, previous.RuntimeOptions, current.RuntimeOptions))
 }
 
 func (s *Service) storedAPIKeyForModelRequest(req ProfileModelRequest, profile AgentProfile) string {
@@ -461,7 +511,7 @@ func (s *Service) recreate(ctx context.Context, id string, imageFor func(context
 	if !profile.ProfileComplete {
 		return Agent{}, fmt.Errorf("agent %q profile is incomplete", id)
 	}
-	if err := s.ensureCodexResponsesAPI(ctx, strings.TrimSpace(got.RuntimeKind), profile); err != nil {
+	if err := s.validateRuntimeConfig(ctx, strings.TrimSpace(got.RuntimeKind), runtimeConfigSnapshotForAgent(profile, got.RuntimeOptions)); err != nil {
 		return Agent{}, err
 	}
 

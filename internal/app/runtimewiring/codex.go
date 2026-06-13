@@ -31,12 +31,13 @@ func WithCodexRuntime() agent.ServiceOption {
 					return runtimecodex.AgentRef{}, err
 				}
 				return runtimecodex.AgentRef{
-					ID:           got.ID,
-					Name:         got.Name,
-					RuntimeID:    strings.TrimSpace(got.RuntimeID),
-					HandleID:     strings.TrimSpace(got.BoxID),
-					Instructions: got.Instructions,
-					Profile:      profile,
+					ID:             got.ID,
+					Name:           got.Name,
+					RuntimeID:      strings.TrimSpace(got.RuntimeID),
+					HandleID:       strings.TrimSpace(got.BoxID),
+					Instructions:   got.Instructions,
+					RuntimeOptions: got.RuntimeOptions,
+					Profile:        profile,
 				}, nil
 			},
 			AgentHome:  host.AgentHome,

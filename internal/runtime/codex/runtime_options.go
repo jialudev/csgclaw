@@ -2,6 +2,7 @@ package codex
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentruntime "csgclaw/internal/runtime"
@@ -28,6 +29,21 @@ func DecodeRuntimeOptions(raw map[string]any) (RuntimeOptions, error) {
 	}
 	opts.LocalWorkspaceDir = strings.TrimSpace(text)
 	return opts, nil
+}
+
+func ResolveWorkspaceDir(agentHome string, raw map[string]any) (string, error) {
+	agentHome = strings.TrimSpace(agentHome)
+	if agentHome == "" {
+		return "", fmt.Errorf("agent home is required")
+	}
+	opts, err := DecodeRuntimeOptions(raw)
+	if err != nil {
+		return "", err
+	}
+	if opts.LocalWorkspaceDir != "" {
+		return opts.LocalWorkspaceDir, nil
+	}
+	return filepath.Join(agentHome, filepath.FromSlash(hostStateDirName), workspaceDirName), nil
 }
 
 func (r *Runtime) RuntimeOptionsSchema() []agentruntime.RuntimeOptionSchema {

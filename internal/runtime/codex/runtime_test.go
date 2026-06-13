@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"csgclaw/internal/agent"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
 )
@@ -213,6 +214,68 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 	}
 }
 
+func TestRuntimeCreateUsesLocalWorkspaceDir(t *testing.T) {
+	root := t.TempDir()
+	workspaceRoot := filepath.Join(root, "project")
+	rt := New(Dependencies{
+		BinaryProvider: fakeBinaryProvider{path: "/tmp/codex"},
+		AgentHome: func(agentName string) (string, error) {
+			return filepath.Join(root, agentName), nil
+		},
+		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
+			return AgentRef{
+				ID:           "u-alice",
+				Name:         "alice",
+				RuntimeID:    h.RuntimeID,
+				Instructions: "Use repo-local files.",
+				RuntimeOptions: map[string]any{
+					"local_workspace_dir": workspaceRoot,
+				},
+				Profile: agentruntime.Profile{
+					ModelID: "gpt-5.5",
+				},
+			}, nil
+		},
+		Manager: fakeManager{
+			start: func(_ context.Context, spec SessionSpec) (*Session, error) {
+				if spec.WorkspaceDir != workspaceRoot {
+					t.Fatalf("WorkspaceDir = %q, want %q", spec.WorkspaceDir, workspaceRoot)
+				}
+				return &Session{
+					RuntimeID:    spec.RuntimeID,
+					AgentID:      spec.AgentID,
+					AgentName:    spec.AgentName,
+					SessionID:    "sess-local",
+					BinaryPath:   spec.BinaryPath,
+					WorkspaceDir: spec.WorkspaceDir,
+					HomeDir:      spec.HomeDir,
+					CodexHomeDir: spec.CodexHomeDir,
+					StderrPath:   spec.StderrPath,
+					CreatedAt:    time.Now().UTC(),
+					StartedAt:    time.Now().UTC(),
+				}, nil
+			},
+		},
+	})
+
+	if _, err := rt.New(context.Background(), agentruntime.Spec{
+		RuntimeID: "rt-u-alice",
+		AgentID:   "u-alice",
+		AgentName: "alice",
+		Profile:   agentruntime.Profile{ModelID: "gpt-5.5"},
+	}); err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(workspaceRoot, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read local workspace AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(raw), "Use repo-local files.") {
+		t.Fatalf("local workspace AGENTS.md = %q, want instructions block", string(raw))
+	}
+}
+
 func TestRefreshWorkspaceAgentsFileCreatesManagedFileWhenMissing(t *testing.T) {
 	root := t.TempDir()
 	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
@@ -382,6 +445,92 @@ func TestRefreshWorkspaceAgentsFileIsIdempotent(t *testing.T) {
 	}
 	if got, want := strings.Count(string(second), "BEGIN CSGCLAW-INSTRUCTIONS (auto-generated; do not edit)"), 1; got != want {
 		t.Fatalf("instructions block start count = %d, want %d", got, want)
+	}
+}
+
+func TestSyncWorkspaceAgentsFileMovesManagedBlockToNewWorkspace(t *testing.T) {
+	root := t.TempDir()
+	oldWorkspace := filepath.Join(root, "old")
+	newWorkspace := filepath.Join(root, "new")
+	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{
+			ID:           "u-alice",
+			Name:         "alice",
+			RuntimeID:    h.RuntimeID,
+			Instructions: "Stay focused.",
+			RuntimeOptions: map[string]any{
+				"local_workspace_dir": newWorkspace,
+			},
+		}, nil
+	})
+
+	oldAgentsPath := filepath.Join(oldWorkspace, "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(oldAgentsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldAgentsPath, []byte("# User AGENTS\n\nKeep this.\n\n"+agent.RenderAgentsInstructionsBlock("Old instructions.")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rt.SyncWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}, map[string]any{
+		"local_workspace_dir": oldWorkspace,
+	}); err != nil {
+		t.Fatalf("SyncWorkspaceAgentsFile() error = %v", err)
+	}
+
+	oldRaw, err := os.ReadFile(oldAgentsPath)
+	if err != nil {
+		t.Fatalf("read old AGENTS.md: %v", err)
+	}
+	oldText := string(oldRaw)
+	if strings.Contains(oldText, "BEGIN CSGCLAW-INSTRUCTIONS") {
+		t.Fatalf("old AGENTS.md = %q, want managed block removed", oldText)
+	}
+	if !strings.Contains(oldText, "# User AGENTS\n\nKeep this.") {
+		t.Fatalf("old AGENTS.md = %q, want user content preserved", oldText)
+	}
+
+	newRaw, err := os.ReadFile(filepath.Join(newWorkspace, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read new AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(newRaw), "Stay focused.") {
+		t.Fatalf("new AGENTS.md = %q, want new instructions", string(newRaw))
+	}
+}
+
+func TestSyncWorkspaceAgentsFileDeletesManagedOnlyFileFromPreviousWorkspace(t *testing.T) {
+	root := t.TempDir()
+	oldWorkspace := filepath.Join(root, "old")
+	newWorkspace := filepath.Join(root, "new")
+	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{
+			ID:           "u-alice",
+			Name:         "alice",
+			RuntimeID:    h.RuntimeID,
+			Instructions: "Stay focused.",
+			RuntimeOptions: map[string]any{
+				"local_workspace_dir": newWorkspace,
+			},
+		}, nil
+	})
+
+	oldAgentsPath := filepath.Join(oldWorkspace, "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(oldAgentsPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldAgentsPath, []byte(agent.RenderAgentsInstructionsBlock("Old instructions.")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rt.SyncWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}, map[string]any{
+		"local_workspace_dir": oldWorkspace,
+	}); err != nil {
+		t.Fatalf("SyncWorkspaceAgentsFile() error = %v", err)
+	}
+
+	if _, err := os.Stat(oldAgentsPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old AGENTS.md stat error = %v, want not exist", err)
 	}
 }
 

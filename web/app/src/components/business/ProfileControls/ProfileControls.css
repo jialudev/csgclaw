@@ -189,6 +189,24 @@
   margin-top: 2px;
 }
 
+.runtime-option-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-option-input-row input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.runtime-option-action {
+  flex: 0 0 auto;
+  min-height: 46px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
 .field-label-with-help {
   display: flex;
   align-items: center;

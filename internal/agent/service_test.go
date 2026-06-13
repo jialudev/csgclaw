@@ -17,7 +17,6 @@ import (
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/config"
 	"csgclaw/internal/hub"
-	"csgclaw/internal/modelprovider"
 	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/runtime/openclawsandbox"
 	"csgclaw/internal/runtime/picoclawsandbox"
@@ -31,9 +30,6 @@ import (
 
 func init() {
 	testDefaultServiceOption = withTestPicoClawSandboxRuntime()
-	checkResponsesAPIForProvider = func(context.Context, string, string, string, map[string]string) error {
-		return nil
-	}
 }
 
 type fakeRuntime struct{}
@@ -100,7 +96,9 @@ type fakeAgentRuntime struct {
 	workspace  func(string) string
 	skills     func(string) string
 	hostLogs   func(string) []string
-	refresh    func(context.Context, agentruntime.Handle) error
+	validate   func(context.Context, agentruntime.RuntimeConfigSnapshot) error
+	restart    func(agentruntime.RuntimeConfigChange) (bool, error)
+	reconcile  func(context.Context, agentruntime.Handle, agentruntime.RuntimeConfigChange) error
 	provision  func(context.Context, agentruntime.ProvisionRequest) error
 	new        func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
 	start      func(context.Context, agentruntime.Handle) (agentruntime.State, error)
@@ -111,7 +109,15 @@ type fakeAgentRuntime struct {
 	streamLogs func(context.Context, agentruntime.Handle, agentruntime.LogOptions) error
 }
 
+type fakeBareAgentRuntime struct {
+	kind string
+}
+
 func (f fakeAgentRuntime) Kind() string {
+	return f.kind
+}
+
+func (f fakeBareAgentRuntime) Kind() string {
 	return f.kind
 }
 
@@ -156,11 +162,39 @@ func (f fakeAgentRuntime) Layout(agentHome string) agentruntime.Layout {
 	}
 }
 
+func (f fakeBareAgentRuntime) Layout(agentHome string) agentruntime.Layout {
+	return fakeAgentRuntime{kind: f.kind}.Layout(agentHome)
+}
+
 func (f fakeAgentRuntime) Provision(ctx context.Context, req agentruntime.ProvisionRequest) error {
 	if f.provision != nil {
 		return f.provision(ctx, req)
 	}
 	return nil
+}
+
+func (f fakeBareAgentRuntime) New(context.Context, agentruntime.Spec) (agentruntime.Handle, error) {
+	return agentruntime.Handle{}, nil
+}
+
+func (f fakeBareAgentRuntime) Start(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeBareAgentRuntime) Stop(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateStopped, nil
+}
+
+func (f fakeBareAgentRuntime) Delete(context.Context, agentruntime.Handle) error {
+	return nil
+}
+
+func (f fakeBareAgentRuntime) State(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+	return agentruntime.StateRunning, nil
+}
+
+func (f fakeBareAgentRuntime) Info(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+	return agentruntime.Info{}, nil
 }
 
 func (f fakeAgentRuntime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
@@ -170,9 +204,23 @@ func (f fakeAgentRuntime) New(ctx context.Context, spec agentruntime.Spec) (agen
 	return agentruntime.Handle{}, nil
 }
 
-func (f fakeAgentRuntime) RefreshWorkspaceAgentsFile(ctx context.Context, h agentruntime.Handle) error {
-	if f.refresh != nil {
-		return f.refresh(ctx, h)
+func (f fakeAgentRuntime) ValidateConfig(ctx context.Context, current agentruntime.RuntimeConfigSnapshot) error {
+	if f.validate != nil {
+		return f.validate(ctx, current)
+	}
+	return nil
+}
+
+func (f fakeAgentRuntime) RestartRequired(change agentruntime.RuntimeConfigChange) (bool, error) {
+	if f.restart != nil {
+		return f.restart(change)
+	}
+	return false, nil
+}
+
+func (f fakeAgentRuntime) ReconcileConfig(ctx context.Context, h agentruntime.Handle, change agentruntime.RuntimeConfigChange) error {
+	if f.reconcile != nil {
+		return f.reconcile(ctx, h, change)
 	}
 	return nil
 }
@@ -823,52 +871,54 @@ func TestEnsureCodexResponsesAPIRetriesAfterTransientProbeError(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	calls := 0
-	restore := TestOnlySetResponsesAPIProbe(func(_ context.Context, baseURL, apiKey, modelID string, _ map[string]string) error {
-		calls++
-		if baseURL != "https://api.example/v1" {
-			t.Fatalf("responses probe baseURL = %q, want api.example", baseURL)
-		}
-		if modelID != "gpt-5.5" {
-			t.Fatalf("responses probe modelID = %q, want gpt-5.5", modelID)
-		}
-		if calls == 1 {
-			if apiKey != "bad-key" {
-				t.Fatalf("first responses probe apiKey = %q, want bad-key", apiKey)
-			}
-			return errors.New("temporary outage")
-		}
-		if apiKey != "fixed-key" {
-			t.Fatalf("second responses probe apiKey = %q, want fixed-key", apiKey)
-		}
-		return nil
-	})
-	t.Cleanup(restore)
-
-	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "")
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:test", "",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			validate: func(_ context.Context, current agentruntime.RuntimeConfigSnapshot) error {
+				calls++
+				if current.Profile.BaseURL != "https://api.example/v1" {
+					t.Fatalf("responses probe baseURL = %q, want api.example", current.Profile.BaseURL)
+				}
+				if current.Profile.ModelID != "gpt-5.5" {
+					t.Fatalf("responses probe modelID = %q, want gpt-5.5", current.Profile.ModelID)
+				}
+				if calls == 1 {
+					if current.Profile.APIKey != "bad-key" {
+						t.Fatalf("first responses probe apiKey = %q, want bad-key", current.Profile.APIKey)
+					}
+					return errors.New("temporary outage")
+				}
+				if current.Profile.APIKey != "fixed-key" {
+					t.Fatalf("second responses probe apiKey = %q, want fixed-key", current.Profile.APIKey)
+				}
+				return nil
+			},
+		}),
+	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	err = svc.ensureCodexResponsesAPI(context.Background(), RuntimeKindCodex, AgentProfile{
+	err = svc.validateRuntimeConfig(context.Background(), RuntimeKindCodex, runtimeConfigSnapshotForAgent(AgentProfile{
 		Provider:        ProviderAPI,
 		BaseURL:         "https://api.example/v1",
 		APIKey:          "bad-key",
 		ModelID:         "gpt-5.5",
 		ProfileComplete: true,
-	})
+	}, nil))
 	if err == nil || !strings.Contains(err.Error(), "temporary outage") {
-		t.Fatalf("first ensureCodexResponsesAPI() error = %v, want temporary outage", err)
+		t.Fatalf("first validateRuntimeConfig() error = %v, want temporary outage", err)
 	}
 
-	err = svc.ensureCodexResponsesAPI(context.Background(), RuntimeKindCodex, AgentProfile{
+	err = svc.validateRuntimeConfig(context.Background(), RuntimeKindCodex, runtimeConfigSnapshotForAgent(AgentProfile{
 		Provider:        ProviderAPI,
 		BaseURL:         "https://api.example/v1",
 		APIKey:          "fixed-key",
 		ModelID:         "gpt-5.5",
 		ProfileComplete: true,
-	})
+	}, nil))
 	if err != nil {
-		t.Fatalf("second ensureCodexResponsesAPI() error = %v, want retry success", err)
+		t.Fatalf("second validateRuntimeConfig() error = %v, want retry success", err)
 	}
 	if calls != 2 {
 		t.Fatalf("responses probe calls = %d, want 2", calls)
@@ -877,20 +927,6 @@ func TestEnsureCodexResponsesAPIRetriesAfterTransientProbeError(t *testing.T) {
 
 func TestCreateWorkerCodexRuntimeContinuesWhenResponsesUnsupported(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-
-	restore := TestOnlySetResponsesAPIProbe(func(_ context.Context, baseURL, apiKey, modelID string, _ map[string]string) error {
-		if baseURL != "https://unsupported.example/v1" {
-			t.Fatalf("responses probe baseURL = %q, want upstream profile URL", baseURL)
-		}
-		if apiKey != "api-key" {
-			t.Fatalf("responses probe apiKey = %q, want upstream profile key", apiKey)
-		}
-		if modelID != "gpt-4.1" {
-			t.Fatalf("responses probe modelID = %q, want gpt-4.1", modelID)
-		}
-		return modelprovider.ErrResponsesAPIUnsupported
-	})
-	t.Cleanup(restore)
 
 	svc, err := NewService(
 		testModelConfig(),
@@ -903,6 +939,18 @@ func TestCreateWorkerCodexRuntimeContinuesWhenResponsesUnsupported(t *testing.T)
 		"",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
+			validate: func(_ context.Context, current agentruntime.RuntimeConfigSnapshot) error {
+				if current.Profile.BaseURL != "https://unsupported.example/v1" {
+					t.Fatalf("responses probe baseURL = %q, want upstream profile URL", current.Profile.BaseURL)
+				}
+				if current.Profile.APIKey != "api-key" {
+					t.Fatalf("responses probe apiKey = %q, want upstream profile key", current.Profile.APIKey)
+				}
+				if current.Profile.ModelID != "gpt-4.1" {
+					t.Fatalf("responses probe modelID = %q, want gpt-4.1", current.Profile.ModelID)
+				}
+				return nil
+			},
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-alice"}, nil
 			},
@@ -937,21 +985,6 @@ func TestUpdateCodexAgentProfilePatchRestartsActiveBridge(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	probeCalls := 0
-	restore := TestOnlySetResponsesAPIProbe(func(_ context.Context, baseURL, apiKey, modelID string, _ map[string]string) error {
-		probeCalls++
-		if baseURL != "https://api.deepseek.com" {
-			t.Fatalf("responses probe baseURL = %q, want deepseek upstream", baseURL)
-		}
-		if apiKey != "deepseek-key" {
-			t.Fatalf("responses probe apiKey = %q, want updated profile key", apiKey)
-		}
-		if modelID != "deepseek-v4-pro" {
-			t.Fatalf("responses probe modelID = %q, want deepseek-v4-pro", modelID)
-		}
-		return modelprovider.ErrResponsesAPIUnsupported
-	})
-	t.Cleanup(restore)
-
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		testModelConfig(),
@@ -963,7 +996,27 @@ func TestUpdateCodexAgentProfilePatchRestartsActiveBridge(t *testing.T) {
 		"manager-image:test",
 		"",
 		WithLifecycleObserver(observer),
-		WithRuntime(fakeAgentRuntime{kind: RuntimeKindCodex}),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			validate: func(_ context.Context, current agentruntime.RuntimeConfigSnapshot) error {
+				probeCalls++
+				if current.Profile.BaseURL != "https://api.deepseek.com" {
+					t.Fatalf("responses probe baseURL = %q, want deepseek upstream", current.Profile.BaseURL)
+				}
+				if current.Profile.APIKey != "deepseek-key" {
+					t.Fatalf("responses probe apiKey = %q, want updated profile key", current.Profile.APIKey)
+				}
+				if current.Profile.ModelID != "deepseek-v4-pro" {
+					t.Fatalf("responses probe modelID = %q, want deepseek-v4-pro", current.Profile.ModelID)
+				}
+				return nil
+			},
+			restart: func(change agentruntime.RuntimeConfigChange) (bool, error) {
+				return change.Previous.Profile.BaseURL != change.Current.Profile.BaseURL ||
+					change.Previous.Profile.APIKey != change.Current.Profile.APIKey ||
+					change.Previous.Profile.ModelID != change.Current.Profile.ModelID, nil
+			},
+		}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -1014,20 +1067,6 @@ func TestUpdateCodexAgentProfilePatchRestartsActiveBridge(t *testing.T) {
 func TestUpdateAgentProfileCodexRuntimeFallbackRestartsActiveBridge(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	restore := TestOnlySetResponsesAPIProbe(func(_ context.Context, baseURL, apiKey, modelID string, _ map[string]string) error {
-		if baseURL != "https://api.deepseek.com" {
-			t.Fatalf("responses probe baseURL = %q, want deepseek upstream", baseURL)
-		}
-		if apiKey != "deepseek-key" {
-			t.Fatalf("responses probe apiKey = %q, want updated profile key", apiKey)
-		}
-		if modelID != "deepseek-v4-pro" {
-			t.Fatalf("responses probe modelID = %q, want deepseek-v4-pro", modelID)
-		}
-		return modelprovider.ErrResponsesAPIUnsupported
-	})
-	t.Cleanup(restore)
-
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		testModelConfig(),
@@ -1041,6 +1080,23 @@ func TestUpdateAgentProfileCodexRuntimeFallbackRestartsActiveBridge(t *testing.T
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
+			validate: func(_ context.Context, current agentruntime.RuntimeConfigSnapshot) error {
+				if current.Profile.BaseURL != "https://api.deepseek.com" {
+					t.Fatalf("responses probe baseURL = %q, want deepseek upstream", current.Profile.BaseURL)
+				}
+				if current.Profile.APIKey != "deepseek-key" {
+					t.Fatalf("responses probe apiKey = %q, want updated profile key", current.Profile.APIKey)
+				}
+				if current.Profile.ModelID != "deepseek-v4-pro" {
+					t.Fatalf("responses probe modelID = %q, want deepseek-v4-pro", current.Profile.ModelID)
+				}
+				return nil
+			},
+			restart: func(change agentruntime.RuntimeConfigChange) (bool, error) {
+				return change.Previous.Profile.BaseURL != change.Current.Profile.BaseURL ||
+					change.Previous.Profile.APIKey != change.Current.Profile.APIKey ||
+					change.Previous.Profile.ModelID != change.Current.Profile.ModelID, nil
+			},
 			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
 				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "codex-session-dev"}, nil
 			},
@@ -1097,7 +1153,10 @@ func TestUpdateAgentProfileCodexRuntimeFallbackRestartsActiveBridge(t *testing.T
 }
 
 func TestUpdateInstructionsRefreshesCodexWorkspaceAgentsFile(t *testing.T) {
-	var refreshCalls []agentruntime.Handle
+	var reconcileCalls []struct {
+		handle agentruntime.Handle
+		change agentruntime.RuntimeConfigChange
+	}
 	svc, err := NewService(
 		testModelConfig(),
 		config.ServerConfig{},
@@ -1105,8 +1164,11 @@ func TestUpdateInstructionsRefreshesCodexWorkspaceAgentsFile(t *testing.T) {
 		"",
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
-			refresh: func(_ context.Context, h agentruntime.Handle) error {
-				refreshCalls = append(refreshCalls, h)
+			reconcile: func(_ context.Context, h agentruntime.Handle, change agentruntime.RuntimeConfigChange) error {
+				reconcileCalls = append(reconcileCalls, struct {
+					handle agentruntime.Handle
+					change agentruntime.RuntimeConfigChange
+				}{handle: h, change: change})
 				return nil
 			},
 		}),
@@ -1133,28 +1195,21 @@ func TestUpdateInstructionsRefreshesCodexWorkspaceAgentsFile(t *testing.T) {
 	if updated.Instructions != nextInstructions {
 		t.Fatalf("Update().Instructions = %q, want %q", updated.Instructions, nextInstructions)
 	}
-	if len(refreshCalls) != 1 {
-		t.Fatalf("RefreshWorkspaceAgentsFile() calls = %d, want 1", len(refreshCalls))
+	if len(reconcileCalls) != 1 {
+		t.Fatalf("ReconcileConfig() calls = %d, want 1", len(reconcileCalls))
 	}
-	if got, want := refreshCalls[0].RuntimeID, "rt-u-dev"; got != want {
-		t.Fatalf("RefreshWorkspaceAgentsFile() runtime id = %q, want %q", got, want)
+	if got, want := reconcileCalls[0].handle.RuntimeID, "rt-u-dev"; got != want {
+		t.Fatalf("ReconcileConfig() runtime id = %q, want %q", got, want)
 	}
 }
 
 func TestUpdateInstructionsDoesNotRefreshNonCodexRuntime(t *testing.T) {
-	refreshCalled := false
 	svc, err := NewService(
 		testModelConfig(),
 		config.ServerConfig{},
 		"manager-image:test",
 		"",
-		WithRuntime(fakeAgentRuntime{
-			kind: RuntimeKindPicoClawSandbox,
-			refresh: func(context.Context, agentruntime.Handle) error {
-				refreshCalled = true
-				return nil
-			},
-		}),
+		WithRuntime(fakeBareAgentRuntime{kind: RuntimeKindPicoClawSandbox}),
 	)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
@@ -1174,8 +1229,119 @@ func TestUpdateInstructionsDoesNotRefreshNonCodexRuntime(t *testing.T) {
 	if _, err := svc.Update(context.Background(), "u-dev", UpdateRequest{Instructions: &nextInstructions}); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if refreshCalled {
-		t.Fatal("RefreshWorkspaceAgentsFile() called for non-codex runtime, want no call")
+}
+
+func TestUpdateRuntimeOptionsSyncsCodexWorkspaceAgentsFile(t *testing.T) {
+	var reconcileCalls []struct {
+		handle agentruntime.Handle
+		change agentruntime.RuntimeConfigChange
+	}
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			reconcile: func(_ context.Context, h agentruntime.Handle, change agentruntime.RuntimeConfigChange) error {
+				reconcileCalls = append(reconcileCalls, struct {
+					handle agentruntime.Handle
+					change agentruntime.RuntimeConfigChange
+				}{
+					handle: h,
+					change: change,
+				})
+				return nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:           "u-dev",
+		Name:         "dev",
+		RuntimeID:    "rt-u-dev",
+		RuntimeKind:  RuntimeKindCodex,
+		Role:         RoleWorker,
+		Status:       string(agentruntime.StateStopped),
+		Instructions: "keep synced",
+		RuntimeOptions: map[string]any{
+			"local_workspace_dir": "/tmp/old",
+		},
+		CreatedAt: time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+
+	nextRuntimeOptions := map[string]any{"local_workspace_dir": "/tmp/new"}
+	updated, err := svc.Update(context.Background(), "u-dev", UpdateRequest{RuntimeOptions: &nextRuntimeOptions})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.RuntimeOptions["local_workspace_dir"] != "/tmp/new" {
+		t.Fatalf("Update().RuntimeOptions = %#v, want local_workspace_dir /tmp/new", updated.RuntimeOptions)
+	}
+	if len(reconcileCalls) != 1 {
+		t.Fatalf("ReconcileConfig() calls = %d, want 1", len(reconcileCalls))
+	}
+	if got, want := reconcileCalls[0].handle.RuntimeID, "rt-u-dev"; got != want {
+		t.Fatalf("ReconcileConfig() runtime id = %q, want %q", got, want)
+	}
+	if got := reconcileCalls[0].change.Previous.Options["local_workspace_dir"]; got != "/tmp/old" {
+		t.Fatalf("ReconcileConfig() previous runtime options = %#v, want /tmp/old", reconcileCalls[0].change.Previous.Options)
+	}
+}
+
+func TestUpdateCodexRuntimeOptionsDoesNotRestartRunningRuntime(t *testing.T) {
+	observer := &fakeLifecycleObserver{}
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithLifecycleObserver(observer),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			reconcile: func(context.Context, agentruntime.Handle, agentruntime.RuntimeConfigChange) error {
+				return nil
+			},
+			info: func(context.Context, agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{State: agentruntime.StateRunning}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:          "u-dev",
+		Name:        "dev",
+		RuntimeID:   "rt-u-dev",
+		RuntimeKind: RuntimeKindCodex,
+		Role:        RoleWorker,
+		Status:      string(agentruntime.StateRunning),
+		RuntimeOptions: map[string]any{
+			"local_workspace_dir": "/tmp/old",
+		},
+		AgentProfile: AgentProfile{
+			Name:            "dev",
+			Provider:        ProviderCodex,
+			ModelID:         "gpt-5.5",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
+		CreatedAt:       time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+
+	nextRuntimeOptions := map[string]any{"local_workspace_dir": "/tmp/new"}
+	updated, err := svc.Update(context.Background(), "u-dev", UpdateRequest{RuntimeOptions: &nextRuntimeOptions})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.AgentProfile.EnvRestartRequired {
+		t.Fatal("Update().AgentProfile.EnvRestartRequired = true, want false after codex local_workspace_dir change")
+	}
+	if len(observer.stopCalls) != 0 {
+		t.Fatalf("StopAgent() calls = %+v, want none", observer.stopCalls)
 	}
 }
 

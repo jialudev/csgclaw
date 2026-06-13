@@ -7,6 +7,7 @@ import {
   type RuntimeOptionSchema,
 } from "@/models/agents";
 import type { LocaleCode } from "@/models/conversations";
+import { pickLocalDirectoryPath } from "./runtimeOptionDirectoryPicker";
 
 export type RuntimeOptionsFieldsProps = {
   draft: AgentDraft;
@@ -14,6 +15,14 @@ export type RuntimeOptionsFieldsProps = {
   schemas?: RuntimeOptionSchema[] | null;
   onDraftChange: (draft: AgentDraft) => void;
 };
+
+function directoryPickerLabel(locale: LocaleCode): string {
+  return locale === "zh" ? "选择目录" : "Choose directory";
+}
+
+function clearFieldLabel(locale: LocaleCode): string {
+  return locale === "zh" ? "清空" : "Clear";
+}
 
 export function RuntimeOptionsFields({ draft, locale, schemas = [], onDraftChange }: RuntimeOptionsFieldsProps) {
   if (!Array.isArray(schemas) || schemas.length === 0) {
@@ -30,22 +39,57 @@ export function RuntimeOptionsFields({ draft, locale, schemas = [], onDraftChang
         const label = localizedRuntimeOptionLabel(schema, locale);
         const description = localizedRuntimeOptionDescription(schema, locale);
         const inputValue = runtimeOptionValueForPath(draft.runtime_options, path);
-        const placeholder = schema.type === "directory" ? "/path/to/workspace" : "";
+        const isDirectory = schema.type === "directory";
+        const placeholder = isDirectory ? "/path/to/workspace" : "";
         return (
           <label key={String(schema.key ?? path)} className="field span-2">
             <span>{label}</span>
-            <input
-              value={inputValue}
-              required={Boolean(schema.required)}
-              aria-required={schema.required ? "true" : undefined}
-              placeholder={placeholder}
-              onInput={(event) =>
-                onDraftChange({
-                  ...draft,
-                  runtime_options: setRuntimeOptionValue(draft.runtime_options, path, event.currentTarget.value),
-                })
-              }
-            />
+            <div className={isDirectory ? "runtime-option-input-row" : undefined}>
+              <input
+                value={inputValue}
+                required={Boolean(schema.required)}
+                aria-required={schema.required ? "true" : undefined}
+                placeholder={placeholder}
+                onInput={(event) =>
+                  onDraftChange({
+                    ...draft,
+                    runtime_options: setRuntimeOptionValue(draft.runtime_options, path, event.currentTarget.value),
+                  })
+                }
+              />
+              {isDirectory ? (
+                <>
+                  <button
+                    type="button"
+                    className="csg-button-secondary-gray runtime-option-action"
+                    onClick={async () => {
+                      const pickedPath = await pickLocalDirectoryPath();
+                      if (!pickedPath) {
+                        return;
+                      }
+                      onDraftChange({
+                        ...draft,
+                        runtime_options: setRuntimeOptionValue(draft.runtime_options, path, pickedPath),
+                      });
+                    }}
+                  >
+                    {directoryPickerLabel(locale)}
+                  </button>
+                  <button
+                    type="button"
+                    className="csg-button-secondary-gray runtime-option-action"
+                    onClick={() =>
+                      onDraftChange({
+                        ...draft,
+                        runtime_options: setRuntimeOptionValue(draft.runtime_options, path, ""),
+                      })
+                    }
+                  >
+                    {clearFieldLabel(locale)}
+                  </button>
+                </>
+              ) : null}
+            </div>
             {description ? <span className="field-hint">{description}</span> : null}
           </label>
         );

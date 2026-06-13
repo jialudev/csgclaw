@@ -1269,7 +1269,7 @@ func (s *Service) Start(ctx context.Context, id string) (Agent, error) {
 	if got.AgentProfile.EnvRestartRequired || got.AgentProfile.ImageUpgradeRequired {
 		return s.Recreate(ctx, id)
 	}
-	if err := s.ensureCodexResponsesAPI(ctx, strings.TrimSpace(got.RuntimeKind), got.AgentProfile); err != nil {
+	if err := s.validateRuntimeConfig(ctx, strings.TrimSpace(got.RuntimeKind), runtimeConfigSnapshotForAgent(got.AgentProfile, got.RuntimeOptions)); err != nil {
 		return Agent{}, err
 	}
 
@@ -1587,7 +1587,7 @@ func (s *Service) CreateWorker(ctx context.Context, spec CreateAgentSpec) (Agent
 	if err != nil {
 		return Agent{}, err
 	}
-	if err := s.ensureCodexResponsesAPI(ctx, runtimeKind, resolvedProfile); err != nil {
+	if err := s.validateRuntimeConfig(ctx, runtimeKind, runtimeConfigSnapshotForAgent(resolvedProfile, spec.RuntimeOptions)); err != nil {
 		return Agent{}, err
 	}
 	runtimeProfile := s.runtimeProfileForKind(runtimeKind, id, name, description, resolvedProfile)
