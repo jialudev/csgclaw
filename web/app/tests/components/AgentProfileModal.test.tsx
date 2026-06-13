@@ -13,6 +13,7 @@ const labels: Record<string, string> = {
   editAgentTitle: "Edit Agent",
   profileBasics: "Basics",
   profileModelSection: "Model",
+  profileRuntimeOptions: "Runtime Options",
   profileProvider: "Provider",
   profileRuntimeKind: "Runtime",
 };
@@ -49,6 +50,7 @@ describe("AgentProfileModal", () => {
         managerAgent={null}
         agentModels={[]}
         agentModelBusy={false}
+        locale="en"
         authStatuses={{}}
         authBusyProvider=""
         agentCreateBotKind="worker"
@@ -80,6 +82,7 @@ describe("AgentProfileModal", () => {
         managerAgent={null}
         agentModels={[]}
         agentModelBusy={false}
+        locale="en"
         authStatuses={{}}
         authBusyProvider=""
         agentCreateBotKind="worker"
@@ -113,6 +116,7 @@ describe("AgentProfileModal", () => {
         managerAgent={null}
         agentModels={[]}
         agentModelBusy={false}
+        locale="en"
         authStatuses={{}}
         authBusyProvider=""
         agentCreateBotKind="worker"
@@ -135,6 +139,61 @@ describe("AgentProfileModal", () => {
     expect(container.querySelector(".profile-section .profile-section-title")?.textContent).toBe("Basics");
   });
 
+  it("renders runtime option fields from the selected runtime schema", () => {
+    render(
+      <AgentProfileModal
+        t={t}
+        agentModalMode="create"
+        editingAgent={null}
+        agentDraft={{
+          ...agentToDraft(worker),
+          runtime_kind: "codex",
+          runtime_options: { local_workspace_dir: "/tmp/project" },
+        }}
+        locale="zh"
+        onAgentDraftChange={vi.fn()}
+        onAgentModelsReset={vi.fn()}
+        hubTemplates={[]}
+        bootstrapConfig={{
+          runtime_option_schemas: {
+            codex: [
+              {
+                key: "local_workspace_dir",
+                path: "local_workspace_dir",
+                label: "Local Workspace Dir",
+                label_zh: "本地工作目录",
+                label_en: "Local Workspace Dir",
+                description: "Leave empty to use the default agent workspace.",
+                description_zh: "留空时使用默认 Agent 工作目录。",
+                description_en: "Leave empty to use the default agent workspace.",
+                type: "directory",
+              },
+            ],
+          },
+        }}
+        managerAgent={null}
+        agentModels={[]}
+        agentModelBusy={false}
+        authStatuses={{}}
+        authBusyProvider=""
+        agentCreateBotKind="worker"
+        onAgentCreateBotKindChange={vi.fn()}
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onProviderLogin={vi.fn()}
+        agentError=""
+        agentProgress={null}
+        agentBusy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Runtime Options")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("/tmp/project")).toBeInTheDocument();
+    expect(screen.getByText("本地工作目录")).toBeInTheDocument();
+    expect(screen.getByText("留空时使用默认 Agent 工作目录。")).toBeInTheDocument();
+  });
+
   it("places avatar and name above a full-width description before the create-kind tabs", () => {
     const { container } = render(
       <AgentProfileModal
@@ -149,6 +208,7 @@ describe("AgentProfileModal", () => {
         managerAgent={null}
         agentModels={[]}
         agentModelBusy={false}
+        locale="en"
         authStatuses={{}}
         authBusyProvider=""
         agentCreateBotKind="worker"
@@ -188,6 +248,7 @@ describe("AgentProfileModal", () => {
         managerAgent={null}
         agentModels={[]}
         agentModelBusy={false}
+        locale="en"
         authStatuses={{}}
         authBusyProvider=""
         agentCreateBotKind="notification"

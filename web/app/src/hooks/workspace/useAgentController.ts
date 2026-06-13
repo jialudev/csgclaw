@@ -46,7 +46,7 @@ import {
   availableManagerRebuildRuntimeOptions,
   collectManagerTemplateVariants,
   defaultManagerRebuildImageForRuntime,
-  draftNotifierRuntimeOptionsForSave,
+  draftRuntimeOptionsForSave,
   draftToProfile,
   ensureNotifierPullSubscriptionDraft,
   isAgentRunning,
@@ -225,7 +225,9 @@ export function useAgentController({
     },
     enabled: Boolean(skillsAgentID),
   });
-  const agentSkillsError = agentSkillsQuery.error ? errorMessage(agentSkillsQuery.error, t("agentSkillsLoadFailed")) : "";
+  const agentSkillsError = agentSkillsQuery.error
+    ? errorMessage(agentSkillsQuery.error, t("agentSkillsLoadFailed"))
+    : "";
   const activeConversation = useMemo(
     () => data?.rooms.find((item) => item.id === activeConversationId) ?? null,
     [data, activeConversationId],
@@ -799,7 +801,7 @@ export function useAgentController({
     if (!normalized) {
       return "";
     }
-    const runtimeOptions = draftNotifierRuntimeOptionsForSave(normalized, {
+    const runtimeOptions = draftRuntimeOptionsForSave(normalized, {
       mergeNotifier: false,
     });
     return JSON.stringify(runtimeOptions || {});
@@ -835,7 +837,7 @@ export function useAgentController({
           setAgentPageError(t("profileSaveIncompleteError"));
           return;
         }
-        const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, { mergeNotifier: true });
+        const runtimeOptions = draftRuntimeOptionsForSave(draft, { mergeNotifier: true });
         const payload: AgentUpdatePayload = {
           name: draftToSave.name,
           avatar: draftToSave.avatar,
@@ -858,7 +860,7 @@ export function useAgentController({
         name: draftToSave.name,
         description: draftToSave.description,
       });
-      const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, {
+      const runtimeOptions = draftRuntimeOptionsForSave(draft, {
         mergeNotifier: false,
       });
       const profileChanged = profilePayloadForCompare(draftToSave) !== profilePayloadForCompare(agentPageSavedDraft);
@@ -972,7 +974,7 @@ export function useAgentController({
     try {
       const draft = ensureNotifierPullSubscriptionDraft(agentDraft);
       if (isNotification) {
-        const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, { mergeNotifier: true });
+        const runtimeOptions = draftRuntimeOptionsForSave(draft, { mergeNotifier: true });
         const payload: AgentUpdatePayload = {
           name: agentDraft.name,
           avatar: agentDraft.avatar,
@@ -1007,7 +1009,7 @@ export function useAgentController({
         name: agentDraft.name,
         description: agentDraft.description,
       });
-      const runtimeOptions = draftNotifierRuntimeOptionsForSave(draft, {
+      const runtimeOptions = draftRuntimeOptionsForSave(draft, {
         mergeNotifier: false,
       });
       const payload: AgentUpdatePayload = {
@@ -1297,6 +1299,7 @@ export function useAgentController({
     agentViewProps: {
       item: selectedAgentForPage,
       t,
+      locale,
       busyKey: agentActionBusy,
       error: agentsDisplayError,
       draft: agentPageDraft,
@@ -1344,6 +1347,7 @@ export function useAgentController({
       showAgentModal && agentDraft
         ? {
             t,
+            locale,
             agentModalMode,
             agentCreateBotKind,
             onAgentCreateBotKindChange: setAgentCreateBotKind,

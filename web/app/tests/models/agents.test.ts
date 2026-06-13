@@ -11,6 +11,7 @@ import {
   agentRuntimePollSettled,
   agentStatusLabel,
   draftNotifierRuntimeOptionsForSave,
+  draftRuntimeOptionsForSave,
   draftToProfile,
   ensureNotifierPullSubscriptionDraft,
   envRowsToMap,
@@ -36,6 +37,9 @@ import {
   resolveAgentChannelUserID,
   resolveAgentAvatarSource,
   runtimeImageForKind,
+  runtimeOptionSchemasForAgent,
+  localizedRuntimeOptionLabel,
+  localizedRuntimeOptionDescription,
   shouldWaitForManagerRuntimeAfterProfileSave,
 } from "@/models/agents";
 import { AGENT_AVATAR_OPTIONS, selectUnusedAgentAvatar } from "@/shared/avatarOptions";
@@ -227,6 +231,73 @@ describe("agent model helpers", () => {
       reasoning_effort: "medium",
       request_options: { top_p: 0.9 },
     });
+  });
+
+  it("merges generic runtime options into the saved payload", () => {
+    expect(
+      draftRuntimeOptionsForSave({
+        runtime_options: {
+          ignored_empty: "   ",
+          local_workspace_dir: "  /tmp/project  ",
+        },
+      }),
+    ).toEqual({
+      local_workspace_dir: "/tmp/project",
+    });
+
+    expect(
+      runtimeOptionSchemasForAgent("codex", null, {
+        runtime_option_schemas: {
+          codex: [
+            {
+              key: "local_workspace_dir",
+              path: "local_workspace_dir",
+              label: "Local Workspace Dir",
+              label_zh: "本地工作目录",
+              label_en: "Local Workspace Dir",
+              description_zh: "留空时使用默认 Agent 工作目录。",
+              description_en: "Leave empty to use the default agent workspace.",
+            },
+          ],
+        },
+      }),
+    ).toEqual([
+      {
+        key: "local_workspace_dir",
+        path: "local_workspace_dir",
+        label: "Local Workspace Dir",
+        label_zh: "本地工作目录",
+        label_en: "Local Workspace Dir",
+        description: "",
+        description_zh: "留空时使用默认 Agent 工作目录。",
+        description_en: "Leave empty to use the default agent workspace.",
+        type: "text",
+        required: false,
+        picker: "",
+        options: [],
+      },
+    ]);
+    expect(
+      localizedRuntimeOptionLabel(
+        {
+          path: "local_workspace_dir",
+          label: "Local Workspace Dir",
+          label_zh: "本地工作目录",
+          label_en: "Local Workspace Dir",
+        },
+        "zh",
+      ),
+    ).toBe("本地工作目录");
+    expect(
+      localizedRuntimeOptionDescription(
+        {
+          path: "local_workspace_dir",
+          description_zh: "留空时使用默认 Agent 工作目录。",
+          description_en: "Leave empty to use the default agent workspace.",
+        },
+        "en",
+      ),
+    ).toBe("Leave empty to use the default agent workspace.");
   });
 
   it("selects runtime-specific templates and images", () => {

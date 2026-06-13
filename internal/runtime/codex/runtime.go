@@ -129,9 +129,10 @@ type Runtime struct {
 }
 
 var (
-	_ agentruntime.Runtime             = (*Runtime)(nil)
-	_ agentruntime.LogStreamer         = (*Runtime)(nil)
-	_ agentruntime.ConversationStarter = (*Runtime)(nil)
+	_ agentruntime.Runtime                     = (*Runtime)(nil)
+	_ agentruntime.LogStreamer                 = (*Runtime)(nil)
+	_ agentruntime.ConversationStarter         = (*Runtime)(nil)
+	_ agentruntime.RuntimeOptionSchemaProvider = (*Runtime)(nil)
 )
 
 func New(deps Dependencies) *Runtime {

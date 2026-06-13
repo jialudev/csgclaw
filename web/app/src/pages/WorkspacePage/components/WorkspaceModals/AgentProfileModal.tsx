@@ -18,6 +18,7 @@ import {
   NotifierControls,
   profileBaseURLMissing,
   requiredFieldLabel,
+  RuntimeOptionsFields,
 } from "@/components/business/ProfileControls";
 import { Button, Select } from "@/components/ui";
 import { AgentAvatarPicker } from "@/components/business/AgentAvatar";
@@ -33,11 +34,13 @@ import {
   normalizeTemplateSelection,
   notifierFormIsComplete,
   pickDefaultAgentTemplate,
+  runtimeOptionSchemasForAgent,
   runtimeImageForKind,
   templateMatchesRuntime,
 } from "@/models/agents";
 import type { AgentDraft, AgentLike, RuntimeBootstrapConfig } from "@/models/agents";
 import type { TranslateFn } from "@/models/conversations";
+import type { LocaleCode } from "@/models/conversations";
 import type { HubTemplate } from "@/models/hubWorkspace";
 import type { CLIProxyAuthStatusMap } from "@/hooks/workspace/useCLIProxyAuthStatuses";
 import { ModalCloseButton } from "./ModalCloseButton";
@@ -68,6 +71,7 @@ export type AgentProfileModalProps = {
   onClose: () => void;
   onProviderLogin?: (provider: string) => VoidOrPromise;
   onSave: () => VoidOrPromise;
+  locale: LocaleCode;
   t: TranslateFn;
 };
 
@@ -92,6 +96,7 @@ export function AgentProfileModal({
   agentError = "",
   agentProgress = null,
   agentBusy = false,
+  locale,
   onClose,
   onSave,
 }: AgentProfileModalProps) {
@@ -101,6 +106,13 @@ export function AgentProfileModal({
   const isNotificationContext = isNotificationBotDraftContext(agentDraft, editingAgent, createBotKind);
   const isWorkerCreate = agentModalMode === "create" && !isNotificationContext;
   const templateLocked = agentCreateTemplateLocked(agentDraft, agentModalMode);
+  const runtimeOptionSchemas = isNotificationContext
+    ? []
+    : runtimeOptionSchemasForAgent(
+        agentDraft.runtime_kind,
+        agentModalMode === "edit" ? editingAgent : null,
+        bootstrapConfig,
+      );
 
   useEffect(
     () => () => {
@@ -429,11 +441,24 @@ export function AgentProfileModal({
                     <textarea
                       className="compact-textarea"
                       value={agentDraft.instructions || ""}
-                      onInput={(event) => onAgentDraftChange({ ...agentDraft, instructions: event.currentTarget.value })}
+                      onInput={(event) =>
+                        onAgentDraftChange({ ...agentDraft, instructions: event.currentTarget.value })
+                      }
                     />
                   </label>
                 </div>
               </section>
+              {runtimeOptionSchemas.length > 0 ? (
+                <section className="profile-section">
+                  <div className="profile-section-title">{t("profileRuntimeOptions")}</div>
+                  <RuntimeOptionsFields
+                    draft={agentDraft}
+                    locale={locale}
+                    schemas={runtimeOptionSchemas}
+                    onDraftChange={onAgentDraftChange}
+                  />
+                </section>
+              ) : null}
               {agentDraft.provider === "api" ? (
                 <section className="profile-section">
                   <div className="profile-section-title">{t("profileAPIProvider")}</div>

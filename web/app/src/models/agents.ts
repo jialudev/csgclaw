@@ -17,11 +17,27 @@ import {
   WORKER_AGENT_ROLE,
 } from "@/shared/constants/agents";
 import { avatarFallbackText } from "@/shared/avatar";
+import type { LocaleCode } from "@/models/conversations";
 
 export type RuntimeKind = "picoclaw_sandbox" | "openclaw_sandbox" | "codex" | string;
 export type BotType = typeof BOT_TYPE_NORMAL | typeof BOT_TYPE_NOTIFICATION | string;
 export type ProviderName = "csghub_lite" | "codex" | "claude_code" | "api" | string;
 export type JSONRecord = Record<string, unknown>;
+
+export type RuntimeOptionSchema = {
+  key?: string | null;
+  path?: string | null;
+  label?: string | null;
+  label_zh?: string | null;
+  label_en?: string | null;
+  description?: string | null;
+  description_zh?: string | null;
+  description_en?: string | null;
+  type?: string | null;
+  required?: boolean | null;
+  picker?: string | null;
+  options?: string[] | null;
+};
 
 export type EnvKeyValueRow = {
   key: string;
@@ -76,6 +92,7 @@ export type AgentLike = AgentProfileLike & {
   image?: string | null;
   name?: string | null;
   role?: string | null;
+  runtime_option_schemas?: RuntimeOptionSchema[] | null;
   runtime_options?: JSONRecord | null;
   status?: string | null;
   template_name?: string | null;
@@ -137,6 +154,7 @@ export type AgentDraft = {
   requestOptionsText: string;
   role?: string;
   bot_type?: BotType;
+  runtime_options?: JSONRecord;
   runtime_kind: RuntimeKind;
   template_name?: string;
 };
@@ -172,6 +190,7 @@ export type RuntimeBootstrapConfig = {
   effective_manager_image?: string | null;
   runtime_default_images?: unknown;
   runtime_kind?: string | null;
+  runtime_option_schemas?: Record<string, RuntimeOptionSchema[]> | null;
   show_upgrade?: boolean | null;
   supported_runtime_kinds?: unknown;
 };
@@ -206,6 +225,91 @@ const NOTIFIER_STORAGE_KEYS = [
   "poll_interval",
   "remote_token",
 ];
+
+function normalizeRuntimeOptionSchema(item: unknown): RuntimeOptionSchema | null {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return null;
+  }
+  const record = item as JSONRecord;
+  const path = String(record.path ?? "").trim();
+  if (!path) {
+    return null;
+  }
+  return {
+    key: String(record.key ?? path).trim() || path,
+    path,
+    label: String(record.label ?? path).trim() || path,
+    label_zh: String(record.label_zh ?? "").trim(),
+    label_en: String(record.label_en ?? "").trim(),
+    description: String(record.description ?? "").trim(),
+    description_zh: String(record.description_zh ?? "").trim(),
+    description_en: String(record.description_en ?? "").trim(),
+    type: String(record.type ?? "text").trim() || "text",
+    required: Boolean(record.required),
+    picker: String(record.picker ?? "").trim(),
+    options: Array.isArray(record.options)
+      ? record.options.map((option) => String(option ?? "").trim()).filter(Boolean)
+      : [],
+  };
+}
+
+export function localizedRuntimeOptionLabel(
+  schema: RuntimeOptionSchema | null | undefined,
+  locale: LocaleCode,
+): string {
+  const localized = locale === "zh" ? String(schema?.label_zh ?? "").trim() : String(schema?.label_en ?? "").trim();
+  if (localized) {
+    return localized;
+  }
+  return String(schema?.label ?? schema?.path ?? "").trim();
+}
+
+export function localizedRuntimeOptionDescription(
+  schema: RuntimeOptionSchema | null | undefined,
+  locale: LocaleCode,
+): string {
+  const localized =
+    locale === "zh" ? String(schema?.description_zh ?? "").trim() : String(schema?.description_en ?? "").trim();
+  if (localized) {
+    return localized;
+  }
+  return String(schema?.description ?? "").trim();
+}
+
+export function normalizeRuntimeOptionSchemas(value: unknown): RuntimeOptionSchema[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => normalizeRuntimeOptionSchema(item))
+    .filter((item): item is RuntimeOptionSchema => item != null);
+}
+
+export function normalizeRuntimeOptionSchemaMap(value: unknown): Record<string, RuntimeOptionSchema[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const out: Record<string, RuntimeOptionSchema[]> = {};
+  for (const [key, schemas] of Object.entries(value as JSONRecord)) {
+    const normalizedKey = normalizeRuntimeKind(key);
+    if (!normalizedKey) {
+      continue;
+    }
+    const normalizedSchemas = normalizeRuntimeOptionSchemas(schemas);
+    if (normalizedSchemas.length === 0) {
+      continue;
+    }
+    out[normalizedKey] = normalizedSchemas;
+  }
+  return out;
+}
+
+function normalizeRuntimeOptionsRecord(value: unknown): JSONRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return { ...(value as JSONRecord) };
+}
 
 export function isManagerAgent(item: AgentLike | null | undefined): boolean {
   return item?.role === MANAGER_AGENT_ROLE || item?.id === MANAGER_AGENT_ID;
@@ -361,6 +465,13 @@ export function agentDraftWithRuntimeFieldsFromAgent(
   }
   if (updated?.runtime_kind != null) {
     next.runtime_kind = normalizeRuntimeKind(updated.runtime_kind || next.runtime_kind);
+  }
+  if (
+    updated?.runtime_options &&
+    typeof updated.runtime_options === "object" &&
+    !Array.isArray(updated.runtime_options)
+  ) {
+    next.runtime_options = normalizeRuntimeOptionsRecord(updated.runtime_options);
   }
   return next;
 }
@@ -765,6 +876,7 @@ export function agentToDraft(agent: AgentDraftSource | null | undefined): AgentD
     image: agent?.image || "",
     from_template: agent?.from_template || "",
     template_name: agent?.template_name || "",
+    runtime_options: normalizeRuntimeOptionsRecord(agent?.runtime_options),
     ...base,
     notifier_delivery_mode: normalizeNotifierDeliveryMode(agent?.notifier_delivery_mode || base.notifier_delivery_mode),
     runtime_kind: normalizeRuntimeKind(agent?.runtime_kind || profile.runtime_kind),
@@ -918,6 +1030,80 @@ export function draftNotifierRuntimeOptionsForSave(
     return null;
   }
   return { ...notifier };
+}
+
+export function runtimeOptionValueForPath(
+  runtimeOptions: JSONRecord | null | undefined,
+  path: string | null | undefined,
+): string {
+  const key = String(path ?? "").trim();
+  if (!key) {
+    return "";
+  }
+  return String(normalizeRuntimeOptionsRecord(runtimeOptions)[key] ?? "");
+}
+
+export function setRuntimeOptionValue(
+  runtimeOptions: JSONRecord | null | undefined,
+  path: string | null | undefined,
+  value: string,
+): JSONRecord {
+  const key = String(path ?? "").trim();
+  const next = normalizeRuntimeOptionsRecord(runtimeOptions);
+  if (!key) {
+    return next;
+  }
+  next[key] = value;
+  return next;
+}
+
+export function runtimeOptionSchemasForAgent(
+  runtimeKind: unknown,
+  item?: AgentLike | null,
+  bootstrapConfig?: RuntimeBootstrapConfig | null,
+): RuntimeOptionSchema[] {
+  const fromAgent = normalizeRuntimeOptionSchemas(item?.runtime_option_schemas);
+  if (fromAgent.length > 0) {
+    return fromAgent;
+  }
+  const kind = normalizeRuntimeKind(runtimeKind);
+  if (!kind) {
+    return [];
+  }
+  return normalizeRuntimeOptionSchemaMap(bootstrapConfig?.runtime_option_schemas)[kind] || [];
+}
+
+function trimmedRuntimeOptionsRecord(runtimeOptions: JSONRecord | null | undefined): JSONRecord | null {
+  const source = normalizeRuntimeOptionsRecord(runtimeOptions);
+  const out: JSONRecord = {};
+  for (const [key, rawValue] of Object.entries(source)) {
+    const normalizedKey = String(key ?? "").trim();
+    if (!normalizedKey || rawValue == null) {
+      continue;
+    }
+    if (typeof rawValue === "string") {
+      const text = rawValue.trim();
+      if (!text) {
+        continue;
+      }
+      out[normalizedKey] = text;
+      continue;
+    }
+    out[normalizedKey] = rawValue;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+export function draftRuntimeOptionsForSave(
+  draft: Partial<AgentDraft> | null | undefined,
+  options: { mergeNotifier?: boolean } = {},
+): JSONRecord | null {
+  const base = trimmedRuntimeOptionsRecord(draft?.runtime_options);
+  const notifier = draftNotifierRuntimeOptionsForSave(draft, options);
+  if (!base && !notifier) {
+    return null;
+  }
+  return { ...(base || {}), ...(notifier || {}) };
 }
 
 export function notifierRemoteTokenPlaceholderText(

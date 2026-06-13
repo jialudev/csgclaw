@@ -31,12 +31,13 @@ import (
 )
 
 type fakeCompatRuntime struct {
-	kind  string
-	new   func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
-	start func(context.Context, agentruntime.Handle) (agentruntime.State, error)
-	stop  func(context.Context, agentruntime.Handle) (agentruntime.State, error)
-	del   func(context.Context, agentruntime.Handle) error
-	info  func(context.Context, agentruntime.Handle) (agentruntime.Info, error)
+	kind    string
+	schemas []agentruntime.RuntimeOptionSchema
+	new     func(context.Context, agentruntime.Spec) (agentruntime.Handle, error)
+	start   func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	stop    func(context.Context, agentruntime.Handle) (agentruntime.State, error)
+	del     func(context.Context, agentruntime.Handle) error
+	info    func(context.Context, agentruntime.Handle) (agentruntime.Info, error)
 }
 
 func init() {
@@ -141,6 +142,10 @@ func (f fakeCompatRuntime) EnsureGatewayConfig(string, string, string) error {
 
 func (f fakeCompatRuntime) ProjectsGuestPath() string {
 	return ""
+}
+
+func (f fakeCompatRuntime) RuntimeOptionsSchema() []agentruntime.RuntimeOptionSchema {
+	return append([]agentruntime.RuntimeOptionSchema(nil), f.schemas...)
 }
 
 type fakeConversationRuntime struct {
@@ -271,12 +276,128 @@ func TestBootstrapConfigViewUsesServerUpgradeVisibility(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := bootstrapConfigView(context.Background(), config.Config{
 				Server: config.ServerConfig{ShowUpgrade: tt.configValue},
-			}, nil)
+			}, nil, nil)
 
 			if got.ShowUpgrade != tt.showUpgrade {
 				t.Fatalf("ShowUpgrade = %t, want %t", got.ShowUpgrade, tt.showUpgrade)
 			}
 		})
+	}
+}
+
+func TestHandlerBootstrapConfigIncludesRuntimeOptionSchemas(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+	svc, err := agent.NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"manager-image:test",
+		statePath,
+		agent.WithRuntime(fakeCompatRuntime{
+			kind: agent.RuntimeKindCodex,
+			schemas: []agentruntime.RuntimeOptionSchema{
+				{
+					Key:     "local_workspace_dir",
+					Path:    "local_workspace_dir",
+					Label:   "Local Workspace Dir",
+					LabelZh: "本地工作目录",
+					LabelEn: "Local Workspace Dir",
+					Type:    "directory",
+				},
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/config/bootstrap", nil)
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got bootstrapConfigResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.RuntimeOptionSchemas[agent.RuntimeKindCodex]) != 1 {
+		t.Fatalf("codex runtime option schemas = %#v, want one schema", got.RuntimeOptionSchemas)
+	}
+	if got.RuntimeOptionSchemas[agent.RuntimeKindCodex][0].Path != "local_workspace_dir" {
+		t.Fatalf("schema path = %q, want local_workspace_dir", got.RuntimeOptionSchemas[agent.RuntimeKindCodex][0].Path)
+	}
+}
+
+func TestHandleAgentIncludesRuntimeOptionSchemas(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "agents.json")
+	if err := writeSeededAgents(statePath, []agent.Agent{
+		{
+			ID:             "u-codex",
+			Name:           "codex-worker",
+			RuntimeID:      "rt-u-codex",
+			RuntimeKind:    agent.RuntimeKindCodex,
+			RuntimeOptions: map[string]any{"local_workspace_dir": "/tmp/project"},
+			Role:           agent.RoleWorker,
+			Status:         string(agentruntime.StateRunning),
+			CreatedAt:      time.Date(2026, 6, 13, 8, 0, 0, 0, time.UTC),
+		},
+	}); err != nil {
+		t.Fatalf("writeSeededAgents() error = %v", err)
+	}
+	svc, err := agent.NewService(
+		config.ModelConfig{},
+		config.ServerConfig{},
+		"manager-image:test",
+		statePath,
+		agent.WithRuntime(fakeCompatRuntime{
+			kind: agent.RuntimeKindCodex,
+			schemas: []agentruntime.RuntimeOptionSchema{
+				{
+					Key:           "local_workspace_dir",
+					Path:          "local_workspace_dir",
+					Label:         "Local Workspace Dir",
+					LabelZh:       "本地工作目录",
+					LabelEn:       "Local Workspace Dir",
+					Description:   "Leave empty to use the default agent workspace.",
+					DescriptionZh: "留空时使用默认 Agent 工作目录。",
+					DescriptionEn: "Leave empty to use the default agent workspace.",
+					Type:          "directory",
+					Picker:        "optional",
+				},
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	srv := &Handler{svc: svc}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/u-codex", nil)
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got agentResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.RuntimeOptions["local_workspace_dir"] != "/tmp/project" {
+		t.Fatalf("runtime options = %#v, want local_workspace_dir", got.RuntimeOptions)
+	}
+	if len(got.RuntimeOptionSchemas) != 1 {
+		t.Fatalf("runtime option schemas = %#v, want one schema", got.RuntimeOptionSchemas)
+	}
+	if got.RuntimeOptionSchemas[0].Type != "directory" {
+		t.Fatalf("schema type = %q, want directory", got.RuntimeOptionSchemas[0].Type)
+	}
+	if got.RuntimeOptionSchemas[0].LabelZh != "本地工作目录" {
+		t.Fatalf("schema zh label = %q, want 本地工作目录", got.RuntimeOptionSchemas[0].LabelZh)
 	}
 }
 

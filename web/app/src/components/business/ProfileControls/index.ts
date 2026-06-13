@@ -8,5 +8,6 @@ export * from "./EnvKeyValueEditor";
 export * from "./FieldHelpTooltip";
 export * from "./NotifierControls";
 export * from "./requiredFieldLabel";
+export * from "./RuntimeOptionsFields";
 export * from "./types";
 export * from "./utils";

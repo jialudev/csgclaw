@@ -7,7 +7,13 @@ import type { FetchVersionOptions } from "@/api/app";
 import { fetchHubTemplate, fetchHubTemplates, fetchHubWorkspaceFile } from "@/api/hub";
 import { fetchManagerProfile } from "@/api/agents";
 import { fetchUpgradeStatus } from "@/api/upgrade";
-import { modelRequestKey, normalizeRuntimeImageMap, normalizeRuntimeKind, parseJSONMap } from "@/models/agents";
+import {
+  modelRequestKey,
+  normalizeRuntimeImageMap,
+  normalizeRuntimeKind,
+  normalizeRuntimeOptionSchemaMap,
+  parseJSONMap,
+} from "@/models/agents";
 import type { AgentLike, AgentProfileLike, AgentProfileModelsResponse, RuntimeBootstrapConfig } from "@/models/agents";
 import { normalizeIMData } from "@/models/conversations";
 import type { IMData } from "@/models/conversations";
@@ -61,6 +67,7 @@ export async function fetchWorkspaceBootstrapConfig(): Promise<RuntimeBootstrapC
           .filter((item, index, array) => item && array.indexOf(item) === index)
       : [],
     runtime_default_images: normalizeRuntimeImageMap(payload.runtime_default_images),
+    runtime_option_schemas: normalizeRuntimeOptionSchemaMap(payload.runtime_option_schemas),
   };
 }
 

@@ -236,6 +236,47 @@ func TestRefreshWorkspaceAgentsFileCreatesManagedFileWhenMissing(t *testing.T) {
 	}
 }
 
+func TestDecodeRuntimeOptionsNormalizesLocalWorkspaceDir(t *testing.T) {
+	got, err := DecodeRuntimeOptions(map[string]any{
+		"local_workspace_dir": "  /tmp/project  ",
+	})
+	if err != nil {
+		t.Fatalf("DecodeRuntimeOptions() error = %v", err)
+	}
+	if got.LocalWorkspaceDir != "/tmp/project" {
+		t.Fatalf("LocalWorkspaceDir = %q, want /tmp/project", got.LocalWorkspaceDir)
+	}
+}
+
+func TestDecodeRuntimeOptionsRejectsNonStringLocalWorkspaceDir(t *testing.T) {
+	_, err := DecodeRuntimeOptions(map[string]any{
+		"local_workspace_dir": 42,
+	})
+	if err == nil {
+		t.Fatal("DecodeRuntimeOptions() error = nil, want error")
+	}
+}
+
+func TestRuntimeOptionsSchemaIncludesLocalWorkspaceDir(t *testing.T) {
+	rt := newTestCodexRuntime(t.TempDir(), func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID}, nil
+	})
+
+	got := rt.RuntimeOptionsSchema()
+	if len(got) != 1 {
+		t.Fatalf("RuntimeOptionsSchema() len = %d, want 1", len(got))
+	}
+	if got[0].Path != "local_workspace_dir" {
+		t.Fatalf("RuntimeOptionsSchema()[0].Path = %q, want local_workspace_dir", got[0].Path)
+	}
+	if got[0].Type != "directory" {
+		t.Fatalf("RuntimeOptionsSchema()[0].Type = %q, want directory", got[0].Type)
+	}
+	if got[0].LabelZh != "本地工作目录" {
+		t.Fatalf("RuntimeOptionsSchema()[0].LabelZh = %q, want 本地工作目录", got[0].LabelZh)
+	}
+}
+
 func TestRefreshWorkspaceAgentsFileAppendsManagedBlockToExistingUserFile(t *testing.T) {
 	root := t.TempDir()
 	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {

@@ -24,6 +24,7 @@ import (
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/participant"
+	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandboxproviders"
 	"csgclaw/internal/team"
@@ -90,14 +91,15 @@ type imEventResponse struct {
 }
 
 type bootstrapConfigResponse struct {
-	DefaultManagerTemplate string            `json:"default_manager_template"`
-	DefaultWorkerTemplate  string            `json:"default_worker_template"`
-	RuntimeKind            string            `json:"runtime_kind"`
-	ShowUpgrade            bool              `json:"show_upgrade"`
-	EffectiveManagerImage  string            `json:"effective_manager_image"`
-	AdvertiseBaseURL       string            `json:"advertise_base_url,omitempty"`
-	SupportedRuntimeKinds  []string          `json:"supported_runtime_kinds"`
-	RuntimeDefaultImages   map[string]string `json:"runtime_default_images,omitempty"`
+	DefaultManagerTemplate string                                        `json:"default_manager_template"`
+	DefaultWorkerTemplate  string                                        `json:"default_worker_template"`
+	RuntimeKind            string                                        `json:"runtime_kind"`
+	ShowUpgrade            bool                                          `json:"show_upgrade"`
+	EffectiveManagerImage  string                                        `json:"effective_manager_image"`
+	AdvertiseBaseURL       string                                        `json:"advertise_base_url,omitempty"`
+	SupportedRuntimeKinds  []string                                      `json:"supported_runtime_kinds"`
+	RuntimeDefaultImages   map[string]string                             `json:"runtime_default_images,omitempty"`
+	RuntimeOptionSchemas   map[string][]agentruntime.RuntimeOptionSchema `json:"runtime_option_schemas,omitempty"`
 }
 
 type updateBootstrapConfigRequest struct {
@@ -106,24 +108,25 @@ type updateBootstrapConfigRequest struct {
 }
 
 type agentResponse struct {
-	ID               string                         `json:"id"`
-	Name             string                         `json:"name"`
-	Description      string                         `json:"description,omitempty"`
-	Instructions     string                         `json:"instructions,omitempty"`
-	RuntimeID        string                         `json:"runtime_id,omitempty"`
-	RuntimeKind      string                         `json:"runtime_kind,omitempty"`
-	Image            string                         `json:"image,omitempty"`
-	Avatar           string                         `json:"avatar,omitempty"`
-	BoxID            string                         `json:"box_id,omitempty"`
-	Role             string                         `json:"role"`
-	Status           string                         `json:"status"`
-	CreatedAt        time.Time                      `json:"created_at"`
-	Profile          string                         `json:"profile,omitempty"`
-	RuntimeOptions   map[string]any                 `json:"runtime_options,omitempty"`
-	AgentProfile     agent.AgentProfileView         `json:"agent_profile,omitempty"`
-	ProfileComplete  bool                           `json:"profile_complete"`
-	DetectionResults []agent.ProfileDetectionResult `json:"detection_results,omitempty"`
-	Participants     []apitypes.Participant         `json:"participants,omitempty"`
+	ID                   string                             `json:"id"`
+	Name                 string                             `json:"name"`
+	Description          string                             `json:"description,omitempty"`
+	Instructions         string                             `json:"instructions,omitempty"`
+	RuntimeID            string                             `json:"runtime_id,omitempty"`
+	RuntimeKind          string                             `json:"runtime_kind,omitempty"`
+	Image                string                             `json:"image,omitempty"`
+	Avatar               string                             `json:"avatar,omitempty"`
+	BoxID                string                             `json:"box_id,omitempty"`
+	Role                 string                             `json:"role"`
+	Status               string                             `json:"status"`
+	CreatedAt            time.Time                          `json:"created_at"`
+	Profile              string                             `json:"profile,omitempty"`
+	RuntimeOptions       map[string]any                     `json:"runtime_options,omitempty"`
+	RuntimeOptionSchemas []agentruntime.RuntimeOptionSchema `json:"runtime_option_schemas,omitempty"`
+	AgentProfile         agent.AgentProfileView             `json:"agent_profile,omitempty"`
+	ProfileComplete      bool                               `json:"profile_complete"`
+	DetectionResults     []agent.ProfileDetectionResult     `json:"detection_results,omitempty"`
+	Participants         []apitypes.Participant             `json:"participants,omitempty"`
 }
 
 func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +138,7 @@ func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, bootstrapConfigView(r.Context(), cfg, h.hub))
+		writeJSON(w, http.StatusOK, h.bootstrapConfigView(r.Context(), cfg))
 	case http.MethodPut:
 		var req updateBootstrapConfigRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -174,7 +177,7 @@ func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) 
 				}
 			}
 		}
-		writeJSON(w, http.StatusOK, bootstrapConfigView(r.Context(), cfg, h.hub))
+		writeJSON(w, http.StatusOK, h.bootstrapConfigView(r.Context(), cfg))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -258,7 +261,7 @@ func (h *Handler) loadBootstrapConfig() (config.Config, string, error) {
 	return cfg, path, nil
 }
 
-func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Service) bootstrapConfigResponse {
+func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Service, runtimeOptionSchemas map[string][]agentruntime.RuntimeOptionSchema) bootstrapConfigResponse {
 	resp := bootstrapConfigResponse{
 		DefaultManagerTemplate: cfg.Bootstrap.ResolvedDefaultManagerTemplate(),
 		DefaultWorkerTemplate:  cfg.Bootstrap.ResolvedDefaultWorkerTemplate(),
@@ -270,6 +273,7 @@ func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Ser
 			agent.RuntimeKindCodex,
 		},
 		RuntimeDefaultImages: map[string]string{},
+		RuntimeOptionSchemas: runtimeOptionSchemas,
 	}
 	defaults, err := hub.ResolveBootstrapDefaults(ctx, cfg.Bootstrap, hubSvc)
 	if err != nil {
@@ -285,6 +289,18 @@ func bootstrapConfigView(ctx context.Context, cfg config.Config, hubSvc *hub.Ser
 		resp.RuntimeDefaultImages[defaults.WorkerRuntimeKind] = defaults.WorkerImage
 	}
 	return resp
+}
+
+func (h *Handler) bootstrapConfigView(ctx context.Context, cfg config.Config) bootstrapConfigResponse {
+	var schemas map[string][]agentruntime.RuntimeOptionSchema
+	if h != nil {
+		schemas = h.runtimeOptionSchemasByKind([]string{
+			agent.RuntimeKindPicoClawSandbox,
+			agent.RuntimeKindOpenClawSandbox,
+			agent.RuntimeKindCodex,
+		})
+	}
+	return bootstrapConfigView(ctx, cfg, h.hub, schemas)
 }
 
 func bootstrapRuntimeKind(runtime string) string {
@@ -553,7 +569,7 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.publishUpdatedAgentUser(updated)
-		writeJSON(w, http.StatusOK, presentAgent(updated))
+		writeJSON(w, http.StatusOK, h.presentAgentResponse(updated))
 	case http.MethodDelete:
 		if err := h.svc.Delete(r.Context(), id); err != nil {
 			if strings.Contains(err.Error(), "not found") {
@@ -884,7 +900,7 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusCreated, presentAgent(created))
+	writeJSON(w, http.StatusCreated, h.presentAgentResponse(created))
 }
 
 func agentCreateRequestFromAPI(req apitypes.CreateAgentRequest) agent.CreateRequest {
@@ -1814,7 +1830,10 @@ func presentAgents(items []agent.Agent) []agentResponse {
 }
 
 func (h *Handler) presentAgentsForRequest(r *http.Request, items []agent.Agent) []agentResponse {
-	out := presentAgents(items)
+	out := make([]agentResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, h.presentAgentResponse(item))
+	}
 	if !includeParticipants(r) || h == nil || h.participant == nil {
 		return out
 	}
@@ -1826,12 +1845,55 @@ func (h *Handler) presentAgentsForRequest(r *http.Request, items []agent.Agent) 
 }
 
 func (h *Handler) presentAgentForRequest(r *http.Request, item agent.Agent) agentResponse {
-	resp := presentAgent(item)
+	resp := h.presentAgentResponse(item)
 	if !includeParticipants(r) || h == nil || h.participant == nil {
 		return resp
 	}
 	resp.Participants = presentParticipants(h.participant.List(participant.ListOptions{AgentID: item.ID}))
 	return resp
+}
+
+func (h *Handler) presentAgentResponse(item agent.Agent) agentResponse {
+	resp := presentAgent(item)
+	resp.RuntimeOptionSchemas = h.runtimeOptionSchemasForKind(item.RuntimeKind)
+	return resp
+}
+
+func (h *Handler) runtimeOptionSchemasByKind(kinds []string) map[string][]agentruntime.RuntimeOptionSchema {
+	if h == nil {
+		return nil
+	}
+	out := map[string][]agentruntime.RuntimeOptionSchema{}
+	for _, kind := range kinds {
+		schemas := h.runtimeOptionSchemasForKind(kind)
+		if len(schemas) == 0 {
+			continue
+		}
+		out[strings.TrimSpace(kind)] = schemas
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func (h *Handler) runtimeOptionSchemasForKind(kind string) []agentruntime.RuntimeOptionSchema {
+	if h == nil || h.svc == nil {
+		return nil
+	}
+	rt, err := h.svc.Runtime(strings.TrimSpace(kind))
+	if err != nil {
+		return nil
+	}
+	provider, ok := rt.(agentruntime.RuntimeOptionSchemaProvider)
+	if !ok {
+		return nil
+	}
+	schemas := provider.RuntimeOptionsSchema()
+	if len(schemas) == 0 {
+		return nil
+	}
+	return append([]agentruntime.RuntimeOptionSchema(nil), schemas...)
 }
 
 func includeParticipants(r *http.Request) bool {

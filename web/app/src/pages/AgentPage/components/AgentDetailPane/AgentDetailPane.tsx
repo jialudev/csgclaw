@@ -8,6 +8,7 @@ import {
   EnvKeyValueEditor,
   NotifierControls,
   requiredFieldLabel,
+  RuntimeOptionsFields,
 } from "@/components/business/ProfileControls";
 import {
   agentProfilePageSaveDisabled,
@@ -23,9 +24,11 @@ import {
   isNotifierRuntimeDraftOnAgentPage,
   normalizeAuthProviderName,
   normalizeRuntimeKind,
+  runtimeOptionSchemasForAgent,
 } from "@/models/agents";
 import type { AgentDraft, AgentLike } from "@/models/agents";
 import type { IMConversation, TranslateFn } from "@/models/conversations";
+import type { LocaleCode } from "@/models/conversations";
 import type { SlashSkillOption } from "@/models/slashCommands";
 import type { CLIProxyAuthStatusMap } from "@/hooks/workspace/useCLIProxyAuthStatuses";
 import { AgentAvatarContent, AgentAvatarPicker } from "@/components/business/AgentAvatar";
@@ -69,6 +72,7 @@ export type AgentDetailPaneProps = {
   onStop: AgentActionHandler;
   onUpgrade?: AgentActionHandler;
   publishBusy?: boolean;
+  locale?: LocaleCode;
   saveError?: string;
   savedDraft?: AgentDraft | null;
   saving?: boolean;
@@ -97,6 +101,7 @@ export function AgentDetailPane({
   saveError = "",
   authStatuses = {},
   authBusyProvider = "",
+  locale = "en",
   notifierWebhookPublicOrigin = "",
   skills = [],
   skillsLoading = false,
@@ -130,6 +135,7 @@ export function AgentDetailPane({
     hasUnsavedChangesProp ?? Boolean(draft && savedDraft && JSON.stringify(draft) !== JSON.stringify(savedDraft));
   const saveDisabled = agentProfilePageSaveDisabled(draft, item, { saving, savedDraft });
   const updateDraft = (patch: Partial<AgentDraft>) => onDraftChange?.({ ...(draft || agentToDraft(item)), ...patch });
+  const runtimeOptionSchemas = runtimeOptionSchemasForAgent(draft?.runtime_kind || item.runtime_kind, item);
 
   useEffect(() => {
     if (!draft) {
@@ -431,6 +437,18 @@ export function AgentDetailPane({
             </section>
           ) : null}
 
+          {!isNotifierRuntimeDraftOnAgentPage(draft, item) && runtimeOptionSchemas.length > 0 ? (
+            <section className="profile-section">
+              <div className="profile-section-title">{t("profileRuntimeOptions")}</div>
+              <RuntimeOptionsFields
+                draft={draft}
+                locale={locale}
+                schemas={runtimeOptionSchemas}
+                onDraftChange={onDraftChange || (() => {})}
+              />
+            </section>
+          ) : null}
+
           {!isNotifierRuntimeDraftOnAgentPage(draft, item) && draft.provider === "api" ? (
             <section className="profile-section">
               <div className="profile-section-title">{t("profileAPIProvider")}</div>
@@ -472,7 +490,9 @@ export function AgentDetailPane({
               </div>
               {skillsError ? <div className="form-error">{skillsError}</div> : null}
               {skillsLoading ? <div className="agent-skills-empty">{t("agentSkillsLoading")}</div> : null}
-              {!skillsLoading && !skills.length ? <div className="agent-skills-empty">{t("agentSkillsEmpty")}</div> : null}
+              {!skillsLoading && !skills.length ? (
+                <div className="agent-skills-empty">{t("agentSkillsEmpty")}</div>
+              ) : null}
               {!skillsLoading && skills.length ? (
                 <div className="agent-skills-list">
                   {skills.map((skill) => (
