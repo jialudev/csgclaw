@@ -49,6 +49,7 @@ import {
 } from "@/models/composer";
 import { WorkspacePaneTypes } from "@/models/routing";
 import { normalizeAuthProviderName, providerNeedsAuth } from "@/models/agents";
+import { skillDescriptionFromMarkdown, skillOptionsFromWorkspace, type SlashSkillOption } from "@/models/slashCommands";
 import { localizeError } from "@/shared/i18n";
 import { subscribeIMEvents } from "@/shared/realtime/imEvents";
 import { MESSAGE_LIST_BOTTOM_THRESHOLD } from "@/shared/constants/workspace";
@@ -56,13 +57,10 @@ import type { IMMessage, IMServerEvent, IMUser, ThreadView } from "@/models/conv
 import type { SlashPickerCandidate } from "@/models/slashCommands";
 import type { UseConversationControllerArgs } from "./types";
 
-type SlashSkillOption = {
-  description?: string;
-  name: string;
-};
-
 const slashSkillOptionsCache = new Map<string, SlashSkillOption[]>();
 const slashSkillOptionsRequests = new Map<string, Promise<SlashSkillOption[]>>();
+
+export { skillDescriptionFromMarkdown } from "@/models/slashCommands";
 
 type ComposerMentionState = {
   endOffset: number;
@@ -1161,28 +1159,6 @@ export function useConversationController({
   };
 }
 
-function skillOptionsFromWorkspace(
-  entries: readonly { name?: string; path?: string; type?: string }[],
-): SlashSkillOption[] {
-  const skillDirs = new Set<string>();
-  const dirs = new Set<string>();
-  entries.forEach((entry) => {
-    const path = String(entry.path || "").trim();
-    const parts = path.split("/").filter(Boolean);
-    if (parts.length === 1 && entry.type === "dir") {
-      dirs.add(path);
-    }
-    if (parts.length === 2 && parts[1] === "SKILL.md") {
-      skillDirs.add(parts[0]);
-    }
-  });
-  return [...dirs]
-    .filter((path) => skillDirs.has(path))
-    .map((path) => ({ name: path }))
-    .filter((skill) => Boolean(skill.name))
-    .sort((left, right) => left.name.localeCompare(right.name));
-}
-
 function loadSlashSkillOptions(
   agentID: string,
   onInitial: (skills: SlashSkillOption[]) => void,
@@ -1224,22 +1200,6 @@ function loadSlashSkillOptions(
 
   slashSkillOptionsRequests.set(agentID, request);
   return request;
-}
-
-export function skillDescriptionFromMarkdown(content: string): string {
-  const frontmatterMatch = String(content || "").match(/^---\n([\s\S]*?)\n---/);
-  if (!frontmatterMatch) {
-    return "";
-  }
-  const descriptionLine = frontmatterMatch[1].split(/\r?\n/).find((line) => line.trim().startsWith("description:"));
-  if (!descriptionLine) {
-    return "";
-  }
-  const description = descriptionLine
-    .replace(/^\s*description:\s*/, "")
-    .trim()
-    .replace(/^['"]|['"]$/g, "");
-  return description.slice(0, 220);
 }
 
 const builtinSlashCommandNames = ["new"];

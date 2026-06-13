@@ -255,6 +255,71 @@
   word-break: break-word;
 }
 
+.agent-skills-section {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-detail-pane .agent-skills-title {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.agent-detail-pane .agent-skills-title span {
+  color: var(--portal-gray-700);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.agent-detail-pane .agent-skills-title small {
+  min-width: 16px;
+  color: var(--portal-gray-500);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: left;
+}
+
+.agent-skills-list {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-skill-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.agent-skill-name {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.agent-skill-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agent-skills-empty {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .agent-detail-pane .agent-status-dot {
   width: 8px;
   height: 8px;

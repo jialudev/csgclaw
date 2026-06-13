@@ -11,6 +11,8 @@ import {
   fetchAgent,
   fetchAgentProfile,
   fetchAgentProfileDefaults,
+  fetchAgentSkills,
+  fetchAgentSkillsFile,
   patchNotificationBotRequest,
   runAgentActionRequest,
   updateAgentRequest,
@@ -32,7 +34,6 @@ import {
 } from "@/shared/constants/agents";
 import { ACTION_REBUILD_MANAGER } from "@/shared/constants/messages";
 import { selectUnusedAgentAvatar } from "@/shared/avatarOptions";
-import { firstWorkspaceFilePath, hasWorkspaceFilePath } from "@/models/workspace";
 import {
   applyTemplateToDraft,
   advanceAgentProgress,
@@ -79,13 +80,10 @@ import type {
 } from "@/models/agents";
 import { isDirectConversation, resolveRoomInviterID } from "@/models/conversations";
 import { WorkspacePaneTypes } from "@/models/routing";
+import { skillDescriptionFromMarkdown, skillOptionsFromWorkspace } from "@/models/slashCommands";
 import { useCLIProxyAuthStatuses } from "./useCLIProxyAuthStatuses";
 import { useProfileModelOptions } from "./useProfileModelOptions";
-import {
-  useWorkspaceAgentWorkspaceFileQuery,
-  useWorkspaceAgentWorkspaceQuery,
-  workspaceQueryKeys,
-} from "./workspaceQueries";
+import { workspaceQueryKeys } from "./workspaceQueries";
 import type { MessageAction, MessageActionError, MessageLike } from "@/components/business/MessageContent/types";
 import type { IMConversation } from "@/models/conversations";
 import type { UseAgentControllerArgs } from "./types";
@@ -159,7 +157,6 @@ export function useAgentController({
   const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
   const [createTeamTitle, setCreateTeamTitle] = useState("");
   const [createTeamMemberIDs, setCreateTeamMemberIDs] = useState<string[]>([]);
-  const [selectedAgentWorkspacePath, setSelectedAgentWorkspacePath] = useState("");
   const agentPageHasUnsavedChanges = Boolean(
     agentPageDraft && agentPageSavedDraft && JSON.stringify(agentPageDraft) !== JSON.stringify(agentPageSavedDraft),
   );
@@ -206,38 +203,29 @@ export function useAgentController({
     }
     return agentItems.find((item) => item.id === activePane.id) ?? null;
   }, [agentItems, activePane]);
-  const selectedAgentWorkspaceSupported = useMemo(() => {
-    const runtimeKind = normalizeRuntimeKind(selectedAgentForPage?.runtime_kind);
-    return runtimeKind === "openclaw_sandbox" || runtimeKind === "picoclaw_sandbox";
-  }, [selectedAgentForPage?.runtime_kind]);
-  const workspaceAgentID = selectedAgentWorkspaceSupported ? selectedAgentForPage?.id || "" : "";
-  const agentWorkspaceQuery = useWorkspaceAgentWorkspaceQuery(workspaceAgentID);
-  const agentWorkspaceEntries = agentWorkspaceQuery.data?.entries ?? null;
-  const agentWorkspaceError = agentWorkspaceQuery.error
-    ? errorMessage(agentWorkspaceQuery.error, t("agentWorkspaceLoadFailed"))
-    : "";
-  const selectedAgentWorkspaceFilePath = hasWorkspaceFilePath(agentWorkspaceEntries, selectedAgentWorkspacePath)
-    ? selectedAgentWorkspacePath
-    : "";
-  const agentWorkspaceFileQuery = useWorkspaceAgentWorkspaceFileQuery(workspaceAgentID, selectedAgentWorkspaceFilePath);
-  const agentWorkspaceFileError = agentWorkspaceFileQuery.error
-    ? errorMessage(agentWorkspaceFileQuery.error, t("agentWorkspaceFileLoadFailed"))
-    : "";
-  useEffect(() => {
-    const entries = agentWorkspaceEntries ?? [];
-    if (!selectedAgentWorkspaceSupported || !selectedAgentForPage?.id || !entries.length) {
-      if (selectedAgentWorkspacePath) {
-        setSelectedAgentWorkspacePath("");
-      }
-      return;
-    }
-    if (!hasWorkspaceFilePath(entries, selectedAgentWorkspacePath)) {
-      const nextPath = firstWorkspaceFilePath(entries);
-      if (nextPath !== selectedAgentWorkspacePath) {
-        setSelectedAgentWorkspacePath(nextPath);
-      }
-    }
-  }, [agentWorkspaceEntries, selectedAgentForPage?.id, selectedAgentWorkspacePath, selectedAgentWorkspaceSupported]);
+  const skillsAgentID = selectedAgentForPage?.id || "";
+  const agentSkillsQuery = useQuery({
+    queryKey: workspaceQueryKeys.agentSkills(skillsAgentID),
+    queryFn: async () => {
+      const skillsListing = await fetchAgentSkills(skillsAgentID);
+      const skills = skillOptionsFromWorkspace(skillsListing.entries || []);
+      return Promise.all(
+        skills.map(async (skill) => {
+          try {
+            const file = await fetchAgentSkillsFile(skillsAgentID, `${skill.name}/SKILL.md`);
+            return {
+              ...skill,
+              description: skillDescriptionFromMarkdown(file.content || "") || skill.description,
+            };
+          } catch {
+            return skill;
+          }
+        }),
+      );
+    },
+    enabled: Boolean(skillsAgentID),
+  });
+  const agentSkillsError = agentSkillsQuery.error ? errorMessage(agentSkillsQuery.error, t("agentSkillsLoadFailed")) : "";
   const activeConversation = useMemo(
     () => data?.rooms.find((item) => item.id === activeConversationId) ?? null,
     [data, activeConversationId],
@@ -633,19 +621,16 @@ export function useAgentController({
     await refreshAgents();
     if (latestAgent?.id) {
       applyAgentListUpdate(latestAgent);
-      await refreshAgentWorkspace(latestAgent.id);
+      await refreshAgentSkills(latestAgent.id);
     }
   }
 
-  async function refreshAgentWorkspace(agentID: string | null | undefined): Promise<void> {
+  async function refreshAgentSkills(agentID: string | null | undefined): Promise<void> {
     const id = String(agentID ?? "").trim();
     if (!id) {
       return;
     }
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentWorkspaceScope(id) }),
-      queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentWorkspaceFileScope(id) }),
-    ]);
+    await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentSkills(id) });
   }
 
   async function fetchAgentWithProfile(item: AgentLike | null | undefined): Promise<AgentWithProfile> {
@@ -863,7 +848,7 @@ export function useAgentController({
         const saved = await patchNotificationBotRequest(selectedAgentForPage.id, payload);
         await refreshAgents();
         await refreshWorkspaceBootstrap();
-        await refreshAgentWorkspace(saved.id || selectedAgentForPage.id);
+        await refreshAgentSkills(saved.id || selectedAgentForPage.id);
         const savedDraft = agentToDraft(saved);
         setAgentPageDraft(savedDraft);
         setAgentPageSavedDraft(savedDraft);
@@ -901,7 +886,7 @@ export function useAgentController({
         if (savedMetaOnly.id === MANAGER_AGENT_ID) {
           await refreshManagerProfile();
         }
-        await refreshAgentWorkspace(savedMetaOnly.id || selectedAgentForPage.id);
+        await refreshAgentSkills(savedMetaOnly.id || selectedAgentForPage.id);
         const nextDraft = await agentDraftFromItem(savedMetaOnly);
         setAgentPageDraft(nextDraft);
         setAgentPageSavedDraft(nextDraft);
@@ -924,7 +909,7 @@ export function useAgentController({
       if (saved.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
       }
-      await refreshAgentWorkspace(saved.id || selectedAgentForPage.id);
+      await refreshAgentSkills(saved.id || selectedAgentForPage.id);
       const savedDraft = await agentDraftFromItem(saved);
       setAgentPageDraft(savedDraft);
       setAgentPageSavedDraft(savedDraft);
@@ -1003,7 +988,7 @@ export function useAgentController({
         await refreshAgents();
         await refreshWorkspaceBootstrap();
         if (!isCreate) {
-          await refreshAgentWorkspace(editingAgentID);
+          await refreshAgentSkills(editingAgentID);
         }
         if (isCreate) {
           setAgentProgress((current) =>
@@ -1054,7 +1039,7 @@ export function useAgentController({
       if (saved.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
       }
-      await refreshAgentWorkspace(saved.id || editingAgentID);
+      await refreshAgentSkills(saved.id || editingAgentID);
       if (isCreate) {
         setAgentProgress((current) =>
           current
@@ -1102,7 +1087,7 @@ export function useAgentController({
       }
       await refreshAgentsWithUpdatedAgent(updatedAgent);
       if (action === "delete") {
-        await refreshAgentWorkspace(item.id);
+        await refreshAgentSkills(item.id);
       }
       if (item.id === MANAGER_AGENT_ID) {
         await refreshManagerProfile();
@@ -1327,15 +1312,10 @@ export function useAgentController({
       authStatuses: cliproxyAuthStatuses,
       authBusyProvider: cliproxyAuthBusy,
       notifierWebhookPublicOrigin,
-      workspaceEntries: agentWorkspaceQuery.data?.entries ?? [],
-      workspaceLoading: agentWorkspaceQuery.isFetching,
-      workspaceError: agentWorkspaceError,
-      workspaceSupported: selectedAgentWorkspaceSupported,
-      selectedWorkspacePath: selectedAgentWorkspacePath,
-      workspaceFile: agentWorkspaceFileQuery.data ?? null,
-      workspaceFileLoading: agentWorkspaceFileQuery.isFetching,
-      workspaceFileError: agentWorkspaceFileError,
-      onSelectWorkspaceFile: setSelectedAgentWorkspacePath,
+      skills: agentSkillsQuery.data ?? [],
+      skillsLoading: agentSkillsQuery.isFetching,
+      skillsError: agentSkillsError,
+      workspaceSupported: Boolean(selectedAgentForPage),
       onDraftChange: setAgentPageDraft,
       onSave: saveAgentPage,
       onPublish: publishAgentPage,

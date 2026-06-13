@@ -9,7 +9,6 @@ import {
   NotifierControls,
   requiredFieldLabel,
 } from "@/components/business/ProfileControls";
-import { WorkspaceFilePreview, WorkspaceFileTree } from "@/components/business/WorkspaceFileTree";
 import {
   agentProfilePageSaveDisabled,
   agentStatusLabel,
@@ -27,7 +26,7 @@ import {
 } from "@/models/agents";
 import type { AgentDraft, AgentLike } from "@/models/agents";
 import type { IMConversation, TranslateFn } from "@/models/conversations";
-import type { WorkspaceEntry, WorkspaceFile } from "@/models/workspace";
+import type { SlashSkillOption } from "@/models/slashCommands";
 import type { CLIProxyAuthStatusMap } from "@/hooks/workspace/useCLIProxyAuthStatuses";
 import { AgentAvatarContent, AgentAvatarPicker } from "@/components/business/AgentAvatar";
 import { avatarFallbackText } from "@/shared/avatar";
@@ -66,7 +65,6 @@ export type AgentDetailPaneProps = {
   onPublish?: () => VoidOrPromise;
   onRecreate: AgentActionHandler;
   onSave?: () => VoidOrPromise;
-  onSelectWorkspaceFile?: (path: string) => void;
   onStart: AgentActionHandler;
   onStop: AgentActionHandler;
   onUpgrade?: AgentActionHandler;
@@ -74,14 +72,10 @@ export type AgentDetailPaneProps = {
   saveError?: string;
   savedDraft?: AgentDraft | null;
   saving?: boolean;
-  selectedWorkspacePath?: string;
+  skills?: SlashSkillOption[];
+  skillsError?: string;
+  skillsLoading?: boolean;
   t: TranslateFn;
-  workspaceEntries?: WorkspaceEntry[];
-  workspaceError?: string;
-  workspaceFile?: WorkspaceFile | null;
-  workspaceFileError?: string;
-  workspaceFileLoading?: boolean;
-  workspaceLoading?: boolean;
   workspaceSupported?: boolean;
 };
 
@@ -104,15 +98,10 @@ export function AgentDetailPane({
   authStatuses = {},
   authBusyProvider = "",
   notifierWebhookPublicOrigin = "",
-  workspaceEntries = [],
-  workspaceLoading = false,
-  workspaceError = "",
+  skills = [],
+  skillsLoading = false,
+  skillsError = "",
   workspaceSupported = false,
-  selectedWorkspacePath = "",
-  workspaceFile = null,
-  workspaceFileLoading = false,
-  workspaceFileError = "",
-  onSelectWorkspaceFile = () => {},
   onDraftChange,
   onSave,
   onPublish,
@@ -475,6 +464,28 @@ export function AgentDetailPane({
             </section>
           ) : null}
 
+          {workspaceSupported ? (
+            <section className="profile-section agent-skills-section">
+              <div className="profile-section-title agent-skills-title">
+                <span>{t("agentSkillsTitle")}</span>
+                <small>{skills.length}</small>
+              </div>
+              {skillsError ? <div className="form-error">{skillsError}</div> : null}
+              {skillsLoading ? <div className="agent-skills-empty">{t("agentSkillsLoading")}</div> : null}
+              {!skillsLoading && !skills.length ? <div className="agent-skills-empty">{t("agentSkillsEmpty")}</div> : null}
+              {!skillsLoading && skills.length ? (
+                <div className="agent-skills-list">
+                  {skills.map((skill) => (
+                    <article key={skill.name} className="agent-skill-card">
+                      <div className="agent-skill-name">{skill.name}</div>
+                      <p className="agent-skill-description">{skill.description || "-"}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           <section className="profile-section">
             <div className="profile-section-title">{t("profileAdvanced")}</div>
             <div className="profile-advanced-grid">
@@ -494,39 +505,6 @@ export function AgentDetailPane({
               </div>
             </div>
           </section>
-
-          {workspaceSupported ? (
-            <section className="profile-section agent-workspace-section">
-              <div className="profile-section-title">{t("agentWorkspaceTitle")}</div>
-              {workspaceError ? <div className="form-error">{workspaceError}</div> : null}
-              <div className="agent-workspace-panels">
-                <WorkspaceFileTree
-                  entries={workspaceEntries}
-                  loading={workspaceLoading}
-                  loadingText={t("agentWorkspaceLoading")}
-                  emptyText={t("agentWorkspaceEmpty")}
-                  selectedPath={selectedWorkspacePath}
-                  onSelectFile={onSelectWorkspaceFile}
-                />
-                <WorkspaceFilePreview
-                  className="agent-workspace-preview"
-                  file={workspaceFile}
-                  loading={workspaceFileLoading}
-                  error={workspaceFileError}
-                  loadingText={t("agentWorkspaceFileLoading")}
-                  emptyTitle={t("agentWorkspacePreviewTitle")}
-                  emptyHint={t("agentWorkspacePreviewHint")}
-                  binaryText={t("agentWorkspaceBinary")}
-                  emptyFileText={t("agentWorkspaceEmptyFile")}
-                  previewText={t("workspacePreviewPreviewTab")}
-                  codeText={t("workspacePreviewCodeTab")}
-                  viewToggleLabel={t("workspacePreviewViewMode")}
-                  closeText={t("close")}
-                  truncatedText={t("workspacePreviewTruncated")}
-                />
-              </div>
-            </section>
-          ) : null}
         </div>
       ) : null}
     </section>

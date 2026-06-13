@@ -6,6 +6,11 @@ export type SlashCommandPayload = {
 
 export type SlashPickerCandidateType = "command" | "skill";
 
+export type SlashSkillOption = {
+  description?: string;
+  name: string;
+};
+
 export type SlashPickerCandidate = {
   description?: string;
   name: string;
@@ -94,6 +99,44 @@ export function renderSlashCommandPreviewText(content: unknown): string {
     return slashCommandText;
   }
   return String(content ?? "");
+}
+
+export function skillOptionsFromWorkspace(
+  entries: readonly { name?: string; path?: string; type?: string }[],
+): SlashSkillOption[] {
+  const skillDirs = new Set<string>();
+  const dirs = new Set<string>();
+  entries.forEach((entry) => {
+    const path = String(entry.path || "").trim();
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length === 1 && entry.type === "dir") {
+      dirs.add(path);
+    }
+    if (parts.length === 2 && parts[1] === "SKILL.md") {
+      skillDirs.add(parts[0]);
+    }
+  });
+  return [...dirs]
+    .filter((path) => skillDirs.has(path))
+    .map((path) => ({ name: path }))
+    .filter((skill) => Boolean(skill.name))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export function skillDescriptionFromMarkdown(content: string): string {
+  const frontmatterMatch = String(content || "").match(/^---\n([\s\S]*?)\n---/);
+  if (!frontmatterMatch) {
+    return "";
+  }
+  const descriptionLine = frontmatterMatch[1].split(/\r?\n/).find((line) => line.trim().startsWith("description:"));
+  if (!descriptionLine) {
+    return "";
+  }
+  const description = descriptionLine
+    .replace(/^\s*description:\s*/, "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "");
+  return description.slice(0, 220);
 }
 
 function findSlashCommandElementEnd(content: string): number | null {
