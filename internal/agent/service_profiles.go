@@ -14,6 +14,21 @@ import (
 	"csgclaw/internal/utils"
 )
 
+func normalizeUpdateFieldMask(fieldMask []string) map[string]struct{} {
+	if len(fieldMask) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(fieldMask))
+	for _, field := range fieldMask {
+		normalized := strings.ToLower(strings.TrimSpace(field))
+		if normalized == "" {
+			continue
+		}
+		out[normalized] = struct{}{}
+	}
+	return out
+}
+
 func (s *Service) AgentProfileView(id string) (AgentProfileView, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -215,9 +230,22 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 	runtimeRunning := isRuntimeRunning(current)
 	restartRequired := false
 	profileUpdated := false
-	instructionsUpdated := req.Instructions != nil
-	runtimeOptionsUpdated := req.RuntimeOptions != nil
-	if req.Name != nil {
+	fieldMask := normalizeUpdateFieldMask(req.FieldMask)
+	hasFieldMask := len(fieldMask) > 0
+	updateRequested := func(field string, legacy bool) bool {
+		if !hasFieldMask {
+			return legacy
+		}
+		_, ok := fieldMask[field]
+		return ok
+	}
+	instructionsUpdated := updateRequested("instructions", req.Instructions != nil)
+	runtimeOptionsUpdated := updateRequested("runtime_options", req.RuntimeOptions != nil)
+	if updateRequested("name", req.Name != nil) {
+		if req.Name == nil {
+			s.mu.Unlock()
+			return Agent{}, fmt.Errorf("field_mask includes name but request is missing name")
+		}
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
 			s.mu.Unlock()
@@ -235,33 +263,63 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 		}
 		current.Name = name
 	}
-	if req.Description != nil {
+	if updateRequested("description", req.Description != nil) {
+		if req.Description == nil {
+			s.mu.Unlock()
+			return Agent{}, fmt.Errorf("field_mask includes description but request is missing description")
+		}
 		current.Description = strings.TrimSpace(*req.Description)
 	}
-	if req.Instructions != nil {
+	if updateRequested("instructions", req.Instructions != nil) {
+		if req.Instructions == nil {
+			s.mu.Unlock()
+			return Agent{}, fmt.Errorf("field_mask includes instructions but request is missing instructions")
+		}
 		current.Instructions = strings.TrimSpace(*req.Instructions)
 	}
-	if req.Image != nil {
+	if updateRequested("image", req.Image != nil) {
+		if req.Image == nil {
+			s.mu.Unlock()
+			return Agent{}, fmt.Errorf("field_mask includes image but request is missing image")
+		}
 		current.Image = strings.TrimSpace(*req.Image)
 	}
-	if req.Avatar != nil {
+	if updateRequested("avatar", req.Avatar != nil) {
+		if req.Avatar == nil {
+			s.mu.Unlock()
+			return Agent{}, fmt.Errorf("field_mask includes avatar but request is missing avatar")
+		}
 		current.Avatar = strings.TrimSpace(*req.Avatar)
 	}
-	if req.AgentProfile != nil || req.RuntimeOptions != nil {
+	agentProfileUpdated := updateRequested("agent_profile", req.AgentProfile != nil)
+	if agentProfileUpdated || runtimeOptionsUpdated {
 		profileUpdated = true
 		profile := current.AgentProfile
-		if req.AgentProfile != nil {
+		if agentProfileUpdated {
+			if req.AgentProfile == nil {
+				s.mu.Unlock()
+				return Agent{}, fmt.Errorf("field_mask includes agent_profile but request is missing agent_profile")
+			}
 			profile = *req.AgentProfile
 			if strings.TrimSpace(profile.APIKey) == "" {
 				profile.APIKey = current.AgentProfile.APIKey
 			}
 		}
 		var patch map[string]any
-		if req.RuntimeOptions != nil {
+		if runtimeOptionsUpdated {
+			if req.RuntimeOptions == nil {
+				empty := map[string]any{}
+				req.RuntimeOptions = &empty
+			}
 			patch = *req.RuntimeOptions
 		}
-		mergedFlat := runtimeOptionsAfterPatch(current.RuntimeKind, current.RuntimeOptions, patch)
-		current.RuntimeOptions = nextAgentRuntimeOptions(current.RuntimeKind, current.RuntimeOptions, mergedFlat)
+		mergedFlat := runtimeOptionsAfterPatch(current.RuntimeKind, current.RuntimeOptions, nil)
+		if runtimeOptionsUpdated {
+			mergedFlat = utils.CloneAnyMap(patch)
+			current.RuntimeOptions = utils.CloneAnyMap(mergedFlat)
+		} else {
+			current.RuntimeOptions = nextAgentRuntimeOptions(current.RuntimeKind, current.RuntimeOptions, mergedFlat)
+		}
 		normalized := normalizeProfileForAgentRuntime(profile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, mergedFlat)
 		change := runtimeConfigChangeForAgent(previous.AgentProfile, normalized, previous.RuntimeOptions, current.RuntimeOptions)
 		restartRequired = profileRestartRequired(previous, normalized)

@@ -1214,6 +1214,50 @@ func TestHandleAgentsPatchUpdatesMetadataAndProfile(t *testing.T) {
 	}
 }
 
+func TestHandleAgentsPatchFieldMaskClearsRuntimeOptions(t *testing.T) {
+	svc := mustNewSeededService(t, []agent.Agent{
+		{
+			ID:          "u-alice",
+			Name:        "alice",
+			Role:        agent.RoleWorker,
+			RuntimeKind: agent.RuntimeKindCodex,
+			RuntimeOptions: map[string]any{
+				"local_workspace_dir": "/tmp/project",
+			},
+			AgentProfile: agent.AgentProfile{
+				Name:            "alice",
+				Provider:        agent.ProviderCodex,
+				ModelID:         "gpt-5.5",
+				ProfileComplete: true,
+			},
+			ProfileComplete: true,
+			CreatedAt:       time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC),
+		},
+	})
+
+	srv := &Handler{svc: svc}
+	body := `{"runtime_options":{},"field_mask":["runtime_options"]}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/agents/u-alice", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	runtimeOptions, ok := got["runtime_options"].(map[string]any)
+	if !ok {
+		t.Fatalf("runtime_options = %#v, want empty object", got["runtime_options"])
+	}
+	if len(runtimeOptions) != 0 {
+		t.Fatalf("runtime_options = %#v, want cleared map", runtimeOptions)
+	}
+}
+
 func TestHandleAgentsGetByIDReloadsStateBeforeLookup(t *testing.T) {
 	svc, statePath := mustNewSeededServiceWithPath(t, []agent.Agent{
 		{ID: "u-alice", Name: "alice", Role: agent.RoleWorker, CreatedAt: time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC)},

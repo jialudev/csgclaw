@@ -35,6 +35,7 @@ export type AgentUpdatePayload = {
   agent_profile?: JSONRecord;
   avatar?: string;
   description?: string;
+  field_mask?: string[];
   instructions?: string;
   image?: string;
   name?: string;
@@ -158,7 +159,11 @@ export function fetchAgentProfileModels(draft: AgentProfileModelRequest): Promis
 }
 
 export function updateAgentRequest(agentID: string, payload: AgentUpdatePayload): Promise<AgentLike> {
-  return patch(`api/v1/agents/${encodeURIComponent(agentID)}`, payload);
+  const fieldMask = Object.keys(payload).filter((key) => key !== "field_mask" && payload[key as keyof AgentUpdatePayload] !== undefined);
+  return patch(`api/v1/agents/${encodeURIComponent(agentID)}`, {
+    ...payload,
+    field_mask: fieldMask,
+  });
 }
 
 export type CreateBotPayload = AgentUpdatePayload & {

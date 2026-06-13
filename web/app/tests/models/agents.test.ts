@@ -244,6 +244,13 @@ describe("agent model helpers", () => {
     ).toEqual({
       local_workspace_dir: "/tmp/project",
     });
+    expect(
+      draftRuntimeOptionsForSave({
+        runtime_options: {
+          local_workspace_dir: "   ",
+        },
+      }),
+    ).toBeNull();
 
     expect(
       runtimeOptionSchemasForAgent("codex", null, {

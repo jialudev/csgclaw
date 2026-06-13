@@ -59,6 +59,7 @@ type UpdateRequest struct {
 	Avatar         *string         `json:"avatar,omitempty"`
 	RuntimeOptions *map[string]any `json:"runtime_options,omitempty"`
 	AgentProfile   *AgentProfile   `json:"agent_profile,omitempty"`
+	FieldMask      []string        `json:"field_mask,omitempty"`
 }
 
 type CreateRequest struct {

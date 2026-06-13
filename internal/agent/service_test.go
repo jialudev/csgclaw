@@ -1345,6 +1345,55 @@ func TestUpdateCodexRuntimeOptionsDoesNotRestartRunningRuntime(t *testing.T) {
 	}
 }
 
+func TestUpdateFieldMaskClearsRuntimeOptions(t *testing.T) {
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			reconcile: func(context.Context, agentruntime.Handle, agentruntime.RuntimeConfigChange) error {
+				return nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:          "u-dev",
+		Name:        "dev",
+		RuntimeID:   "rt-u-dev",
+		RuntimeKind: RuntimeKindCodex,
+		Role:        RoleWorker,
+		Status:      string(agentruntime.StateStopped),
+		RuntimeOptions: map[string]any{
+			"local_workspace_dir": "/tmp/old",
+		},
+		AgentProfile: AgentProfile{
+			Name:            "dev",
+			Provider:        ProviderCodex,
+			ModelID:         "gpt-5.5",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
+		CreatedAt:       time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+
+	emptyRuntimeOptions := map[string]any{}
+	updated, err := svc.Update(context.Background(), "u-dev", UpdateRequest{
+		RuntimeOptions: &emptyRuntimeOptions,
+		FieldMask:      []string{"runtime_options"},
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if len(updated.RuntimeOptions) != 0 {
+		t.Fatalf("Update().RuntimeOptions = %#v, want cleared map", updated.RuntimeOptions)
+	}
+}
+
 func TestCreateWorkerTriggersLifecycleObserver(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(

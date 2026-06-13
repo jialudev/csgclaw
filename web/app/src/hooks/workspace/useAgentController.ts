@@ -877,8 +877,8 @@ export function useAgentController({
       if (profileChanged) {
         payload.agent_profile = profile;
       }
-      if (runtimeOptionsChanged && hasObjectValues(runtimeOptions)) {
-        payload.runtime_options = runtimeOptions;
+      if (runtimeOptionsChanged) {
+        payload.runtime_options = runtimeOptions || {};
       }
       if (!hasProfileOrRuntimeChange) {
         debugAgentPageSavePayload("meta-only", payload);
@@ -1023,8 +1023,16 @@ export function useAgentController({
         from_template: agentDraft.from_template || "",
         agent_profile: profile,
       };
-      if (runtimeOptions) {
-        payload.runtime_options = runtimeOptions;
+      const editingDraftBaseline = editingAgent ? agentToDraft(editingAgent) : null;
+      const runtimeOptionsChanged = !isCreate
+        ? runtimeOptionsPayloadForCompare(agentDraft) !== runtimeOptionsPayloadForCompare(editingDraftBaseline)
+        : Boolean(runtimeOptions);
+      if (isCreate) {
+        if (runtimeOptions) {
+          payload.runtime_options = runtimeOptions;
+        }
+      } else if (runtimeOptionsChanged) {
+        payload.runtime_options = runtimeOptions || {};
       }
       const saved = isCreate
         ? await createBotRequest(payload)
@@ -1034,7 +1042,7 @@ export function useAgentController({
             description: payload.description,
             instructions: payload.instructions,
             agent_profile: payload.agent_profile,
-            ...(payload.runtime_options ? { runtime_options: payload.runtime_options } : {}),
+            ...(payload.runtime_options !== undefined ? { runtime_options: payload.runtime_options } : {}),
           });
       await refreshAgents();
       await refreshWorkspaceBootstrap();
