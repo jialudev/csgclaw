@@ -262,6 +262,61 @@ func TestHandleVersionMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestHandleLocalDirectoryPickerReturnsSelectedPath(t *testing.T) {
+	srv := &Handler{
+		localDirectoryPicker: func(context.Context) (string, error) {
+			return "/tmp/project", nil
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/local/directory-picker", strings.NewReader(`{}`))
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got directoryPickerResponse
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Path != "/tmp/project" {
+		t.Fatalf("path = %q, want %q", got.Path, "/tmp/project")
+	}
+}
+
+func TestHandleLocalDirectoryPickerCancelReturnsNoContent(t *testing.T) {
+	srv := &Handler{
+		localDirectoryPicker: func(context.Context) (string, error) {
+			return "", errDirectorySelectionCanceled
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/local/directory-picker", strings.NewReader(`{}`))
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+}
+
+func TestHandleLocalDirectoryPickerUnsupportedReturnsNotImplemented(t *testing.T) {
+	srv := &Handler{
+		localDirectoryPicker: func(context.Context) (string, error) {
+			return "", errDirectoryPickerUnsupported
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/local/directory-picker", strings.NewReader(`{}`))
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotImplemented, rec.Body.String())
+	}
+}
+
 func TestBootstrapConfigViewUsesServerUpgradeVisibility(t *testing.T) {
 	tests := []struct {
 		name        string

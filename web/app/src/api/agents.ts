@@ -60,6 +60,11 @@ export type ParticipantLike = {
   type?: string | null;
 };
 
+export type HostDirectoryPickResult =
+  | { status: "selected"; path: string }
+  | { status: "canceled" }
+  | { status: "unavailable" };
+
 function modelPayload(draft: AgentProfileModelRequest): AgentProfileModelRequest {
   return {
     agent_id: draft.agent_id,
@@ -156,6 +161,20 @@ export function fetchAgentProfile(agentID: string): Promise<AgentProfileLike> {
 
 export function fetchAgentProfileModels(draft: AgentProfileModelRequest): Promise<AgentProfileModelsResponse> {
   return post("api/v1/agent-profiles/models", modelPayload(draft));
+}
+
+export async function pickHostDirectoryRequest(): Promise<HostDirectoryPickResult> {
+  try {
+    const response = await post<{ path?: string | null } | undefined>("api/v1/local/directory-picker", {});
+    const path = String(response?.path ?? "").trim();
+    return path ? { status: "selected", path } : { status: "canceled" };
+  } catch (error) {
+    const status = Number((error as { status?: unknown })?.status ?? 0);
+    if (status === 404 || status === 405 || status === 501 || status === 503) {
+      return { status: "unavailable" };
+    }
+    throw error;
+  }
 }
 
 export function updateAgentRequest(agentID: string, payload: AgentUpdatePayload): Promise<AgentLike> {

@@ -202,8 +202,6 @@
 
 .runtime-option-action {
   flex: 0 0 auto;
-  min-height: 46px;
-  padding: 0 14px;
   white-space: nowrap;
 }
 

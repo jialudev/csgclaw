@@ -1,3 +1,5 @@
+import { pickHostDirectoryRequest } from "@/api/agents";
+
 type DirectoryHandleWithPath = {
   path?: string;
 };
@@ -80,6 +82,16 @@ function pickDirectoryPathFromInput(): Promise<string | null> {
 }
 
 export async function pickLocalDirectoryPath(): Promise<string | null> {
+  const picked = await pickHostDirectoryRequest();
+  if (picked.status === "selected") {
+    return picked.path;
+  }
+  if (picked.status === "canceled") {
+    return null;
+  }
+  if (picked.status !== "unavailable") {
+    return null;
+  }
   const hostWindow = window as DirectoryPickerWindow;
   if (typeof hostWindow.showDirectoryPicker === "function") {
     try {

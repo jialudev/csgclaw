@@ -63,6 +63,7 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 		})
 		r.Post("/agent-profiles/models", h.handleAgentProfileModels)
 		r.Get("/agent-profile-defaults", h.handleAgentProfileDefaults)
+		r.Post("/local/directory-picker", h.handleLocalDirectoryPicker)
 		r.Get("/agents/image-candidates", h.listAgentImageCandidates)
 		r.Route("/config/bootstrap", func(r chi.Router) {
 			r.Get("/", h.getBootstrapConfig)

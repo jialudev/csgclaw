@@ -34,28 +34,29 @@ import (
 )
 
 type Handler struct {
-	svc                 *agent.Service
-	participant         *participant.Service
-	im                  *im.Service
-	csgclaw             *csgclawchannel.Service
-	imBus               *im.Bus
-	imProvisioner       *im.Provisioner
-	participantBridge   *im.ParticipantBridge
-	feishu              *feishu.Service
-	llm                 *llm.Service
-	hub                 *hub.Service
-	teamSvc             *team.Service
-	teamAdapter         team.TeamChannelAdapter
-	configPath          string
-	serverAccessToken   string
-	serverNoAuth        bool
-	upgradeManager      *upgrade.Manager
-	upgradeConfigPath   string
-	upgradeApply        func(upgrade.ApplyHelperOptions) error
-	serverRestartApply  func(upgrade.RestartHelperOptions) error
-	localRuntimeImages  func(context.Context, config.Config) ([]string, error)
-	notificationDeliver notification.Fanouter
-	activityDecider     ActivityDecider
+	svc                  *agent.Service
+	participant          *participant.Service
+	im                   *im.Service
+	csgclaw              *csgclawchannel.Service
+	imBus                *im.Bus
+	imProvisioner        *im.Provisioner
+	participantBridge    *im.ParticipantBridge
+	feishu               *feishu.Service
+	llm                  *llm.Service
+	hub                  *hub.Service
+	teamSvc              *team.Service
+	teamAdapter          team.TeamChannelAdapter
+	configPath           string
+	serverAccessToken    string
+	serverNoAuth         bool
+	upgradeManager       *upgrade.Manager
+	upgradeConfigPath    string
+	upgradeApply         func(upgrade.ApplyHelperOptions) error
+	serverRestartApply   func(upgrade.RestartHelperOptions) error
+	localRuntimeImages   func(context.Context, config.Config) ([]string, error)
+	notificationDeliver  notification.Fanouter
+	activityDecider      ActivityDecider
+	localDirectoryPicker func(context.Context) (string, error)
 
 	participantActivityTurnsMu sync.Mutex
 	participantActivityTurns   map[string]participantActivityTurn
@@ -127,6 +128,10 @@ type agentResponse struct {
 	ProfileComplete      bool                               `json:"profile_complete"`
 	DetectionResults     []agent.ProfileDetectionResult     `json:"detection_results,omitempty"`
 	Participants         []apitypes.Participant             `json:"participants,omitempty"`
+}
+
+type directoryPickerResponse struct {
+	Path string `json:"path"`
 }
 
 func (h *Handler) handleBootstrapConfig(w http.ResponseWriter, r *http.Request) {
@@ -206,6 +211,30 @@ func (h *Handler) listAgentImageCandidates(w http.ResponseWriter, r *http.Reques
 		images = []string{}
 	}
 	writeJSON(w, http.StatusOK, images)
+}
+
+func (h *Handler) handleLocalDirectoryPicker(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	picker := h.localDirectoryPicker
+	if picker == nil {
+		picker = selectLocalDirectory
+	}
+	path, err := picker(r.Context())
+	if err != nil {
+		switch {
+		case errors.Is(err, errDirectorySelectionCanceled):
+			w.WriteHeader(http.StatusNoContent)
+		case errors.Is(err, errDirectoryPickerUnsupported):
+			http.Error(w, err.Error(), http.StatusNotImplemented)
+		default:
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, directoryPickerResponse{Path: path})
 }
 
 func listLocalRuntimeImages(ctx context.Context, cfg config.Config) ([]string, error) {

@@ -6,6 +6,7 @@ import {
   type AgentDraft,
   type RuntimeOptionSchema,
 } from "@/models/agents";
+import { Button } from "@/components/ui/Button/Button";
 import type { LocaleCode } from "@/models/conversations";
 import { pickLocalDirectoryPath } from "./runtimeOptionDirectoryPicker";
 
@@ -59,9 +60,10 @@ export function RuntimeOptionsFields({ draft, locale, schemas = [], onDraftChang
               />
               {isDirectory ? (
                 <>
-                  <button
-                    type="button"
-                    className="csg-button-secondary-gray runtime-option-action"
+                  <Button
+                    variant="secondaryGray"
+                    size="md"
+                    className="runtime-option-action"
                     onClick={async () => {
                       const pickedPath = await pickLocalDirectoryPath();
                       if (!pickedPath) {
@@ -74,10 +76,11 @@ export function RuntimeOptionsFields({ draft, locale, schemas = [], onDraftChang
                     }}
                   >
                     {directoryPickerLabel(locale)}
-                  </button>
-                  <button
-                    type="button"
-                    className="csg-button-secondary-gray runtime-option-action"
+                  </Button>
+                  <Button
+                    variant="secondaryGray"
+                    size="md"
+                    className="runtime-option-action"
                     onClick={() =>
                       onDraftChange({
                         ...draft,
@@ -86,7 +89,7 @@ export function RuntimeOptionsFields({ draft, locale, schemas = [], onDraftChang
                     }
                   >
                     {clearFieldLabel(locale)}
-                  </button>
+                  </Button>
                 </>
               ) : null}
             </div>
