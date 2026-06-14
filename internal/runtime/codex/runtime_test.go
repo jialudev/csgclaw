@@ -214,6 +214,46 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 	}
 }
 
+func TestRestartRequiredReturnsTrueWhenLocalWorkspaceDirChanges(t *testing.T) {
+	rt := &Runtime{}
+	got, err := rt.RestartRequired(agentruntime.RuntimeConfigChange{
+		Previous: agentruntime.RuntimeConfigSnapshot{
+			Options: map[string]any{"local_workspace_dir": "/tmp/old"},
+		},
+		Current: agentruntime.RuntimeConfigSnapshot{
+			Options: map[string]any{"local_workspace_dir": "/tmp/new"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RestartRequired() error = %v", err)
+	}
+	if !got {
+		t.Fatal("RestartRequired() = false, want true when local_workspace_dir changes")
+	}
+}
+
+func TestRestartRequiredIgnoresProfileChanges(t *testing.T) {
+	rt := &Runtime{}
+	got, err := rt.RestartRequired(agentruntime.RuntimeConfigChange{
+		Previous: agentruntime.RuntimeConfigSnapshot{
+			Profile: agentruntime.RuntimeProfileConfig{
+				ModelID: "gpt-5.5",
+			},
+		},
+		Current: agentruntime.RuntimeConfigSnapshot{
+			Profile: agentruntime.RuntimeProfileConfig{
+				ModelID: "gpt-5.6",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RestartRequired() error = %v", err)
+	}
+	if got {
+		t.Fatal("RestartRequired() = true, want false when only profile changes")
+	}
+}
+
 func TestRuntimeCreateUsesLocalWorkspaceDir(t *testing.T) {
 	root := t.TempDir()
 	workspaceRoot := filepath.Join(root, "project")

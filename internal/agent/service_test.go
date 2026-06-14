@@ -1291,7 +1291,7 @@ func TestUpdateRuntimeOptionsSyncsCodexWorkspaceAgentsFile(t *testing.T) {
 	}
 }
 
-func TestUpdateCodexRuntimeOptionsDoesNotRestartRunningRuntime(t *testing.T) {
+func TestUpdateCodexLocalWorkspaceDirMarksRunningRuntimeForRestart(t *testing.T) {
 	observer := &fakeLifecycleObserver{}
 	svc, err := NewService(
 		testModelConfig(),
@@ -1301,6 +1301,11 @@ func TestUpdateCodexRuntimeOptionsDoesNotRestartRunningRuntime(t *testing.T) {
 		WithLifecycleObserver(observer),
 		WithRuntime(fakeAgentRuntime{
 			kind: RuntimeKindCodex,
+			restart: func(change agentruntime.RuntimeConfigChange) (bool, error) {
+				prev, _ := change.Previous.Options["local_workspace_dir"].(string)
+				next, _ := change.Current.Options["local_workspace_dir"].(string)
+				return prev != next, nil
+			},
 			reconcile: func(context.Context, agentruntime.Handle, agentruntime.RuntimeConfigChange) error {
 				return nil
 			},
@@ -1337,11 +1342,11 @@ func TestUpdateCodexRuntimeOptionsDoesNotRestartRunningRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if updated.AgentProfile.EnvRestartRequired {
-		t.Fatal("Update().AgentProfile.EnvRestartRequired = true, want false after codex local_workspace_dir change")
+	if !updated.AgentProfile.EnvRestartRequired {
+		t.Fatal("Update().AgentProfile.EnvRestartRequired = false, want true after codex local_workspace_dir change")
 	}
-	if len(observer.stopCalls) != 0 {
-		t.Fatalf("StopAgent() calls = %+v, want none", observer.stopCalls)
+	if len(observer.stopCalls) != 1 || observer.stopCalls[0] != "u-dev" {
+		t.Fatalf("StopAgent() calls = %+v, want [u-dev]", observer.stopCalls)
 	}
 }
 

@@ -45,7 +45,7 @@ func (r *Runtime) ValidateConfig(ctx context.Context, current agentruntime.Runti
 }
 
 func (r *Runtime) RestartRequired(change agentruntime.RuntimeConfigChange) (bool, error) {
-	return !codexProfileRuntimeInputsEqual(change.Previous.Profile, change.Current.Profile), nil
+	return codexWorkspaceOptionChanged(change.Previous.Options, change.Current.Options), nil
 }
 
 func (r *Runtime) ReconcileConfig(ctx context.Context, h agentruntime.Handle, change agentruntime.RuntimeConfigChange) error {
@@ -136,71 +136,14 @@ func normalizeHeaders(values map[string]string) map[string]string {
 	return out
 }
 
-func codexProfileRuntimeInputsEqual(a, b agentruntime.RuntimeProfileConfig) bool {
-	return strings.TrimSpace(a.Provider) == strings.TrimSpace(b.Provider) &&
-		strings.TrimRight(strings.TrimSpace(a.BaseURL), "/") == strings.TrimRight(strings.TrimSpace(b.BaseURL), "/") &&
-		strings.TrimSpace(a.APIKey) == strings.TrimSpace(b.APIKey) &&
-		strings.TrimSpace(a.ModelID) == strings.TrimSpace(b.ModelID) &&
-		strings.TrimSpace(a.ReasoningEffort) == strings.TrimSpace(b.ReasoningEffort) &&
-		equalStringMap(a.Headers, b.Headers) &&
-		equalAnyMap(a.RequestOptions, b.RequestOptions)
-}
-
-func equalStringMap(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for key, value := range a {
-		if b[key] != value {
-			return false
-		}
-	}
-	return true
-}
-
-func equalAnyMap(a, b map[string]any) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for key, value := range a {
-		if !valuesEqual(value, b[key]) {
-			return false
-		}
-	}
-	return true
-}
-
-func valuesEqual(a, b any) bool {
-	switch av := a.(type) {
-	case string:
-		bv, ok := b.(string)
-		return ok && av == bv
-	case bool:
-		bv, ok := b.(bool)
-		return ok && av == bv
-	case float64:
-		bv, ok := b.(float64)
-		return ok && av == bv
-	case int:
-		bv, ok := b.(int)
-		return ok && av == bv
-	case nil:
-		return b == nil
-	case []any:
-		bv, ok := b.([]any)
-		if !ok || len(av) != len(bv) {
-			return false
-		}
-		for i := range av {
-			if !valuesEqual(av[i], bv[i]) {
-				return false
-			}
-		}
+func codexWorkspaceOptionChanged(previous, current map[string]any) bool {
+	previousOpts, err := DecodeRuntimeOptions(previous)
+	if err != nil {
 		return true
-	case map[string]any:
-		bv, ok := b.(map[string]any)
-		return ok && equalAnyMap(av, bv)
-	default:
-		return fmt.Sprintf("%#v", a) == fmt.Sprintf("%#v", b)
 	}
+	currentOpts, err := DecodeRuntimeOptions(current)
+	if err != nil {
+		return true
+	}
+	return previousOpts.LocalWorkspaceDir != currentOpts.LocalWorkspaceDir
 }
