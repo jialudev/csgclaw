@@ -348,6 +348,15 @@ export function AgentDetailPane({
                   <input value={draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
                 </label>
               )}
+              {!isNotifierRuntimeDraftOnAgentPage(draft, item) && runtimeOptionSchemas.length > 0 ? (
+                <RuntimeOptionsFields
+                  draft={draft}
+                  locale={locale}
+                  schemas={runtimeOptionSchemas}
+                  onDraftChange={onDraftChange || (() => {})}
+                  embedded
+                />
+              ) : null}
             </div>
           </section>
 
@@ -434,18 +443,6 @@ export function AgentDetailPane({
                   />
                 </label>
               </div>
-            </section>
-          ) : null}
-
-          {!isNotifierRuntimeDraftOnAgentPage(draft, item) && runtimeOptionSchemas.length > 0 ? (
-            <section className="profile-section">
-              <div className="profile-section-title">{t("profileRuntimeOptions")}</div>
-              <RuntimeOptionsFields
-                draft={draft}
-                locale={locale}
-                schemas={runtimeOptionSchemas}
-                onDraftChange={onDraftChange || (() => {})}
-              />
             </section>
           ) : null}
 

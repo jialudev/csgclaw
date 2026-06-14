@@ -356,6 +356,15 @@ export function AgentProfileModal({
                     </label>
                   </div>
                 ) : null}
+                {runtimeOptionSchemas.length > 0 ? (
+                  <RuntimeOptionsFields
+                    draft={agentDraft}
+                    locale={locale}
+                    schemas={runtimeOptionSchemas}
+                    onDraftChange={onAgentDraftChange}
+                    embedded
+                  />
+                ) : null}
               </div>
             </section>
           ) : null}
@@ -448,17 +457,6 @@ export function AgentProfileModal({
                   </label>
                 </div>
               </section>
-              {runtimeOptionSchemas.length > 0 ? (
-                <section className="profile-section">
-                  <div className="profile-section-title">{t("profileRuntimeOptions")}</div>
-                  <RuntimeOptionsFields
-                    draft={agentDraft}
-                    locale={locale}
-                    schemas={runtimeOptionSchemas}
-                    onDraftChange={onAgentDraftChange}
-                  />
-                </section>
-              ) : null}
               {agentDraft.provider === "api" ? (
                 <section className="profile-section">
                   <div className="profile-section-title">{t("profileAPIProvider")}</div>
