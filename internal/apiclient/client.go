@@ -325,6 +325,22 @@ func (c *Client) CreateTeamTasksBatch(ctx context.Context, teamID string, req ap
 	return created, nil
 }
 
+func (c *Client) PlanTeamTask(ctx context.Context, teamID, taskID, actorID string, autoStart bool) (apitypes.PlanTeamTaskResponse, error) {
+	var planned apitypes.PlanTeamTaskResponse
+	path, err := teamTaskPlanPath(teamID, taskID)
+	if err != nil {
+		return apitypes.PlanTeamTaskResponse{}, err
+	}
+	req := apitypes.PlanTeamTaskRequest{
+		ActorID:   strings.TrimSpace(actorID),
+		AutoStart: autoStart,
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, path, req, &planned); err != nil {
+		return apitypes.PlanTeamTaskResponse{}, err
+	}
+	return planned, nil
+}
+
 func (c *Client) ClaimNextTeamTask(ctx context.Context, req apitypes.ClaimNextTeamTaskRequest) (apitypes.TeamTask, error) {
 	var task apitypes.TeamTask
 	path, err := teamClaimNextPath(req.TeamID)
@@ -385,6 +401,19 @@ func (c *Client) AssignTeamTask(ctx context.Context, teamID, taskID, actorID, pa
 		return apitypes.TeamTask{}, err
 	}
 	return updated, nil
+}
+
+func (c *Client) StartTeamTask(ctx context.Context, teamID, taskID, actorID string) (apitypes.StartTeamTaskResponse, error) {
+	var started apitypes.StartTeamTaskResponse
+	path, err := teamTaskStartPath(teamID, taskID)
+	if err != nil {
+		return apitypes.StartTeamTaskResponse{}, err
+	}
+	req := apitypes.StartTeamTaskRequest{ActorID: strings.TrimSpace(actorID)}
+	if err := c.DoJSON(ctx, http.MethodPost, path, req, &started); err != nil {
+		return apitypes.StartTeamTaskResponse{}, err
+	}
+	return started, nil
 }
 
 func (c *Client) ListTeamApprovals(ctx context.Context, teamID string) ([]apitypes.TeamApproval, error) {
@@ -692,6 +721,14 @@ func teamTaskClaimPath(teamID, taskID string) (string, error) {
 	return path + "/claim", nil
 }
 
+func teamTaskPlanPath(teamID, taskID string) (string, error) {
+	path, err := teamTaskPath(teamID, taskID)
+	if err != nil {
+		return "", err
+	}
+	return path + "/plan", nil
+}
+
 func teamTaskPath(teamID, taskID string) (string, error) {
 	path, err := teamBasePath(teamID)
 	if err != nil {
@@ -710,6 +747,14 @@ func teamTaskAssignPath(teamID, taskID string) (string, error) {
 		return "", err
 	}
 	return path + "/assign", nil
+}
+
+func teamTaskStartPath(teamID, taskID string) (string, error) {
+	path, err := teamTaskPath(teamID, taskID)
+	if err != nil {
+		return "", err
+	}
+	return path + "/start", nil
 }
 
 func teamApprovalsPath(teamID string) (string, error) {

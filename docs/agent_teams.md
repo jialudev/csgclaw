@@ -699,6 +699,8 @@ csgclaw-cli team resume --team <id>
 csgclaw-cli team task list --team <id> [--status <status>] [--assigned-to <participant>]
 csgclaw-cli team task create --team <id> --title <title> [--body <text>] [--assign-to <participant>] [--depends-on <ids>] [--priority <n>]
 csgclaw-cli team task create-batch --team <team> --created-by <participant> --file <tasks.json>
+csgclaw-cli team task plan --team <id> --task <parent-task-id> [--start]
+csgclaw-cli team task start --team <id> --task <parent-task-id>
 csgclaw-cli team task assign --team <id> --task <id> --participant-id <participant> --actor-id <participant>
 csgclaw-cli team task claim --team <id> --task <id> --participant-id <participant>
 csgclaw-cli team task claim-next [--team <id>] --participant-id <participant>
@@ -716,6 +718,8 @@ Phase 2 必需子集：
 
 - `team create` 或 `team enable-room`；
 - `task create-batch`；
+- `task plan`；
+- `task start`；
 - `task claim-next`；
 - `task update`；
 - `approval create`；
@@ -941,7 +945,7 @@ Phase 0 的重点是减少 Phase 1 返工，不要求实现代码，也不追求
 1. 注册 `/api/v1/teams` 的最小 API；
 2. 新增 `csgclaw-cli team ...`；
 3. 支持基于已有 csgclaw room 启用 team；
-4. CLI 只实现 POC 必需命令：`team create` 或 `team enable-room`、`task create-batch`、`task claim-next`、`task update`、`approval create`、`approval resolve`；
+4. CLI 只实现 POC 必需命令：`team create` 或 `team enable-room`、`task create-batch`、`task plan`、`task start`、`task claim-next`、`task update`、`approval create`、`approval resolve`；
 5. `task list` 和 `approval list` 可作为调试命令加入，但不要求 table/json 双模式完整打磨；
 6. 其他命令如 pause/resume、assign、cancel、presence update、复杂筛选和批量操作延后到 Phase 3b 之后补齐；
 7. ConversationPage 只做基础展示：普通 room messages + 最小 structured event 识别；

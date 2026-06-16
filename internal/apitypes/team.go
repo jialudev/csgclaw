@@ -8,6 +8,7 @@ type Team struct {
 	Channel     string    `json:"channel"`
 	Title       string    `json:"title"`
 	LeadAgentID string    `json:"lead_agent_id"`
+	Members     []string  `json:"members,omitempty"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

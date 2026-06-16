@@ -56,6 +56,8 @@ func (c cmd) usage(run *command.Context) {
 		"create                      Create a team or enable team mode on a room",
 		"task list                   List tasks for a team",
 		"task create-batch           Create tasks from a JSON file",
+		"task plan                   Plan child tasks for a parent task",
+		"task start                  Start a parent task and dispatch ready subtasks",
 		"task claim-next             Claim the next available task",
 		"task update                 Update a task status",
 		"approval list               List approvals for a team",
@@ -122,6 +124,8 @@ func (c cmd) runTask(ctx context.Context, run *command.Context, args []string, g
 		run.UsageCommandGroup(subcommandGroup("team task", "Manage team tasks."), run.Program+" team task <subcommand> [flags]", []string{
 			"list                        List tasks for a team",
 			"create-batch                Create tasks from a JSON file",
+			"plan                        Plan child tasks for a parent task",
+			"start                       Start a parent task and dispatch ready subtasks",
 			"assign                      Reassign a task to a worker",
 			"claim                       Claim a specific task",
 			"claim-next                  Claim the next available task",
@@ -134,6 +138,10 @@ func (c cmd) runTask(ctx context.Context, run *command.Context, args []string, g
 		return c.runTaskList(ctx, run, args[1:], globals)
 	case "create-batch":
 		return c.runTaskCreateBatch(ctx, run, args[1:], globals)
+	case "plan":
+		return c.runTaskPlan(ctx, run, args[1:], globals)
+	case "start":
+		return c.runTaskStart(ctx, run, args[1:], globals)
 	case "assign":
 		return c.runTaskAssign(ctx, run, args[1:], globals)
 	case "claim":
@@ -200,6 +208,50 @@ func (c cmd) runTaskCreateBatch(ctx context.Context, run *command.Context, args 
 		return err
 	}
 	return command.RenderTeamTasks(globals.Output, run.Stdout, resp.Tasks)
+}
+
+func (c cmd) runTaskPlan(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
+	fs := run.NewFlagSet("team task plan", run.Program+" team task plan --team <id> --task <id> [--start]", "Plan child tasks for a parent task.")
+	teamID := fs.String("team", "", "team id")
+	taskID := fs.String("task", "", "parent task id")
+	autoStart := fs.Bool("start", false, "start the parent task after planning")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if len(fs.Args()) != 0 {
+		return fmt.Errorf("team task plan does not accept positional arguments")
+	}
+	if *teamID == "" || *taskID == "" {
+		return fmt.Errorf("team and task are required")
+	}
+	resp, err := run.APIClient(globals).PlanTeamTask(ctx, *teamID, *taskID, "", *autoStart)
+	if err != nil {
+		return err
+	}
+	tasks := make([]apitypes.TeamTask, 0, 1+len(resp.CreatedTasks))
+	tasks = append(tasks, resp.Task)
+	tasks = append(tasks, resp.CreatedTasks...)
+	return command.RenderTeamTasks(globals.Output, run.Stdout, tasks)
+}
+
+func (c cmd) runTaskStart(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
+	fs := run.NewFlagSet("team task start", run.Program+" team task start --team <id> --task <id>", "Start a parent task and dispatch ready subtasks.")
+	teamID := fs.String("team", "", "team id")
+	taskID := fs.String("task", "", "parent task id")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if len(fs.Args()) != 0 {
+		return fmt.Errorf("team task start does not accept positional arguments")
+	}
+	if *teamID == "" || *taskID == "" {
+		return fmt.Errorf("team and task are required")
+	}
+	resp, err := run.APIClient(globals).StartTeamTask(ctx, *teamID, *taskID, "")
+	if err != nil {
+		return err
+	}
+	return command.RenderTeamTasks(globals.Output, run.Stdout, []apitypes.TeamTask{resp.Task})
 }
 
 func (c cmd) runTaskClaim(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {

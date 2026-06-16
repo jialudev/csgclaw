@@ -87,6 +87,72 @@ func TestTeamRoutesCreateAndTaskFlow(t *testing.T) {
 	}
 }
 
+func TestTeamRoutesReturnMembers(t *testing.T) {
+	imSvc := im.NewService()
+	participantSvc := participant.NewService(participant.NewMemoryStore([]apitypes.Participant{
+		{
+			ID:              agent.ManagerParticipantID,
+			Channel:         participant.ChannelCSGClaw,
+			Type:            participant.TypeAgent,
+			ChannelUserRef:  agent.ManagerParticipantID,
+			AgentID:         agent.ManagerUserID,
+			LifecycleStatus: participant.LifecycleStatusActive,
+		},
+		{
+			ID:              "worker",
+			Channel:         participant.ChannelCSGClaw,
+			Type:            participant.TypeAgent,
+			ChannelUserRef:  "u-worker",
+			AgentID:         "u-worker",
+			LifecycleStatus: participant.LifecycleStatusActive,
+		},
+	}))
+	adapter := team.NewCSGClawAdapter(imSvc, participantSvc)
+	teamSvc := team.NewService()
+	h := &Handler{im: imSvc, participant: participantSvc, teamSvc: teamSvc, teamAdapter: adapter}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"channel":"csgclaw","title":"release","lead_participant_id":"manager","member_participant_ids":["worker"]}`))
+	createRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create team status = %d, want %d: %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+
+	var created apitypes.Team
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create team response: %v", err)
+	}
+	if !containsMember(created.Members, agent.ManagerUserID) || !containsMember(created.Members, "u-worker") {
+		t.Fatalf("created members = %v, want manager and worker agent ids", created.Members)
+	}
+
+	listRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(listRec, httptest.NewRequest(http.MethodGet, "/api/v1/teams", nil))
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list teams status = %d, want %d: %s", listRec.Code, http.StatusOK, listRec.Body.String())
+	}
+	var listed []apitypes.Team
+	if err := json.NewDecoder(listRec.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode list teams response: %v", err)
+	}
+	if len(listed) != 1 || !containsMember(listed[0].Members, agent.ManagerUserID) || !containsMember(listed[0].Members, "u-worker") {
+		t.Fatalf("listed teams = %+v, want members on list response", listed)
+	}
+
+	getRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/api/v1/teams/"+created.ID, nil))
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get team status = %d, want %d: %s", getRec.Code, http.StatusOK, getRec.Body.String())
+	}
+	var got apitypes.Team
+	if err := json.NewDecoder(getRec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode get team response: %v", err)
+	}
+	if !containsMember(got.Members, agent.ManagerUserID) || !containsMember(got.Members, "u-worker") {
+		t.Fatalf("got members = %v, want manager and worker agent ids", got.Members)
+	}
+}
+
 func TestTeamTaskResponsesIncludeParticipantDisplayNames(t *testing.T) {
 	agentSvc := mustNewSeededService(t, []agent.Agent{
 		{

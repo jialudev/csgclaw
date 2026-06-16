@@ -11,6 +11,7 @@ function mockFetch(): Mock<typeof fetch> {
           created_at: "2026-06-10T00:00:00Z",
           id: "team-1",
           lead_agent_id: "u-manager",
+          members: ["u-manager", "u-worker"],
           room_id: "room-1",
           status: "active",
           title: "release",

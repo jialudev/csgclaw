@@ -505,7 +505,7 @@ export function WorkspaceTabPanels({
           {teams.length ? (
             teams.map((team) => {
               const room = roomsById.get(team.room_id);
-              const memberCount = room?.members?.length ?? 0;
+              const memberCount = team.members.length;
               return (
                 <button
                   key={team.id}

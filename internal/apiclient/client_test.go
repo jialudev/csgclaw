@@ -181,6 +181,15 @@ func TestClientUsesExpectedRoutes(t *testing.T) {
 			},
 		},
 		{
+			name: "plan team task",
+			body: `{"task":{},"created_tasks":[]}`,
+			want: "POST /api/v1/teams/team-1/tasks/task-1/plan",
+			call: func(c *Client) error {
+				_, err := c.PlanTeamTask(ctx, "team-1", "task-1", "", true)
+				return err
+			},
+		},
+		{
 			name: "claim next team task",
 			body: `{}`,
 			want: "POST /api/v1/teams/team-1/tasks/claim-next",
@@ -213,6 +222,15 @@ func TestClientUsesExpectedRoutes(t *testing.T) {
 			want: "POST /api/v1/teams/team-1/tasks/task-1/assign",
 			call: func(c *Client) error {
 				_, err := c.AssignTeamTask(ctx, "team-1", "task-1", "bot-manager", "bot-worker")
+				return err
+			},
+		},
+		{
+			name: "start team task",
+			body: `{"task":{},"scheduled_tasks":1}`,
+			want: "POST /api/v1/teams/team-1/tasks/task-1/start",
+			call: func(c *Client) error {
+				_, err := c.StartTeamTask(ctx, "team-1", "task-1", "")
 				return err
 			},
 		},

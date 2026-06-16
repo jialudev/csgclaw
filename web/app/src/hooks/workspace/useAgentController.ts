@@ -1197,12 +1197,12 @@ export function useAgentController({
       setTeamActionError(t("teamActionFailed"));
       return;
     }
-    const room = rooms.find((item) => item.id === team.room_id);
-    const roomMembers = new Set(room?.members ?? []);
-    const nextAgentIDs = agentIDs.filter((id) => id && !roomMembers.has(id));
+    const teamMembers = new Set(team.members ?? []);
+    const nextAgentIDs = agentIDs.filter((id) => id && !teamMembers.has(id));
     if (!nextAgentIDs.length) {
       return;
     }
+    const room = rooms.find((item) => item.id === team.room_id);
     const inviterID = resolveRoomInviterID(room, {
       preferredInviterIDs: [team.lead_agent_id, data.current_user_id, MANAGER_AGENT_ID],
     });
@@ -1220,6 +1220,7 @@ export function useAgentController({
         user_ids: nextAgentIDs,
         locale,
       });
+      await teamsQuery.refetch();
       await refreshWorkspaceBootstrap();
     } catch (err) {
       setTeamActionError(errorMessage(err, t("teamActionFailed")));

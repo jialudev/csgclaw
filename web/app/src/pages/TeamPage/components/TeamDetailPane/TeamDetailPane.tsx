@@ -80,19 +80,17 @@ export function TeamDetailPane({
     );
   }
 
-  const memberIDs = teamMemberIDs(team, room);
+  const memberIDs = teamMemberIDs(team);
   const members = memberIDs.map((memberID) => memberDisplay(memberID, agents, usersById, team.lead_agent_id));
   const parentTasks = rootTasks(tasks);
   const locale = document.documentElement.lang || "en";
   const teamAgents = agents.filter((agent): agent is AgentLike & { id: string } => Boolean(agent?.id));
   const teamAgentIDs = teamAgents.map((agent) => String(agent.id));
-  const roomMemberIDs = new Set(room?.members ?? []);
-  const existingTeamAgentIDs = teamAgentIDs.filter(
-    (agentID) => roomMemberIDs.has(agentID) || agentID === team.lead_agent_id,
-  );
+  const teamMemberIDSet = new Set(memberIDs);
+  const existingTeamAgentIDs = teamAgentIDs.filter((agentID) => teamMemberIDSet.has(agentID));
   const allAgentsSelected = teamAgentIDs.length > 0 && teamAgentIDs.every((id) => selectedMemberIDs.includes(id));
   const selectedAgentCount = selectedMemberIDs.filter((id) => teamAgentIDs.includes(id)).length;
-  const hasNewMembersToAdd = selectedMemberIDs.some((id) => teamAgentIDs.includes(id) && !roomMemberIDs.has(id));
+  const hasNewMembersToAdd = selectedMemberIDs.some((id) => teamAgentIDs.includes(id) && !teamMemberIDSet.has(id));
 
   function openAddMembersDialog() {
     setSelectedMemberIDs(existingTeamAgentIDs);
@@ -176,7 +174,7 @@ export function TeamDetailPane({
                     </label>
                     {teamAgents.map((agent) => {
                       const agentID = String(agent.id);
-                      const inTeam = roomMemberIDs.has(agentID) || agentID === team.lead_agent_id;
+                      const inTeam = teamMemberIDSet.has(agentID);
                       return (
                         <label key={agentID} className="selection-item">
                           <input
@@ -400,9 +398,13 @@ function MemberRowContent({ member, t }: { member: TeamMemberDisplay; t: Transla
   );
 }
 
-function teamMemberIDs(team: WorkspaceTeam, room: IMConversation | null | undefined): string[] {
-  const ids = new Set(room?.members ?? []);
+function teamMemberIDs(team: WorkspaceTeam): string[] {
+  const ids = new Set(team.members ?? []);
   if (team.lead_agent_id) {
+    // The lead agent ID (e.g., "u-manager") may differ from the room participant ID
+    // (e.g., "manager"). Remove the participant ID form to avoid double-counting.
+    const altID = team.lead_agent_id.startsWith("u-") ? team.lead_agent_id.slice(2) : "u-" + team.lead_agent_id;
+    ids.delete(altID);
     ids.add(team.lead_agent_id);
   }
   return Array.from(ids);

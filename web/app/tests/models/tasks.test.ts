@@ -71,6 +71,7 @@ describe("tasks model", () => {
         id: "team-1",
         room_id: "room-1",
         lead_agent_id: "u-manager",
+        members: ["u-manager", "u-worker"],
       },
       {
         id: "team-2",
@@ -80,6 +81,8 @@ describe("tasks model", () => {
     ]);
 
     expect(teams.map((team) => team.lead_agent_id)).toEqual(["u-manager", "u-other-manager"]);
+    expect(teams[0]?.members).toEqual(["u-manager", "u-worker"]);
+    expect(teams[1]?.members).toEqual([]);
   });
 
   it("normalizes parent ids and groups child tasks under their parent", () => {

@@ -17,7 +17,7 @@ func (h *Handler) handleListTeams(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, apiTeams(svc.ListTeams()))
+	writeJSON(w, http.StatusOK, h.apiTeams(svc.ListTeams()))
 }
 
 func (h *Handler) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +47,7 @@ func (h *Handler) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, apiTeam(created))
+	writeJSON(w, http.StatusCreated, h.apiTeam(created))
 }
 
 func (h *Handler) resolveCreateTeamAgents(req apitypes.CreateTeamRequest) (string, []string, error) {
@@ -111,7 +111,7 @@ func (h *Handler) handleGetTeam(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, team.ErrTeamNotFound.Error(), http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, apiTeam(item))
+	writeJSON(w, http.StatusOK, h.apiTeam(item))
 }
 
 func (h *Handler) handleListTeamTasks(w http.ResponseWriter, r *http.Request) {

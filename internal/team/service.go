@@ -536,9 +536,6 @@ func (s *Service) PlanTask(input PlanTaskInput) (PlanTaskResult, error) {
 	if strings.TrimSpace(task.ParentID) != "" {
 		return PlanTaskResult{}, fmt.Errorf("%w: only parent tasks can be planned", ErrTaskTransitionInvalid)
 	}
-	if !taskIsPlannable(task, meta) {
-		return PlanTaskResult{}, fmt.Errorf("%w: cannot plan task in status %s", ErrTaskTransitionInvalid, task.Status)
-	}
 	existingChildren := s.taskChildrenLocked(meta.ID, task.ID)
 	if len(existingChildren) > 0 {
 		out := PlanTaskResult{
@@ -549,6 +546,9 @@ func (s *Service) PlanTask(input PlanTaskInput) (PlanTaskResult, error) {
 			out.Tasks = append(out.Tasks, cloneTask(*child))
 		}
 		return out, nil
+	}
+	if !taskIsPlannable(task, meta) {
+		return PlanTaskResult{}, fmt.Errorf("%w: cannot plan task in status %s", ErrTaskTransitionInvalid, task.Status)
 	}
 
 	actorID, err := requireCanonicalParticipantID("actor_id", normalizeTeamActorID(meta, input.ActorID))
@@ -706,7 +706,7 @@ func (s *Service) StartTask(input StartTaskInput) (StartTaskResult, error) {
 	if strings.TrimSpace(task.ParentID) != "" {
 		return StartTaskResult{}, fmt.Errorf("%w: only parent tasks can be started", ErrTaskTransitionInvalid)
 	}
-	if !taskStatusIsUnstarted(task.Status) {
+	if !taskIsStartable(task, meta) {
 		return StartTaskResult{}, fmt.Errorf("%w: cannot start task in status %s", ErrTaskTransitionInvalid, task.Status)
 	}
 
@@ -771,6 +771,16 @@ func taskStatusIsUnstarted(status string) bool {
 	return strings.TrimSpace(status) == "" || strings.TrimSpace(status) == TaskStatusPending
 }
 
+func taskIsStartable(task *TeamTask, meta TeamMeta) bool {
+	if task == nil {
+		return false
+	}
+	if taskStatusIsUnstarted(task.Status) {
+		return true
+	}
+	return strings.TrimSpace(task.Status) == TaskStatusAssigned && taskAssignedToManager(task.AssignedTo, meta)
+}
+
 func taskAssignedToManager(assignedTo string, teamMeta TeamMeta) bool {
 	assignedTo = strings.TrimSpace(assignedTo)
 	if assignedTo == "" {
@@ -798,13 +808,7 @@ func defaultPlanSummary(taskCount int) string {
 }
 
 func taskIsPlannable(task *TeamTask, meta TeamMeta) bool {
-	if task == nil {
-		return false
-	}
-	if taskStatusIsUnstarted(task.Status) {
-		return true
-	}
-	return strings.TrimSpace(task.Status) == TaskStatusAssigned && taskAssignedToManager(task.AssignedTo, meta)
+	return taskIsStartable(task, meta)
 }
 
 func (s *Service) AssignTask(input AssignTaskInput) (TeamTask, error) {

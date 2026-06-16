@@ -93,25 +93,88 @@ func writeTeamPlannerError(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusBadGateway)
 }
 
-func apiTeam(item team.TeamMeta) apitypes.Team {
+func (h *Handler) apiTeam(item team.TeamMeta) apitypes.Team {
 	return apitypes.Team{
 		ID:          item.ID,
 		RoomID:      item.RoomID,
 		Channel:     item.Channel,
 		Title:       item.Title,
 		LeadAgentID: item.LeadAgentID,
+		Members:     h.apiTeamMembers(item),
 		Status:      item.Status,
 		CreatedAt:   item.CreatedAt,
 		UpdatedAt:   item.UpdatedAt,
 	}
 }
 
-func apiTeams(items []team.TeamMeta) []apitypes.Team {
+func (h *Handler) apiTeams(items []team.TeamMeta) []apitypes.Team {
 	resp := make([]apitypes.Team, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, apiTeam(item))
+		resp = append(resp, h.apiTeam(item))
 	}
 	return resp
+}
+
+func (h *Handler) apiTeamMembers(item team.TeamMeta) []string {
+	seen := make(map[string]struct{})
+	members := make([]string, 0)
+	if h != nil && h.im != nil {
+		if room, ok := h.im.Room(item.RoomID); ok {
+			members = make([]string, 0, len(room.Members)+1)
+			for _, memberID := range room.Members {
+				resolved := h.apiTeamMemberID(memberID)
+				if resolved == "" {
+					continue
+				}
+				if _, ok := seen[resolved]; ok {
+					continue
+				}
+				seen[resolved] = struct{}{}
+				members = append(members, resolved)
+			}
+		}
+	}
+	if leadAgentID := strings.TrimSpace(item.LeadAgentID); leadAgentID != "" {
+		if _, ok := seen[leadAgentID]; !ok {
+			members = append(members, leadAgentID)
+		}
+	}
+	return members
+}
+
+func (h *Handler) apiTeamMemberID(channelUserID string) string {
+	channelUserID = strings.TrimSpace(channelUserID)
+	if channelUserID == "" {
+		return ""
+	}
+	if h != nil && h.participant != nil {
+		for _, item := range h.participant.List(participant.ListOptions{Channel: participant.ChannelCSGClaw}) {
+			if strings.TrimSpace(item.ChannelUserRef) != channelUserID {
+				continue
+			}
+			if agentID := strings.TrimSpace(item.AgentID); agentID != "" {
+				return agentID
+			}
+			if id := strings.TrimSpace(item.ID); id != "" {
+				return id
+			}
+		}
+	}
+	if channelUserID == agent.ManagerParticipantID {
+		return agent.ManagerUserID
+	}
+	if h != nil && h.svc != nil {
+		if _, ok := h.svc.Agent(channelUserID); ok {
+			return channelUserID
+		}
+		if !strings.HasPrefix(channelUserID, "u-") {
+			agentID := "u-" + channelUserID
+			if _, ok := h.svc.Agent(agentID); ok {
+				return agentID
+			}
+		}
+	}
+	return channelUserID
 }
 
 type teamIdentityPresenter struct {
