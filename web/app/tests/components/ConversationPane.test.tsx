@@ -1,7 +1,7 @@
 import { createRef, useRef, useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ConversationPane } from "@/pages/ConversationPage/components/ConversationPane/ConversationPane";
+import { ConversationPane } from "@/pages/ConversationPage/components/ConversationPane";
 import { AgentActivityMsgTypes, CSGCLAW_AGENT_ACTIVITY_TYPE } from "@/shared/constants/messages";
 import type { IMConversation, IMUser, ThreadView, TranslateFn } from "@/models/conversations";
 import {
