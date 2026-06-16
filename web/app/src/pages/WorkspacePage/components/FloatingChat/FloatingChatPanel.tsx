@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { fetchAgentLogsRequest } from "@/api/agents";
 import { errorMessage } from "@/api/client";
 import {
@@ -6,78 +7,88 @@ import {
   type ConversationPaneProps,
   useConversationDraftEditorSync,
 } from "@/components/business/ConversationPane";
+import { DialogContent, DialogRoot } from "@/components/ui";
 import { normalizeAuthProviderName } from "@/models/agents";
 import { getConversationDescription, isDirectConversation } from "@/models/conversations";
+import { classNames } from "@/shared/lib/classNames";
+import styles from "./FloatingChat.module.css";
 
-export function ConversationPane({
-  conversation,
-  visibleMessages,
-  currentUserID = "",
-  usersById,
-  agents = [],
-  locale,
-  t,
-  theme,
-  selectedMessageCount,
-  logAgent,
-  conversationMembers,
-  showMemberList,
-  onToggleMemberList,
-  showChannelTools,
-  onToggleChannelTools,
-  showToolCalls,
-  onToggleToolCalls,
-  memberMenuRef,
-  channelToolsRef,
-  messageListRef,
-  editorRef,
-  onPreviewUser,
-  onDeleteRoom,
-  onClearRoomMessages = (_id) => {},
-  inviteActionLabel,
-  onInviteAction,
-  mentionCandidates,
-  mentionIndex,
-  onApplyMention,
-  slashCandidates = [],
-  slashIndex = 0,
-  slashPickerLoading = false,
-  slashPickerOpen = false,
-  onApplySlashCandidate = (_name) => {},
-  threadSlashCandidates = [],
-  threadSlashIndex = 0,
-  threadSlashPickerLoading = false,
-  threadSlashPickerOpen = false,
-  onApplyThreadSlashCandidate = (_name) => {},
-  onDismissThreadSlashPicker = () => {},
-  onSetThreadSlashIndex = (_index) => {},
-  managerProfile,
-  managerProfileIncomplete,
-  authStatuses,
-  authBusyProvider,
-  onProviderLogin,
-  draftSegments,
-  draftText,
-  mentionableUsersByHandle,
-  onSyncComposer,
-  onComposerKeyDown,
-  onComposerCompositionStart,
-  onComposerCompositionEnd,
-  onSendMessage,
-  composerError,
-  messageActionBusy,
-  messageActionError,
-  onMessageAction,
-  activeThreadRootID,
-  activeThreadView,
-  threadLoading,
-  threadError,
-  threadDraftSegments,
-  onOpenThread,
-  onCloseThread,
-  onThreadDraftChange,
-  onSendThreadReply,
-}: ConversationPaneProps) {
+export type FloatingChatPanelProps = {
+  chatProps: ConversationPaneProps;
+  emptyStateSlot?: ReactNode;
+  headerAccessory?: ReactNode;
+};
+
+export function FloatingChatPanel({ chatProps, emptyStateSlot, headerAccessory }: FloatingChatPanelProps) {
+  const {
+    activeThreadRootID,
+    activeThreadView,
+    agents = [],
+    authBusyProvider,
+    authStatuses,
+    channelToolsRef,
+    composerError,
+    conversation,
+    conversationMembers,
+    currentUserID = "",
+    draftSegments,
+    draftText,
+    editorRef,
+    inviteActionLabel,
+    locale,
+    logAgent,
+    managerProfile,
+    managerProfileIncomplete,
+    memberMenuRef,
+    mentionCandidates,
+    mentionIndex,
+    mentionableUsersByHandle,
+    messageActionBusy,
+    messageActionError,
+    messageListRef,
+    onApplyMention,
+    onApplySlashCandidate = (_name) => {},
+    onApplyThreadSlashCandidate = (_name) => {},
+    onClearRoomMessages = (_id) => {},
+    onCloseThread,
+    onComposerCompositionEnd,
+    onComposerCompositionStart,
+    onComposerKeyDown,
+    onDeleteRoom,
+    onDismissThreadSlashPicker = () => {},
+    onInviteAction,
+    onMessageAction,
+    onOpenThread,
+    onPreviewUser,
+    onProviderLogin,
+    onSendMessage,
+    onSendThreadReply,
+    onSetThreadSlashIndex = (_index) => {},
+    onSyncComposer,
+    onThreadDraftChange,
+    onToggleChannelTools,
+    onToggleMemberList,
+    onToggleToolCalls,
+    selectedMessageCount,
+    showChannelTools,
+    showMemberList,
+    showToolCalls,
+    slashCandidates = [],
+    slashIndex = 0,
+    slashPickerLoading = false,
+    slashPickerOpen = false,
+    t,
+    theme,
+    threadDraftSegments,
+    threadError,
+    threadLoading,
+    threadSlashCandidates = [],
+    threadSlashIndex = 0,
+    threadSlashPickerLoading = false,
+    threadSlashPickerOpen = false,
+    usersById,
+    visibleMessages,
+  } = chatProps;
   const description = getConversationDescription(conversation, currentUserID, usersById, locale, t);
   const managerProvider = normalizeAuthProviderName(managerProfile?.provider);
   const [logModalOpen, setLogModalOpen] = useState(false);
@@ -159,19 +170,20 @@ export function ConversationPane({
   ) : null;
 
   return (
-    <>
+    <div className={classNames("chat-panel", styles.conversation)}>
       <Conversation.Header
         channelToolsRef={channelToolsRef}
         conversation={conversation}
         conversationMembers={conversationMembers}
         description={description}
+        headerAccessory={headerAccessory}
         inviteActionLabel={inviteActionLabel}
         logAgent={logAgent}
         logModalOpen={logModalOpen}
         memberMenuRef={memberMenuRef}
         selectedMessageCount={selectedMessageCount}
         showChannelTools={showChannelTools}
-        showInviteAction={true}
+        showInviteAction={false}
         showMemberList={showMemberList}
         showToolCalls={showToolCalls}
         t={t}
@@ -184,11 +196,11 @@ export function ConversationPane({
         onToggleMemberList={onToggleMemberList}
         onToggleToolCalls={onToggleToolCalls}
       />
-
       <Conversation.MessageList
         agents={agents}
         conversation={conversation}
         currentUserID={currentUserID}
+        emptyStateSlot={emptyStateSlot}
         locale={locale}
         messageActionBusy={messageActionBusy}
         messageActionError={messageActionError}
@@ -201,7 +213,6 @@ export function ConversationPane({
         onOpenThread={onOpenThread}
         onPreviewUser={onPreviewUser}
       />
-
       <Conversation.Composer
         authBusyProvider={authBusyProvider}
         authStatuses={authStatuses}
@@ -229,7 +240,20 @@ export function ConversationPane({
         onSendMessage={onSendMessage}
         onSyncComposer={onSyncComposer}
       />
-      {threadPanel}
+      <DialogRoot
+        open={Boolean(activeThreadRootID)}
+        onOpenChange={(open) => {
+          if (!open) {
+            onCloseThread();
+          }
+        }}
+      >
+        {threadPanel ? (
+          <DialogContent className="thread-dialog-content" overlayClassName="thread-dialog-backdrop">
+            {threadPanel}
+          </DialogContent>
+        ) : null}
+      </DialogRoot>
       <Conversation.RoomDangerConfirmDialog
         cancelLabel={t("cancel")}
         closeLabel={t("close")}
@@ -269,6 +293,6 @@ export function ConversationPane({
           onRefresh={refreshAgentLogs}
         />
       ) : null}
-    </>
+    </div>
   );
 }

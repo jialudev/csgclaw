@@ -181,6 +181,7 @@ export type UseConversationControllerArgs = {
   activeConversationId: string;
   activePane: WorkspacePane;
   agents: AgentLike[];
+  autoSelectFallbackConversation?: boolean;
   authBusyProvider: string;
   authStatuses: CLIProxyAuthStatusMap;
   data: IMData | null;
@@ -189,6 +190,7 @@ export type UseConversationControllerArgs = {
   managerProfileIncomplete: boolean | null;
   messageActionBusy: string;
   messageActionError: MessageActionError;
+  messageListActive?: boolean;
   navigatePane: WorkspaceNavigationController["navigatePane"];
   onMessageAction: (
     action: MessageAction | null | undefined,
@@ -224,6 +226,10 @@ export type UseAgentControllerArgs = {
   refreshWorkspaceBootstrapConfig: () => Promise<RuntimeBootstrapConfig | null>;
   refreshWorkspaceManagerProfile: () => Promise<AgentProfileLike | null>;
   rooms: IMConversation[];
+  onOpenDirectConversation?: (
+    conversation: IMConversation,
+    context: { agent?: AgentLike | null; rooms?: IMConversation[] },
+  ) => void;
   selectAgent: WorkspaceNavigationController["selectAgent"];
   selectComputer: WorkspaceNavigationController["selectComputer"];
   selectConversation: WorkspaceNavigationController["selectConversation"];

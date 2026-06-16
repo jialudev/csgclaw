@@ -120,6 +120,7 @@ export function useAgentController({
   refreshWorkspaceBootstrapConfig,
   refreshWorkspaceManagerProfile,
   rooms,
+  onOpenDirectConversation,
   selectAgent,
   selectComputer,
   selectConversation,
@@ -1272,7 +1273,12 @@ export function useAgentController({
         setAgentsError(t("agentActionFailed"));
         return;
       }
-      selectConversation(direct.id, { rooms: nextData?.rooms ?? rooms });
+      const nextRooms = nextData?.rooms ?? rooms;
+      if (onOpenDirectConversation && isManagerAgent(item)) {
+        onOpenDirectConversation(direct, { agent: item ?? null, rooms: nextRooms });
+        return;
+      }
+      selectConversation(direct.id, { rooms: nextRooms });
     } catch (err) {
       setAgentsError(errorMessage(err, t("agentActionFailed")));
     }

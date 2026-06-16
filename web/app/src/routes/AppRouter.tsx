@@ -1,8 +1,9 @@
 import { lazy, Suspense } from "react";
 import type { ComponentType, ReactElement } from "react";
-import { createHashRouter, RouterProvider } from "react-router-dom";
+import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { WorkspacePage } from "@/pages/WorkspacePage/WorkspacePage";
+import { MANAGER_AGENT_ID } from "@/shared/constants/agents";
 
 const AgentPage = lazy(() => import("@/pages/AgentPage").then((module) => ({ default: module.AgentPage })));
 const ComputerPage = lazy(() => import("@/pages/ComputerPage").then((module) => ({ default: module.ComputerPage })));
@@ -27,7 +28,7 @@ const routes: RouteObject[] = [
     path: "/",
     element: <WorkspacePage />,
     children: [
-      { index: true, element: routeElement(ConversationPage) },
+      { index: true, element: <Navigate to={`/agents/${MANAGER_AGENT_ID}`} replace /> },
       { path: "computer", element: routeElement(ComputerPage) },
       { path: "agents/:agentId", element: routeElement(AgentPage) },
       { path: "agent/:agentId", element: routeElement(AgentPage) },

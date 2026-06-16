@@ -11,12 +11,13 @@ import {
   runAgentActionRequest,
   updateAgentRequest,
 } from "@/api/agents";
+import { createUserRequest } from "@/api/im";
 import { createTeamRequest, fetchTeams } from "@/api/tasks";
 import { useAgentController } from "@/hooks/workspace/useAgentController";
 import { WorkspacePaneTypes } from "@/models/routing";
 import type { WorkspacePane } from "@/models/routing";
 import type { AgentLike, AgentProfileLike } from "@/models/agents";
-import type { IMData, TranslateFn } from "@/models/conversations";
+import type { IMConversation, IMData, TranslateFn } from "@/models/conversations";
 import { AGENT_AVATAR_OPTIONS } from "@/shared/avatarOptions";
 
 vi.mock("react-router-dom", async () => {
@@ -51,6 +52,14 @@ vi.mock("@/api/agents", async () => {
     fetchAgentWorkspace: vi.fn(),
     runAgentActionRequest: vi.fn(),
     updateAgentRequest: vi.fn(),
+  };
+});
+
+vi.mock("@/api/im", async () => {
+  const actual = await vi.importActual<typeof import("@/api/im")>("@/api/im");
+  return {
+    ...actual,
+    createUserRequest: vi.fn(),
   };
 });
 
@@ -121,12 +130,19 @@ function useAgentControllerHarness(
     agents?: AgentLike[];
     data?: IMData | null;
     managerProfile?: AgentProfileLike | null;
+    onOpenDirectConversation?: (
+      conversation: IMConversation,
+      context: { agent?: AgentLike | null; rooms?: IMConversation[] },
+    ) => void;
   } = {},
 ) {
   const [agents, setAgents] = useState<AgentLike[]>(options.agents ?? [oldAgent]);
   const refreshWorkspaceAgents = vi.fn(async () => [oldAgent]);
   const selectAgentRef = useRef(vi.fn());
   const selectAgent = selectAgentRef.current;
+  const selectConversationRef = useRef(vi.fn());
+  const selectConversation = selectConversationRef.current;
+  const data = options.data ?? null;
 
   const controller = useAgentController({
     activeConversationId: "",
@@ -140,7 +156,7 @@ function useAgentControllerHarness(
       isFetched: true,
     } as UseQueryResult<AgentLike[]>,
     bootstrapConfig: null,
-    data: options.data ?? null,
+    data,
     hubTemplates: [],
     locale: "en",
     managerProfile: options.managerProfile ?? null,
@@ -149,10 +165,11 @@ function useAgentControllerHarness(
     refreshWorkspaceBootstrap: vi.fn(async () => null),
     refreshWorkspaceBootstrapConfig: vi.fn(async () => null),
     refreshWorkspaceManagerProfile: vi.fn(async () => null),
-    rooms: [],
+    rooms: data?.rooms ?? [],
+    onOpenDirectConversation: options.onOpenDirectConversation,
     selectAgent,
     selectComputer: vi.fn(),
-    selectConversation: vi.fn(),
+    selectConversation,
     selectHub: vi.fn(),
     setAgentsData: (value: AgentLike[] | ((current: AgentLike[]) => AgentLike[])) => {
       setAgents((current) => (typeof value === "function" ? value(current) : value));
@@ -161,7 +178,7 @@ function useAgentControllerHarness(
     t,
   });
 
-  return { controller, selectAgent };
+  return { controller, selectAgent, selectConversation };
 }
 
 describe("useAgentController", () => {
@@ -171,6 +188,7 @@ describe("useAgentController", () => {
     vi.mocked(fetchAgentProfileDefaults).mockReset();
     vi.mocked(fetchAgentProfileModels).mockReset();
     vi.mocked(fetchAgentWorkspace).mockReset();
+    vi.mocked(createUserRequest).mockReset();
     vi.mocked(createTeamRequest).mockReset();
     vi.mocked(fetchTeams).mockReset();
     vi.mocked(runAgentActionRequest).mockReset();
@@ -180,6 +198,7 @@ describe("useAgentController", () => {
     vi.mocked(fetchAgentProfileDefaults).mockResolvedValue(profile);
     vi.mocked(fetchAgentProfileModels).mockResolvedValue({ models: [] });
     vi.mocked(fetchAgentWorkspace).mockResolvedValue({ entries: [] });
+    vi.mocked(createUserRequest).mockResolvedValue({ id: "u-worker", name: "worker" });
     vi.mocked(createTeamRequest).mockResolvedValue({
       channel: "csgclaw",
       created_at: "2026-06-10T00:00:00Z",
@@ -251,6 +270,87 @@ describe("useAgentController", () => {
     );
     expect(result.current.controller.agentViewProps.notice).toBe("profileIncompleteRedirectNotice");
     expect("managerProfileSetupModalProps" in result.current.controller).toBe(false);
+  });
+
+  it("opens manager direct messages through the floating chat callback without route navigation", async () => {
+    const directConversation: IMConversation = {
+      id: "dm-manager",
+      is_direct: true,
+      members: ["u-admin", "manager"],
+      messages: [],
+      title: "manager",
+    };
+    const onOpenDirectConversation = vi.fn();
+    const { result } = renderHook(
+      () =>
+        useAgentControllerHarness({
+          agents: [oldAgent],
+          data: {
+            current_user_id: "u-admin",
+            rooms: [directConversation],
+            users: [
+              { id: "u-admin", name: "admin" },
+              { id: "manager", name: "manager" },
+            ],
+          },
+          onOpenDirectConversation,
+        }),
+      { wrapper: createWrapper() },
+    );
+
+    await act(async () => {
+      await result.current.controller.agentViewProps.onOpenDM(oldAgent);
+    });
+
+    expect(onOpenDirectConversation).toHaveBeenCalledWith(directConversation, {
+      agent: oldAgent,
+      rooms: [directConversation],
+    });
+    expect(result.current.selectConversation).not.toHaveBeenCalled();
+    expect(createUserRequest).not.toHaveBeenCalled();
+  });
+
+  it("routes worker direct messages to their conversation page instead of the floating chat callback", async () => {
+    const workerAgent: AgentLike = {
+      id: "agent-worker",
+      name: "worker",
+      role: "worker",
+      runtime_kind: "picoclaw_sandbox",
+      status: "running",
+      user_id: "u-worker",
+    };
+    const directConversation: IMConversation = {
+      id: "dm-worker",
+      is_direct: true,
+      members: ["u-admin", "u-worker"],
+      messages: [],
+      title: "worker",
+    };
+    const onOpenDirectConversation = vi.fn();
+    const { result } = renderHook(
+      () =>
+        useAgentControllerHarness({
+          agents: [oldAgent, workerAgent],
+          data: {
+            current_user_id: "u-admin",
+            rooms: [directConversation],
+            users: [
+              { id: "u-admin", name: "admin" },
+              { id: "u-worker", name: "worker" },
+            ],
+          },
+          onOpenDirectConversation,
+        }),
+      { wrapper: createWrapper() },
+    );
+
+    await act(async () => {
+      await result.current.controller.agentViewProps.onOpenDM(workerAgent);
+    });
+
+    expect(onOpenDirectConversation).not.toHaveBeenCalled();
+    expect(result.current.selectConversation).toHaveBeenCalledWith("dm-worker", { rooms: [directConversation] });
+    expect(createUserRequest).not.toHaveBeenCalled();
   });
 
   it("clears the manager setup redirect notice after a short timeout", async () => {

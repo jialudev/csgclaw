@@ -1,5 +1,6 @@
 import { WORKSPACE_GROUPS_COLLAPSED_STORAGE_KEY } from "@/shared/storage/keys";
 import { isDirectConversation } from "@/models/conversations";
+import { MANAGER_AGENT_ID } from "@/shared/constants/agents";
 import type { IMConversation } from "@/models/conversations";
 
 type ValueOf<T> = T[keyof T];
@@ -94,6 +95,9 @@ export function paneFromLocation(pathname = window.location.pathname): Workspace
   const section = parts[0] || "";
   const id = parts[1] || "";
 
+  if (!section) {
+    return { type: WorkspacePaneTypes.agent, id: MANAGER_AGENT_ID };
+  }
   if (section === WorkspaceRouteSegments.computer) {
     return { type: WorkspacePaneTypes.computer, id: DefaultWorkspacePaneIds.computer };
   }
