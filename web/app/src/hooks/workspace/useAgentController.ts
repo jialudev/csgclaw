@@ -103,7 +103,9 @@ type AgentWithProfile = {
 const AGENT_RUNTIME_SYNC_INTERVAL_MS = 2_000;
 const AGENT_RUNTIME_SYNC_TIMEOUT_MS = 120_000;
 
-export function shouldReturnToAgentOverviewAfterAgentMissing(activePane: { type?: string; id?: string | undefined } | null | undefined) {
+export function shouldReturnToAgentOverviewAfterAgentMissing(
+  activePane: { type?: string; id?: string | undefined } | null | undefined,
+) {
   return activePane?.type === WorkspacePaneTypes.agent;
 }
 
@@ -1272,7 +1274,8 @@ export function useAgentController({
         setAgentsError(t("agentActionFailed"));
         return;
       }
-      selectConversation(direct.id, { rooms: nextData?.rooms ?? rooms });
+      const nextRooms = nextData?.rooms ?? rooms;
+      selectConversation(direct.id, { rooms: nextRooms });
     } catch (err) {
       setAgentsError(errorMessage(err, t("agentActionFailed")));
     }

@@ -181,6 +181,7 @@ export type UseConversationControllerArgs = {
   activeConversationId: string;
   activePane: WorkspacePane;
   agents: AgentLike[];
+  autoSelectFallbackConversation?: boolean;
   authBusyProvider: string;
   authStatuses: CLIProxyAuthStatusMap;
   data: IMData | null;
@@ -189,6 +190,7 @@ export type UseConversationControllerArgs = {
   managerProfileIncomplete: boolean | null;
   messageActionBusy: string;
   messageActionError: MessageActionError;
+  messageListActive?: boolean;
   navigatePane: WorkspaceNavigationController["navigatePane"];
   onMessageAction: (
     action: MessageAction | null | undefined,
@@ -196,6 +198,7 @@ export type UseConversationControllerArgs = {
   ) => void | Promise<void>;
   onProviderLogin: (provider: string | null | undefined) => Promise<void>;
   onUpgradeStatusChange: (payload: unknown) => void;
+  preferredFallbackConversationId?: string;
   rooms: IMConversation[];
   selectComputer: WorkspaceNavigationController["selectComputer"];
   selectConversation: WorkspaceNavigationController["selectConversation"];

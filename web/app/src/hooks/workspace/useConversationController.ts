@@ -97,6 +97,7 @@ export function useConversationController({
   activeConversationId,
   activePane,
   agents,
+  autoSelectFallbackConversation = true,
   authBusyProvider,
   authStatuses,
   data,
@@ -107,6 +108,7 @@ export function useConversationController({
   onMessageAction,
   onProviderLogin,
   onUpgradeStatusChange,
+  preferredFallbackConversationId = "",
   rooms,
   selectComputer,
   selectConversation,
@@ -118,6 +120,7 @@ export function useConversationController({
   theme,
   messageActionBusy,
   messageActionError,
+  messageListActive = true,
 }: UseConversationControllerArgs) {
   const [draftsByConversationId, setDraftsByConversationId] = useState<DraftsByConversationId>({});
   const [threadDraftsByKey, setThreadDraftsByKey] = useState<DraftsByThreadKey>({});
@@ -487,7 +490,13 @@ export function useConversationController({
     if (!data) {
       return;
     }
-    const fallbackConversationId = data.rooms[0]?.id ?? "";
+    if (!autoSelectFallbackConversation) {
+      return;
+    }
+    const preferredFallbackID = String(preferredFallbackConversationId || "").trim();
+    const fallbackConversationId = data.rooms.some((room) => room.id === preferredFallbackID)
+      ? preferredFallbackID
+      : (data.rooms[0]?.id ?? "");
     if (!activeConversationId) {
       if (fallbackConversationId) {
         setActiveConversationId(fallbackConversationId);
@@ -525,9 +534,14 @@ export function useConversationController({
     selectComputer,
     selectConversation,
     setActiveConversationId,
+    autoSelectFallbackConversation,
+    preferredFallbackConversationId,
   ]);
 
   useEffect(() => {
+    if (!messageListActive) {
+      return;
+    }
     const el = messageListRef.current;
     if (!el) {
       return;
@@ -539,9 +553,12 @@ export function useConversationController({
     updateAutoScrollState();
     el.addEventListener("scroll", updateAutoScrollState);
     return () => el.removeEventListener("scroll", updateAutoScrollState);
-  }, [activeConversationId]);
+  }, [activeConversationId, messageListActive]);
 
   useLayoutEffect(() => {
+    if (!messageListActive) {
+      return;
+    }
     if (activePane.type !== WorkspacePaneTypes.conversation) {
       return;
     }
@@ -552,9 +569,12 @@ export function useConversationController({
     autoScrollConversationRef.current = activeConversationId;
     el.scrollTop = el.scrollHeight;
     shouldAutoScrollRef.current = true;
-  }, [activePane.type, activeConversationId]);
+  }, [activePane.type, activeConversationId, messageListActive]);
 
   useEffect(() => {
+    if (!messageListActive) {
+      return;
+    }
     const el = messageListRef.current;
     if (autoScrollConversationRef.current !== activeConversationId) {
       autoScrollConversationRef.current = activeConversationId;
@@ -565,7 +585,7 @@ export function useConversationController({
       return;
     }
     el.scrollTop = el.scrollHeight;
-  }, [visibleMessages.length, activeConversationId]);
+  }, [visibleMessages.length, activeConversationId, messageListActive]);
 
   useEffect(() => {
     const editor = editorRef.current;
