@@ -409,7 +409,7 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 	if err := r.seedCodexHomeSkills(spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
-	if err := r.refreshCodexWorkspaceAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.WorkspaceDir); err != nil {
+	if err := r.refreshCodexWorkspaceAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(spec.BinaryPath) == "" {
@@ -722,89 +722,52 @@ func (r *Runtime) RefreshWorkspaceAgentsFile(_ context.Context, h agentruntime.H
 	if err != nil {
 		return err
 	}
-	workspaceDir, err := r.resolveWorkspaceDir(agentRef.Name, agentRef.RuntimeOptions)
+	codexHomeDir, err := r.resolveCodexHomeDir(agentRef.Name)
 	if err != nil {
 		return err
 	}
-	return r.refreshCodexWorkspaceAgentsFile(h, workspaceDir)
+	return r.refreshCodexWorkspaceAgentsFile(h, codexHomeDir)
 }
 
-func (r *Runtime) refreshCodexWorkspaceAgentsFile(h agentruntime.Handle, workspaceDir string) error {
-	workspaceDir = strings.TrimSpace(workspaceDir)
-	if workspaceDir == "" {
-		return fmt.Errorf("workspace dir is required")
+func (r *Runtime) resolveCodexHomeDir(agentName string) (string, error) {
+	dirs, err := r.ensureRuntimeDirs(agentName)
+	if err != nil {
+		return "", err
 	}
-	if err := r.mkdirAll(workspaceDir, 0o755); err != nil {
-		return fmt.Errorf("create codex workspace dir %s: %w", workspaceDir, err)
+	return dirs.CodexHome, nil
+}
+
+func (r *Runtime) refreshCodexWorkspaceAgentsFile(h agentruntime.Handle, codexHomeDir string) error {
+	codexHomeDir = strings.TrimSpace(codexHomeDir)
+	if codexHomeDir == "" {
+		return fmt.Errorf("codex home dir is required")
+	}
+	if err := r.mkdirAll(codexHomeDir, 0o755); err != nil {
+		return fmt.Errorf("create codex home dir %s: %w", codexHomeDir, err)
 	}
 	agentRef, err := r.resolveAgent(h)
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(workspaceDir, "AGENTS.md")
+	path := filepath.Join(codexHomeDir, "AGENTS.md")
 	block := agent.RenderAgentsInstructionsBlock(agentRef.Instructions)
 	current, err := r.readFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read codex workspace AGENTS.md %s: %w", path, err)
+		return fmt.Errorf("read codex home AGENTS.md %s: %w", path, err)
 	}
 	merged := mergeAgentsInstructionsBlock(string(current), block)
 	if err == nil && string(current) == merged {
 		return nil
 	}
 	if err := r.writeFile(path, []byte(merged), 0o644); err != nil {
-		return fmt.Errorf("write codex workspace AGENTS.md %s: %w", path, err)
+		return fmt.Errorf("write codex home AGENTS.md %s: %w", path, err)
 	}
 	return nil
 }
 
-func (r *Runtime) SyncWorkspaceAgentsFile(_ context.Context, h agentruntime.Handle, previousRuntimeOptions map[string]any) error {
-	agentRef, err := r.resolveAgent(h)
-	if err != nil {
-		return err
-	}
-	currentWorkspace, err := r.resolveWorkspaceDir(agentRef.Name, agentRef.RuntimeOptions)
-	if err != nil {
-		return err
-	}
-	previousWorkspace, err := r.resolveWorkspaceDir(agentRef.Name, previousRuntimeOptions)
-	if err != nil {
-		return err
-	}
-	if previousWorkspace != "" && previousWorkspace != currentWorkspace {
-		if err := r.removeCodexWorkspaceAgentsFile(previousWorkspace); err != nil {
-			return err
-		}
-	}
-	return r.refreshCodexWorkspaceAgentsFile(h, currentWorkspace)
-}
-
-func (r *Runtime) removeCodexWorkspaceAgentsFile(workspaceDir string) error {
-	workspaceDir = strings.TrimSpace(workspaceDir)
-	if workspaceDir == "" {
-		return nil
-	}
-	path := filepath.Join(workspaceDir, "AGENTS.md")
-	current, err := r.readFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read codex workspace AGENTS.md %s: %w", path, err)
-	}
-	merged, changed := removeAgentsInstructionsBlock(string(current))
-	if !changed {
-		return nil
-	}
-	if strings.TrimSpace(merged) == "" {
-		if err := r.removeAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove codex workspace AGENTS.md %s: %w", path, err)
-		}
-		return nil
-	}
-	if err := r.writeFile(path, []byte(merged), 0o644); err != nil {
-		return fmt.Errorf("write codex workspace AGENTS.md %s: %w", path, err)
-	}
-	return nil
+func (r *Runtime) SyncWorkspaceAgentsFile(ctx context.Context, h agentruntime.Handle, previousRuntimeOptions map[string]any) error {
+	_ = previousRuntimeOptions
+	return r.RefreshWorkspaceAgentsFile(ctx, h)
 }
 
 func mergeAgentsInstructionsBlock(current, block string) string {

@@ -49,7 +49,8 @@ func (r *Runtime) RestartRequired(change agentruntime.RuntimeConfigChange) (bool
 }
 
 func (r *Runtime) ReconcileConfig(ctx context.Context, h agentruntime.Handle, change agentruntime.RuntimeConfigChange) error {
-	return r.SyncWorkspaceAgentsFile(ctx, h, change.Previous.Options)
+	_ = change
+	return r.RefreshWorkspaceAgentsFile(ctx, h)
 }
 
 type responsesProbeTargetConfig struct {

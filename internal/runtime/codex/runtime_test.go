@@ -201,16 +201,16 @@ func TestRuntimeCreateStartAndInfo(t *testing.T) {
 		`supports_websockets = false`,
 	)
 	assertRuntimeModelCatalog(t, filepath.Join(root, "alice", ".codex", "home", modelCatalogFileName), "gpt-5.5")
-	agentsRaw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md"))
+	agentsRaw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "home", "AGENTS.md"))
 	if err != nil {
-		t.Fatalf("read workspace AGENTS.md: %v", err)
+		t.Fatalf("read codex home AGENTS.md: %v", err)
 	}
 	agentsText := string(agentsRaw)
 	if !strings.Contains(agentsText, "BEGIN CSGCLAW-INSTRUCTIONS (auto-generated; do not edit)") {
-		t.Fatalf("workspace AGENTS.md missing instructions block:\n%s", agentsText)
+		t.Fatalf("codex home AGENTS.md missing instructions block:\n%s", agentsText)
 	}
 	if !strings.Contains(agentsText, "Use concise Go comments.") {
-		t.Fatalf("workspace AGENTS.md missing agent instructions:\n%s", agentsText)
+		t.Fatalf("codex home AGENTS.md missing agent instructions:\n%s", agentsText)
 	}
 }
 
@@ -307,12 +307,15 @@ func TestRuntimeCreateUsesLocalWorkspaceDir(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(workspaceRoot, "AGENTS.md"))
+	raw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "home", "AGENTS.md"))
 	if err != nil {
-		t.Fatalf("read local workspace AGENTS.md: %v", err)
+		t.Fatalf("read codex home AGENTS.md: %v", err)
 	}
 	if !strings.Contains(string(raw), "Use repo-local files.") {
-		t.Fatalf("local workspace AGENTS.md = %q, want instructions block", string(raw))
+		t.Fatalf("codex home AGENTS.md = %q, want instructions block", string(raw))
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "AGENTS.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("workspace AGENTS.md stat error = %v, want not exist", err)
 	}
 }
 
@@ -326,7 +329,7 @@ func TestRefreshWorkspaceAgentsFileCreatesManagedFileWhenMissing(t *testing.T) {
 		t.Fatalf("RefreshWorkspaceAgentsFile() error = %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md"))
+	raw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "home", "AGENTS.md"))
 	if err != nil {
 		t.Fatalf("read AGENTS.md: %v", err)
 	}
@@ -386,7 +389,7 @@ func TestRefreshWorkspaceAgentsFileAppendsManagedBlockToExistingUserFile(t *test
 		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "Use Chinese in docs."}, nil
 	})
 
-	agentsPath := filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md")
+	agentsPath := filepath.Join(root, "alice", ".codex", "home", "AGENTS.md")
 	if err := os.MkdirAll(filepath.Dir(agentsPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -417,7 +420,7 @@ func TestRefreshWorkspaceAgentsFileReplacesExistingInstructionsBlock(t *testing.
 		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "New instructions."}, nil
 	})
 
-	agentsPath := filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md")
+	agentsPath := filepath.Join(root, "alice", ".codex", "home", "AGENTS.md")
 	if err := os.MkdirAll(filepath.Dir(agentsPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +469,7 @@ func TestRefreshWorkspaceAgentsFileIsIdempotent(t *testing.T) {
 	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), handle); err != nil {
 		t.Fatalf("first RefreshWorkspaceAgentsFile() error = %v", err)
 	}
-	agentsPath := filepath.Join(root, "alice", ".codex", "workspace", "AGENTS.md")
+	agentsPath := filepath.Join(root, "alice", ".codex", "home", "AGENTS.md")
 	first, err := os.ReadFile(agentsPath)
 	if err != nil {
 		t.Fatalf("read first AGENTS.md: %v", err)
@@ -488,7 +491,7 @@ func TestRefreshWorkspaceAgentsFileIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestSyncWorkspaceAgentsFileMovesManagedBlockToNewWorkspace(t *testing.T) {
+func TestSyncWorkspaceAgentsFileRefreshesCodexHomeAgentsFileWithoutTouchingWorkspace(t *testing.T) {
 	root := t.TempDir()
 	oldWorkspace := filepath.Join(root, "old")
 	newWorkspace := filepath.Join(root, "new")
@@ -504,11 +507,11 @@ func TestSyncWorkspaceAgentsFileMovesManagedBlockToNewWorkspace(t *testing.T) {
 		}, nil
 	})
 
-	oldAgentsPath := filepath.Join(oldWorkspace, "AGENTS.md")
-	if err := os.MkdirAll(filepath.Dir(oldAgentsPath), 0o755); err != nil {
+	homeAgentsPath := filepath.Join(root, "alice", ".codex", "home", "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(homeAgentsPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(oldAgentsPath, []byte("# User AGENTS\n\nKeep this.\n\n"+agent.RenderAgentsInstructionsBlock("Old instructions.")), 0o644); err != nil {
+	if err := os.WriteFile(homeAgentsPath, []byte("# User AGENTS\n\nKeep this.\n\n"+agent.RenderAgentsInstructionsBlock("Old instructions.")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -518,28 +521,28 @@ func TestSyncWorkspaceAgentsFileMovesManagedBlockToNewWorkspace(t *testing.T) {
 		t.Fatalf("SyncWorkspaceAgentsFile() error = %v", err)
 	}
 
-	oldRaw, err := os.ReadFile(oldAgentsPath)
+	homeRaw, err := os.ReadFile(homeAgentsPath)
 	if err != nil {
-		t.Fatalf("read old AGENTS.md: %v", err)
+		t.Fatalf("read codex home AGENTS.md: %v", err)
 	}
-	oldText := string(oldRaw)
-	if strings.Contains(oldText, "BEGIN CSGCLAW-INSTRUCTIONS") {
-		t.Fatalf("old AGENTS.md = %q, want managed block removed", oldText)
+	homeText := string(homeRaw)
+	if !strings.Contains(homeText, "# User AGENTS\n\nKeep this.") {
+		t.Fatalf("codex home AGENTS.md = %q, want user content preserved", homeText)
 	}
-	if !strings.Contains(oldText, "# User AGENTS\n\nKeep this.") {
-		t.Fatalf("old AGENTS.md = %q, want user content preserved", oldText)
+	if strings.Contains(homeText, "Old instructions.") {
+		t.Fatalf("codex home AGENTS.md = %q, want old managed block replaced", homeText)
 	}
-
-	newRaw, err := os.ReadFile(filepath.Join(newWorkspace, "AGENTS.md"))
-	if err != nil {
-		t.Fatalf("read new AGENTS.md: %v", err)
+	if !strings.Contains(homeText, "Stay focused.") {
+		t.Fatalf("codex home AGENTS.md = %q, want new instructions", homeText)
 	}
-	if !strings.Contains(string(newRaw), "Stay focused.") {
-		t.Fatalf("new AGENTS.md = %q, want new instructions", string(newRaw))
+	for _, workspace := range []string{oldWorkspace, newWorkspace} {
+		if _, err := os.Stat(filepath.Join(workspace, "AGENTS.md")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s AGENTS.md stat error = %v, want not exist", workspace, err)
+		}
 	}
 }
 
-func TestSyncWorkspaceAgentsFileDeletesManagedOnlyFileFromPreviousWorkspace(t *testing.T) {
+func TestSyncWorkspaceAgentsFileCreatesCodexHomeAgentsFileWhenWorkspaceChanges(t *testing.T) {
 	root := t.TempDir()
 	oldWorkspace := filepath.Join(root, "old")
 	newWorkspace := filepath.Join(root, "new")
@@ -555,22 +558,23 @@ func TestSyncWorkspaceAgentsFileDeletesManagedOnlyFileFromPreviousWorkspace(t *t
 		}, nil
 	})
 
-	oldAgentsPath := filepath.Join(oldWorkspace, "AGENTS.md")
-	if err := os.MkdirAll(filepath.Dir(oldAgentsPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(oldAgentsPath, []byte(agent.RenderAgentsInstructionsBlock("Old instructions.")), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	if err := rt.SyncWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}, map[string]any{
 		"local_workspace_dir": oldWorkspace,
 	}); err != nil {
 		t.Fatalf("SyncWorkspaceAgentsFile() error = %v", err)
 	}
 
-	if _, err := os.Stat(oldAgentsPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("old AGENTS.md stat error = %v, want not exist", err)
+	homeRaw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "home", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read codex home AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(homeRaw), "Stay focused.") {
+		t.Fatalf("codex home AGENTS.md = %q, want instructions", string(homeRaw))
+	}
+	for _, workspace := range []string{oldWorkspace, newWorkspace} {
+		if _, err := os.Stat(filepath.Join(workspace, "AGENTS.md")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s AGENTS.md stat error = %v, want not exist", workspace, err)
+		}
 	}
 }
 
