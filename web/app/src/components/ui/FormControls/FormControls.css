@@ -4,49 +4,52 @@
   margin-top: 18px;
 }
 
-.field span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.035em;
+.field > .field-label,
+.field > span:not(.field-hint),
+.field > .field-label-with-help {
+  color: var(--field-label-color);
+  font-family: var(--font-sans);
+  font-size: var(--field-label-font-size);
+  font-weight: var(--field-label-font-weight);
+  line-height: var(--field-label-line-height);
+  letter-spacing: 0;
 }
 
 .field input,
-.field textarea,
 .field select {
   width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px 16px;
-  background: var(--field);
-  color: var(--text);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  padding: var(--input-padding-md);
+  background: var(--input-background);
+  color: var(--input-text);
+  box-shadow: var(--input-shadow);
   font: inherit;
   outline: none;
 }
 
 .field textarea {
+  width: 100%;
   min-height: 96px;
-  resize: vertical;
 }
 
 .field input:hover,
-.field textarea:hover,
 .field select:hover {
-  border-color: oklch(0.77 0.16 164 / 0.38);
+  border-color: var(--input-border-hover);
 }
 
 .field input:focus,
-.field textarea:focus,
 .field select:focus {
-  border-color: var(--portal-brand-500);
-  box-shadow: var(--focus-ring);
+  border-color: var(--input-border-focus);
+  box-shadow: var(--input-shadow-focus);
 }
 
 .field input:disabled,
-.field textarea:disabled,
 .field select:disabled {
+  border-color: var(--input-border);
+  background-color: var(--input-background-disabled);
+  color: var(--input-text-disabled);
   cursor: not-allowed;
-  opacity: 0.65;
 }
 
 .field-hint,

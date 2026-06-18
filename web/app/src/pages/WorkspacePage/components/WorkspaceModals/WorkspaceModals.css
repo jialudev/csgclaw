@@ -101,14 +101,6 @@
   margin-top: 0;
 }
 
-.create-room-modal .create-room-field span,
-.create-room-modal .create-room-field .field-label {
-  color: var(--portal-gray-700);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 22px;
-}
-
 .create-room-modal .field-required-star {
   order: -1;
   color: var(--portal-error-400);
@@ -435,13 +427,6 @@
   margin-top: 0;
 }
 
-.invite-members-content .field > span {
-  color: var(--portal-gray-700);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-}
-
 .invite-members-modal .selection-list {
   gap: 16px;
 }
@@ -646,27 +631,53 @@
 }
 
 .profile-modal.agent-modal .modal-header {
-  padding: 0 0 14px;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 0 0 20px;
+  background: var(--portal-white);
+  border-bottom: 1px solid var(--portal-gray-200);
+}
+
+.profile-modal.agent-modal .modal-header > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.profile-modal.agent-modal .modal-title {
+  color: var(--portal-gray-900);
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.profile-modal.agent-modal .modal-subtitle {
+  color: var(--portal-gray-600);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
 }
 
 .modal-card .modal-header .modal-close {
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
-  min-height: 34px;
-  padding: 0;
-  margin: 0 2px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 8px;
+  margin: -8px -8px 0 0;
   border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: var(--portal-gray-500);
+  color: var(--portal-gray-400);
   box-shadow: none;
   transform: none;
 }
 
 .modal-card .modal-header .modal-close-icon,
 .modal-card .modal-header .modal-close-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
 }
 
 .modal-card .modal-header .modal-close:hover:not(:disabled),
@@ -715,6 +726,107 @@
   text-transform: uppercase;
 }
 
+.profile-section-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.profile-section-heading .profile-section-title {
+  color: var(--portal-gray-700);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 28px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.profile-section-description {
+  margin: 0;
+  color: var(--portal-gray-600);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
+}
+
+.agent-section-form {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--portal-gray-200);
+  border-radius: 12px;
+  background: var(--portal-white);
+  box-shadow: var(--shadow-xs);
+}
+
+.agent-section-form-content,
+.agent-section-form .agent-basics-grid {
+  width: 100%;
+  min-width: 0;
+  padding: 16px;
+}
+
+.agent-section-form-content {
+  display: grid;
+  gap: 16px;
+}
+
+.agent-model-form-content {
+  gap: 10px;
+}
+
+.agent-instructions-section .profile-grid-compact {
+  padding: 4px;
+}
+
+:root[data-theme="dark"] .agent-section-form {
+  border-color: var(--line);
+  background: var(--panel);
+  box-shadow: none;
+}
+
+.profile-section-subtitle {
+  color: var(--field-label-color);
+  font-size: var(--field-label-font-size);
+  font-weight: 500;
+  line-height: var(--field-label-line-height);
+}
+
+.profile-model-api-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.agent-advanced-summary {
+  width: fit-content;
+  color: var(--field-label-color);
+  font-family: var(--font-sans);
+  font-size: var(--field-label-font-size);
+  font-weight: var(--field-label-font-weight);
+  line-height: var(--field-label-line-height);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  list-style-position: inside;
+  user-select: none;
+}
+
+.agent-advanced-summary:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--input-border-focus);
+  outline-offset: 4px;
+}
+
 .profile-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
@@ -758,7 +870,7 @@
   width: 44px;
   min-width: 44px;
   margin: 0;
-  padding-top: 28px;
+  padding-top: 0;
 }
 
 .agent-identity-section .agent-name-field {
@@ -784,7 +896,14 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-items: end;
+  align-items: start;
+}
+
+.profile-modal.agent-modal .field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
 }
 
 .agent-modal .agent-avatar-field .agent-avatar-picker {
@@ -793,14 +912,43 @@
 
 .profile-runtime-grid {
   display: grid;
-  grid-template-columns: minmax(150px, 0.9fr) minmax(220px, 1.25fr) minmax(220px, 1.25fr) minmax(120px, 0.65fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   align-items: start;
 }
 
 .profile-runtime-grid > .field,
 .profile-runtime-grid > .selection-item {
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
+}
+
+.profile-runtime-grid .csg-select-trigger,
+.profile-runtime-grid .agent-fast-mode-field .compact-toggle-row {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.profile-runtime-grid .csg-select-value,
+.profile-runtime-grid .csg-select-value > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-modal.agent-modal .profile-runtime-grid .csg-select-trigger,
+.profile-modal.agent-modal .profile-runtime-grid .csg-select-trigger:hover,
+.profile-modal.agent-modal .profile-runtime-grid .csg-select-trigger:focus-visible,
+.profile-modal.agent-modal .profile-runtime-grid .csg-select-trigger[data-state="open"],
+.profile-modal.agent-modal .profile-runtime-grid .selection-item.compact-toggle-row,
+.profile-modal.agent-modal .profile-runtime-grid .selection-item.compact-toggle-row:hover,
+.profile-modal.agent-modal .profile-runtime-grid .selection-item.compact-toggle-row:focus-within {
+  box-shadow: none;
 }
 
 .profile-runtime-grid .profile-model-error {
@@ -854,12 +1002,6 @@
   margin-top: 0;
 }
 
-.profile-section .field span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 720;
-}
-
 .api-key-field {
   min-width: 0;
 }
@@ -909,7 +1051,6 @@
 }
 
 .profile-section .field input,
-.profile-section .field textarea,
 .profile-section .field select {
   min-height: 38px;
   padding: 9px 11px;
@@ -917,7 +1058,18 @@
 }
 
 .profile-section .field textarea.compact-textarea {
-  min-height: 64px;
+  min-height: 116px;
+  padding: var(--textarea-padding-md);
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 24px;
+}
+
+.profile-modal.agent-modal .field:has(textarea) > .field-hint {
+  color: var(--portal-gray-600);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
 }
 
 .profile-section .field textarea.compact-json {
@@ -1166,6 +1318,67 @@
   white-space: nowrap;
 }
 
+.profile-modal.agent-modal .agent-fast-mode-field .compact-toggle-row {
+  align-self: stretch;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: var(--input-height-md);
+  padding: 11px 12px;
+  cursor: pointer;
+}
+
+.profile-modal.agent-modal .agent-fast-mode-field input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  border: 1px solid var(--portal-gray-300);
+  border-radius: 4px;
+  background: var(--portal-white);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+}
+
+.profile-modal.agent-modal .agent-fast-mode-field input[type="checkbox"]:hover {
+  border-color: var(--portal-brand-300);
+}
+
+.profile-modal.agent-modal .agent-fast-mode-field input[type="checkbox"]:focus-visible {
+  border-color: var(--portal-brand-300);
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.profile-modal.agent-modal .agent-fast-mode-field input[type="checkbox"]:checked {
+  border-color: var(--portal-brand-600);
+  background: var(--portal-brand-600);
+}
+
+.profile-modal.agent-modal .agent-fast-mode-field input[type="checkbox"]:checked::after {
+  width: 5px;
+  height: 8px;
+  border: solid var(--portal-white);
+  border-width: 0 2px 2px 0;
+  content: "";
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.profile-modal.agent-modal .agent-fast-mode-help {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--portal-gray-600);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .selection-item:hover {
   border-color: oklch(0.77 0.16 164 / 0.38);
 }
@@ -1177,8 +1390,8 @@
 
 .profile-modal.agent-modal .profile-editor-shell {
   min-width: 0;
-  padding-left: 0;
-  padding-right: 0;
+  gap: 20px;
+  padding: 16px 0;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -1209,6 +1422,89 @@
 
 .profile-modal.agent-modal .profile-section {
   min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.profile-modal.agent-modal .agent-identity-section {
+  padding: 0;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab {
+  justify-content: flex-start;
+  min-width: 0;
+  height: 74px;
+  padding: 12px 16px;
+  border: 1px solid var(--portal-gray-300);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--portal-gray-700);
+  box-shadow: none;
+  transform: none;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab:hover,
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab:focus-visible {
+  border-color: var(--portal-gray-300);
+  background: transparent;
+  color: var(--portal-gray-700);
+  box-shadow: none;
+  transform: none;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab.active {
+  border-color: var(--portal-brand-600);
+  background: var(--portal-brand-25);
+  color: var(--portal-brand-600);
+  box-shadow: none;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab .btn-content,
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab-copy {
+  width: 100%;
+  min-width: 0;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab .btn-content {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab-copy {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  text-align: left;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab-copy strong {
+  color: var(--portal-gray-700);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab.active .workspace-tab-copy strong {
+  color: var(--portal-brand-600);
+}
+
+.profile-modal.agent-modal .agent-create-kind-tabbar .workspace-tab-copy small {
+  color: var(--portal-gray-600);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 22px;
 }
 
 .profile-section {
@@ -1257,11 +1553,11 @@
 .env-row input {
   width: 100%;
   min-height: 44px;
-  border: 1px solid var(--portal-gray-300);
-  border-radius: var(--radius-md);
-  background-color: var(--portal-white);
-  color: var(--portal-gray-900);
-  box-shadow: var(--shadow-xs);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background-color: var(--input-background);
+  color: var(--input-text);
+  box-shadow: var(--input-shadow);
   font-family: var(--font-sans);
   font-size: 16px;
   font-weight: 400;
@@ -1302,7 +1598,7 @@
 .profile-section .field input::placeholder,
 .profile-section .field textarea::placeholder,
 .env-row input::placeholder {
-  color: var(--portal-gray-500);
+  color: var(--input-text-placeholder);
 }
 
 .modal-card .field input:hover,
@@ -1312,7 +1608,7 @@
 .profile-section .field textarea:hover,
 .profile-section .field select:hover,
 .env-row input:hover {
-  border-color: var(--portal-gray-400);
+  border-color: var(--input-border-hover);
 }
 
 .modal-card .field input:focus,
@@ -1322,10 +1618,8 @@
 .profile-section .field textarea:focus,
 .profile-section .field select:focus,
 .env-row input:focus {
-  border-color: var(--portal-brand-500);
-  box-shadow:
-    var(--shadow-xs),
-    0 0 0 4px rgba(77, 106, 214, 0.24);
+  border-color: var(--input-border-focus);
+  box-shadow: var(--input-shadow-focus);
 }
 
 .modal-card .field input:disabled,
@@ -1335,20 +1629,10 @@
 .profile-section .field textarea:disabled,
 .profile-section .field select:disabled,
 .env-row input:disabled {
-  border-color: var(--portal-gray-200);
-  background-color: var(--portal-gray-50);
-  color: var(--portal-gray-500);
+  border-color: var(--input-border);
+  background-color: var(--input-background-disabled);
+  color: var(--input-text-disabled);
   cursor: not-allowed;
-}
-
-.modal-card .field span,
-.modal-card .field .field-label,
-.profile-section .field span,
-.profile-section .field .field-label {
-  color: var(--portal-gray-700);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
 }
 
 .modal-card .selection-item.compact-toggle-row,
@@ -1592,13 +1876,6 @@
   gap: 8px;
 }
 
-.manager-rebuild-modal .field > span {
-  color: var(--portal-gray-700);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-}
-
 .manager-rebuild-image-option {
   display: grid;
   gap: 2px;
@@ -1740,6 +2017,10 @@
 }
 
 @media (max-width: 640px) {
+  .profile-modal.agent-modal .agent-create-kind-tabbar {
+    grid-template-columns: 1fr;
+  }
+
   .agent-basics-grid {
     grid-template-columns: 44px minmax(0, 1fr);
   }
