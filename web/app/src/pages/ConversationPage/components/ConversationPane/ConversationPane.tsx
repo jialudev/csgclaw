@@ -21,13 +21,10 @@ export function ConversationPane({
   selectedMessageCount,
   logAgent,
   conversationMembers,
-  showMemberList,
-  onToggleMemberList,
   showChannelTools,
   onToggleChannelTools,
   showToolCalls,
   onToggleToolCalls,
-  memberMenuRef,
   channelToolsRef,
   messageListRef,
   editorRef,
@@ -168,11 +165,10 @@ export function ConversationPane({
         inviteActionLabel={inviteActionLabel}
         logAgent={logAgent}
         logModalOpen={logModalOpen}
-        memberMenuRef={memberMenuRef}
         selectedMessageCount={selectedMessageCount}
         showChannelTools={showChannelTools}
         showInviteAction={true}
-        showMemberList={showMemberList}
+        showMemberListAction={false}
         showToolCalls={showToolCalls}
         t={t}
         onClearMessages={handleOpenClearMessagesDialog}
@@ -181,7 +177,6 @@ export function ConversationPane({
         onOpenAgentLogs={handleOpenAgentLogs}
         onPreviewUser={onPreviewUser}
         onToggleChannelTools={onToggleChannelTools}
-        onToggleMemberList={onToggleMemberList}
         onToggleToolCalls={onToggleToolCalls}
       />
 

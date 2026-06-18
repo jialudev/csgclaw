@@ -122,7 +122,7 @@ describe("useConversationController", () => {
   it("opens create-room modal from a direct message", () => {
     const { result } = renderConversationController();
 
-    expect(result.current.conversationViewProps.inviteActionLabel).toBe("createRoomFromDM");
+    expect(result.current.conversationViewProps.inviteActionLabel).toBe("memberManagement");
 
     act(() => {
       result.current.conversationViewProps.onInviteAction();

@@ -1,9 +1,8 @@
 import { memo } from "react";
 import type { ReactNode, RefObject } from "react";
-import { Logs } from "lucide-react";
 import { AgentAvatarContent } from "@/components/business/AgentAvatar";
 import { Button } from "@/components/ui";
-import { AddUserIcon, TrashIcon, UsersIcon, WrenchIcon } from "@/components/ui/Icons";
+import { AddUserIcon, IconImage, TrashIcon, UsersIcon, WrenchIcon } from "@/components/ui/Icons";
 import type { AgentLike } from "@/models/agents";
 import type { IMConversation, IMUser, TranslateFn } from "@/models/conversations";
 import { isDirectConversation } from "@/models/conversations";
@@ -20,19 +19,20 @@ export type ConversationHeaderProps = {
   inviteActionLabel: string;
   logAgent?: AgentLike | null;
   logModalOpen: boolean;
-  memberMenuRef: RefObject<HTMLDivElement | null>;
+  memberMenuRef?: RefObject<HTMLDivElement | null>;
   onClearMessages: () => void;
   onDeleteRoom: () => void;
   onInviteAction: () => void;
   onOpenAgentLogs: () => void;
   onPreviewUser: (user: IMUser, anchor: HTMLElement) => void;
   onToggleChannelTools: BooleanStateSetter;
-  onToggleMemberList: BooleanStateSetter;
+  onToggleMemberList?: BooleanStateSetter;
   onToggleToolCalls: BooleanStateSetter;
   selectedMessageCount: number;
   showChannelTools: boolean;
   showInviteAction: boolean;
-  showMemberList: boolean;
+  showMemberList?: boolean;
+  showMemberListAction?: boolean;
   showToolCalls: boolean;
   t: TranslateFn;
 };
@@ -50,7 +50,8 @@ export const ConversationHeader = memo(function ConversationHeader({
   selectedMessageCount,
   showChannelTools,
   showInviteAction,
-  showMemberList,
+  showMemberList = false,
+  showMemberListAction = true,
   showToolCalls,
   t,
   onClearMessages,
@@ -73,66 +74,72 @@ export const ConversationHeader = memo(function ConversationHeader({
                 <strong>{selectedMessageCount}</strong>
               </div>
               <div className="chat-title truncate">{conversation.title}</div>
-              <div ref={memberMenuRef} className="header-menu">
-                <Button
-                  className="member-badge-button"
-                  active={showMemberList}
-                  aria-label={t("membersTitle")}
-                  aria-pressed={showMemberList}
-                  title={t("membersTitle")}
-                  onClick={() => {
-                    onToggleMemberList((value) => !value);
-                    onToggleChannelTools(false);
-                  }}
-                >
-                  <span className="icon-button-mark" aria-hidden="true">
-                    <UsersIcon />
-                  </span>
-                  <span className="member-badge-count">{conversationMembers.length}</span>
-                </Button>
-                {showMemberList ? (
-                  <div className="header-popover members-popover">
-                    <div className="header-popover-title">{t("membersTitle")}</div>
-                    <div className="members-popover-list">
-                      {conversationMembers.map((user) => (
-                        <div key={user.id} className="member-row">
-                          <button
-                            type="button"
-                            className="avatar avatar-button"
-                            aria-label={`${t("profilePreview")} ${user.name}`}
-                            onClick={(event) => onPreviewUser(user, event.currentTarget)}
-                          >
-                            <AgentAvatarContent
-                              avatar={user.avatar}
-                              fallback={avatarFallbackText(user.avatar, user.name, user.handle, user.id)}
-                            />
-                          </button>
-                          <div className="member-row-main">
-                            <div className="member-row-name">{user.name}</div>
-                            <div className="member-row-meta">
-                              @{user.handle} · {localizeRole(user.role || "", t)}
+              {showMemberListAction ? (
+                <div ref={memberMenuRef} className="header-menu">
+                  <Button
+                    className="member-badge-button"
+                    active={showMemberList}
+                    aria-label={t("membersTitle")}
+                    aria-pressed={showMemberList}
+                    title={t("membersTitle")}
+                    onClick={() => {
+                      onToggleMemberList?.((value) => !value);
+                      onToggleChannelTools(false);
+                    }}
+                  >
+                    <span className="icon-button-mark" aria-hidden="true">
+                      <UsersIcon />
+                    </span>
+                    <span className="member-badge-count">{conversationMembers.length}</span>
+                  </Button>
+                  {showMemberList ? (
+                    <div className="header-popover members-popover">
+                      <div className="header-popover-title">{t("membersTitle")}</div>
+                      <div className="members-popover-list">
+                        {conversationMembers.map((user) => (
+                          <div key={user.id} className="member-row">
+                            <button
+                              type="button"
+                              className="avatar avatar-button"
+                              aria-label={`${t("profilePreview")} ${user.name}`}
+                              onClick={(event) => onPreviewUser(user, event.currentTarget)}
+                            >
+                              <AgentAvatarContent
+                                avatar={user.avatar}
+                                fallback={avatarFallbackText(user.avatar, user.name, user.handle, user.id)}
+                              />
+                            </button>
+                            <div className="member-row-main">
+                              <div className="member-row-name">{user.name}</div>
+                              <div className="member-row-meta">
+                                @{user.handle} · {localizeRole(user.role || "", t)}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="chat-title-actions">
             {headerAccessory}
             {logAgent ? (
               <Button
-                className="icon-button"
+                className="icon-button log-button"
                 active={logModalOpen}
+                iconOnly
+                size="lg"
+                variant="secondaryGray"
                 aria-label={t("agentLogs")}
-                title={t("agentLogs")}
+                data-tooltip={t("agentLogs")}
+                data-tooltip-side="bottom"
                 onClick={onOpenAgentLogs}
               >
                 <span className="icon-button-mark" aria-hidden="true">
-                  <Logs size={18} strokeWidth={2} />
+                  {IconImage("log")}
                 </span>
               </Button>
             ) : null}
@@ -140,12 +147,16 @@ export const ConversationHeader = memo(function ConversationHeader({
               <Button
                 className="icon-button"
                 active={showChannelTools}
+                iconOnly
+                size="lg"
+                variant="secondaryGray"
                 aria-label={t("channelTools")}
                 aria-expanded={showChannelTools}
-                title={t("channelTools")}
+                data-tooltip={t("channelTools")}
+                data-tooltip-side="bottom"
                 onClick={() => {
                   onToggleChannelTools((value) => !value);
-                  onToggleMemberList(false);
+                  onToggleMemberList?.(false);
                 }}
               >
                 <span className="icon-button-mark">
@@ -178,9 +189,13 @@ export const ConversationHeader = memo(function ConversationHeader({
             </div>
             {showInviteAction ? (
               <Button
-                className="icon-button"
+                className="icon-button member-management-button"
+                iconOnly
+                size="lg"
+                variant="secondaryGray"
                 aria-label={inviteActionLabel}
-                title={inviteActionLabel}
+                data-tooltip={inviteActionLabel}
+                data-tooltip-side="bottom"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();

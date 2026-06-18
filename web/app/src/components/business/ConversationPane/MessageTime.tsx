@@ -8,9 +8,9 @@ export function MessageTimestamp({ parts }: { parts: MessageTimestampParts }) {
     <time
       className="message-timestamp"
       dateTime={parts.dateTime}
-      title={parts.tooltip}
       aria-label={parts.tooltip}
       data-tooltip={parts.tooltip}
+      data-tooltip-side="top"
       tabIndex={0}
     >
       {parts.shortLabel}
@@ -27,8 +27,8 @@ export function MessageTimeDivider({ parts }: { parts: MessageTimestampParts }) 
       <time
         className="message-time-divider-label"
         dateTime={parts.dateTime}
-        title={parts.tooltip}
         data-tooltip={parts.tooltip}
+        data-tooltip-side="top"
         tabIndex={0}
       >
         {parts.dividerLabel}

@@ -7,6 +7,7 @@ import {
   deleteRoomRequest,
   fetchThreadRequest,
   inviteRoomUsersRequest,
+  removeRoomUserRequest,
   sendMessageRequest,
   startThreadRequest,
 } from "@/api/im";
@@ -147,6 +148,8 @@ export function useConversationController({
   const [lockedRoomMemberIDs, setLockedRoomMemberIDs] = useState<string[]>([]);
   const [inviteUserIDs, setInviteUserIDs] = useState<string[]>([]);
   const [submitError, setSubmitError] = useState("");
+  const [memberActionBusyID, setMemberActionBusyID] = useState("");
+  const [memberActionError, setMemberActionError] = useState("");
   const [composerError, setComposerError] = useState("");
   const editorRef = useRef<HTMLDivElement | null>(null);
   const composerIsComposingRef = useRef(false);
@@ -247,8 +250,7 @@ export function useConversationController({
   const inviteCandidates = activeConversation
     ? data?.users.filter((user) => !activeConversation.members.includes(user.id)) || []
     : [];
-  const inviteActionLabel =
-    activeConversation && isDirectConversation(activeConversation) ? t("createRoomFromDM") : t("inviteMembers");
+  const inviteActionLabel = t("memberManagement");
 
   const mentionCandidates = useMemo(() => {
     if (!data || !composerMentionState) {
@@ -469,6 +471,11 @@ export function useConversationController({
     setShowMemberList(false);
     setShowChannelTools(false);
   }, [activeConversationId, activePane.type]);
+
+  useEffect(() => {
+    setMemberActionBusyID("");
+    setMemberActionError("");
+  }, [activeConversationId]);
 
   useEffect(() => {
     if (!showMemberList) {
@@ -834,6 +841,31 @@ export function useConversationController({
     }
   }
 
+  async function removeRoomMember(memberID: string): Promise<void> {
+    if (!data?.current_user_id || !activeConversation || !memberID) {
+      return;
+    }
+
+    setMemberActionBusyID(memberID);
+    setMemberActionError("");
+    try {
+      const updated = await removeRoomUserRequest({
+        room_id: activeConversation.id,
+        inviter_id: data.current_user_id,
+        member_id: memberID,
+        locale,
+      });
+      setBootstrapData((current) => upsertConversationInData(current, updated));
+      setComposerError("");
+    } catch (err) {
+      const localized = localizeError(errorMessage(err, ""), t);
+      setMemberActionError(localized);
+      throw err;
+    } finally {
+      setMemberActionBusyID("");
+    }
+  }
+
   async function deleteRoom(roomID: string): Promise<void> {
     if (!data || !roomID) {
       return;
@@ -1062,6 +1094,10 @@ export function useConversationController({
     setComposerError("");
   }
 
+  function clearMemberActionError() {
+    setMemberActionError("");
+  }
+
   function closeConversationTools() {
     setShowMemberList(false);
     setShowChannelTools(false);
@@ -1154,6 +1190,10 @@ export function useConversationController({
         }
       },
       onSendThreadReply: sendThreadReply,
+      onRemoveMember: removeRoomMember,
+      memberActionBusyID,
+      memberActionError,
+      onClearMemberActionError: clearMemberActionError,
       threadSlashCandidates,
       threadSlashIndex,
       threadSlashPickerLoading: slashPickerLoading,
@@ -1187,7 +1227,14 @@ export function useConversationController({
         ? {
             t,
             candidates: inviteCandidates,
+            members: activeConversationMembers,
+            currentUserID: data.current_user_id || "",
+            allowMemberRemoval: !isDirectConversation(activeConversation),
             inviteUserIDs,
+            memberActionBusyID,
+            memberActionError,
+            onRemoveMember: removeRoomMember,
+            onClearMemberActionError: clearMemberActionError,
             onInviteUserIDsChange: setInviteUserIDs,
             submitError,
             onClose: () => setShowInvite(false),

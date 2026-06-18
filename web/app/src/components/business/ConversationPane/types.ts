@@ -45,10 +45,13 @@ export type ConversationPaneProps = {
   messageActionBusy: string;
   messageActionError: MessageActionError;
   messageListRef: RefObject<HTMLElement | null>;
+  memberActionBusyID?: string;
+  memberActionError?: string;
   onApplyMention: (user: MentionPickerUser) => void;
   onApplySlashCandidate?: (name: string) => void;
   onApplyThreadSlashCandidate?: (name: string) => void;
   onClearRoomMessages?: (id: string) => VoidOrPromise;
+  onClearMemberActionError?: () => void;
   onCloseThread: () => void;
   onComposerCompositionEnd: () => void;
   onComposerCompositionStart: () => void;
@@ -58,6 +61,7 @@ export type ConversationPaneProps = {
   onInviteAction: () => void;
   onMessageAction: (action: MessageAction, message?: MessageLike | null) => VoidOrPromise;
   onOpenThread: (message: IMMessage) => VoidOrPromise;
+  onRemoveMember?: (memberID: string) => VoidOrPromise;
   onPreviewUser: (user: IMUser, anchor: HTMLElement) => void;
   onProviderLogin: (provider: string) => VoidOrPromise;
   onSendMessage: () => VoidOrPromise;

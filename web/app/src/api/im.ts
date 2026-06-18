@@ -27,6 +27,13 @@ export type InviteRoomUsersPayload = {
   user_ids: string[];
 };
 
+export type RemoveRoomUserPayload = {
+  inviter_id: string;
+  locale?: string;
+  member_id: string;
+  room_id: string;
+};
+
 export type JoinAgentToRoomPayload = {
   agent_id: string;
   inviter_id: string;
@@ -57,6 +64,12 @@ export function createRoomRequest(payload: CreateRoomPayload): Promise<IMConvers
 
 export function inviteRoomUsersRequest(payload: InviteRoomUsersPayload): Promise<IMConversation> {
   return post("api/v1/rooms/invite", payload);
+}
+
+export function removeRoomUserRequest(payload: RemoveRoomUserPayload): Promise<IMConversation> {
+  return del(`api/v1/rooms/${encodeURIComponent(payload.room_id)}/members/${encodeURIComponent(payload.member_id)}`, {
+    json: { inviter_id: payload.inviter_id, locale: payload.locale },
+  });
 }
 
 export function deleteRoomRequest(roomID: string): Promise<void> {

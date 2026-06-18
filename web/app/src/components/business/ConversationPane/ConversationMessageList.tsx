@@ -128,13 +128,12 @@ export const ConversationMessageList = memo(function ConversationMessageList({
                     type="button"
                     className="thread-hover-button"
                     aria-label={t("replyInThread")}
+                    data-tooltip={t("replyInThread")}
+                    data-tooltip-side="top"
                     onClick={() => onOpenThread(message)}
                   >
                     <span className="thread-hover-icon" aria-hidden="true">
                       {IconImage("rooms")}
-                    </span>
-                    <span className="thread-action-tooltip" aria-hidden="true">
-                      {t("replyInThread")}
                     </span>
                   </button>
                 </div>

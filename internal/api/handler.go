@@ -357,6 +357,11 @@ type addRoomMembersRequest struct {
 	Locale    string   `json:"locale"`
 }
 
+type removeRoomMemberRequest struct {
+	InviterID string `json:"inviter_id"`
+	Locale    string `json:"locale"`
+}
+
 func NewHandler(svc *agent.Service, imSvc *im.Service, imBus *im.Bus, participantBridge *im.ParticipantBridge, feishu *feishu.Service, llmSvc *llm.Service) *Handler {
 	return NewHandlerWithAccessToken(svc, imSvc, imBus, participantBridge, feishu, llmSvc, "")
 }
@@ -1432,6 +1437,39 @@ func (h *Handler) handleRoomMembersByID(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, http.StatusOK, members)
+}
+
+func (h *Handler) handleRoomMemberDeletePath(w http.ResponseWriter, r *http.Request) {
+	roomID := strings.TrimSpace(pathValue(r, "id"))
+	memberID := strings.TrimSpace(pathValue(r, "member_id"))
+	if roomID == "" || memberID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	channel, ok := h.requireLocalChannel(w)
+	if !ok {
+		return
+	}
+	var req removeRoomMemberRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	serviceReq := im.AddRoomMembersRequest{
+		RoomID:    roomID,
+		InviterID: h.resolveCSGClawParticipantUserID(req.InviterID),
+		UserIDs:   h.resolveCSGClawParticipantUserIDs([]string{memberID}),
+		Locale:    req.Locale,
+	}
+
+	room, err := channel.RemoveRoomMembers(serviceReq)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.publishRoomEvent(im.EventTypeRoomMembersRemoved, room)
+	writeJSON(w, http.StatusOK, room)
 }
 
 func (h *Handler) handleUserByID(w http.ResponseWriter, r *http.Request) {
