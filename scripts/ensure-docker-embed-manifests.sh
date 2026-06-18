@@ -51,7 +51,17 @@ run_with_sigkill_retry() {
   done
 }
 
-run_with_sigkill_retry "docker embed manifest check" "${CHECK_RETRIES}" "${CHECK_SCRIPT}" "${check_args[@]}"
+check_cmd=("${CHECK_SCRIPT}")
+if [ "${#check_args[@]}" -gt 0 ]; then
+  check_cmd+=("${check_args[@]}")
+fi
+
+sync_cmd=("${SYNC_SCRIPT}")
+if [ "${#sync_args[@]}" -gt 0 ]; then
+  sync_cmd+=("${sync_args[@]}")
+fi
+
+run_with_sigkill_retry "docker embed manifest check" "${CHECK_RETRIES}" "${check_cmd[@]}"
 status=$?
 if [ "${status}" -eq 0 ]; then
   exit 0
@@ -62,5 +72,5 @@ if [ "${status}" -ne 1 ]; then
 fi
 
 printf '%s\n' "docker embed agent.toml version/ref out of sync; running sync-docker-embed-image-refs"
-run_with_sigkill_retry "docker embed manifest sync" "${SYNC_RETRIES}" "${SYNC_SCRIPT}" "${sync_args[@]}"
+run_with_sigkill_retry "docker embed manifest sync" "${SYNC_RETRIES}" "${sync_cmd[@]}"
 exit $?

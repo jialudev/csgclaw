@@ -133,12 +133,39 @@ test_repeated_killed_check_fails_without_sync() {
   cleanup_fixture
 }
 
+test_empty_args_do_not_trip_nounset() {
+  setup_fixture
+  local noarg_check="${FIXTURE}/check-noargs.sh"
+  local noarg_sync="${FIXTURE}/sync-noargs.sh"
+  cat > "${noarg_check}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  cat > "${noarg_sync}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+  chmod +x "${noarg_check}" "${noarg_sync}"
+  set +e
+  DOCKER_EMBED_CHECK_RETRIES=1 \
+    CHECK_DOCKER_EMBED_MANIFESTS_SCRIPT="${noarg_check}" \
+    SYNC_DOCKER_EMBED_IMAGE_REFS_SCRIPT="${noarg_sync}" \
+    bash "${ENSURE_SCRIPT}" >/dev/null
+  local status=$?
+  set -e
+  assert_eq "${status}" "0" "empty args should not fail under nounset"
+  cleanup_fixture
+}
+
 main() {
   test_current_manifest_skips_sync
   test_out_of_sync_runs_sync
   test_killed_check_retries_without_sync_when_retry_is_current
   test_killed_check_retries_then_syncs_when_retry_is_out_of_sync
   test_repeated_killed_check_fails_without_sync
+  test_empty_args_do_not_trip_nounset
   echo "OK: docker embed ensure tests passed"
 }
 
