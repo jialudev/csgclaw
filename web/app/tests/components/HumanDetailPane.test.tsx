@@ -8,10 +8,11 @@ const labels: Record<string, string> = {
   humanIdentitySection: "Identity",
   humanChannelsSection: "Channels",
   humanDescriptionLabel: "Description",
-  humanDescriptionSave: "Save description",
   humanStatusOffline: "Offline",
   humanStatusOnline: "Online",
-  humanFeishuBoundUser: "Bound user",
+  agentSaveChanges: "Save changes",
+  agentSavingChanges: "Saving...",
+  agentSaved: "Saved",
   agentAvatar: "Avatar",
   agentAvatarStyle3D: "3D",
   agentAvatarStyleCartoon: "Cartoon",
@@ -97,24 +98,30 @@ describe("HumanDetailPane", () => {
     expect(onAvatarChange).toHaveBeenCalledWith("avatar/cartoon-2.png");
   });
 
-  it("shows Feishu channel binding details", () => {
-    render(<HumanDetailPane locale="en" t={t} user={admin} />);
+  it("shows Feishu channel status without bound user detail", () => {
+    const { container } = render(<HumanDetailPane locale="en" t={t} user={admin} />);
 
     expect(screen.getByRole("heading", { name: "Channels" })).toBeInTheDocument();
     expect(screen.getByText("Feishu")).toBeInTheDocument();
     expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("龙韵")).toBeInTheDocument();
+    expect(screen.queryByText("龙韵")).not.toBeInTheDocument();
     expect(screen.queryByText("ou_admin")).not.toBeInTheDocument();
+
+    const panel = container.querySelector(".human-info-panel");
+    expect(panel?.firstElementChild).toHaveClass("human-channels-section");
   });
 
   it("allows saving the human description", () => {
     const onDescriptionSave = vi.fn();
     render(<HumanDetailPane locale="en" onDescriptionSave={onDescriptionSave} t={t} user={admin} />);
 
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Description" }));
     fireEvent.change(screen.getByLabelText("Description"), {
       target: { value: "Ask me to confirm product decisions." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save description" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(onDescriptionSave).toHaveBeenCalledWith("Ask me to confirm product decisions.");
   });

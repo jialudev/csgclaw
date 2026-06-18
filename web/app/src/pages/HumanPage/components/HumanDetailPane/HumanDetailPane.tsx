@@ -1,9 +1,9 @@
-import { CheckCircle2, Link2, Save } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, CheckCircle2, Edit3, Link2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { AgentAvatarPicker } from "@/components/business/AgentAvatar";
 import { Button } from "@/components/ui";
 import { localizeRole } from "@/shared/i18n";
-import { feishuHumanParticipant, humanParticipantDisplayName } from "@/models/conversations";
+import { feishuHumanParticipant } from "@/models/conversations";
 import type { IMUser, LocaleCode, TranslateFn } from "@/models/conversations";
 
 type VoidOrPromise = void | Promise<void>;
@@ -31,10 +31,19 @@ export function HumanDetailPane({
   user = null,
 }: HumanDetailPaneProps) {
   const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const descriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     setDescriptionDraft(String(user?.description || ""));
   }, [user?.description, user?.id]);
+
+  useEffect(() => {
+    if (!isEditingDescription) {
+      return;
+    }
+    descriptionInputRef.current?.focus();
+  }, [isEditingDescription]);
 
   if (!user) {
     return (
@@ -74,7 +83,40 @@ export function HumanDetailPane({
                 {online ? t("humanStatusOnline") : t("humanStatusOffline")}
               </span>
             </div>
-            <p>{t("humanDetailSubtitle")}</p>
+            {isEditingDescription ? (
+              <div className="human-description-editor">
+                <label className="human-description-field">
+                  <span className="sr-only">{t("humanDescriptionLabel")}</span>
+                  <textarea
+                    ref={descriptionInputRef}
+                    value={descriptionDraft}
+                    rows={4}
+                    disabled={descriptionBusy}
+                    onBlur={() => setIsEditingDescription(false)}
+                    onChange={(event) => setDescriptionDraft(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    placeholder={t("humanDescriptionLabel")}
+                  />
+                </label>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={`entity-description-display ${descriptionDraft ? "" : "is-empty"}`.trim()}
+                aria-label={t("humanDescriptionLabel")}
+                onClick={() => setIsEditingDescription(true)}
+              >
+                <span className="entity-description-display-copy">{descriptionDraft || t("humanDescriptionLabel")}</span>
+                <span className="entity-description-display-icon" aria-hidden="true">
+                  <Edit3 size={16} strokeWidth={1.8} />
+                </span>
+              </button>
+            )}
             {avatarBusy || avatarError ? (
               <div className="human-avatar-feedback">
                 {avatarBusy ? (
@@ -89,11 +131,39 @@ export function HumanDetailPane({
                 ) : null}
               </div>
             ) : null}
+            {descriptionError ? (
+              <div className="human-avatar-feedback">
+                <span className="human-avatar-error" role="alert">
+                  {descriptionError}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <div className="entity-toolbar human-detail-toolbar">
+            {descriptionChanged || descriptionBusy ? (
+              <Button
+                variant="primary"
+                size="md"
+                type="button"
+                loading={descriptionBusy}
+                loadingLabel={t("agentSavingChanges")}
+                disabled={!descriptionChanged || descriptionBusy}
+                onClick={() => void onDescriptionSave(descriptionDraft)}
+              >
+                {t("agentSaveChanges")}
+              </Button>
+            ) : (
+              <span className="human-save-status" role="status">
+                <Check aria-hidden="true" size={16} strokeWidth={2.5} />
+                {t("agentSaved")}
+              </span>
+            )}
           </div>
         </div>
       </header>
 
       <section className="human-info-panel">
+        <HumanChannelsSection t={t} user={user} />
         <section className="human-info-section human-identity-section">
           <div className="section-header-inline human-info-section-header">
             <div className="section-label">{t("humanIdentitySection")}</div>
@@ -104,40 +174,6 @@ export function HumanDetailPane({
             <HumanField label={t("userIDLabel")} value={user.user_id || user.id} />
           </div>
         </section>
-        <section className="human-info-section human-description-section">
-          <div className="section-header-inline human-info-section-header">
-            <h2 className="section-label">{t("humanDescriptionLabel")}</h2>
-          </div>
-          <label className="human-description-field">
-            <span>{t("humanDescriptionLabel")}</span>
-            <textarea
-              value={descriptionDraft}
-              rows={4}
-              disabled={descriptionBusy}
-              onChange={(event) => setDescriptionDraft(event.currentTarget.value)}
-            />
-          </label>
-          <div className="human-description-actions">
-            {descriptionError ? (
-              <span className="human-avatar-error" role="alert">
-                {descriptionError}
-              </span>
-            ) : null}
-            <Button
-              variant="primary"
-              size="sm"
-              type="button"
-              loading={descriptionBusy}
-              loadingLabel={t("humanDescriptionSave")}
-              disabled={!descriptionChanged || descriptionBusy}
-              onClick={() => void onDescriptionSave(descriptionDraft)}
-            >
-              <Save aria-hidden="true" size={15} strokeWidth={2} />
-              {t("humanDescriptionSave")}
-            </Button>
-          </div>
-        </section>
-        <HumanChannelsSection t={t} user={user} />
       </section>
     </section>
   );
@@ -146,7 +182,6 @@ export function HumanDetailPane({
 function HumanChannelsSection({ t, user }: { t: TranslateFn; user: IMUser }) {
   const feishuParticipant = feishuHumanParticipant(user);
   const connected = Boolean(feishuParticipant);
-  const boundUser = humanParticipantDisplayName(feishuParticipant);
   const statusLabel = connected ? t("feishuConnected") : t("feishuDisconnected");
   const statusIcon = connected ? (
     <CheckCircle2 aria-hidden="true" size={16} strokeWidth={2.2} />
@@ -171,11 +206,6 @@ function HumanChannelsSection({ t, user }: { t: TranslateFn; user: IMUser }) {
             {statusIcon}
             {statusLabel}
           </span>
-          {boundUser ? (
-            <span className="human-channel-detail">
-              {t("humanFeishuBoundUser")} <strong>{boundUser}</strong>
-            </span>
-          ) : null}
         </span>
       </div>
     </section>
