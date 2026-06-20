@@ -1,10 +1,13 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -2344,6 +2347,102 @@ func TestHandleSkillsMissingRootUsesEmptyOrNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleSkillUpload(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srv := &Handler{}
+	req := newSkillUploadRequest(t, "alpha.zip", map[string]string{
+		"alpha/SKILL.md":       "---\ndescription: Alpha skill\n---\n# Alpha\n",
+		"alpha/scripts/run.sh": "#!/bin/sh\necho hi\n",
+	})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var skill struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&skill); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+	if skill.Name != "alpha" || skill.Description != "Alpha skill" {
+		t.Fatalf("uploaded skill = %+v, want alpha summary", skill)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".csgclaw", "skills", "alpha", "SKILL.md")); err != nil {
+		t.Fatalf("installed SKILL.md missing: %v", err)
+	}
+}
+
+func TestHandleSkillUploadRejectsDuplicate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".csgclaw", "skills", "alpha"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(alpha) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".csgclaw", "skills", "alpha", "SKILL.md"), []byte("# Alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(alpha SKILL.md) error = %v", err)
+	}
+
+	srv := &Handler{}
+	req := newSkillUploadRequest(t, "alpha.zip", map[string]string{
+		"alpha/SKILL.md": "# Alpha\n",
+	})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("upload status = %d, want %d; body=%s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestHandleSkillDelete(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	skillsRoot := filepath.Join(home, ".csgclaw", "skills")
+	if err := os.MkdirAll(filepath.Join(skillsRoot, "alpha", "scripts"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(alpha) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha", "SKILL.md"), []byte("# Alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(alpha SKILL.md) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha", "scripts", "run.sh"), []byte("echo hi\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(run.sh) error = %v", err)
+	}
+
+	srv := &Handler{}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/skills/alpha", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(skillsRoot, "alpha")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("alpha still exists, err = %v", err)
+	}
+}
+
+func TestHandleSkillUploadRejectsInvalidArchive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srv := &Handler{}
+	req := newSkillUploadRequest(t, "invalid.zip", map[string]string{
+		"alpha/SKILL.md": "# Alpha\n",
+		"beta/SKILL.md":  "# Beta\n",
+	})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("upload status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
 func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.T) {
 	hubSvc := mustNewLocalTemplateHubServiceWithoutWorkspace(t, "review-bot", hub.Template{
 		ID:          "review-bot",
@@ -2379,6 +2478,44 @@ func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.
 	if !strings.Contains(rec.Body.String(), "hub workspace is not available") {
 		t.Fatalf("file response body = %q, want unavailable workspace error", rec.Body.String())
 	}
+}
+
+func newSkillUploadRequest(t *testing.T, filename string, files map[string]string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("CreateFormFile() error = %v", err)
+	}
+	if _, err := part.Write(mustZipBytes(t, files)); err != nil {
+		t.Fatalf("Write(zip) error = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/skills:upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
+}
+
+func mustZipBytes(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) error = %v", name, err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) error = %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	return buf.Bytes()
 }
 
 func TestHandleHubTemplatesPublishesAgentSnapshot(t *testing.T) {

@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileCode2 } from "lucide-react";
-import {
-  formatHubDate,
-  formatHubDateTime,
-  formatHubTemplateCount,
-  isDeletableHubTemplate,
-} from "@/models/hubWorkspace";
+import { formatHubDateTime, isDeletableHubTemplate } from "@/models/hubWorkspace";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "@/components/business/WorkspaceFileTree";
 import { localizeRole, localizeTemplateSourceTag } from "@/shared/i18n";
 import { HubIcon } from "@/components/ui/Icons";
-import { Button } from "@/components/ui";
+import {
+  Button,
+  DialogCloseButton,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
+} from "@/components/ui";
 import type { LocaleCode, TranslateFn } from "@/models/conversations";
 import type { HubTemplate } from "@/models/hubWorkspace";
 import type { SkillFile, SkillSummary, SkillTree } from "@/models/skillhub";
@@ -23,6 +26,7 @@ type HubDetailPaneHub = {
     detailLoading: boolean;
     error: string;
     loaded: boolean;
+    onDeleteSkill?: (item: SkillSummary | null | undefined) => Promise<boolean> | boolean;
     onDeleteTemplate?: (item: HubTemplate | null | undefined) => unknown;
     onRetry: () => void | Promise<void>;
     onSelectSkill?: (name: string | null | undefined) => void;
@@ -38,6 +42,7 @@ type HubDetailPaneHub = {
     skillFile: SkillFile | null;
     skillFileError: string;
     skillFileLoading: boolean;
+    skillDeleteBusy?: boolean;
     skills: readonly SkillSummary[];
     skillTree: SkillTree | null;
     skillTreeError: string;
@@ -66,6 +71,7 @@ const EMPTY_HUB_DETAIL_PROPS: HubDetailPaneHub["detailPaneProps"] = {
   skillFile: null,
   skillFileError: "",
   skillFileLoading: false,
+  skillDeleteBusy: false,
   skills: [],
   skillTree: null,
   skillTreeError: "",
@@ -120,7 +126,6 @@ export function HubDetailPane({
     templates,
     skills,
     selectedTemplate,
-    selectedTemplateId,
     selectedSkill,
     selectedSkillPath,
     selectedResourceType = "template",
@@ -137,11 +142,12 @@ export function HubDetailPane({
     skillFile,
     skillFileLoading,
     skillFileError,
-    onSelectTemplate,
     onSelectWorkspaceFile,
     onSelectSkillFile,
+    onDeleteSkill,
     onDeleteTemplate,
     deleteBusy = false,
+    skillDeleteBusy = false,
   } = hub?.detailPaneProps ?? EMPTY_HUB_DETAIL_PROPS;
   const canDeleteTemplate = isDeletableHubTemplate(selectedTemplate);
   const workspaceEntries = selectedTemplate?.workspace?.entries ?? EMPTY_WORKSPACE_ENTRIES;
@@ -158,33 +164,17 @@ export function HubDetailPane({
     }
     return "template";
   }, [selectedResourceType, skills.length, templates.length]);
-  const showingSkillCatalog = activeResourceType === "skill";
-  const [isTemplateListScrolling, setIsTemplateListScrolling] = useState(false);
   const [isInspectorScrolling, setIsInspectorScrolling] = useState(false);
-  const templateListScrollTimerRef = useRef<number | null>(null);
+  const [deleteSkillDialogOpen, setDeleteSkillDialogOpen] = useState(false);
   const inspectorScrollTimerRef = useRef<number | null>(null);
   useEffect(
     () => () => {
-      if (templateListScrollTimerRef.current) {
-        window.clearTimeout(templateListScrollTimerRef.current);
-      }
       if (inspectorScrollTimerRef.current) {
         window.clearTimeout(inspectorScrollTimerRef.current);
       }
     },
     [],
   );
-
-  function handleTemplateListScroll() {
-    setIsTemplateListScrolling(true);
-    if (templateListScrollTimerRef.current) {
-      window.clearTimeout(templateListScrollTimerRef.current);
-    }
-    templateListScrollTimerRef.current = window.setTimeout(() => {
-      setIsTemplateListScrolling(false);
-      templateListScrollTimerRef.current = null;
-    }, 900);
-  }
 
   function handleInspectorScroll() {
     setIsInspectorScrolling(true);
@@ -195,6 +185,13 @@ export function HubDetailPane({
       setIsInspectorScrolling(false);
       inspectorScrollTimerRef.current = null;
     }, 900);
+  }
+
+  async function handleDeleteSkillConfirm() {
+    const deleted = await onDeleteSkill?.(selectedSkill);
+    if (deleted) {
+      setDeleteSkillDialogOpen(false);
+    }
   }
 
   return (
@@ -211,83 +208,6 @@ export function HubDetailPane({
         </div>
       ) : (
         <div className="hub-workbench">
-          <div className="hub-catalog-panel">
-            <div className="hub-resource-section">
-              <div className="hub-section-heading">
-                <strong>{showingSkillCatalog ? t("hubSkillsLabel") : t("hubTemplatesSection")}</strong>
-                <span>
-                  {showingSkillCatalog ? skills.length : formatHubTemplateCount(templates.length, locale, t)}
-                </span>
-              </div>
-              <div
-                className={`hub-template-list ${isTemplateListScrolling ? "is-scrolling" : ""}`}
-                onScroll={handleTemplateListScroll}
-              >
-                {showingSkillCatalog ? (
-                  skills.length === 0 ? (
-                    <div className="workspace-empty hub-resource-empty">{t("hubSkillsEmpty")}</div>
-                  ) : (
-                    skills.map((item) => (
-                      <button
-                        key={item.name}
-                        type="button"
-                        className={`hub-template-card ${selectedSkill?.name === item.name ? "active" : ""}`}
-                        onClick={() => hub?.detailPaneProps.onSelectSkill?.(item.name)}
-                      >
-                        <div className="hub-template-card-icon hub-skill-card-icon">
-                          <FileCode2 aria-hidden="true" />
-                        </div>
-                        <div className="hub-template-card-body">
-                          <div className="hub-template-card-title-row">
-                            <h2>{item.name}</h2>
-                          </div>
-                          <p>{item.description || item.name}</p>
-                        </div>
-                      </button>
-                    ))
-                  )
-                ) : (
-                  templates.length === 0 ? (
-                    <div className="workspace-empty hub-resource-empty">{t("hubEmpty")}</div>
-                  ) : (
-                    templates.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`hub-template-card ${selectedTemplateId === item.id && activeResourceType === "template" ? "active" : ""}`}
-                        onClick={() => onSelectTemplate?.(item)}
-                      >
-                        <div className="hub-template-card-icon">
-                          <HubIcon />
-                        </div>
-                        <div className="hub-template-card-body">
-                          <div className="hub-template-card-title-row">
-                            <h2>{item.name || item.id}</h2>
-                          </div>
-                          <p>{item.description || item.id}</p>
-                          <div className="hub-template-card-meta">
-                            <span className="mini-badge template-role-badge">{localizeRole(item.role || "worker", t)}</span>
-                            <span className="mini-badge template-runtime-badge">
-                              {item.runtime_kind || item.workspace?.kind || "-"}
-                            </span>
-                            <span className="mini-badge template-source-badge">
-                              <span className="template-source-badge-dot" aria-hidden="true"></span>
-                              {localizeTemplateSourceTag(item.source?.name, locale)}
-                            </span>
-                            <span className="hub-template-card-updated">
-                              {t("hubUpdatedAtLabel")} {formatHubDate(item.updated_at, locale)}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    ))
-                  )
-                )}
-              </div>
-            </div>
-
-          </div>
-
           <div
             className={`hub-inspector-panel ${isInspectorScrolling ? "is-scrolling" : ""}`}
             onScroll={handleInspectorScroll}
@@ -404,6 +324,17 @@ export function HubDetailPane({
                         <p>{selectedSkill.description || selectedSkill.name}</p>
                       </div>
                     </div>
+                    <div className="hub-template-actions">
+                      <Button
+                        className="hub-skill-delete-button"
+                        variant="danger"
+                        size="md"
+                        disabled={skillDeleteBusy}
+                        onClick={() => setDeleteSkillDialogOpen(true)}
+                      >
+                        {t("hubDeleteSkill")}
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
@@ -449,6 +380,32 @@ export function HubDetailPane({
           </div>
         </div>
       )}
+      <DialogRoot open={deleteSkillDialogOpen} onOpenChange={setDeleteSkillDialogOpen}>
+        <DialogContent className="hub-skill-delete-dialog">
+          <DialogHeader className="hub-skill-delete-dialog-header">
+            <div className="hub-skill-delete-dialog-copy">
+              <DialogTitle>{t("hubDeleteSkill")}</DialogTitle>
+              <DialogDescription>
+                {t("hubDeleteSkillConfirmMessage", { name: selectedSkill?.name || "" })}
+              </DialogDescription>
+            </div>
+            <DialogCloseButton label={t("close")} size="sm" variant="tertiaryGray" />
+          </DialogHeader>
+          <div className="hub-skill-delete-dialog-actions">
+            <Button
+              variant="secondaryGray"
+              size="sm"
+              disabled={skillDeleteBusy}
+              onClick={() => setDeleteSkillDialogOpen(false)}
+            >
+              {t("cancel")}
+            </Button>
+            <Button variant="danger" size="sm" loading={skillDeleteBusy} onClick={handleDeleteSkillConfirm}>
+              {t("hubDeleteSkillConfirmAction")}
+            </Button>
+          </div>
+        </DialogContent>
+      </DialogRoot>
     </section>
   );
 }

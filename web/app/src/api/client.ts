@@ -19,7 +19,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
     body = JSON.stringify(json);
   }
 
-  if (body && !headers.has("Content-Type")) {
+  if (body && !(body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (!headers.has("Accept")) {
@@ -57,7 +57,7 @@ export async function requestText(path: string, options: ApiRequestOptions = {})
     body = JSON.stringify(json);
   }
 
-  if (body && !headers.has("Content-Type")) {
+  if (body && !(body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (!headers.has("Accept")) {

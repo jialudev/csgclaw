@@ -45,7 +45,7 @@
 
 .hub-workbench {
   display: grid;
-  grid-template-columns: minmax(320px, 35%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   flex: 1 1 auto;
   min-height: 0;
@@ -60,24 +60,9 @@
   background: color-mix(in srgb, var(--panel) 94%, black 6%);
 }
 
-.hub-catalog-panel,
 .hub-inspector-panel {
   min-width: 0;
   padding: 28px 24px;
-}
-
-.hub-catalog-panel {
-  border-right: 1px solid var(--line);
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 18px;
-  min-height: 0;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--panel) 78%, white 22%);
-}
-
-:root[data-theme="dark"] .hub-catalog-panel {
-  background: color-mix(in srgb, var(--panel) 92%, black 8%);
 }
 
 .hub-resource-section {
@@ -322,6 +307,15 @@
   flex-wrap: wrap;
 }
 
+.hub-template-actions .btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.hub-skill-delete-button {
+  min-width: 104px;
+}
+
 .hub-inspector-icon {
   width: 62px;
   height: 62px;
@@ -391,17 +385,6 @@
 .hub-workspace-block {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 360px;
-}
-
-@media (max-width: 1080px) {
-  .hub-workbench {
-    grid-template-columns: 1fr;
-  }
-
-  .hub-catalog-panel {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
 }
 
 .hub-workspace-panels {
@@ -555,17 +538,27 @@
   min-height: 220px;
 }
 
-@media (max-width: 960px) {
-  .hub-workbench {
-    grid-template-columns: 1fr;
-  }
+.hub-skill-delete-dialog {
+  width: min(480px, calc(100vw - 32px));
 }
 
-@media (max-width: 960px) {
-  .hub-catalog-panel {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
+.hub-skill-delete-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hub-skill-delete-dialog-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.hub-skill-delete-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
 }
 
 @media (max-width: 960px) {
@@ -584,6 +577,7 @@
 @media (max-width: 960px) {
   .hub-template-actions {
     width: 100%;
+    justify-content: flex-start;
   }
 }
 
@@ -600,7 +594,6 @@
 }
 
 @media (max-width: 720px) {
-  .hub-catalog-panel,
   .hub-inspector-panel {
     padding: 20px 16px;
   }

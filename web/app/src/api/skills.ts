@@ -1,4 +1,4 @@
-import { get } from "@/api/client";
+import { del, get, request } from "@/api/client";
 import type { SkillFile, SkillSummary, SkillTree } from "@/models/skillhub";
 
 const SKILLS_PATH = "api/v1/skills";
@@ -19,4 +19,17 @@ export function fetchSkillTree(path = ""): Promise<SkillTree> {
 export function fetchSkillFile(path: string): Promise<SkillFile> {
   const params = new URLSearchParams({ path });
   return get<SkillFile>(`${SKILLS_PATH}/file?${params.toString()}`);
+}
+
+export function deleteSkillRequest(name: string): Promise<void> {
+  return del<void>(`${SKILLS_PATH}/${encodeURIComponent(String(name || "").trim())}`);
+}
+
+export function uploadSkillArchive(file: File): Promise<SkillSummary> {
+  const formData = new FormData();
+  formData.set("file", file);
+  return request<SkillSummary>("api/v1/skills:upload", {
+    body: formData,
+    method: "POST",
+  });
 }

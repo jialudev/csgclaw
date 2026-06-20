@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { DragEvent } from "react";
-import { FileCode2, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, DragEvent } from "react";
+import { FileCode2, Plus, UploadCloud } from "lucide-react";
 import { TaskSubtaskIndicator } from "@/components/business";
+import {
+  Button,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
+} from "@/components/ui";
 import { HubIcon, UsersIcon } from "@/components/ui/Icons";
 import { isDirectConversation, resolveConversationUser } from "@/models/conversations";
 import { WorkspacePaneTypes, WorkspaceTabs } from "@/models/routing";
@@ -110,6 +119,135 @@ const DEFAULT_SECTION_ORDERS = {
   ],
 } as const;
 
+type SkillUploadDialogProps = {
+  busy: boolean;
+  error: string;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (file: File) => Promise<unknown>;
+  open: boolean;
+  t: WorkspaceTabPanelsProps["t"];
+};
+
+function SkillUploadDialog({ open, onOpenChange, onSubmit, busy, error, t }: SkillUploadDialogProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [localError, setLocalError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedFile(null);
+      setLocalError("");
+      setDragOver(false);
+    }
+  }, [open]);
+
+  const setFile = useCallback(
+    (file: File | null | undefined) => {
+      if (!file) {
+        return;
+      }
+      if (
+        !String(file.name || "")
+          .toLowerCase()
+          .endsWith(".zip")
+      ) {
+        setSelectedFile(null);
+        setLocalError(t("hubSkillUploadDropHint"));
+        return;
+      }
+      setSelectedFile(file);
+      setLocalError("");
+    },
+    [t],
+  );
+
+  const handleFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setFile(event.target.files?.[0] ?? null);
+      event.target.value = "";
+    },
+    [setFile],
+  );
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      setDragOver(false);
+      setFile(event.dataTransfer.files?.[0] ?? null);
+    },
+    [setFile],
+  );
+
+  const handleSubmit = useCallback(async () => {
+    if (!selectedFile) {
+      setLocalError(t("hubSkillUploadDropHint"));
+      return;
+    }
+    const result = await onSubmit(selectedFile);
+    if (result) {
+      onOpenChange(false);
+    }
+  }, [onOpenChange, onSubmit, selectedFile, t]);
+
+  return (
+    <DialogRoot open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="hub-skill-upload-dialog">
+        <DialogHeader>
+          <div>
+            <DialogTitle>{t("hubSkillUpload")}</DialogTitle>
+            <DialogDescription>{t("hubSkillUploadSubtitle")}</DialogDescription>
+          </div>
+        </DialogHeader>
+        <DialogBody className="hub-skill-upload-body">
+          <button
+            type="button"
+            className={`hub-skill-upload-dropzone ${dragOver ? "drag-over" : ""} ${localError || error ? "error" : ""}`}
+            onClick={() => inputRef.current?.click()}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setDragOver(false);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragOver(true);
+            }}
+            onDrop={handleDrop}
+          >
+            <span className="hub-skill-upload-icon" aria-hidden="true">
+              <UploadCloud size={20} strokeWidth={1.8} />
+            </span>
+            <span className="hub-skill-upload-copy">
+              <strong>{t("hubSkillUploadDropTitle")}</strong>
+              <small>{selectedFile ? selectedFile.name : t("hubSkillUploadDropHint")}</small>
+            </span>
+          </button>
+          <input
+            ref={inputRef}
+            className="hub-skill-upload-input"
+            type="file"
+            accept=".zip,application/zip"
+            onChange={handleFileChange}
+          />
+          {localError || error ? <div className="form-error">{localError || error}</div> : null}
+          <div className="hub-skill-upload-actions">
+            <Button variant="secondaryGray" size="md" onClick={() => onOpenChange(false)} disabled={busy}>
+              {t("close")}
+            </Button>
+            <Button variant="primary" size="md" onClick={() => void handleSubmit()} loading={busy} disabled={busy}>
+              {busy ? t("hubSkillUploadSubmitting") : t("hubSkillUploadSubmit")}
+            </Button>
+          </div>
+        </DialogBody>
+      </DialogContent>
+    </DialogRoot>
+  );
+}
+
 function orderEquals(left: readonly SectionId[], right: readonly SectionId[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
@@ -217,10 +355,13 @@ export function WorkspaceTabPanels({
   onPreviewAgent,
   onSelectComputer,
 }: WorkspaceTabPanelsProps) {
+  const [skillUploadOpen, setSkillUploadOpen] = useState(false);
   const hubTemplates = hub?.templates ?? [];
   const hubSkills = hub?.skills ?? [];
   const hubError = hub?.listError ?? "";
   const hubSkillsError = hub?.skillsError ?? "";
+  const hubUploadBusy = hub?.uploadBusy ?? false;
+  const hubUploadError = hub?.uploadError ?? "";
   const hubLoaded = hub?.loaded ?? false;
   const selectedHubResourceType = hub?.selectedHubResourceType ?? "template";
   const selectedHubSkillName = hub?.selectedHubSkillName ?? "";
@@ -654,6 +795,9 @@ export function WorkspaceTabPanels({
             count={hubSkills.length}
             collapsed={Boolean(collapsedWorkspaceGroups["hub-skills"])}
             onToggle={() => onToggleWorkspaceGroup("hub-skills")}
+            onAdd={() => setSkillUploadOpen(true)}
+            addLabel={t("hubSkillUpload")}
+            addIcon={<Plus size={15} strokeWidth={2.2} aria-hidden="true" />}
           >
             {hubSkills.length ? (
               hubSkills.map((item) => (
@@ -679,6 +823,14 @@ export function WorkspaceTabPanels({
               <div className="workspace-empty">{t("hubSkillsEmpty")}</div>
             ) : null}
           </WorkspaceGroup>
+          <SkillUploadDialog
+            open={skillUploadOpen}
+            onOpenChange={setSkillUploadOpen}
+            onSubmit={(file) => hub?.uploadSkill?.(file)}
+            busy={hubUploadBusy}
+            error={hubUploadError}
+            t={t}
+          />
         </div>
       ) : workspaceTab === WorkspaceTabs.tasks ? (
         <div className="workspace-tab-panel" role="tabpanel" aria-label={t("tasksTab")}>

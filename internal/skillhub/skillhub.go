@@ -68,6 +68,38 @@ func List(root string) ([]SkillSummary, error) {
 	return items, nil
 }
 
+func Delete(root, name string) error {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return fmt.Errorf("skills root is required")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("skill name is required")
+	}
+	cleanName := filepath.Clean(name)
+	if cleanName == "." || cleanName == ".." || cleanName != filepath.Base(cleanName) {
+		return fmt.Errorf("invalid skill name %q", name)
+	}
+	skillDir := filepath.Join(root, cleanName)
+	info, err := os.Stat(skillDir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return os.ErrNotExist
+	}
+	skillFile := filepath.Join(skillDir, skillFileName)
+	fileInfo, err := os.Stat(skillFile)
+	if err != nil {
+		return err
+	}
+	if fileInfo.IsDir() {
+		return os.ErrNotExist
+	}
+	return os.RemoveAll(skillDir)
+}
+
 func skillDescription(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

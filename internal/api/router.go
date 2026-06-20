@@ -57,6 +57,8 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Get("/{id}/workspace/file", h.getHubTemplateWorkspaceFileByID)
 		})
 		r.Get("/skills", h.listSkills)
+		r.Post("/skills:upload", h.handleSkillUpload)
+		r.Delete("/skills/{name}", h.deleteSkill)
 		r.Get("/skills/tree", h.getSkillTree)
 		r.Get("/skills/file", h.getSkillFile)
 		r.Route("/cliproxy/auth", func(r chi.Router) {

@@ -4,8 +4,12 @@ import { HubDetailPane } from "@/pages/HubPage/components";
 
 function t(key: string, params: Record<string, string | number> = {}) {
   const messages: Record<string, string> = {
+    cancel: "Cancel",
     close: "Close",
     createAgent: "Create",
+    hubDeleteSkill: "Delete skill",
+    hubDeleteSkillConfirmAction: "Delete",
+    hubDeleteSkillConfirmMessage: 'Delete skill "{name}"? This action cannot be undone.',
     hubAllTab: "All",
     hubEmpty: "No templates",
     hubImageLabel: "Image",
@@ -97,6 +101,7 @@ function renderHubDetailPane() {
 }
 
 function renderHubSkillDetailPane() {
+  const onDeleteSkill = vi.fn().mockResolvedValue(true);
   return render(
     <HubDetailPane
       locale="en"
@@ -129,6 +134,7 @@ function renderHubSkillDetailPane() {
           },
           skillFileError: "",
           skillFileLoading: false,
+          skillDeleteBusy: false,
           skills: [
             {
               name: "demo-skill",
@@ -145,6 +151,7 @@ function renderHubSkillDetailPane() {
           workspaceFileError: "",
           workspaceFileLoading: false,
           deleteBusy: false,
+          onDeleteSkill,
           onDeleteTemplate: vi.fn(),
         },
       }}
@@ -177,9 +184,20 @@ describe("HubDetailPane", () => {
     expect(screen.getAllByRole("heading", { name: "demo-skill" }).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Demo skill").length).toBeGreaterThan(0);
     expect(screen.queryByText("demo-template")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Skills").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Delete skill" })).toBeInTheDocument();
     expect(screen.getAllByText("SKILL.md").length).toBeGreaterThan(0);
     expect(screen.getByText("# Skill", { exact: false })).toBeInTheDocument();
     expect(screen.queryByText("Description")).not.toBeInTheDocument();
+  });
+
+  it("opens a confirmation dialog before deleting a skill", async () => {
+    const user = userEvent.setup();
+    renderHubSkillDetailPane();
+
+    await user.click(screen.getByRole("button", { name: "Delete skill" }));
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText('Delete skill "demo-skill"? This action cannot be undone.')).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Delete" }).length).toBeGreaterThan(0);
   });
 });

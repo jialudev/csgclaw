@@ -21,6 +21,84 @@
   background: color-mix(in oklch, var(--portal-gray-400) 70%, transparent);
 }
 
+.hub-skill-upload-dialog {
+  width: min(520px, calc(100vw - 32px));
+  border-radius: 16px;
+}
+
+.hub-skill-upload-body {
+  display: grid;
+  gap: 16px;
+}
+
+.hub-skill-upload-dropzone {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding: 28px 20px;
+  border: 1px dashed var(--portal-gray-300);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 78%, white 22%);
+  text-align: center;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.hub-skill-upload-dropzone:hover,
+.hub-skill-upload-dropzone:focus-visible,
+.hub-skill-upload-dropzone.drag-over {
+  border-color: var(--portal-brand-500);
+  box-shadow: 0 0 0 4px rgba(77, 106, 214, 0.12);
+  outline: none;
+}
+
+.hub-skill-upload-dropzone.error {
+  border-color: var(--portal-error-300);
+}
+
+.hub-skill-upload-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--portal-gray-200);
+  background: var(--portal-white);
+  color: var(--portal-brand-600);
+  box-shadow: var(--shadow-xs);
+}
+
+.hub-skill-upload-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.hub-skill-upload-copy strong {
+  color: var(--portal-gray-900);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.hub-skill-upload-copy small {
+  color: var(--portal-gray-600);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hub-skill-upload-input {
+  display: none;
+}
+
+.hub-skill-upload-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .task-sidebar-status {
   width: 8px;
   height: 8px;
@@ -2885,7 +2963,6 @@
   width: 15px;
   height: 15px;
 }
-
 
 .workspace-row {
   min-height: 32px;
