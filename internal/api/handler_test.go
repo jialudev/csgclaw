@@ -2224,6 +2224,126 @@ func TestHandleAgentSkillsReturnsContentFromSkillsRoot(t *testing.T) {
 	}
 }
 
+func TestHandleSkillsListsGlobalSkillsAndBrowsesFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	skillsRoot := filepath.Join(home, ".csgclaw", "skills")
+	if err := os.MkdirAll(filepath.Join(skillsRoot, "alpha", "scripts"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(skills) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha", "SKILL.md"), []byte("---\ndescription: Alpha skill\n---\n# Alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(alpha SKILL.md) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha", "scripts", "run.sh"), []byte("echo hi\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(run.sh) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillsRoot, "beta"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(beta) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "beta", "SKILL.md"), []byte("# Beta\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(beta SKILL.md) error = %v", err)
+	}
+
+	srv := &Handler{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/skills", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var skills []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&skills); err != nil {
+		t.Fatalf("decode skills response: %v", err)
+	}
+	if len(skills) != 2 {
+		t.Fatalf("len(skills) = %d, want 2", len(skills))
+	}
+	if skills[0].Name != "alpha" || skills[0].Description != "Alpha skill" {
+		t.Fatalf("skills[0] = %+v, want alpha with description", skills[0])
+	}
+	if skills[1].Name != "beta" || skills[1].Description != "" {
+		t.Fatalf("skills[1] = %+v, want beta without description", skills[1])
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/skills/tree?path=alpha", nil)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tree status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var listing apitypes.WorkspaceListing
+	if err := json.NewDecoder(rec.Body).Decode(&listing); err != nil {
+		t.Fatalf("decode tree response: %v", err)
+	}
+	paths := make([]string, 0, len(listing.Entries))
+	for _, entry := range listing.Entries {
+		paths = append(paths, entry.Path)
+	}
+	if !slices.Contains(paths, "alpha/SKILL.md") || !slices.Contains(paths, "alpha/scripts/run.sh") {
+		t.Fatalf("tree paths = %#v, want alpha files", paths)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/skills/file?path=alpha/SKILL.md", nil)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("file status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var file apitypes.WorkspaceFile
+	if err := json.NewDecoder(rec.Body).Decode(&file); err != nil {
+		t.Fatalf("decode file response: %v", err)
+	}
+	if got, want := file.Path, "alpha/SKILL.md"; got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+	if !strings.Contains(file.Content, "# Alpha") {
+		t.Fatalf("content = %q, want preview with # Alpha", file.Content)
+	}
+}
+
+func TestHandleSkillsMissingRootUsesEmptyOrNotFound(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	srv := &Handler{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/skills", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var skills []any
+	if err := json.NewDecoder(rec.Body).Decode(&skills); err != nil {
+		t.Fatalf("decode skills response: %v", err)
+	}
+	if len(skills) != 0 {
+		t.Fatalf("len(skills) = %d, want 0", len(skills))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/skills/tree?path=alpha", nil)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("tree status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/skills/file?path=alpha/SKILL.md", nil)
+	rec = httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("file status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
 func TestHandleHubTemplateWithoutWorkspaceOmitsEntriesAndFilePreview(t *testing.T) {
 	hubSvc := mustNewLocalTemplateHubServiceWithoutWorkspace(t, "review-bot", hub.Template{
 		ID:          "review-bot",

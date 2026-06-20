@@ -2656,6 +2656,22 @@
   display: none;
 }
 
+.workspace-group-subsection {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.workspace-group-subsection-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .workspace-empty {
   margin: 2px 0 0 30px;
   padding: 3px 0;

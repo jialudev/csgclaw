@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
-import { Plus } from "lucide-react";
+import { FileCode2, Plus } from "lucide-react";
 import { TaskSubtaskIndicator } from "@/components/business";
 import { HubIcon, UsersIcon } from "@/components/ui/Icons";
 import { isDirectConversation, resolveConversationUser } from "@/models/conversations";
@@ -72,6 +72,7 @@ type WorkspaceTabPanelsProps = Pick<
   | "onSelectComputer"
   | "onSelectConversation"
   | "onSelectHuman"
+  | "onSelectHubSkill"
   | "onSelectHubTemplate"
   | "onSelectTask"
   | "onSelectTeam"
@@ -208,6 +209,7 @@ export function WorkspaceTabPanels({
   onSelectThread,
   onPreviewUser,
   onSelectHuman,
+  onSelectHubSkill,
   agentItems,
   workerAgentItems = agentItems,
   notificationAgentItems = [],
@@ -216,8 +218,12 @@ export function WorkspaceTabPanels({
   onSelectComputer,
 }: WorkspaceTabPanelsProps) {
   const hubTemplates = hub?.templates ?? [];
+  const hubSkills = hub?.skills ?? [];
   const hubError = hub?.listError ?? "";
+  const hubSkillsError = hub?.skillsError ?? "";
   const hubLoaded = hub?.loaded ?? false;
+  const selectedHubResourceType = hub?.selectedHubResourceType ?? "template";
+  const selectedHubSkillName = hub?.selectedHubSkillName ?? "";
   const selectedHubTemplateId = hub?.selectedHubTemplateId ?? "";
   const roomsById = useMemo(
     () => new Map([...channels, ...directMessages].map((room) => [room.id, room])),
@@ -604,39 +610,74 @@ export function WorkspaceTabPanels({
       ) : workspaceTab === WorkspaceTabs.hub ? (
         <div className="workspace-tab-panel" role="tabpanel" aria-label={t("hubTab")}>
           <WorkspaceGroup
-            id="hub"
+            id="hub-templates"
             title={t("hubTemplatesSection")}
             count={hubTemplates.length}
-            collapsed={Boolean(collapsedWorkspaceGroups.hub)}
-            onToggle={() => onToggleWorkspaceGroup("hub")}
+            collapsed={Boolean(collapsedWorkspaceGroups["hub-templates"])}
+            onToggle={() => onToggleWorkspaceGroup("hub-templates")}
           >
             {hubError ? (
               <div className="workspace-empty">{hubError}</div>
-            ) : hubLoaded && hubTemplates.length === 0 ? (
+            ) : hubLoaded && hubTemplates.length === 0 && hubSkills.length === 0 ? (
               <div className="workspace-empty">{t("hubEmpty")}</div>
             ) : (
-              hubTemplates.slice(0, 6).map((item) => (
+              <>
+                {hubTemplates.slice(0, 6).map((item) => (
+                  <button
+                    key={item.id}
+                    className={`workspace-row hub-template-row ${
+                      selectedHubTemplateId === item.id && selectedHubResourceType === "template" ? "active" : ""
+                    }`}
+                    onClick={() => onSelectHubTemplate(item)}
+                  >
+                    <span className="workspace-row-icon">
+                      <HubIcon />
+                    </span>
+                    <span className="workspace-row-main">
+                      <span className="workspace-row-title truncate">{item.name || item.id}</span>
+                      <span className="workspace-row-meta truncate">
+                        {item.description || item.source?.name || item.id}
+                      </span>
+                    </span>
+                    <span className="mini-badge template-source-badge">
+                      <span className="template-source-badge-dot" aria-hidden="true"></span>
+                      {localizeTemplateSourceTag(item.source?.name, locale)}
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+          </WorkspaceGroup>
+          <WorkspaceGroup
+            id="hub-skills"
+            title={t("hubSkillsLabel")}
+            count={hubSkills.length}
+            collapsed={Boolean(collapsedWorkspaceGroups["hub-skills"])}
+            onToggle={() => onToggleWorkspaceGroup("hub-skills")}
+          >
+            {hubSkills.length ? (
+              hubSkills.map((item) => (
                 <button
-                  key={item.id}
-                  className={`workspace-row hub-template-row ${selectedHubTemplateId === item.id ? "active" : ""}`}
-                  onClick={() => onSelectHubTemplate(item)}
+                  key={item.name}
+                  className={`workspace-row hub-template-row hub-skill-row ${
+                    selectedHubSkillName === item.name && selectedHubResourceType === "skill" ? "active" : ""
+                  }`}
+                  onClick={() => onSelectHubSkill(item)}
                 >
                   <span className="workspace-row-icon">
-                    <HubIcon />
+                    <FileCode2 size={16} strokeWidth={2} aria-hidden="true" />
                   </span>
                   <span className="workspace-row-main">
-                    <span className="workspace-row-title truncate">{item.name || item.id}</span>
-                    <span className="workspace-row-meta truncate">
-                      {item.description || item.source?.name || item.id}
-                    </span>
-                  </span>
-                  <span className="mini-badge template-source-badge">
-                    <span className="template-source-badge-dot" aria-hidden="true"></span>
-                    {localizeTemplateSourceTag(item.source?.name, locale)}
+                    <span className="workspace-row-title truncate">{item.name}</span>
+                    <span className="workspace-row-meta truncate">{item.description || item.name}</span>
                   </span>
                 </button>
               ))
-            )}
+            ) : hubSkillsError ? (
+              <div className="workspace-empty">{hubSkillsError}</div>
+            ) : hubLoaded && hubTemplates.length === 0 ? (
+              <div className="workspace-empty">{t("hubSkillsEmpty")}</div>
+            ) : null}
           </WorkspaceGroup>
         </div>
       ) : workspaceTab === WorkspaceTabs.tasks ? (

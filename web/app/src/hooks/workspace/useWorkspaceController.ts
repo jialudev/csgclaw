@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { errorMessage } from "@/api/client";
 import { patchCsgclawUserRequest, patchParticipantAvatarRequest } from "@/api/participants";
@@ -27,6 +27,7 @@ import type { CreateTeamPayload } from "@/api/tasks";
 import type { AgentLike } from "@/models/agents";
 import type { HubTemplate } from "@/models/hubWorkspace";
 import type { IMConversation, IMData, IMUser } from "@/models/conversations";
+import type { SkillSummary } from "@/models/skillhub";
 
 function isBootstrapAdminUser(user: IMUser | null | undefined) {
   return (
@@ -220,7 +221,7 @@ export function useWorkspaceController() {
     refreshWorkspaceHubTemplates,
     t,
   });
-  const { setSelectedHubTemplateId } = hub;
+  const { setSelectedHubResourceType, setSelectedHubSkillName, setSelectedHubTemplateId } = hub;
   const upgrade = useUpgradeController({
     appVersion,
     refreshWorkspaceAppVersion,
@@ -469,9 +470,48 @@ export function useWorkspaceController() {
       selectHub();
       return;
     }
+    setSelectedHubResourceType("template");
     setSelectedHubTemplateId(item.id);
-    selectHub();
+    navigatePane({ type: WorkspacePaneTypes.hub, id: item.id, resourceType: "template" }, rooms);
   }
+
+  function selectHubSkill(item: SkillSummary | null | undefined) {
+    if (!item?.name) {
+      selectHub();
+      return;
+    }
+    setSelectedHubResourceType("skill");
+    setSelectedHubSkillName(item.name);
+    navigatePane({ type: WorkspacePaneTypes.hub, id: item.name, resourceType: "skill" }, rooms);
+  }
+
+  useEffect(() => {
+    if (activePane.type !== WorkspacePaneTypes.hub) {
+      return;
+    }
+    if (activePane.resourceType === "template" && activePane.id) {
+      setSelectedHubResourceType("template");
+      setSelectedHubTemplateId(String(activePane.id));
+      return;
+    }
+    if (activePane.resourceType === "skill" && activePane.id) {
+      setSelectedHubResourceType("skill");
+      setSelectedHubSkillName(String(activePane.id));
+    }
+  }, [activePane, setSelectedHubResourceType, setSelectedHubSkillName, setSelectedHubTemplateId]);
+
+  const hubViewHub = useMemo(
+    () => ({
+      ...hub,
+      detailPaneProps: {
+        ...hub.detailPaneProps,
+        onSelectTemplate: selectHubTemplate,
+        onSelectSkill: (name: string | null | undefined) =>
+          selectHubSkill(name ? ({ name, description: "" } as SkillSummary) : null),
+      },
+    }),
+    [hub, selectHubSkill, selectHubTemplate],
+  );
 
   if (!displayData) {
     return {
@@ -543,6 +583,7 @@ export function useWorkspaceController() {
       teamActionError: agent.agentViewProps.teamActionError,
       onOpenCreateTeam: agent.openCreateTeamModal,
       hub,
+      onSelectHubSkill: selectHubSkill,
       onSelectHubTemplate: selectHubTemplate,
       onSelectHub: selectHub,
       onSelectTask: selectTasks,
@@ -568,7 +609,7 @@ export function useWorkspaceController() {
     hubViewProps: {
       t,
       locale,
-      hub,
+      hub: hubViewHub,
       onCreateFromTemplate: agent.openCreateAgentModal,
     },
     agentViewProps: {

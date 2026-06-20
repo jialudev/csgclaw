@@ -10,6 +10,7 @@ import type {
   UsersById,
 } from "@/models/conversations";
 import type { HubTemplate } from "@/models/hubWorkspace";
+import type { SkillSummary } from "@/models/skillhub";
 import type { CollapsedWorkspaceGroups, WorkspacePane, WorkspaceTab } from "@/models/routing";
 import type { WorkspaceTask, WorkspaceTeam } from "@/models/tasks";
 import type { UpgradePhase, UpgradeStatus } from "@/models/upgradeStatus";
@@ -49,6 +50,7 @@ export type WorkspaceSidebarProps = {
   onSelectConversation: (id: string) => void;
   onSelectHuman: (user: IMUser | null | undefined) => void;
   onSelectHub: () => void;
+  onSelectHubSkill: (item: SkillSummary | null | undefined) => void;
   onSelectHubTemplate: (item: HubTemplate | null | undefined) => void;
   onSelectTeam: (item: WorkspaceTeam | null | undefined) => void;
   onSelectTask: (taskID?: string) => void;

@@ -11,6 +11,10 @@ const labels: Record<string, string> = {
   agentsTab: "Agents",
   computerAgentsSection: "Agents",
   computersSection: "Computers",
+  hubSkillsEmpty: "No skills",
+  hubSkillsLabel: "Skills",
+  hubTab: "Hub",
+  hubTemplatesSection: "Templates",
   humanSection: "Human",
   localComputer: "Local computer",
   noAgents: "No workers yet.",
@@ -40,7 +44,10 @@ const hub: WorkspaceSidebarProps["hub"] = {
   listError: "",
   loaded: true,
   selectedHubTemplateId: "",
-  templates: [],
+  selectedHubResourceType: "skill",
+  selectedHubSkillName: "demo-skill",
+  skills: [{ name: "demo-skill", description: "Demo skill" }],
+  templates: [{ id: "builtin/demo", name: "demo-template", description: "Demo template" }],
 } as unknown as WorkspaceSidebarProps["hub"];
 
 describe("WorkspaceTabPanels", () => {
@@ -74,6 +81,7 @@ describe("WorkspaceTabPanels", () => {
         onSelectComputer={() => {}}
         onSelectConversation={() => {}}
         onSelectHuman={onSelectHuman}
+        onSelectHubSkill={() => {}}
         onSelectHubTemplate={() => {}}
         onSelectTask={() => {}}
         onSelectTeam={() => {}}
@@ -169,5 +177,54 @@ describe("WorkspaceTabPanels", () => {
     );
 
     expect(groupLabels).toEqual(["Agents1", "Human1", "Computers1", "Notifications0", "Teams0"]);
+  });
+
+  it("renders hub templates and skills in separate workspace groups", () => {
+    render(
+      <WorkspaceTabPanels
+        activePane={{ type: WorkspacePaneTypes.hub, id: "hub" }}
+        activeThreadRootID=""
+        agentItems={[managerAgent]}
+        agentsError=""
+        channels={[]}
+        collapsedWorkspaceGroups={{}}
+        currentUserID="u-admin"
+        directMessages={[]}
+        hub={hub}
+        locale="en"
+        notificationAgentItems={[]}
+        onCreateAgent={() => {}}
+        onCreateNotificationParticipant={() => {}}
+        onCreateRoom={() => {}}
+        onOpenCreateTask={() => {}}
+        onOpenCreateTeam={() => {}}
+        onPreviewAgent={() => {}}
+        onPreviewUser={() => {}}
+        onSelectAgent={() => {}}
+        onSelectComputer={() => {}}
+        onSelectConversation={() => {}}
+        onSelectHuman={() => {}}
+        onSelectHubSkill={() => {}}
+        onSelectHubTemplate={() => {}}
+        onSelectTask={() => {}}
+        onSelectTeam={() => {}}
+        onSelectThread={() => {}}
+        onToggleWorkspaceGroup={() => {}}
+        onViewTaskDetails={() => {}}
+        t={t}
+        taskCount={0}
+        taskItems={[]}
+        teams={[]}
+        threadGroups={[]}
+        usersById={new Map()}
+        workerAgentItems={[managerAgent]}
+        workspaceTab={WorkspaceTabs.hub}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Templates1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Skills1/ })).toBeInTheDocument();
+    expect(screen.getByText("demo-template")).toBeInTheDocument();
+    expect(screen.getByText("demo-skill")).toBeInTheDocument();
   });
 });

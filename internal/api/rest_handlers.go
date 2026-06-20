@@ -65,6 +65,9 @@ func (h *Handler) listHubTemplates(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createHubTemplate(w http.ResponseWriter, r *http.Request) {
 	h.handleHubTemplates(w, r)
 }
+func (h *Handler) listSkills(w http.ResponseWriter, r *http.Request)   { h.handleSkills(w, r) }
+func (h *Handler) getSkillTree(w http.ResponseWriter, r *http.Request) { h.handleSkillTree(w, r) }
+func (h *Handler) getSkillFile(w http.ResponseWriter, r *http.Request) { h.handleSkillFile(w, r) }
 func (h *Handler) getHubTemplateByID(w http.ResponseWriter, r *http.Request) {
 	h.handleHubTemplateByID(w, r)
 }

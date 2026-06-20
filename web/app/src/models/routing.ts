@@ -48,6 +48,8 @@ export const WorkspaceRouteSegments = {
   teams: "teams",
   team: "team",
   hub: "hub",
+  templates: "templates",
+  skills: "skills",
   tasks: "tasks",
   channels: "channels",
   channel: "channel",
@@ -76,6 +78,7 @@ const conversationRouteSegments = new Set<string>([
 export type WorkspacePane = {
   type: WorkspacePaneType;
   id?: string;
+  resourceType?: "skill" | "template";
 };
 
 export type CollapsedWorkspaceGroups = Record<string, boolean>;
@@ -118,6 +121,16 @@ export function paneFromLocation(pathname = window.location.pathname): Workspace
   if (section === WorkspaceRouteSegments.hub) {
     return { type: WorkspacePaneTypes.hub, id: DefaultWorkspacePaneIds.hub };
   }
+  if (section === WorkspaceRouteSegments.templates) {
+    return id
+      ? { type: WorkspacePaneTypes.hub, id, resourceType: "template" }
+      : { type: WorkspacePaneTypes.hub, id: DefaultWorkspacePaneIds.hub };
+  }
+  if (section === WorkspaceRouteSegments.skills) {
+    return id
+      ? { type: WorkspacePaneTypes.hub, id, resourceType: "skill" }
+      : { type: WorkspacePaneTypes.hub, id: DefaultWorkspacePaneIds.hub };
+  }
   if (section === WorkspaceRouteSegments.tasks) {
     return { type: WorkspacePaneTypes.task, id };
   }
@@ -144,6 +157,12 @@ export function pathForPane(
     return `/${WorkspaceRouteSegments.teams}/${encodeURIComponent(pane.id)}`;
   }
   if (pane.type === WorkspacePaneTypes.hub) {
+    if (pane.resourceType === "template" && pane.id) {
+      return `/${WorkspaceRouteSegments.templates}/${encodeURIComponent(pane.id)}`;
+    }
+    if (pane.resourceType === "skill" && pane.id) {
+      return `/${WorkspaceRouteSegments.skills}/${encodeURIComponent(pane.id)}`;
+    }
     return `/${WorkspaceRouteSegments.hub}`;
   }
   if (pane.type === WorkspacePaneTypes.task) {

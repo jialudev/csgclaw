@@ -38,6 +38,28 @@ describe("task routing", () => {
     expect(pathForPane({ type: WorkspacePaneTypes.task })).toBe("/tasks");
   });
 
+  it("parses hub resource routes as hub panes", () => {
+    expect(paneFromLocation("/templates/builtin%2Fdemo")).toEqual({
+      type: WorkspacePaneTypes.hub,
+      id: "builtin/demo",
+      resourceType: "template",
+    });
+    expect(paneFromLocation("/skills/demo-skill")).toEqual({
+      type: WorkspacePaneTypes.hub,
+      id: "demo-skill",
+      resourceType: "skill",
+    });
+  });
+
+  it("builds hub resource routes from hub panes", () => {
+    expect(pathForPane({ type: WorkspacePaneTypes.hub, id: "builtin/demo", resourceType: "template" })).toBe(
+      "/templates/builtin%2Fdemo",
+    );
+    expect(pathForPane({ type: WorkspacePaneTypes.hub, id: "demo-skill", resourceType: "skill" })).toBe(
+      "/skills/demo-skill",
+    );
+  });
+
   it("maps the task pane to the tasks tab", () => {
     expect(workspaceTabForPane({ type: WorkspacePaneTypes.team, id: "team-7" })).toBe(WorkspaceTabs.agents);
     expect(workspaceTabForPane({ type: WorkspacePaneTypes.human, id: "u-admin" })).toBe(WorkspaceTabs.agents);

@@ -5,6 +5,7 @@ import type { AgentProfileModelRequest } from "@/api/agents";
 import { fetchBootstrap, fetchBootstrapConfig, fetchRuntimeImages, fetchVersion } from "@/api/app";
 import type { FetchVersionOptions } from "@/api/app";
 import { fetchHubTemplate, fetchHubTemplates, fetchHubWorkspaceFile } from "@/api/hub";
+import { fetchSkillFile, fetchSkills, fetchSkillTree } from "@/api/skills";
 import { fetchManagerProfile } from "@/api/agents";
 import { fetchUpgradeStatus } from "@/api/upgrade";
 import {
@@ -18,6 +19,7 @@ import type { AgentLike, AgentProfileLike, AgentProfileModelsResponse, RuntimeBo
 import { normalizeIMData } from "@/models/conversations";
 import type { IMData } from "@/models/conversations";
 import type { HubTemplate, HubWorkspaceFile } from "@/models/hubWorkspace";
+import type { SkillFile, SkillSummary, SkillTree } from "@/models/skillhub";
 import type { WorkspaceFile, WorkspaceListing } from "@/models/workspace";
 import { normalizeUpgradeStatus } from "@/models/upgradeStatus";
 import type { UpgradeStatus } from "@/models/upgradeStatus";
@@ -35,6 +37,9 @@ export const workspaceQueryKeys = {
     [WORKSPACE_QUERY_SCOPE, "hub-template", templateID || ""] as const,
   hubWorkspaceFile: (templateID: string | null | undefined, workspacePath: string | null | undefined) =>
     [WORKSPACE_QUERY_SCOPE, "hub-workspace-file", templateID || "", workspacePath || ""] as const,
+  skills: () => [WORKSPACE_QUERY_SCOPE, "skills"] as const,
+  skillTree: (path: string | null | undefined) => [WORKSPACE_QUERY_SCOPE, "skill-tree", path || ""] as const,
+  skillFile: (path: string | null | undefined) => [WORKSPACE_QUERY_SCOPE, "skill-file", path || ""] as const,
   agentWorkspaceScope: (agentID: string | null | undefined) =>
     [WORKSPACE_QUERY_SCOPE, "agent-workspace", agentID || ""] as const,
   agentWorkspace: (agentID: string | null | undefined, workspacePath: string | null | undefined) =>
@@ -174,6 +179,32 @@ export function useWorkspaceHubWorkspaceFileQuery(
     queryKey: workspaceQueryKeys.hubWorkspaceFile(templateID, workspacePath),
     queryFn: () => fetchHubWorkspaceFile(templateID, workspacePath),
     enabled: Boolean(templateID && workspacePath),
+  });
+}
+
+export function useWorkspaceSkillsQuery(): UseQueryResult<SkillSummary[]> {
+  return useQuery<SkillSummary[]>({
+    queryKey: workspaceQueryKeys.skills(),
+    queryFn: async () => {
+      const payload = await fetchSkills();
+      return Array.isArray(payload) ? payload : [];
+    },
+  });
+}
+
+export function useWorkspaceSkillTreeQuery(path: string | null | undefined): UseQueryResult<SkillTree> {
+  return useQuery<SkillTree>({
+    queryKey: workspaceQueryKeys.skillTree(path),
+    queryFn: () => fetchSkillTree(String(path || "")),
+    enabled: Boolean(path),
+  });
+}
+
+export function useWorkspaceSkillFileQuery(path: string | null | undefined): UseQueryResult<SkillFile> {
+  return useQuery<SkillFile>({
+    queryKey: workspaceQueryKeys.skillFile(path),
+    queryFn: () => fetchSkillFile(String(path || "")),
+    enabled: Boolean(path),
   });
 }
 

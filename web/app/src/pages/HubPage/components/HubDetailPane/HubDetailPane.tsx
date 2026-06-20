@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FileCode2 } from "lucide-react";
 import {
   formatHubDate,
   formatHubDateTime,
@@ -11,6 +12,7 @@ import { HubIcon } from "@/components/ui/Icons";
 import { Button } from "@/components/ui";
 import type { LocaleCode, TranslateFn } from "@/models/conversations";
 import type { HubTemplate } from "@/models/hubWorkspace";
+import type { SkillFile, SkillSummary, SkillTree } from "@/models/skillhub";
 import type { WorkspaceEntry, WorkspaceFile } from "@/models/workspace";
 
 const EMPTY_WORKSPACE_ENTRIES: readonly WorkspaceEntry[] = [];
@@ -23,11 +25,23 @@ type HubDetailPaneHub = {
     loaded: boolean;
     onDeleteTemplate?: (item: HubTemplate | null | undefined) => unknown;
     onRetry: () => void | Promise<void>;
+    onSelectSkill?: (name: string | null | undefined) => void;
+    onSelectSkillFile?: (path: string) => void;
     onSelectTemplate?: (item: HubTemplate | null | undefined) => void;
     onSelectWorkspaceFile: (workspacePath: string) => void;
+    selectedResourceType?: "skill" | "template";
+    selectedSkill: SkillSummary | null;
+    selectedSkillPath: string;
     selectedTemplate: HubTemplate | null;
     selectedTemplateId: string;
     selectedWorkspacePath: string;
+    skillFile: SkillFile | null;
+    skillFileError: string;
+    skillFileLoading: boolean;
+    skills: readonly SkillSummary[];
+    skillTree: SkillTree | null;
+    skillTreeError: string;
+    skillTreeLoading: boolean;
     templates: readonly HubTemplate[];
     workspaceFile: WorkspaceFile | null;
     workspaceFileError: string;
@@ -41,10 +55,21 @@ const EMPTY_HUB_DETAIL_PROPS: HubDetailPaneHub["detailPaneProps"] = {
   error: "",
   loaded: false,
   onRetry: () => {},
+  onSelectSkillFile: () => {},
   onSelectWorkspaceFile: () => {},
+  selectedResourceType: "template",
+  selectedSkill: null,
+  selectedSkillPath: "",
   selectedTemplate: null,
   selectedTemplateId: "",
   selectedWorkspacePath: "",
+  skillFile: null,
+  skillFileError: "",
+  skillFileLoading: false,
+  skills: [],
+  skillTree: null,
+  skillTreeError: "",
+  skillTreeLoading: false,
   templates: [],
   workspaceFile: null,
   workspaceFileError: "",
@@ -93,8 +118,12 @@ export function HubDetailPane({
 }: HubDetailPaneProps) {
   const {
     templates,
+    skills,
     selectedTemplate,
     selectedTemplateId,
+    selectedSkill,
+    selectedSkillPath,
+    selectedResourceType = "template",
     loaded,
     error,
     detailLoading,
@@ -102,14 +131,34 @@ export function HubDetailPane({
     workspaceFile,
     workspaceFileLoading,
     workspaceFileError,
-    onRetry,
+    skillTree,
+    skillTreeLoading,
+    skillTreeError,
+    skillFile,
+    skillFileLoading,
+    skillFileError,
     onSelectTemplate,
     onSelectWorkspaceFile,
+    onSelectSkillFile,
     onDeleteTemplate,
     deleteBusy = false,
   } = hub?.detailPaneProps ?? EMPTY_HUB_DETAIL_PROPS;
   const canDeleteTemplate = isDeletableHubTemplate(selectedTemplate);
   const workspaceEntries = selectedTemplate?.workspace?.entries ?? EMPTY_WORKSPACE_ENTRIES;
+  const skillEntries = skillTree?.entries ?? EMPTY_WORKSPACE_ENTRIES;
+  const activeResourceType = useMemo(() => {
+    if (selectedResourceType === "skill" && skills.length) {
+      return "skill";
+    }
+    if (templates.length) {
+      return "template";
+    }
+    if (skills.length) {
+      return "skill";
+    }
+    return "template";
+  }, [selectedResourceType, skills.length, templates.length]);
+  const showingSkillCatalog = activeResourceType === "skill";
   const [isTemplateListScrolling, setIsTemplateListScrolling] = useState(false);
   const [isInspectorScrolling, setIsInspectorScrolling] = useState(false);
   const templateListScrollTimerRef = useRef<number | null>(null);
@@ -150,19 +199,10 @@ export function HubDetailPane({
 
   return (
     <section className="entity-pane hub-detail-pane">
-      <header className="hub-page-header">
-        <div className="hub-page-heading">
-          <h1>{t("hubTitle")}</h1>
-          <p>{t("hubSubtitle")}</p>
-        </div>
-        <Button variant="secondaryGray" size="md" onClick={onRetry}>
-          {loaded ? t("hubRefresh") : t("hubLoading")}
-        </Button>
-      </header>
       {error ? <div className="form-error">{error}</div> : null}
       {!loaded && !error ? (
         <div className="workspace-empty">{t("hubLoading")}</div>
-      ) : templates.length === 0 ? (
+      ) : templates.length === 0 && skills.length === 0 ? (
         <div className="empty-state shell-empty-state hub-empty-state">
           <span className="rich-empty-mark" aria-hidden="true">
             *
@@ -172,55 +212,87 @@ export function HubDetailPane({
       ) : (
         <div className="hub-workbench">
           <div className="hub-catalog-panel">
-            <div className="hub-filter-tabs">
-              <button type="button" className="hub-filter-tab active">
-                {t("hubAllTab")}
-              </button>
+            <div className="hub-resource-section">
+              <div className="hub-section-heading">
+                <strong>{showingSkillCatalog ? t("hubSkillsLabel") : t("hubTemplatesSection")}</strong>
+                <span>
+                  {showingSkillCatalog ? skills.length : formatHubTemplateCount(templates.length, locale, t)}
+                </span>
+              </div>
+              <div
+                className={`hub-template-list ${isTemplateListScrolling ? "is-scrolling" : ""}`}
+                onScroll={handleTemplateListScroll}
+              >
+                {showingSkillCatalog ? (
+                  skills.length === 0 ? (
+                    <div className="workspace-empty hub-resource-empty">{t("hubSkillsEmpty")}</div>
+                  ) : (
+                    skills.map((item) => (
+                      <button
+                        key={item.name}
+                        type="button"
+                        className={`hub-template-card ${selectedSkill?.name === item.name ? "active" : ""}`}
+                        onClick={() => hub?.detailPaneProps.onSelectSkill?.(item.name)}
+                      >
+                        <div className="hub-template-card-icon hub-skill-card-icon">
+                          <FileCode2 aria-hidden="true" />
+                        </div>
+                        <div className="hub-template-card-body">
+                          <div className="hub-template-card-title-row">
+                            <h2>{item.name}</h2>
+                          </div>
+                          <p>{item.description || item.name}</p>
+                        </div>
+                      </button>
+                    ))
+                  )
+                ) : (
+                  templates.length === 0 ? (
+                    <div className="workspace-empty hub-resource-empty">{t("hubEmpty")}</div>
+                  ) : (
+                    templates.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`hub-template-card ${selectedTemplateId === item.id && activeResourceType === "template" ? "active" : ""}`}
+                        onClick={() => onSelectTemplate?.(item)}
+                      >
+                        <div className="hub-template-card-icon">
+                          <HubIcon />
+                        </div>
+                        <div className="hub-template-card-body">
+                          <div className="hub-template-card-title-row">
+                            <h2>{item.name || item.id}</h2>
+                          </div>
+                          <p>{item.description || item.id}</p>
+                          <div className="hub-template-card-meta">
+                            <span className="mini-badge template-role-badge">{localizeRole(item.role || "worker", t)}</span>
+                            <span className="mini-badge template-runtime-badge">
+                              {item.runtime_kind || item.workspace?.kind || "-"}
+                            </span>
+                            <span className="mini-badge template-source-badge">
+                              <span className="template-source-badge-dot" aria-hidden="true"></span>
+                              {localizeTemplateSourceTag(item.source?.name, locale)}
+                            </span>
+                            <span className="hub-template-card-updated">
+                              {t("hubUpdatedAtLabel")} {formatHubDate(item.updated_at, locale)}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )
+                )}
+              </div>
             </div>
-            <div className="hub-catalog-meta">{formatHubTemplateCount(templates.length, locale, t)}</div>
-            <div
-              className={`hub-template-list ${isTemplateListScrolling ? "is-scrolling" : ""}`}
-              onScroll={handleTemplateListScroll}
-            >
-              {templates.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`hub-template-card ${selectedTemplateId === item.id ? "active" : ""}`}
-                  onClick={() => onSelectTemplate?.(item)}
-                >
-                  <div className="hub-template-card-icon">
-                    <HubIcon />
-                  </div>
-                  <div className="hub-template-card-body">
-                    <div className="hub-template-card-title-row">
-                      <h2>{item.name || item.id}</h2>
-                    </div>
-                    <p>{item.description || item.id}</p>
-                    <div className="hub-template-card-meta">
-                      <span className="mini-badge template-role-badge">{localizeRole(item.role || "worker", t)}</span>
-                      <span className="mini-badge template-runtime-badge">
-                        {item.runtime_kind || item.workspace?.kind || "-"}
-                      </span>
-                      <span className="mini-badge template-source-badge">
-                        <span className="template-source-badge-dot" aria-hidden="true"></span>
-                        {localizeTemplateSourceTag(item.source?.name, locale)}
-                      </span>
-                      <span className="hub-template-card-updated">
-                        {t("hubUpdatedAtLabel")} {formatHubDate(item.updated_at, locale)}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+
           </div>
 
           <div
             className={`hub-inspector-panel ${isInspectorScrolling ? "is-scrolling" : ""}`}
             onScroll={handleInspectorScroll}
           >
-            {selectedTemplate ? (
+            {activeResourceType === "template" && selectedTemplate ? (
               <>
                 <div className="hub-inspector-hero">
                   <div className="hub-inspector-hero-row">
@@ -319,7 +391,61 @@ export function HubDetailPane({
                   </div>
                 </div>
               </>
-            ) : null}
+            ) : activeResourceType === "skill" && selectedSkill ? (
+              <>
+                <div className="hub-inspector-hero">
+                  <div className="hub-inspector-hero-row">
+                    <div className="hub-inspector-brand">
+                      <div className="hub-inspector-icon hub-skill-card-icon">
+                        <FileCode2 aria-hidden="true" />
+                      </div>
+                      <div className="hub-inspector-copy">
+                        <h2>{selectedSkill.name}</h2>
+                        <p>{selectedSkill.description || selectedSkill.name}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="hub-workspace-block">
+                  <div className="hub-workspace-panels">
+                    <WorkspaceFileTree
+                      className="hub-workspace-tree"
+                      entries={skillEntries}
+                      loading={skillTreeLoading}
+                      loadingText={t("hubSkillFilesLoading")}
+                      emptyText={skillTreeError || t("hubSkillFilesEmpty")}
+                      selectedPath={selectedSkillPath}
+                      onSelectFile={onSelectSkillFile}
+                    />
+                    <WorkspaceFilePreview
+                      className="hub-workspace-preview"
+                      file={skillFile}
+                      loading={skillFileLoading}
+                      error={skillFileError}
+                      loadingText={t("hubWorkspaceFileLoading")}
+                      emptyTitle={t("hubSkillPreviewTitle")}
+                      emptyHint={t("hubSkillPreviewHint")}
+                      emptyIcon={<HubPreviewEmptyIcon />}
+                      binaryText={t("hubWorkspaceBinary")}
+                      emptyFileText={t("hubWorkspaceEmptyFile")}
+                      previewText={t("workspacePreviewPreviewTab")}
+                      codeText={t("workspacePreviewCodeTab")}
+                      viewToggleLabel={t("workspacePreviewViewMode")}
+                      closeText={t("close")}
+                      truncatedText={t("workspacePreviewTruncated")}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="empty-state shell-empty-state hub-empty-state">
+                <span className="rich-empty-mark" aria-hidden="true">
+                  *
+                </span>
+                <strong>{templates.length || skills.length ? t("hubLoading") : t("hubEmpty")}</strong>
+              </div>
+            )}
           </div>
         </div>
       )}

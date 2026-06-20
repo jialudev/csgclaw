@@ -69,7 +69,7 @@
 .hub-catalog-panel {
   border-right: 1px solid var(--line);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
   min-height: 0;
   overflow: hidden;
@@ -80,37 +80,39 @@
   background: color-mix(in srgb, var(--panel) 92%, black 8%);
 }
 
-.hub-filter-tabs {
-  display: flex;
-  align-items: center;
+.hub-resource-section {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
 }
 
-.hub-filter-tab {
-  padding: 0 2px 12px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
+.hub-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hub-section-heading strong,
+.hub-section-heading span {
+  margin: 0;
+}
+
+.hub-section-heading strong {
   font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
+  font-weight: 760;
 }
 
-.hub-filter-tab.active {
-  color: oklch(0.56 0.2 260);
-  border-bottom-color: oklch(0.64 0.21 262);
-}
-
-.hub-catalog-meta,
-.hub-catalog-end {
+.hub-section-heading span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
-.hub-catalog-end {
-  display: none;
+.hub-resource-empty {
+  min-height: 84px;
+  display: flex;
+  align-items: center;
 }
 
 .hub-template-list {
@@ -209,6 +211,15 @@
 .hub-inspector-icon svg {
   width: 22px;
   height: 22px;
+}
+
+.hub-skill-card-icon {
+  background: linear-gradient(180deg, oklch(0.76 0.09 180), oklch(0.62 0.12 204));
+}
+
+.hub-skill-card.active {
+  border-color: oklch(0.69 0.15 194);
+  box-shadow: 0 0 0 1px oklch(0.69 0.15 194 / 0.18);
 }
 
 .hub-template-card-body,
@@ -380,6 +391,17 @@
 .hub-workspace-block {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 360px;
+}
+
+@media (max-width: 1080px) {
+  .hub-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-catalog-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
 }
 
 .hub-workspace-panels {

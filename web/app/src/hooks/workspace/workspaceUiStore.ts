@@ -14,12 +14,22 @@ import type { ThemeMode } from "@/shared/theme/theme";
 
 type MaybeUpdater<T> = T | ((current: T) => T);
 
+export const HubResourceTypes = {
+  skill: "skill",
+  template: "template",
+} as const;
+
+export type HubResourceType = (typeof HubResourceTypes)[keyof typeof HubResourceTypes];
+
 export type WorkspaceUiState = {
   activeConversationId: string;
   collapsedWorkspaceGroups: CollapsedWorkspaceGroups;
   floatingChatOpen: boolean;
   isSidebarCollapsed: boolean;
   locale: LocaleCode;
+  selectedHubResourceType: HubResourceType;
+  selectedHubSkillName: string;
+  selectedHubSkillPath: string;
   selectedHubTemplateId: string;
   selectedHubWorkspacePath: string;
   showToolCalls: boolean;
@@ -30,6 +40,9 @@ export type WorkspaceUiState = {
   setFloatingChatOpen: (value: MaybeUpdater<boolean>) => void;
   setIsSidebarCollapsed: (value: MaybeUpdater<boolean>) => void;
   setLocale: (locale: LocaleCode) => void;
+  setSelectedHubResourceType: (value: MaybeUpdater<HubResourceType>) => void;
+  setSelectedHubSkillName: (value: MaybeUpdater<string>) => void;
+  setSelectedHubSkillPath: (value: MaybeUpdater<string>) => void;
   setSelectedHubTemplateId: (value: MaybeUpdater<string>) => void;
   setSelectedHubWorkspacePath: (value: MaybeUpdater<string>) => void;
   setShowToolCalls: (value: MaybeUpdater<boolean>) => void;
@@ -48,6 +61,9 @@ export const useWorkspaceUiStore = create<WorkspaceUiState>((set) => ({
   activeConversationId: initialPane.type === WorkspacePaneTypes.conversation ? String(initialPane.id ?? "") : "",
   floatingChatOpen: false,
   workspaceTab: workspaceTabForPane(initialPane),
+  selectedHubResourceType: HubResourceTypes.template,
+  selectedHubSkillName: "",
+  selectedHubSkillPath: "",
   selectedHubTemplateId: "",
   selectedHubWorkspacePath: "",
 
@@ -71,6 +87,18 @@ export const useWorkspaceUiStore = create<WorkspaceUiState>((set) => ({
     })),
   setActiveConversationId: (activeConversationId) => set({ activeConversationId }),
   setWorkspaceTab: (workspaceTab) => set({ workspaceTab }),
+  setSelectedHubResourceType: (value) =>
+    set((state) => ({
+      selectedHubResourceType: typeof value === "function" ? value(state.selectedHubResourceType) : value,
+    })),
+  setSelectedHubSkillName: (value) =>
+    set((state) => ({
+      selectedHubSkillName: typeof value === "function" ? value(state.selectedHubSkillName) : value,
+    })),
+  setSelectedHubSkillPath: (value) =>
+    set((state) => ({
+      selectedHubSkillPath: typeof value === "function" ? value(state.selectedHubSkillPath) : value,
+    })),
   setSelectedHubTemplateId: (value) =>
     set((state) => ({
       selectedHubTemplateId: typeof value === "function" ? value(state.selectedHubTemplateId) : value,

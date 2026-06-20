@@ -33,6 +33,7 @@ export function WorkspaceSidebar({
   onOpenCreateTeam,
   onOpenCreateTask,
   hub,
+  onSelectHubSkill,
   onSelectHubTemplate,
   onSelectHub,
   onSelectTask,
@@ -123,6 +124,7 @@ export function WorkspaceSidebar({
             onOpenCreateTeam={onOpenCreateTeam}
             onOpenCreateTask={onOpenCreateTask}
             hub={hub}
+            onSelectHubSkill={onSelectHubSkill}
             onSelectHubTemplate={onSelectHubTemplate}
             onSelectTask={onSelectTask}
             onViewTaskDetails={onViewTaskDetails}

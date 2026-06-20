@@ -11,6 +11,8 @@ function t(key: string, params: Record<string, string | number> = {}) {
     hubImageLabel: "Image",
     hubLoading: "Loading Hub",
     hubRefresh: "Refresh templates",
+    hubSkillsEmpty: "No skills",
+    hubSkillsLabel: "Skills",
     hubRuntimeLabel: "Runtime",
     hubSourceLabel: "Source",
     hubSubtitle: "Browse templates.",
@@ -60,11 +62,23 @@ function renderHubDetailPane() {
           error: "",
           loaded: true,
           onRetry: vi.fn(),
+          onSelectSkill: vi.fn(),
+          onSelectSkillFile: vi.fn(),
           onSelectTemplate: vi.fn(),
           onSelectWorkspaceFile: vi.fn(),
+          selectedResourceType: "template",
+          selectedSkill: null,
+          selectedSkillPath: "",
           selectedTemplate: template,
           selectedTemplateId: template.id,
           selectedWorkspacePath: "README.md",
+          skillFile: null,
+          skillFileError: "",
+          skillFileLoading: false,
+          skills: [],
+          skillTree: null,
+          skillTreeError: "",
+          skillTreeLoading: false,
           templates: [template],
           workspaceFile: {
             binary: false,
@@ -72,6 +86,62 @@ function renderHubDetailPane() {
             path: "README.md",
             size: 33,
           },
+          workspaceFileError: "",
+          workspaceFileLoading: false,
+          deleteBusy: false,
+          onDeleteTemplate: vi.fn(),
+        },
+      }}
+    />,
+  );
+}
+
+function renderHubSkillDetailPane() {
+  return render(
+    <HubDetailPane
+      locale="en"
+      t={t}
+      onCreateFromTemplate={vi.fn()}
+      hub={{
+        detailPaneProps: {
+          detailLoading: false,
+          error: "",
+          loaded: true,
+          onRetry: vi.fn(),
+          onSelectSkill: vi.fn(),
+          onSelectSkillFile: vi.fn(),
+          onSelectTemplate: vi.fn(),
+          onSelectWorkspaceFile: vi.fn(),
+          selectedResourceType: "skill",
+          selectedSkill: {
+            name: "demo-skill",
+            description: "Demo skill",
+          },
+          selectedSkillPath: "SKILL.md",
+          selectedTemplate: template,
+          selectedTemplateId: template.id,
+          selectedWorkspacePath: "",
+          skillFile: {
+            binary: false,
+            content: "# Skill\n\nUse it carefully.",
+            path: "SKILL.md",
+            size: 26,
+          },
+          skillFileError: "",
+          skillFileLoading: false,
+          skills: [
+            {
+              name: "demo-skill",
+              description: "Demo skill",
+            },
+          ],
+          skillTree: {
+            entries: [{ name: "SKILL.md", path: "SKILL.md", type: "file" }],
+          },
+          skillTreeError: "",
+          skillTreeLoading: false,
+          templates: [template],
+          workspaceFile: null,
           workspaceFileError: "",
           workspaceFileLoading: false,
           deleteBusy: false,
@@ -99,5 +169,17 @@ describe("HubDetailPane", () => {
 
     expect(screen.getByRole("tab", { name: "Code" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByText("# Summary", { exact: false }).length).toBeGreaterThan(0);
+  });
+
+  it("renders the selected skill with file tree but without template details", () => {
+    renderHubSkillDetailPane();
+
+    expect(screen.getAllByRole("heading", { name: "demo-skill" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Demo skill").length).toBeGreaterThan(0);
+    expect(screen.queryByText("demo-template")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Skills").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("SKILL.md").length).toBeGreaterThan(0);
+    expect(screen.getByText("# Skill", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("Description")).not.toBeInTheDocument();
   });
 });
