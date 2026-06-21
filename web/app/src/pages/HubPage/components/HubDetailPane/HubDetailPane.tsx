@@ -207,11 +207,10 @@ export function HubDetailPane({
           <strong>{t("hubEmpty")}</strong>
         </div>
       ) : (
-        <div className="hub-workbench">
-          <div
-            className={`hub-inspector-panel ${isInspectorScrolling ? "is-scrolling" : ""}`}
-            onScroll={handleInspectorScroll}
-          >
+        <div
+          className={`hub-workbench hub-inspector-panel ${isInspectorScrolling ? "is-scrolling" : ""}`}
+          onScroll={handleInspectorScroll}
+        >
             {activeResourceType === "template" && selectedTemplate ? (
               <>
                 <div className="hub-inspector-hero">
@@ -327,7 +326,7 @@ export function HubDetailPane({
                     <div className="hub-template-actions">
                       <Button
                         className="hub-skill-delete-button"
-                        variant="danger"
+                        variant="outlineDanger"
                         size="md"
                         disabled={skillDeleteBusy}
                         onClick={() => setDeleteSkillDialogOpen(true)}
@@ -377,7 +376,6 @@ export function HubDetailPane({
                 <strong>{templates.length || skills.length ? t("hubLoading") : t("hubEmpty")}</strong>
               </div>
             )}
-          </div>
         </div>
       )}
       <DialogRoot open={deleteSkillDialogOpen} onOpenChange={setDeleteSkillDialogOpen}>

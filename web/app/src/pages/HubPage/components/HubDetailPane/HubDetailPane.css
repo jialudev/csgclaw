@@ -62,7 +62,7 @@
 
 .hub-inspector-panel {
   min-width: 0;
-  padding: 28px 24px;
+  padding: 28px 24px 14px;
 }
 
 .hub-resource-section {
@@ -265,12 +265,12 @@
 
 .hub-inspector-panel {
   container-type: inline-size;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  align-content: stretch;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   gap: 20px;
-  max-height: calc(100dvh - 166px);
   min-height: 0;
+  height: 100%;
   background: color-mix(in srgb, var(--panel) 88%, white 12%);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -313,7 +313,13 @@
 }
 
 .hub-skill-delete-button {
-  min-width: 104px;
+  --btn-height: 36px;
+  --btn-min-width: 0;
+  --btn-padding-x: 14px;
+
+  border-radius: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
 }
 
 .hub-inspector-icon {
@@ -383,8 +389,10 @@
 }
 
 .hub-workspace-block {
+  flex: 1 1 auto;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 360px;
+  min-width: 0;
 }
 
 .hub-workspace-panels {
@@ -401,6 +409,7 @@
   grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
   gap: 0;
   min-height: 340px;
+  height: 100%;
   align-items: stretch;
   overflow: hidden;
   border: 1px solid var(--hub-workspace-border);
@@ -532,6 +541,9 @@
   --workspace-preview-radius: 0;
   --workspace-preview-text: var(--hub-workspace-text);
   --workspace-preview-title-size: 16px;
+
+  min-height: 340px;
+  height: 100%;
 }
 
 .hub-empty-state {
@@ -595,7 +607,7 @@
 
 @media (max-width: 720px) {
   .hub-inspector-panel {
-    padding: 20px 16px;
+    padding: 20px 16px 12px;
   }
 }
 
