@@ -59,7 +59,11 @@ export function useWorkspaceHubSelection({
   }, [setSelectedHubSkillName, setSelectedHubSkillPath, skills]);
 
   useEffect(() => {
-    setSelectedHubSkillPath("");
+    if (selectedHubSkillName) {
+      setSelectedHubSkillPath(`${selectedHubSkillName}/SKILL.md`);
+    } else {
+      setSelectedHubSkillPath("");
+    }
   }, [selectedHubSkillName, setSelectedHubSkillPath]);
 
   useEffect(() => {
