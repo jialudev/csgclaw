@@ -6,7 +6,9 @@ import {
   ExternalLink,
   Link2,
   MoreHorizontal,
+  Plus,
   RefreshCw,
+  Trash2,
   Unlink2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -41,12 +43,19 @@ import {
 import type { AgentDraft, AgentLike } from "@/models/agents";
 import type { IMConversation, TranslateFn } from "@/models/conversations";
 import type { LocaleCode } from "@/models/conversations";
+import type { SkillSummary } from "@/models/skillhub";
 import type { SlashSkillOption } from "@/models/slashCommands";
 import type { CLIProxyAuthStatusMap } from "@/hooks/workspace/useCLIProxyAuthStatuses";
 import { AgentAvatarContent, AgentAvatarPicker } from "@/components/business/AgentAvatar";
 import { avatarFallbackText } from "@/shared/avatar";
 import {
   Button,
+  DialogCloseButton,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRoot,
@@ -104,11 +113,20 @@ export type AgentDetailPaneProps = {
   saveError?: string;
   savedDraft?: AgentDraft | null;
   saving?: boolean;
+  skillAddBusy?: boolean;
+  skillAddError?: string;
+  skillCandidates?: SkillSummary[];
+  skillCandidatesError?: string;
+  skillCandidatesLoading?: boolean;
+  skillDeleteBusy?: boolean;
+  skillDeleteError?: string;
   skills?: SlashSkillOption[];
   skillsError?: string;
   skillsLoading?: boolean;
   t: TranslateFn;
   workspaceSupported?: boolean;
+  onAddSkills?: (skillNames: string[]) => Promise<boolean> | boolean;
+  onDeleteSkill?: (skill: SlashSkillOption | string) => Promise<boolean> | boolean;
 };
 
 export function AgentDetailPane({
@@ -137,6 +155,13 @@ export function AgentDetailPane({
   skills = [],
   skillsLoading = false,
   skillsError = "",
+  skillCandidates = [],
+  skillCandidatesLoading = false,
+  skillCandidatesError = "",
+  skillAddBusy = false,
+  skillAddError = "",
+  skillDeleteBusy = false,
+  skillDeleteError = "",
   workspaceSupported = false,
   onDraftChange,
   onSave,
@@ -151,8 +176,14 @@ export function AgentDetailPane({
   onDelete,
   onInvite,
   onOpenDM,
+  onAddSkills,
+  onDeleteSkill,
 }: AgentDetailPaneProps) {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [addSkillsDialogOpen, setAddSkillsDialogOpen] = useState(false);
+  const [selectedSkillNames, setSelectedSkillNames] = useState<string[]>([]);
+  const [deleteSkillDialogOpen, setDeleteSkillDialogOpen] = useState(false);
+  const [skillPendingDelete, setSkillPendingDelete] = useState<SlashSkillOption | null>(null);
   const descriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const isManager = item.role === "manager" || item.id === "u-manager";
   const running = isAgentRunning(item);
@@ -182,6 +213,33 @@ export function AgentDetailPane({
     }
     descriptionInputRef.current?.focus();
   }, [isEditingDescription]);
+
+  useEffect(() => {
+    if (!addSkillsDialogOpen) {
+      setSelectedSkillNames([]);
+    }
+  }, [addSkillsDialogOpen]);
+
+  async function handleAddSkillsConfirm(): Promise<void> {
+    if (!selectedSkillNames.length) {
+      return;
+    }
+    const added = await onAddSkills?.(selectedSkillNames);
+    if (added) {
+      setAddSkillsDialogOpen(false);
+    }
+  }
+
+  async function handleDeleteSkillConfirm(): Promise<void> {
+    if (!skillPendingDelete) {
+      return;
+    }
+    const deleted = await onDeleteSkill?.(skillPendingDelete);
+    if (deleted) {
+      setDeleteSkillDialogOpen(false);
+      setSkillPendingDelete(null);
+    }
+  }
 
   return (
     <section className="entity-pane agent-detail-pane">
@@ -525,10 +583,25 @@ export function AgentDetailPane({
           {workspaceSupported ? (
             <section className="profile-section agent-skills-section">
               <div className="profile-section-title agent-skills-title">
-                <span>{t("agentSkillsTitle")}</span>
-                <small>{skills.length}</small>
+                <div className="agent-skills-title-copy">
+                  <span>{t("agentSkillsTitle")}</span>
+                  <small>{skills.length}</small>
+                </div>
+                <Button
+                  className="agent-skill-icon-button"
+                  variant="secondaryGray"
+                  size="sm"
+                  aria-label={t("agentSkillAdd")}
+                  title={t("agentSkillAdd")}
+                  disabled={skillCandidatesLoading || skillAddBusy}
+                  onClick={() => setAddSkillsDialogOpen(true)}
+                >
+                  <Plus aria-hidden="true" size={16} strokeWidth={2.2} />
+                </Button>
               </div>
               {skillsError ? <div className="form-error">{skillsError}</div> : null}
+              {skillAddError ? <div className="form-error">{skillAddError}</div> : null}
+              {skillDeleteError ? <div className="form-error">{skillDeleteError}</div> : null}
               {skillsLoading ? <div className="agent-skills-empty">{t("agentSkillsLoading")}</div> : null}
               {!skillsLoading && !skills.length ? (
                 <div className="agent-skills-empty">{t("agentSkillsEmpty")}</div>
@@ -537,7 +610,23 @@ export function AgentDetailPane({
                 <div className="agent-skills-list">
                   {skills.map((skill) => (
                     <article key={skill.name} className="agent-skill-card">
-                      <div className="agent-skill-name">{skill.name}</div>
+                      <div className="agent-skill-card-header">
+                        <div className="agent-skill-name">{skill.name}</div>
+                        <Button
+                          className="agent-skill-icon-button"
+                          variant="outlineDanger"
+                          size="sm"
+                          aria-label={t("agentDeleteSkill")}
+                          title={t("agentDeleteSkill")}
+                          disabled={skillDeleteBusy}
+                          onClick={() => {
+                            setSkillPendingDelete(skill);
+                            setDeleteSkillDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 aria-hidden="true" size={16} strokeWidth={1.9} />
+                        </Button>
+                      </div>
                       <p className="agent-skill-description">{skill.description || "-"}</p>
                     </article>
                   ))}
@@ -567,6 +656,105 @@ export function AgentDetailPane({
           </section>
         </div>
       ) : null}
+      <DialogRoot open={addSkillsDialogOpen} onOpenChange={setAddSkillsDialogOpen}>
+        <DialogContent className="agent-skills-dialog">
+          <DialogHeader className="agent-skills-dialog-header">
+            <div className="agent-skills-dialog-copy">
+              <DialogTitle>{t("agentSkillAdd")}</DialogTitle>
+              <DialogDescription>{t("agentSkillAddSubtitle")}</DialogDescription>
+            </div>
+            <DialogCloseButton label={t("close")} size="sm" variant="tertiaryGray" />
+          </DialogHeader>
+          <div className="agent-skills-dialog-body">
+            {skillCandidatesError ? <div className="form-error">{skillCandidatesError}</div> : null}
+            {skillAddError ? <div className="form-error">{skillAddError}</div> : null}
+            {skillCandidatesLoading ? (
+              <div className="agent-skills-empty">{t("agentSkillsLoading")}</div>
+            ) : !skillCandidates.length ? (
+              <div className="agent-skills-empty">{t("agentSkillAddEmpty")}</div>
+            ) : (
+              <div className="agent-skill-candidates-list" role="list">
+                {skillCandidates.map((skill) => {
+                  const checked = selectedSkillNames.includes(skill.name);
+                  return (
+                    <label key={skill.name} className={`agent-skill-candidate ${checked ? "selected" : ""}`.trim()}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          const nextChecked = event.currentTarget.checked;
+                          setSelectedSkillNames((current) =>
+                            nextChecked ? [...current, skill.name] : current.filter((name) => name !== skill.name),
+                          );
+                        }}
+                      />
+                      <span className="agent-skill-candidate-copy">
+                        <span className="agent-skill-name">{skill.name}</span>
+                        <span className="agent-skill-description">{skill.description || "-"}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="agent-skills-dialog-actions">
+            <Button variant="secondaryGray" size="sm" disabled={skillAddBusy} onClick={() => setAddSkillsDialogOpen(false)}>
+              {t("cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={skillAddBusy}
+              loadingLabel={t("agentSkillAdd")}
+              disabled={!selectedSkillNames.length || skillCandidatesLoading}
+              onClick={handleAddSkillsConfirm}
+            >
+              {t("agentSkillAdd")}
+            </Button>
+          </div>
+        </DialogContent>
+      </DialogRoot>
+      <DialogRoot
+        open={deleteSkillDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteSkillDialogOpen(open);
+          if (!open) {
+            setSkillPendingDelete(null);
+          }
+        }}
+      >
+        <DialogContent className="agent-skills-dialog agent-skill-delete-dialog">
+          <DialogHeader className="agent-skills-dialog-header">
+            <div className="agent-skills-dialog-copy">
+              <DialogTitle>{t("agentDeleteSkill")}</DialogTitle>
+              <DialogDescription>
+                {t("agentDeleteSkillConfirmMessage", { name: skillPendingDelete?.name || "" })}
+              </DialogDescription>
+            </div>
+            <DialogCloseButton label={t("close")} size="sm" variant="tertiaryGray" />
+          </DialogHeader>
+          <div className="agent-skills-dialog-body">
+            {skillDeleteError ? <div className="form-error">{skillDeleteError}</div> : null}
+          </div>
+          <div className="agent-skills-dialog-actions">
+            <Button
+              variant="secondaryGray"
+              size="sm"
+              disabled={skillDeleteBusy}
+              onClick={() => {
+                setDeleteSkillDialogOpen(false);
+                setSkillPendingDelete(null);
+              }}
+            >
+              {t("cancel")}
+            </Button>
+            <Button variant="danger" size="sm" loading={skillDeleteBusy} onClick={handleDeleteSkillConfirm}>
+              {t("agentDeleteSkill")}
+            </Button>
+          </div>
+        </DialogContent>
+      </DialogRoot>
     </section>
   );
 }

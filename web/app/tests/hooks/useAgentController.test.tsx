@@ -3,11 +3,14 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
 import {
+  batchAddAgentSkillsRequest,
+  deleteAgentSkillRequest,
   fetchAgent,
   fetchAgentProfile,
   fetchAgentProfileDefaults,
   fetchAgentProfileModels,
   fetchAgentSkills,
+  fetchAgentSkillsFile,
   fetchAgentWorkspace,
   deleteFeishuParticipantRequest,
   finalizeFeishuRegistrationRequest,
@@ -16,6 +19,7 @@ import {
   updateAgentRequest,
 } from "@/api/agents";
 import { createUserRequest } from "@/api/im";
+import { fetchSkills } from "@/api/skills";
 import { createTeamRequest, fetchTeams } from "@/api/tasks";
 import { useAgentController } from "@/hooks/workspace/useAgentController";
 import { WorkspacePaneTypes } from "@/models/routing";
@@ -49,17 +53,28 @@ vi.mock("@/api/agents", async () => {
   const actual = await vi.importActual<typeof import("@/api/agents")>("@/api/agents");
   return {
     ...actual,
+    batchAddAgentSkillsRequest: vi.fn(),
+    deleteAgentSkillRequest: vi.fn(),
     fetchAgent: vi.fn(),
     fetchAgentProfile: vi.fn(),
     fetchAgentProfileDefaults: vi.fn(),
     fetchAgentProfileModels: vi.fn(),
     fetchAgentSkills: vi.fn(),
+    fetchAgentSkillsFile: vi.fn(),
     fetchAgentWorkspace: vi.fn(),
     deleteFeishuParticipantRequest: vi.fn(),
     finalizeFeishuRegistrationRequest: vi.fn(),
     runAgentActionRequest: vi.fn(),
     startFeishuRegistrationRequest: vi.fn(),
     updateAgentRequest: vi.fn(),
+  };
+});
+
+vi.mock("@/api/skills", async () => {
+  const actual = await vi.importActual<typeof import("@/api/skills")>("@/api/skills");
+  return {
+    ...actual,
+    fetchSkills: vi.fn(),
   };
 });
 
@@ -192,9 +207,13 @@ describe("useAgentController", () => {
     vi.mocked(fetchAgentProfile).mockReset();
     vi.mocked(fetchAgentProfileDefaults).mockReset();
     vi.mocked(fetchAgentProfileModels).mockReset();
+    vi.mocked(batchAddAgentSkillsRequest).mockReset();
+    vi.mocked(deleteAgentSkillRequest).mockReset();
     vi.mocked(fetchAgentWorkspace).mockReset();
     vi.mocked(createUserRequest).mockReset();
     vi.mocked(fetchAgentSkills).mockReset();
+    vi.mocked(fetchAgentSkillsFile).mockReset();
+    vi.mocked(fetchSkills).mockReset();
     vi.mocked(deleteFeishuParticipantRequest).mockReset();
     vi.mocked(finalizeFeishuRegistrationRequest).mockReset();
     vi.mocked(createTeamRequest).mockReset();
@@ -207,9 +226,16 @@ describe("useAgentController", () => {
     vi.mocked(fetchAgentProfile).mockResolvedValue(profile);
     vi.mocked(fetchAgentProfileDefaults).mockResolvedValue(profile);
     vi.mocked(fetchAgentProfileModels).mockResolvedValue({ models: [] });
+    vi.mocked(batchAddAgentSkillsRequest).mockResolvedValue(undefined);
+    vi.mocked(deleteAgentSkillRequest).mockResolvedValue(undefined);
     vi.mocked(fetchAgentWorkspace).mockResolvedValue({ entries: [] });
     vi.mocked(createUserRequest).mockResolvedValue({ id: "u-worker", name: "worker" });
     vi.mocked(fetchAgentSkills).mockResolvedValue({ entries: [] });
+    vi.mocked(fetchAgentSkillsFile).mockResolvedValue({ content: "", path: "SKILL.md", size: 0 });
+    vi.mocked(fetchSkills).mockResolvedValue([
+      { name: "alpha", description: "Alpha skill" },
+      { name: "beta", description: "Beta skill" },
+    ]);
     vi.mocked(deleteFeishuParticipantRequest).mockResolvedValue(undefined);
     vi.mocked(createTeamRequest).mockResolvedValue({
       channel: "csgclaw",
@@ -284,6 +310,86 @@ describe("useAgentController", () => {
         name: "manager",
       }),
     );
+  });
+
+  it("loads global skill candidates and filters already-installed agent skills", async () => {
+    vi.mocked(fetchAgentSkills).mockResolvedValue({
+      entries: [
+        { name: "alpha", path: "alpha", type: "dir" },
+        { name: "SKILL.md", path: "alpha/SKILL.md", type: "file" },
+      ],
+    });
+    vi.mocked(fetchAgentSkillsFile).mockResolvedValue({
+      content: "---\ndescription: Alpha skill\n---\n# Alpha\n",
+      path: "alpha/SKILL.md",
+      size: 32,
+    });
+
+    const { result } = renderHook(() => useAgentControllerHarness().controller, { wrapper: createWrapper() });
+
+    await waitFor(() => expect(fetchSkills).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchAgentSkills).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.agentViewProps.skills).toHaveLength(1));
+
+    expect(result.current.agentViewProps.skillCandidates).toEqual([{ name: "beta", description: "Beta skill" }]);
+  });
+
+  it("adds selected global skills into the current agent runtime and refreshes skills", async () => {
+    vi.mocked(fetchAgentSkills)
+      .mockResolvedValueOnce({ entries: [] })
+      .mockResolvedValueOnce({
+        entries: [
+          { name: "alpha", path: "alpha", type: "dir" },
+          { name: "SKILL.md", path: "alpha/SKILL.md", type: "file" },
+        ],
+      });
+    vi.mocked(fetchAgentSkillsFile).mockResolvedValue({
+      content: "---\ndescription: Alpha skill\n---\n# Alpha\n",
+      path: "alpha/SKILL.md",
+      size: 32,
+    });
+
+    const { result } = renderHook(() => useAgentControllerHarness().controller, { wrapper: createWrapper() });
+
+    await waitFor(() => expect(fetchAgentSkills).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.agentViewProps.onAddSkills?.(["alpha"]);
+    });
+
+    expect(batchAddAgentSkillsRequest).toHaveBeenCalledWith("u-manager", ["alpha"]);
+    await waitFor(() => expect(fetchAgentSkills).toHaveBeenCalledTimes(2));
+    expect(result.current.agentViewProps.skillAddError).toBe("");
+    expect(result.current.agentViewProps.skills.map((item) => item.name)).toEqual(["alpha"]);
+  });
+
+  it("deletes an agent-scoped skill and refreshes the agent skill list", async () => {
+    vi.mocked(fetchAgentSkills)
+      .mockResolvedValueOnce({
+        entries: [
+          { name: "alpha", path: "alpha", type: "dir" },
+          { name: "SKILL.md", path: "alpha/SKILL.md", type: "file" },
+        ],
+      })
+      .mockResolvedValueOnce({ entries: [] });
+    vi.mocked(fetchAgentSkillsFile).mockResolvedValue({
+      content: "---\ndescription: Alpha skill\n---\n# Alpha\n",
+      path: "alpha/SKILL.md",
+      size: 32,
+    });
+
+    const { result } = renderHook(() => useAgentControllerHarness().controller, { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.agentViewProps.skills.map((item) => item.name)).toEqual(["alpha"]));
+
+    await act(async () => {
+      await result.current.agentViewProps.onDeleteSkill?.({ name: "alpha" });
+    });
+
+    expect(deleteAgentSkillRequest).toHaveBeenCalledWith("u-manager", "alpha");
+    await waitFor(() => expect(fetchAgentSkills).toHaveBeenCalledTimes(2));
+    expect(result.current.agentViewProps.skillDeleteError).toBe("");
+    expect(result.current.agentViewProps.skills).toEqual([]);
   });
 
   it("routes incomplete manager profile setup to the manager agent page", async () => {

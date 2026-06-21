@@ -4,9 +4,11 @@ import { useBlocker } from "react-router-dom";
 import { errorMessage } from "@/api/client";
 import { loginCLIProxyProviderRequest } from "@/api/cliproxy";
 import {
+  batchAddAgentSkillsRequest,
   createBotRequest,
   createManagerAgentRequest,
   createNotificationBotRequest,
+  deleteAgentSkillRequest,
   deleteBotRequest,
   deleteFeishuParticipantRequest,
   fetchAgent,
@@ -23,6 +25,7 @@ import {
 import type { AgentUpdatePayload, FeishuRegistration, FetchAgentsOptions } from "@/api/agents";
 import { publishAgentTemplateRequest } from "@/api/hub";
 import { createUserRequest, inviteRoomUsersRequest, joinAgentToRoomRequest } from "@/api/im";
+import { fetchSkills } from "@/api/skills";
 import { createTeamRequest, fetchTeams } from "@/api/tasks";
 import type { CreateTeamPayload } from "@/api/tasks";
 import {
@@ -252,6 +255,10 @@ export function useAgentController({
   const [agentPageBusy, setAgentPageBusy] = useState(false);
   const [agentPagePublishBusy, setAgentPagePublishBusy] = useState(false);
   const [agentPageError, setAgentPageError] = useState("");
+  const [agentSkillAddBusy, setAgentSkillAddBusy] = useState(false);
+  const [agentSkillAddError, setAgentSkillAddError] = useState("");
+  const [agentSkillDeleteBusy, setAgentSkillDeleteBusy] = useState(false);
+  const [agentSkillDeleteError, setAgentSkillDeleteError] = useState("");
   const [agentPageNotice, setAgentPageNotice] = useState("");
   const [agentPageNoticeTone, setAgentPageNoticeTone] = useState<AgentPageNoticeTone>("warning");
   const agentPageNoticeTimerRef = useRef<number | null>(null);
@@ -319,6 +326,13 @@ export function useAgentController({
     return normalizeFeishuPendingRegistration(feishuPendingRegistrations[agentID], agentID);
   }, [feishuPendingRegistrations, selectedAgentForPage?.id]);
   const skillsAgentID = selectedAgentForPage?.id || "";
+  const globalSkillsQuery = useQuery({
+    queryKey: workspaceQueryKeys.skills(),
+    queryFn: async () => {
+      const payload = await fetchSkills();
+      return Array.isArray(payload) ? payload : [];
+    },
+  });
   const agentSkillsQuery = useQuery({
     queryKey: workspaceQueryKeys.agentSkills(skillsAgentID),
     queryFn: async () => {
@@ -342,6 +356,16 @@ export function useAgentController({
   });
   const agentSkillsError = agentSkillsQuery.error
     ? errorMessage(agentSkillsQuery.error, t("agentSkillsLoadFailed"))
+    : "";
+  const agentSkillCandidates = useMemo(() => {
+    const currentSkillNames = new Set((agentSkillsQuery.data ?? []).map((skill) => String(skill?.name || "").trim()));
+    return (globalSkillsQuery.data ?? []).filter((skill) => {
+      const name = String(skill?.name || "").trim();
+      return Boolean(name) && !currentSkillNames.has(name);
+    });
+  }, [agentSkillsQuery.data, globalSkillsQuery.data]);
+  const agentSkillCandidatesError = globalSkillsQuery.error
+    ? errorMessage(globalSkillsQuery.error, t("agentSkillsLoadFailed"))
     : "";
   const activeConversation = useMemo(
     () => data?.rooms.find((item) => item.id === activeConversationId) ?? null,
@@ -484,6 +508,11 @@ export function useAgentController({
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [agentPageHasUnsavedChanges]);
+
+  useEffect(() => {
+    setAgentSkillAddError("");
+    setAgentSkillDeleteError("");
+  }, [skillsAgentID]);
 
   useEffect(() => {
     if (!selectedAgentForPage) {
@@ -1488,6 +1517,57 @@ export function useAgentController({
     }
   }
 
+  const batchAddAgentSkills = useCallback(
+    async (skillNames: string[]) => {
+      if (!skillsAgentID || agentSkillAddBusy) {
+        return false;
+      }
+      const names = skillNames.map((name) => String(name || "").trim()).filter(Boolean);
+      if (!names.length) {
+        return false;
+      }
+      setAgentSkillAddBusy(true);
+      setAgentSkillAddError("");
+      try {
+        await batchAddAgentSkillsRequest(skillsAgentID, names);
+        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentSkills(skillsAgentID) });
+        return true;
+      } catch (err) {
+        setAgentSkillAddError(errorMessage(err, t("agentSkillAddFailed")));
+        return false;
+      } finally {
+        setAgentSkillAddBusy(false);
+      }
+    },
+    [agentSkillAddBusy, queryClient, skillsAgentID, t],
+  );
+
+  const deleteAgentSkill = useCallback(
+    async (skill: { name?: string | null } | string | null | undefined) => {
+      if (!skillsAgentID || agentSkillDeleteBusy) {
+        return false;
+      }
+      const rawName = typeof skill === "string" ? skill : String(skill?.name || "");
+      const name = rawName.trim();
+      if (!name) {
+        return false;
+      }
+      setAgentSkillDeleteBusy(true);
+      setAgentSkillDeleteError("");
+      try {
+        await deleteAgentSkillRequest(skillsAgentID, name);
+        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentSkills(skillsAgentID) });
+        return true;
+      } catch (err) {
+        setAgentSkillDeleteError(errorMessage(err, t("agentSkillDeleteFailed")));
+        return false;
+      } finally {
+        setAgentSkillDeleteBusy(false);
+      }
+    },
+    [agentSkillDeleteBusy, queryClient, skillsAgentID, t],
+  );
+
   function directConversationForUser(
     userID: string | null | undefined,
     roomList: IMConversation[] = rooms,
@@ -1588,6 +1668,13 @@ export function useAgentController({
       authStatuses: cliproxyAuthStatuses,
       authBusyProvider: cliproxyAuthBusy,
       notifierWebhookPublicOrigin,
+      skillCandidates: agentSkillCandidates,
+      skillCandidatesLoading: globalSkillsQuery.isFetching,
+      skillCandidatesError: agentSkillCandidatesError,
+      skillAddBusy: agentSkillAddBusy,
+      skillAddError: agentSkillAddError,
+      skillDeleteBusy: agentSkillDeleteBusy,
+      skillDeleteError: agentSkillDeleteError,
       skills: agentSkillsQuery.data ?? [],
       skillsLoading: agentSkillsQuery.isFetching,
       skillsError: agentSkillsError,
@@ -1606,6 +1693,8 @@ export function useAgentController({
       onStartFeishuConnect: startFeishuConnect,
       onFinalizeFeishuConnect: finalizeFeishuConnect,
       onDisconnectFeishu: disconnectFeishu,
+      onAddSkills: batchAddAgentSkills,
+      onDeleteSkill: deleteAgentSkill,
       teamActionBusy,
       teamActionError,
       onCreateTeam: createAgentTeam,

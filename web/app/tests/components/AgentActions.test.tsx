@@ -17,6 +17,11 @@ const labels: Record<string, string> = {
   agentSaveChanges: "Save changes",
   agentUpdateSave: "Save",
   agentChannelsTitle: "Channels",
+  agentSkillAdd: "Add skill",
+  agentSkillAddSubtitle: "Candidates come from global skills.",
+  agentSkillAddEmpty: "No skills are available to add.",
+  agentDeleteSkill: "Delete",
+  agentDeleteSkillConfirmMessage: 'Delete skill "alpha" from this agent?',
   feishuChannelName: "Feishu",
   feishuConnect: "Connect Feishu",
   feishuReconnect: "Reconnect Feishu",
@@ -35,6 +40,7 @@ const labels: Record<string, string> = {
   profileProvider: "Provider",
   profileReasoning: "Reasoning",
   profileRestartRequired: "Recreate required",
+  profileNotifierSection: "Notifications",
   profileUpgradeRequired: "Upgrade required",
   profileRuntimeKind: "Runtime",
   agentName: "Name",
@@ -624,6 +630,106 @@ describe("agent action visibility", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Saved");
     expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+  });
+
+  it("opens an add-skill dialog with only skills that are not already installed", async () => {
+    const user = userEvent.setup();
+    const onAddSkills = vi.fn().mockResolvedValue(true);
+    const draft = agentToDraft(worker);
+    render(
+      <AgentDetailPane
+        item={worker}
+        t={t}
+        activeRoom={null}
+        busyKey=""
+        error=""
+        draft={draft}
+        savedDraft={draft}
+        models={[]}
+        modelBusy={false}
+        saving={false}
+        publishBusy={false}
+        saveError=""
+        authStatuses={{}}
+        authBusyProvider=""
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        workspaceSupported
+        skills={[{ name: "alpha", description: "Alpha installed" }]}
+        skillCandidates={[
+          { name: "beta", description: "Beta candidate" },
+          { name: "gamma", description: "Gamma candidate" },
+        ]}
+        onDraftChange={vi.fn()}
+        onSave={vi.fn()}
+        onPublish={vi.fn()}
+        onProviderLogin={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRecreate={vi.fn()}
+        onDelete={vi.fn()}
+        onInvite={vi.fn()}
+        onOpenDM={vi.fn()}
+        onAddSkills={onAddSkills}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add skill" }));
+    expect(screen.getByText("Candidates come from global skills.")).toBeInTheDocument();
+    expect(screen.getByText("Beta candidate")).toBeInTheDocument();
+    expect(screen.getByText("Gamma candidate")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /alpha/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /beta/i }));
+    const addButtons = screen.getAllByRole("button", { name: "Add skill" });
+    await user.click(addButtons[addButtons.length - 1]);
+
+    expect(onAddSkills).toHaveBeenCalledWith(["beta"]);
+    expect(screen.queryByText("Candidates come from global skills.")).not.toBeInTheDocument();
+  });
+
+  it("shows a confirmation dialog before deleting an installed skill", async () => {
+    const user = userEvent.setup();
+    const onDeleteSkill = vi.fn().mockResolvedValue(true);
+    const draft = agentToDraft(worker);
+    render(
+      <AgentDetailPane
+        item={worker}
+        t={t}
+        activeRoom={null}
+        busyKey=""
+        error=""
+        draft={draft}
+        savedDraft={draft}
+        models={[]}
+        modelBusy={false}
+        saving={false}
+        publishBusy={false}
+        saveError=""
+        authStatuses={{}}
+        authBusyProvider=""
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        workspaceSupported
+        skills={[{ name: "alpha", description: "Alpha installed" }]}
+        onDraftChange={vi.fn()}
+        onSave={vi.fn()}
+        onPublish={vi.fn()}
+        onProviderLogin={vi.fn()}
+        onStart={vi.fn()}
+        onStop={vi.fn()}
+        onRecreate={vi.fn()}
+        onDelete={vi.fn()}
+        onInvite={vi.fn()}
+        onOpenDM={vi.fn()}
+        onDeleteSkill={onDeleteSkill}
+      />,
+    );
+
+    await user.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    expect(screen.getByText('Delete skill "alpha" from this agent?')).toBeInTheDocument();
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
+    await user.click(deleteButtons[deleteButtons.length - 1]);
+    expect(onDeleteSkill).toHaveBeenCalledWith({ name: "alpha", description: "Alpha installed" });
   });
 
   it("matches the notification bot profile header interaction and keeps actions on the right", async () => {

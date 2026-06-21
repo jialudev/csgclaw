@@ -2227,6 +2227,205 @@ func TestHandleAgentSkillsReturnsContentFromSkillsRoot(t *testing.T) {
 	}
 }
 
+func TestHandleAgentSkillsBatchAddCopiesGlobalSkillIntoAgentRuntimeRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	globalRoot := filepath.Join(home, ".csgclaw", "skills")
+	if err := os.MkdirAll(filepath.Join(globalRoot, "alpha", "scripts"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(global alpha) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "alpha", "SKILL.md"), []byte("---\ndescription: Alpha skill\n---\n# Alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(global SKILL.md) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "alpha", "scripts", "run.sh"), []byte("echo alpha\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(global run.sh) error = %v", err)
+	}
+
+	srv, svc, created := newAgentSkillManagementTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+created.ID+"/skills:batchAdd", strings.NewReader(`{"names":["alpha"]}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	skillsRoot, err := svc.SkillsRoot(created.Name)
+	if err != nil {
+		t.Fatalf("SkillsRoot() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(skillsRoot, "alpha", "SKILL.md")); err != nil {
+		t.Fatalf("Stat(agent SKILL.md) error = %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(skillsRoot, "alpha", "scripts", "run.sh")); err != nil {
+		t.Fatalf("ReadFile(agent run.sh) error = %v", err)
+	} else if strings.TrimSpace(string(data)) != "echo alpha" {
+		t.Fatalf("run.sh content = %q, want %q", strings.TrimSpace(string(data)), "echo alpha")
+	}
+
+	workspaceRoot, err := svc.WorkspaceRoot(created.Name)
+	if err != nil {
+		t.Fatalf("WorkspaceRoot() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "skills", "alpha", "SKILL.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Stat(workspace skills alpha) error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(globalRoot, "alpha", "SKILL.md")); err != nil {
+		t.Fatalf("Stat(global SKILL.md) error = %v", err)
+	}
+}
+
+func TestHandleAgentSkillsBatchAddReturnsNotFoundWhenGlobalSkillMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	srv, _, created := newAgentSkillManagementTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+created.ID+"/skills:batchAdd", strings.NewReader(`{"names":["missing"]}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestHandleAgentSkillsBatchAddReturnsConflictWhenSkillAlreadyExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	globalRoot := filepath.Join(home, ".csgclaw", "skills")
+	if err := os.MkdirAll(filepath.Join(globalRoot, "alpha"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(global alpha) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "alpha", "SKILL.md"), []byte("# Alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(global SKILL.md) error = %v", err)
+	}
+
+	srv, svc, created := newAgentSkillManagementTestServer(t)
+	skillsRoot, err := svc.SkillsRoot(created.Name)
+	if err != nil {
+		t.Fatalf("SkillsRoot() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillsRoot, "alpha"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(agent alpha) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha", "SKILL.md"), []byte("# Existing\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(agent SKILL.md) error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents/"+created.ID+"/skills:batchAdd", strings.NewReader(`{"names":["alpha"]}`))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestHandleAgentSkillDeleteRemovesOnlyAgentScopedSkill(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	globalRoot := filepath.Join(home, ".csgclaw", "skills")
+	if err := os.MkdirAll(filepath.Join(globalRoot, "alpha"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(global alpha) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalRoot, "alpha", "SKILL.md"), []byte("# Global Alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(global SKILL.md) error = %v", err)
+	}
+
+	srv, svc, created := newAgentSkillManagementTestServer(t)
+	skillsRoot, err := svc.SkillsRoot(created.Name)
+	if err != nil {
+		t.Fatalf("SkillsRoot() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillsRoot, "alpha"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(agent alpha) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha", "SKILL.md"), []byte("# Agent Alpha\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(agent SKILL.md) error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/"+created.ID+"/skills/alpha", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(skillsRoot, "alpha", "SKILL.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Stat(agent SKILL.md) error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(globalRoot, "alpha", "SKILL.md")); err != nil {
+		t.Fatalf("Stat(global SKILL.md) error = %v", err)
+	}
+}
+
+func TestHandleAgentSkillsMutationsReturnNotFoundForMissingAgent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	srv, _, _ := newAgentSkillManagementTestServer(t)
+
+	postReq := httptest.NewRequest(http.MethodPost, "/api/v1/agents/u-missing/skills:batchAdd", strings.NewReader(`{"names":["alpha"]}`))
+	postRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusNotFound {
+		t.Fatalf("batch add status = %d, want %d; body=%s", postRec.Code, http.StatusNotFound, postRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/agents/u-missing/skills/alpha", nil)
+	deleteRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNotFound {
+		t.Fatalf("delete status = %d, want %d; body=%s", deleteRec.Code, http.StatusNotFound, deleteRec.Body.String())
+	}
+}
+
+func newAgentSkillManagementTestServer(t *testing.T) (*Handler, *agent.Service, agent.Agent) {
+	t.Helper()
+	t.Cleanup(agent.TestOnlySetSandboxProvider(sandboxtest.NewProvider()))
+
+	hubSvc, err := hub.NewService(config.HubConfig{}, hub.DefaultStoreFactory)
+	if err != nil {
+		t.Fatalf("hub.NewService() error = %v", err)
+	}
+
+	svc, err := agent.NewService(config.ModelConfig{
+		Provider: config.ProviderLLMAPI,
+		BaseURL:  "http://127.0.0.1:4000",
+		APIKey:   "sk-test",
+		ModelID:  "model-1",
+	}, config.ServerConfig{}, "manager-image:test", "",
+		agent.WithHubService(hubSvc),
+		agent.WithBootstrapDefaultTemplates(config.BootstrapConfig{
+			DefaultManagerTemplate: config.DefaultBootstrapManagerTemplate,
+			DefaultWorkerTemplate:  config.DefaultBootstrapWorkerTemplate,
+		}),
+		agent.WithRuntime(fakeCompatRuntime{kind: agent.RuntimeKindCodex}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), agent.CreateRequest{
+		Spec: agent.CreateAgentSpec{
+			Name:        "alice",
+			Role:        agent.RoleWorker,
+			RuntimeKind: agent.RuntimeKindCodex,
+			Image:       "worker-image:test",
+			AgentProfile: agent.AgentProfile{
+				ProfileComplete: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	return &Handler{svc: svc}, svc, created
+}
+
 func TestHandleSkillsListsGlobalSkillsAndBrowsesFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

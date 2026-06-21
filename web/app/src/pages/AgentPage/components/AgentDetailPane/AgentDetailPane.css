@@ -397,9 +397,15 @@
 }
 
 .agent-detail-pane .agent-skills-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.agent-detail-pane .agent-skills-title-copy {
   display: inline-flex;
   align-items: baseline;
-  justify-content: flex-start;
   gap: 6px;
 }
 
@@ -434,6 +440,27 @@
   background: var(--surface);
 }
 
+.agent-skill-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-skill-card-header .btn {
+  flex: 0 0 auto;
+}
+
+.agent-skill-icon-button {
+  --btn-height: 32px;
+  --btn-min-width: 32px;
+  --btn-padding-x: 0;
+
+  width: 32px;
+  min-width: 32px;
+  padding-inline: 0;
+}
+
 .agent-skill-name {
   color: var(--text);
   font-size: 14px;
@@ -454,6 +481,83 @@
   color: var(--muted);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.agent-skills-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.agent-skills-dialog-header {
+  align-items: flex-start;
+}
+
+.agent-skills-dialog-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.agent-skills-dialog-body {
+  display: grid;
+  gap: 12px;
+  padding: 20px 22px;
+}
+
+.agent-skill-candidates-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.agent-skill-candidate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.agent-skill-candidate.selected {
+  border-color: color-mix(in oklab, var(--primary) 28%, var(--line));
+  background: color-mix(in oklab, var(--primary) 5%, var(--surface));
+}
+
+.agent-skill-candidate input {
+  margin-top: 2px;
+}
+
+.agent-skill-candidate-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.agent-skills-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 22px 22px;
+  border-top: 1px solid var(--line);
+}
+
+.agent-skills-dialog .agent-skills-empty {
+  padding: 16px 2px 4px;
+}
+
+.agent-skills-dialog .form-error {
+  margin: 0;
+}
+
+.agent-skills-dialog .csg-dialog-description {
+  max-width: 440px;
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .agent-detail-pane .agent-status-dot {
@@ -655,5 +759,11 @@
   .agent-detail-pane .profile-advanced-grid,
   .agent-detail-pane .agent-workspace-panels {
     grid-template-columns: 1fr;
+  }
+
+  .agent-skill-card-header,
+  .agent-detail-pane .agent-skills-title {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

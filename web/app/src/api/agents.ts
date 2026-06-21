@@ -160,6 +160,16 @@ export function fetchAgentSkillsFile(agentID: string, skillsPath: string): Promi
   return get(`api/v1/agents/${encodeURIComponent(agentID)}/skills/file?${params.toString()}`);
 }
 
+export function batchAddAgentSkillsRequest(agentID: string, skillNames: string[]): Promise<void> {
+  return post(`api/v1/agents/${encodeURIComponent(agentID)}/skills:batchAdd`, { names: skillNames });
+}
+
+export function deleteAgentSkillRequest(agentID: string, skillName: string): Promise<void> {
+  return del(
+    `api/v1/agents/${encodeURIComponent(agentID)}/skills/${encodeURIComponent(String(skillName || "").trim())}`,
+  );
+}
+
 export function createManagerAgentRequest(options: CreateManagerAgentOptions = {}): Promise<AgentLike> {
   const payload: { id: string; replace: boolean; runtime_kind?: RuntimeKind } = {
     id: MANAGER_AGENT_ID, // Legacy contract: id: "u-manager",
