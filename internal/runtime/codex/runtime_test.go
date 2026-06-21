@@ -319,14 +319,14 @@ func TestRuntimeCreateUsesLocalWorkspaceDir(t *testing.T) {
 	}
 }
 
-func TestRefreshWorkspaceAgentsFileCreatesManagedFileWhenMissing(t *testing.T) {
+func TestRefreshCodexHomeAgentsFileCreatesManagedFileWhenMissing(t *testing.T) {
 	root := t.TempDir()
 	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
 		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "Prefer targeted tests."}, nil
 	})
 
-	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
-		t.Fatalf("RefreshWorkspaceAgentsFile() error = %v", err)
+	if err := rt.RefreshCodexHomeAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
+		t.Fatalf("RefreshCodexHomeAgentsFile() error = %v", err)
 	}
 
 	raw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "home", "AGENTS.md"))
@@ -383,7 +383,7 @@ func TestRuntimeOptionsSchemaIncludesLocalWorkspaceDir(t *testing.T) {
 	}
 }
 
-func TestRefreshWorkspaceAgentsFileAppendsManagedBlockToExistingUserFile(t *testing.T) {
+func TestRefreshCodexHomeAgentsFileAppendsManagedBlockToExistingUserFile(t *testing.T) {
 	root := t.TempDir()
 	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
 		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "Use Chinese in docs."}, nil
@@ -397,8 +397,8 @@ func TestRefreshWorkspaceAgentsFileAppendsManagedBlockToExistingUserFile(t *test
 		t.Fatal(err)
 	}
 
-	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
-		t.Fatalf("RefreshWorkspaceAgentsFile() error = %v", err)
+	if err := rt.RefreshCodexHomeAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
+		t.Fatalf("RefreshCodexHomeAgentsFile() error = %v", err)
 	}
 
 	raw, err := os.ReadFile(agentsPath)
@@ -414,7 +414,7 @@ func TestRefreshWorkspaceAgentsFileAppendsManagedBlockToExistingUserFile(t *test
 	}
 }
 
-func TestRefreshWorkspaceAgentsFileReplacesExistingInstructionsBlock(t *testing.T) {
+func TestRefreshCodexHomeAgentsFileReplacesExistingInstructionsBlock(t *testing.T) {
 	root := t.TempDir()
 	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
 		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "New instructions."}, nil
@@ -436,8 +436,8 @@ old block
 		t.Fatal(err)
 	}
 
-	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
-		t.Fatalf("RefreshWorkspaceAgentsFile() error = %v", err)
+	if err := rt.RefreshCodexHomeAgentsFile(context.Background(), agentruntime.Handle{RuntimeID: "rt-u-alice"}); err != nil {
+		t.Fatalf("RefreshCodexHomeAgentsFile() error = %v", err)
 	}
 
 	raw, err := os.ReadFile(agentsPath)
@@ -459,15 +459,15 @@ old block
 	}
 }
 
-func TestRefreshWorkspaceAgentsFileIsIdempotent(t *testing.T) {
+func TestRefreshCodexHomeAgentsFileIsIdempotent(t *testing.T) {
 	root := t.TempDir()
 	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
 		return AgentRef{ID: "u-alice", Name: "alice", RuntimeID: h.RuntimeID, Instructions: "Stay focused."}, nil
 	})
 
 	handle := agentruntime.Handle{RuntimeID: "rt-u-alice"}
-	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), handle); err != nil {
-		t.Fatalf("first RefreshWorkspaceAgentsFile() error = %v", err)
+	if err := rt.RefreshCodexHomeAgentsFile(context.Background(), handle); err != nil {
+		t.Fatalf("first RefreshCodexHomeAgentsFile() error = %v", err)
 	}
 	agentsPath := filepath.Join(root, "alice", ".codex", "home", "AGENTS.md")
 	first, err := os.ReadFile(agentsPath)
@@ -475,8 +475,8 @@ func TestRefreshWorkspaceAgentsFileIsIdempotent(t *testing.T) {
 		t.Fatalf("read first AGENTS.md: %v", err)
 	}
 
-	if err := rt.RefreshWorkspaceAgentsFile(context.Background(), handle); err != nil {
-		t.Fatalf("second RefreshWorkspaceAgentsFile() error = %v", err)
+	if err := rt.RefreshCodexHomeAgentsFile(context.Background(), handle); err != nil {
+		t.Fatalf("second RefreshCodexHomeAgentsFile() error = %v", err)
 	}
 	second, err := os.ReadFile(agentsPath)
 	if err != nil {
@@ -878,9 +878,10 @@ func TestRuntimeSessionManagerHydratesPersistedSession(t *testing.T) {
 		},
 		ResolveAgent: func(h agentruntime.Handle) (AgentRef, error) {
 			return AgentRef{
-				ID:        "u-alice",
-				Name:      "alice",
-				RuntimeID: h.RuntimeID,
+				ID:           "u-alice",
+				Name:         "alice",
+				RuntimeID:    h.RuntimeID,
+				Instructions: "Resume with repo-specific instructions.",
 				Profile: agentruntime.Profile{
 					ModelID:         "gpt-5",
 					BaseURL:         "https://runtime.example/v1",
@@ -918,6 +919,16 @@ func TestRuntimeSessionManagerHydratesPersistedSession(t *testing.T) {
 	}
 	if session.SessionID != "resumed-thread" {
 		t.Fatalf("hydrated session id = %q, want resumed-thread", session.SessionID)
+	}
+	homeAgentsRaw, err := os.ReadFile(filepath.Join(root, "alice", ".codex", "home", "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read hydrated codex home AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(homeAgentsRaw), "Resume with repo-specific instructions.") {
+		t.Fatalf("hydrated codex home AGENTS.md = %q, want refreshed instructions", string(homeAgentsRaw))
+	}
+	if _, err := os.Stat(filepath.Join(session.WorkspaceDir, "AGENTS.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("workspace AGENTS.md stat error = %v, want not exist", err)
 	}
 
 	resp, err := manager.Prompt(context.Background(), SessionHandle{RuntimeID: "rt-u-alice"}, PromptRequest{

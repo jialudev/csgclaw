@@ -50,7 +50,7 @@ func (r *Runtime) RestartRequired(change agentruntime.RuntimeConfigChange) (bool
 
 func (r *Runtime) ReconcileConfig(ctx context.Context, h agentruntime.Handle, change agentruntime.RuntimeConfigChange) error {
 	_ = change
-	return r.RefreshWorkspaceAgentsFile(ctx, h)
+	return r.RefreshCodexHomeAgentsFile(ctx, h)
 }
 
 type responsesProbeTargetConfig struct {

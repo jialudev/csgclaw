@@ -409,7 +409,7 @@ func (r *Runtime) ensureSession(ctx context.Context, spec SessionSpec) (*Session
 	if err := r.seedCodexHomeSkills(spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
-	if err := r.refreshCodexWorkspaceAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.CodexHomeDir); err != nil {
+	if err := r.refreshCodexHomeAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(spec.BinaryPath) == "" {
@@ -477,7 +477,7 @@ func (r *Runtime) hydratePersistedSession(ctx context.Context, manager *appServe
 		StderrPath:   filepath.Join(runtimeDir, homeDirName, stderrLogFileName),
 		Profile:      agentRef.Profile.Normalized(),
 	}
-	if err := r.refreshCodexWorkspaceAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.WorkspaceDir); err != nil {
+	if err := r.refreshCodexHomeAgentsFile(agentruntime.Handle{RuntimeID: runtimeID}, spec.CodexHomeDir); err != nil {
 		return nil, err
 	}
 	if ctx == nil {
@@ -717,7 +717,7 @@ func (r *Runtime) resolveAgent(h agentruntime.Handle) (AgentRef, error) {
 	return agentRef, nil
 }
 
-func (r *Runtime) RefreshWorkspaceAgentsFile(_ context.Context, h agentruntime.Handle) error {
+func (r *Runtime) RefreshCodexHomeAgentsFile(_ context.Context, h agentruntime.Handle) error {
 	agentRef, err := r.resolveAgent(h)
 	if err != nil {
 		return err
@@ -726,7 +726,7 @@ func (r *Runtime) RefreshWorkspaceAgentsFile(_ context.Context, h agentruntime.H
 	if err != nil {
 		return err
 	}
-	return r.refreshCodexWorkspaceAgentsFile(h, codexHomeDir)
+	return r.refreshCodexHomeAgentsFile(h, codexHomeDir)
 }
 
 func (r *Runtime) resolveCodexHomeDir(agentName string) (string, error) {
@@ -737,7 +737,7 @@ func (r *Runtime) resolveCodexHomeDir(agentName string) (string, error) {
 	return dirs.CodexHome, nil
 }
 
-func (r *Runtime) refreshCodexWorkspaceAgentsFile(h agentruntime.Handle, codexHomeDir string) error {
+func (r *Runtime) refreshCodexHomeAgentsFile(h agentruntime.Handle, codexHomeDir string) error {
 	codexHomeDir = strings.TrimSpace(codexHomeDir)
 	if codexHomeDir == "" {
 		return fmt.Errorf("codex home dir is required")
@@ -767,7 +767,7 @@ func (r *Runtime) refreshCodexWorkspaceAgentsFile(h agentruntime.Handle, codexHo
 
 func (r *Runtime) SyncWorkspaceAgentsFile(ctx context.Context, h agentruntime.Handle, previousRuntimeOptions map[string]any) error {
 	_ = previousRuntimeOptions
-	return r.RefreshWorkspaceAgentsFile(ctx, h)
+	return r.RefreshCodexHomeAgentsFile(ctx, h)
 }
 
 func mergeAgentsInstructionsBlock(current, block string) string {
