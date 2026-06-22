@@ -23,6 +23,10 @@ export function WorkspaceSidebar({
   activePane,
   activeThreadRootID,
   currentUserID,
+  csghubAuthBusy,
+  csghubAuthError,
+  csghubAuthPending,
+  csghubAuthStatus,
   usersById,
   collapsedWorkspaceGroups,
   showUpgradeControls,
@@ -54,6 +58,8 @@ export function WorkspaceSidebar({
   upgradeError,
   onOpenUpgrade,
   onOpenConfigSettings,
+  onCSGHubLogin,
+  onCSGHubLogout,
   taskItems,
   teams,
   planningTaskID = "",
@@ -90,6 +96,12 @@ export function WorkspaceSidebar({
             showUpgradeControls={showUpgradeControls}
             onOpenUpgrade={onOpenUpgrade}
             onOpenConfigSettings={onOpenConfigSettings}
+            csghubAuthStatus={csghubAuthStatus}
+            csghubAuthBusy={csghubAuthBusy}
+            csghubAuthPending={csghubAuthPending}
+            csghubAuthError={csghubAuthError}
+            onCSGHubLogin={onCSGHubLogin}
+            onCSGHubLogout={onCSGHubLogout}
             t={t}
           />
         </div>

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Settings } from "lucide-react";
+import { LogIn, LogOut, Settings } from "lucide-react";
 import { Button } from "@/components/ui";
 import { MoonIcon, SunIcon } from "@/components/ui/Icons";
 import type { LocaleCode, TranslateFn } from "@/models/conversations";
+import type { CSGHubAuthStatus } from "@/models/csghubAuth";
+import { isCSGHubAuthenticated } from "@/models/csghubAuth";
 import type { UpgradePhase, UpgradeStatus } from "@/models/upgradeStatus";
 import { formatSidebarVersionLabel, hasUpgradeAttention, isLocalBuildUpgradeStatus } from "@/models/upgradeStatus";
 import { classNames } from "@/shared/lib/classNames";
@@ -21,6 +23,12 @@ type SidebarUserButtonProps = {
   showUpgradeControls?: boolean;
   onOpenUpgrade?: () => void;
   onOpenConfigSettings?: () => void;
+  csghubAuthStatus?: CSGHubAuthStatus | null;
+  csghubAuthBusy?: boolean;
+  csghubAuthPending?: boolean;
+  csghubAuthError?: string;
+  onCSGHubLogin?: () => void | Promise<void>;
+  onCSGHubLogout?: () => void | Promise<void>;
   t: TranslateFn;
 };
 
@@ -37,6 +45,12 @@ export function SidebarUserButton({
   showUpgradeControls = true,
   onOpenUpgrade,
   onOpenConfigSettings,
+  csghubAuthStatus = null,
+  csghubAuthBusy = false,
+  csghubAuthPending = false,
+  csghubAuthError = "",
+  onCSGHubLogin,
+  onCSGHubLogout,
   t,
 }: SidebarUserButtonProps) {
   const [open, setOpen] = useState(false);
@@ -65,6 +79,13 @@ export function SidebarUserButton({
             : formatSidebarVersionLabel(currentVersion),
       }
     : null;
+  const csghubAuthenticated = isCSGHubAuthenticated(csghubAuthStatus);
+  const csghubDisplayName = csghubAuthStatus?.user_id || csghubAuthStatus?.user_uuid || t("csghubSignedIn");
+  const csghubLoginLabel = csghubAuthPending
+    ? t("csghubLoginPending")
+    : csghubAuthBusy
+      ? t("csghubSigningIn")
+      : t("csghubSignIn");
 
   function handleOpenUpgrade() {
     setOpen(false);
@@ -164,6 +185,58 @@ export function SidebarUserButton({
             </div>
           </div>
           <div className="sidebar-menu-divider"></div>
+          <div className="sidebar-csghub-panel">
+            <div className="sidebar-csghub-heading">
+              <span className="sidebar-csghub-kicker">CSGHub</span>
+              <span className={classNames("sidebar-csghub-state", csghubAuthenticated && "is-authenticated")}>
+                {csghubAuthenticated ? t("csghubSignedIn") : t("csghubNotSignedIn")}
+              </span>
+            </div>
+            {csghubAuthenticated ? (
+              <div className="sidebar-csghub-account">
+                <span className="sidebar-csghub-identity">
+                  <span className="sidebar-csghub-avatar" aria-hidden="true">
+                    {csghubAuthStatus?.avatar ? (
+                      <img src={csghubAuthStatus.avatar} alt="" />
+                    ) : (
+                      <span>{initialsForCSGHubUser(csghubDisplayName)}</span>
+                    )}
+                  </span>
+                  <strong>{csghubDisplayName}</strong>
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="sidebar-csghub-action"
+                  disabled={csghubAuthBusy}
+                  role="menuitem"
+                  onClick={() => onCSGHubLogout?.()}
+                >
+                  <LogOut size={14} strokeWidth={2} aria-hidden="true" />
+                  <span>{t("csghubSignOut")}</span>
+                </Button>
+              </div>
+            ) : (
+              <div className="sidebar-csghub-account is-disconnected">
+                <span className="sidebar-csghub-status">
+                  {csghubAuthPending ? t("csghubLoginPendingDetail") : t("csghubNotSignedIn")}
+                </span>
+                <Button
+                  variant="secondaryColor"
+                  size="sm"
+                  className="sidebar-csghub-action"
+                  disabled={csghubAuthBusy || csghubAuthPending}
+                  role="menuitem"
+                  onClick={() => onCSGHubLogin?.()}
+                >
+                  <LogIn size={14} strokeWidth={2} aria-hidden="true" />
+                  <span>{csghubLoginLabel}</span>
+                </Button>
+              </div>
+            )}
+            {csghubAuthError ? <div className="sidebar-csghub-error">{csghubAuthError}</div> : null}
+          </div>
+          <div className="sidebar-menu-divider"></div>
           <button type="button" className="sidebar-menu-row" role="menuitem" onClick={handleOpenConfigSettings}>
             {t("configSettingsMenu")}
           </button>
@@ -200,6 +273,14 @@ export function SidebarUserButton({
       ) : null}
     </div>
   );
+}
+
+function initialsForCSGHubUser(name: string): string {
+  const cleaned = name.trim();
+  if (!cleaned) {
+    return "CS";
+  }
+  return cleaned.slice(0, 2).toUpperCase();
 }
 
 function upgradeMenuActionText({

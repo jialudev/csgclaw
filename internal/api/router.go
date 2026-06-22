@@ -68,6 +68,12 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Post("/login", h.handleCLIProxyAuthLogin)
 			r.Post("/logout", h.handleCLIProxyAuthLogout)
 		})
+		r.Route("/csghub/auth", func(r chi.Router) {
+			r.Get("/status", h.handleCSGHubAuthStatus)
+			r.Get("/callback", h.handleCSGHubAuthCallback)
+			r.Post("/login", h.handleCSGHubAuthLogin)
+			r.Post("/logout", h.handleCSGHubAuthLogout)
+		})
 		r.Post("/agent-profiles/models", h.handleAgentProfileModels)
 		r.Get("/agent-profile-defaults", h.handleAgentProfileDefaults)
 		r.Post("/local/directory-picker", h.handleLocalDirectoryPicker)

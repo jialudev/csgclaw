@@ -4,7 +4,7 @@ import {
   BOT_TYPE_NORMAL,
   BOT_TYPE_NOTIFICATION,
   DEFAULT_RUNTIME_KIND,
-  PROVIDERS,
+  PROVIDER_OPTIONS,
   WORKER_RUNTIME_KIND_OPTIONS,
 } from "@/shared/constants/agents";
 import { useEffect, useRef, useState, type SetStateAction } from "react";
@@ -26,7 +26,6 @@ import {
   agentCreateTemplateLocked,
   applyTemplateToDraft,
   ensureNotifierPullSubscriptionDraft,
-  formatProviderLabel,
   formatRuntimeKindLabel,
   isNotificationBotDraftContext,
   normalizeAuthProviderName,
@@ -412,10 +411,7 @@ export function AgentProfileModal({
                             onAgentModelsReset();
                           }}
                           triggerProps={{ "aria-label": t("profileProvider") }}
-                          options={PROVIDERS.map((provider) => ({
-                            value: provider,
-                            label: formatProviderLabel(provider),
-                          }))}
+                          options={PROVIDER_OPTIONS}
                         />
                       </label>
                       <label className="field">

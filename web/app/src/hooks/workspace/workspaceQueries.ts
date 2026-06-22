@@ -53,6 +53,7 @@ export const workspaceQueryKeys = {
     [WORKSPACE_QUERY_SCOPE, "agent-profile-models", requestKey || ""] as const,
   cliProxyAuthStatus: (provider: string | null | undefined) =>
     [WORKSPACE_QUERY_SCOPE, "cliproxy-auth-status", provider || ""] as const,
+  csghubAuthStatus: () => [WORKSPACE_QUERY_SCOPE, "csghub-auth-status"] as const,
   appVersion: () => [WORKSPACE_QUERY_SCOPE, "app-version"] as const,
   upgradeStatus: () => [WORKSPACE_QUERY_SCOPE, "upgrade-status"] as const,
 };
