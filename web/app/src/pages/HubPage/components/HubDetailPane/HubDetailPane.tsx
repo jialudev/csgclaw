@@ -9,6 +9,7 @@ import {
   DialogCloseButton,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogRoot,
   DialogTitle,
@@ -389,7 +390,7 @@ export function HubDetailPane({
             </div>
             <DialogCloseButton label={t("close")} size="sm" variant="tertiaryGray" />
           </DialogHeader>
-          <div className="hub-skill-delete-dialog-actions">
+          <DialogFooter className="hub-skill-delete-dialog-actions">
             <Button
               variant="secondaryGray"
               size="sm"
@@ -401,7 +402,7 @@ export function HubDetailPane({
             <Button variant="danger" size="sm" loading={skillDeleteBusy} onClick={handleDeleteSkillConfirm}>
               {t("hubDeleteSkillConfirmAction")}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </DialogRoot>
     </section>
