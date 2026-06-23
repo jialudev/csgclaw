@@ -8,11 +8,11 @@
 # Manual build:
 #   make stage-docker-embed-cli
 #   docker build -f internal/templates/embed/openclaw-manager/Dockerfile \
-#     --build-arg OPENCLAW_IMAGE=opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260610.2-csgclaw \
+#     --build-arg OPENCLAW_IMAGE=opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260623.24-csgclaw \
 #     -t openclaw-manager:local .
 
 # Default upstream OpenClaw base image (single source of truth for local make / CI builds).
-ARG OPENCLAW_IMAGE=opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260610.2-csgclaw
+ARG OPENCLAW_IMAGE=opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260623.24-csgclaw
 
 FROM ${OPENCLAW_IMAGE}
 
