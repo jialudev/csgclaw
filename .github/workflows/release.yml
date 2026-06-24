@@ -125,7 +125,13 @@ jobs:
       - name: Verify builtin agent image refs
         shell: bash
         run: |
-          for manifest in internal/templates/embed/*/agent.toml; do
+          shopt -s nullglob
+          manifests=(internal/hub/templates/*/*/agent.toml)
+          if [ ${#manifests[@]} -eq 0 ]; then
+            echo "no builtin agent manifests found under internal/hub/templates" >&2
+            exit 1
+          fi
+          for manifest in "${manifests[@]}"; do
             grep '^ref = ' "${manifest}"
             if grep -q '^ref = ""' "${manifest}"; then
               echo "missing image ref in ${manifest}" >&2
