@@ -8,9 +8,9 @@ export const ApiEndpoints = {
   serverConfig: `${API_BASE_PATH}/server/config`,
   serverRestart: `${API_BASE_PATH}/server/restart`,
   serverRestartStatus: `${API_BASE_PATH}/server/restart/status`,
-  csghubAuthStatus: `${API_BASE_PATH}/csghub/auth/status`,
-  csghubAuthLogin: `${API_BASE_PATH}/csghub/auth/login`,
-  csghubAuthLogout: `${API_BASE_PATH}/csghub/auth/logout`,
+  authStatus: `${API_BASE_PATH}/auth/status`,
+  authLogin: `${API_BASE_PATH}/auth/login`,
+  authLogout: `${API_BASE_PATH}/auth/logout`,
   notifierRelayWebhookIngress: `${API_BASE_PATH}/webhooks/ingress`,
 } as const;
 

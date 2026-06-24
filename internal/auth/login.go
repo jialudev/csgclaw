@@ -1,4 +1,4 @@
-package csghubauth
+package auth
 
 import (
 	"context"
@@ -55,7 +55,7 @@ func (s *Service) Login(_ context.Context, opts ...LoginOptions) (LoginResponse,
 		callbackURL = callbackURLWithReturnURL(sanitizeCallbackURL(opts[0].CallbackURL), returnURL)
 	}
 	if callbackURL == "" {
-		return LoginResponse{}, fmt.Errorf("csghub login callback url is required")
+		return LoginResponse{}, fmt.Errorf("auth callback url is required")
 	}
 	return LoginResponse{LoginURL: s.buildLoginURL(callbackURL)}, nil
 }
@@ -103,24 +103,35 @@ func (s *Service) completeCallback(ctx context.Context, values url.Values) (stri
 	if err != nil {
 		return "", err
 	}
-	aiGatewayBuiltinAPIKey := builtinAPIKey
 
 	store, err := s.store()
 	if err != nil {
 		return "", err
 	}
+	now := s.now().UTC()
 	record := Record{
-		AIGatewayBuiltinAPIKey: aiGatewayBuiltinAPIKey,
-		AccessToken:            accessToken,
-		UserID:                 userID,
-		UserUUID:               userUUID,
-		Avatar:                 avatar,
-		CSGHubBaseURL:          csgHubBaseURL,
-		PortalURL:              portalURL,
-		LoggedInAt:             s.now().UTC(),
+		Tokens: Tokens{
+			AccessToken: accessToken,
+		},
+		Account: Account{
+			UserID:     userID,
+			UserUUID:   userUUID,
+			Avatar:     avatar,
+			BaseURL:    csgHubBaseURL,
+			PortalURL:  portalURL,
+			LoggedInAt: now,
+		},
+		LastRefresh: now,
 	}
 	if err := store.Save(record); err != nil {
 		return "", err
+	}
+	if builtinAPIKey != "" {
+		if err := store.SaveCSGHubProviderCredentials(CSGHubProviderCredentials{
+			AIGatewayBuiltinAPIKey: builtinAPIKey,
+		}); err != nil {
+			return "", err
+		}
 	}
 
 	if returnURL := callbackReturnURL(values); returnURL != "" {

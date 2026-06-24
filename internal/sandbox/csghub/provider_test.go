@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"csgclaw/internal/csghubauth"
+	"csgclaw/internal/auth"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/csghub/csghubsdk"
 )
@@ -49,18 +49,18 @@ func TestOpenRequiresBaseURL(t *testing.T) {
 	}
 }
 
-func TestOpenFallsBackToCSGHubAuthStore(t *testing.T) {
+func TestOpenFallsBackToAuthStore(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CSGHUB_API_BASE_URL", "")
 	t.Setenv("CSGHUB_USER_TOKEN", "")
 
-	store, err := csghubauth.DefaultStore()
+	store, err := auth.DefaultStore()
 	if err != nil {
 		t.Fatalf("DefaultStore() error = %v", err)
 	}
-	if err := store.Save(csghubauth.Record{
-		AccessToken:   "stored-token",
-		CSGHubBaseURL: "https://stored-hub.example.test",
+	if err := store.Save(auth.Record{
+		Tokens:  auth.Tokens{AccessToken: "stored-token"},
+		Account: auth.Account{BaseURL: "https://stored-hub.example.test"},
 	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -78,18 +78,18 @@ func TestOpenFallsBackToCSGHubAuthStore(t *testing.T) {
 	}
 }
 
-func TestOpenPrefersEnvOverCSGHubAuthStore(t *testing.T) {
+func TestOpenPrefersEnvOverAuthStore(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CSGHUB_API_BASE_URL", "https://env-hub.example.test")
 	t.Setenv("CSGHUB_USER_TOKEN", "env-token")
 
-	store, err := csghubauth.DefaultStore()
+	store, err := auth.DefaultStore()
 	if err != nil {
 		t.Fatalf("DefaultStore() error = %v", err)
 	}
-	if err := store.Save(csghubauth.Record{
-		AccessToken:   "stored-token",
-		CSGHubBaseURL: "https://stored-hub.example.test",
+	if err := store.Save(auth.Record{
+		Tokens:  auth.Tokens{AccessToken: "stored-token"},
+		Account: auth.Account{BaseURL: "https://stored-hub.example.test"},
 	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}

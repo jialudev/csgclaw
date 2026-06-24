@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"csgclaw/internal/auth"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
-	"csgclaw/internal/csghubauth"
 	"csgclaw/internal/modelprovider"
 	agentruntime "csgclaw/internal/runtime"
 )
@@ -29,7 +29,7 @@ var (
 	defaultCSGHubLiteBaseURL = modelprovider.CSGHubLiteDefaultBaseURL
 	defaultCSGHubLiteAPIKey  = modelprovider.CSGHubLiteDefaultAPIKey
 	defaultCSGHubCredentials = func(ctx context.Context, client *http.Client) (string, string, bool, error) {
-		store, err := csghubauth.DefaultStore()
+		store, err := auth.DefaultStore()
 		if err != nil {
 			return "", "", false, err
 		}

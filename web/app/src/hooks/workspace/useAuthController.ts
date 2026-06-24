@@ -1,71 +1,66 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { beginCSGHubAuthLogin, fetchCSGHubAuthStatus, logoutCSGHubAuth } from "@/api/csghubAuth";
+import { beginAuthLogin, fetchAuthStatus, logoutAuth } from "@/api/auth";
 import { errorMessage } from "@/api/client";
-import {
-  emptyCSGHubAuthStatus,
-  isCSGHubAuthenticated,
-  normalizeCSGHubAuthStatus,
-  normalizeCSGHubLoginResponse,
-} from "@/models/csghubAuth";
-import type { CSGHubAuthStatus } from "@/models/csghubAuth";
+import { emptyAuthStatus, isAuthenticated, normalizeAuthStatus, normalizeLoginResponse } from "@/models/auth";
+import type { AuthStatus } from "@/models/auth";
 import type { TranslateFn } from "@/models/conversations";
 import { workspaceQueryKeys } from "./workspaceQueries";
 
 const LOGIN_POLL_INTERVAL_MS = 2000;
 const LOGIN_POLL_TIMEOUT_MS = 120000;
 
-export type CSGHubAuthController = {
-  csghubAuthBusy: boolean;
-  csghubAuthError: string;
-  csghubAuthPending: boolean;
-  csghubAuthStatus: CSGHubAuthStatus;
-  loginCSGHub: () => Promise<void>;
-  logoutCSGHub: () => Promise<void>;
+export type AuthController = {
+  busy: boolean;
+  error: string;
+  login: () => Promise<void>;
+  logout: () => Promise<void>;
+  pending: boolean;
+  status: AuthStatus;
 };
 
-export function useCSGHubAuthController(t: TranslateFn): CSGHubAuthController {
+export function useAuthController(t: TranslateFn): AuthController {
   const queryClient = useQueryClient();
   const [busyAction, setBusyAction] = useState<"login" | "logout" | "">("");
   const [authError, setAuthError] = useState("");
   const [loginPending, setLoginPending] = useState(false);
 
   const statusQuery = useQuery({
-    queryKey: workspaceQueryKeys.csghubAuthStatus(),
-    queryFn: fetchNormalizedCSGHubAuthStatus,
+    queryKey: workspaceQueryKeys.authStatus(),
+    queryFn: fetchNormalizedAuthStatus,
     retry: 0,
   });
 
-  const status = useMemo(() => statusQuery.data ?? emptyCSGHubAuthStatus(), [statusQuery.data]);
+  const status = useMemo(() => statusQuery.data ?? emptyAuthStatus(), [statusQuery.data]);
 
   const setStatus = useCallback(
-    (next: CSGHubAuthStatus) => {
-      queryClient.setQueryData(workspaceQueryKeys.csghubAuthStatus(), next);
+    (next: AuthStatus) => {
+      queryClient.setQueryData(workspaceQueryKeys.authStatus(), next);
     },
     [queryClient],
   );
 
   const refreshStatus = useCallback(async () => {
     return queryClient.fetchQuery({
-      queryKey: workspaceQueryKeys.csghubAuthStatus(),
-      queryFn: fetchNormalizedCSGHubAuthStatus,
+      queryKey: workspaceQueryKeys.authStatus(),
+      queryFn: fetchNormalizedAuthStatus,
       retry: 0,
     });
   }, [queryClient]);
 
-  const loginCSGHub = useCallback(async () => {
+  const login = useCallback(async () => {
     if (busyAction) {
       return;
     }
     setBusyAction("login");
     setAuthError("");
     try {
-      const login = normalizeCSGHubLoginResponse(await beginCSGHubAuthLogin(window.location.href));
-      if (!login.login_url) {
+      const loginResp = normalizeLoginResponse(await beginAuthLogin(window.location.href));
+      if (!loginResp.login_url) {
         throw new Error(t("csghubLoginURLMissing"));
       }
       setLoginPending(true);
-      window.location.assign(login.login_url);
+      window.location.assign(loginResp.login_url);
     } catch (err) {
       setLoginPending(false);
       setAuthError(errorMessage(err, t("csghubLoginFailed")));
@@ -74,14 +69,14 @@ export function useCSGHubAuthController(t: TranslateFn): CSGHubAuthController {
     }
   }, [busyAction, t]);
 
-  const logoutCSGHub = useCallback(async () => {
+  const logout = useCallback(async () => {
     if (busyAction) {
       return;
     }
     setBusyAction("logout");
     setAuthError("");
     try {
-      const next = normalizeCSGHubAuthStatus(await logoutCSGHubAuth());
+      const next = normalizeAuthStatus(await logoutAuth());
       setStatus(next);
       setLoginPending(false);
     } catch (err) {
@@ -104,7 +99,7 @@ export function useCSGHubAuthController(t: TranslateFn): CSGHubAuthController {
         if (cancelled) {
           return;
         }
-        if (isCSGHubAuthenticated(next)) {
+        if (isAuthenticated(next)) {
           setLoginPending(false);
           setAuthError("");
           return;
@@ -128,15 +123,15 @@ export function useCSGHubAuthController(t: TranslateFn): CSGHubAuthController {
   }, [loginPending, refreshStatus, t]);
 
   return {
-    csghubAuthBusy: Boolean(busyAction),
-    csghubAuthError: authError || (statusQuery.isError ? errorMessage(statusQuery.error, t("csghubStatusFailed")) : ""),
-    csghubAuthPending: loginPending,
-    csghubAuthStatus: status,
-    loginCSGHub,
-    logoutCSGHub,
+    busy: Boolean(busyAction),
+    error: authError || (statusQuery.isError ? errorMessage(statusQuery.error, t("csghubStatusFailed")) : ""),
+    login,
+    logout,
+    pending: loginPending,
+    status,
   };
 }
 
-async function fetchNormalizedCSGHubAuthStatus(): Promise<CSGHubAuthStatus> {
-  return normalizeCSGHubAuthStatus(await fetchCSGHubAuthStatus());
+async function fetchNormalizedAuthStatus(): Promise<AuthStatus> {
+  return normalizeAuthStatus(await fetchAuthStatus());
 }

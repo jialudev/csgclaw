@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/auth"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
-	"csgclaw/internal/csghubauth"
 )
 
 func TestChatCompletionsLLMAPIOverridesModelAndProxiesUpstream(t *testing.T) {
@@ -122,15 +122,17 @@ func TestChatCompletionsUsesCSGHubAIGatewayAuthStore(t *testing.T) {
 	}))
 	defer hub.Close()
 
-	store, err := csghubauth.DefaultStore()
+	store, err := auth.DefaultStore()
 	if err != nil {
 		t.Fatalf("DefaultStore() error = %v", err)
 	}
-	if err := store.Save(csghubauth.Record{
-		AccessToken:   "access-token",
-		CSGHubBaseURL: hub.URL,
-		UserID:        "alice",
-		UserUUID:      "user-1",
+	if err := store.Save(auth.Record{
+		Tokens: auth.Tokens{AccessToken: "access-token"},
+		Account: auth.Account{
+			BaseURL:  hub.URL,
+			UserID:   "alice",
+			UserUUID: "user-1",
+		},
 	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -170,12 +172,12 @@ func TestChatCompletionsUsesCSGHubAIGatewayAuthStore(t *testing.T) {
 	if !sawBuiltin {
 		t.Fatal("builtin api key endpoint was not called")
 	}
-	record, ok, err := store.Load()
+	credentials, ok, err := store.LoadCSGHubProviderCredentials()
 	if err != nil || !ok {
-		t.Fatalf("Load() = %+v, %v, %v", record, ok, err)
+		t.Fatalf("LoadCSGHubProviderCredentials() = %+v, %v, %v", credentials, ok, err)
 	}
-	if record.AIGatewayBuiltinAPIKey != "gk_aigateway-key" {
-		t.Fatalf("stored AIGatewayBuiltinAPIKey = %q, want cached aigateway key", record.AIGatewayBuiltinAPIKey)
+	if credentials.AIGatewayBuiltinAPIKey != "gk_aigateway-key" {
+		t.Fatalf("stored AIGatewayBuiltinAPIKey = %q, want cached aigateway key", credentials.AIGatewayBuiltinAPIKey)
 	}
 }
 

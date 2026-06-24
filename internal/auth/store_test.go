@@ -1,4 +1,4 @@
-package csghubauth
+package auth
 
 import (
 	"context"
@@ -13,21 +13,30 @@ import (
 )
 
 func TestStoreSaveLoadStatusAndDelete(t *testing.T) {
-	store := NewStore(filepath.Join(t.TempDir(), "auth", "csghub.json"))
+	store := newTestStore(t)
 	loggedInAt := time.Date(2026, 6, 22, 8, 30, 0, 0, time.UTC)
 
 	err := store.Save(Record{
-		AIGatewayBuiltinAPIKey: " gk_api-key ",
-		AccessToken:            " access-token ",
-		UserID:                 " alice ",
-		UserUUID:               " user-uuid ",
-		Avatar:                 " https://example.test/avatar.png ",
-		CSGHubBaseURL:          " https://hub.example.test/ ",
-		PortalURL:              " https://hub.example.test/welcome ",
-		LoggedInAt:             loggedInAt,
+		Tokens: Tokens{
+			AccessToken: " access-token ",
+		},
+		Account: Account{
+			UserID:     " alice ",
+			UserUUID:   " user-uuid ",
+			Avatar:     " https://example.test/avatar.png ",
+			BaseURL:    " https://hub.example.test/ ",
+			PortalURL:  " https://hub.example.test/welcome ",
+			LoggedInAt: loggedInAt,
+		},
+		LastRefresh: loggedInAt,
 	})
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
+	}
+	if err := store.SaveCSGHubProviderCredentials(CSGHubProviderCredentials{
+		AIGatewayBuiltinAPIKey: " gk_api-key ",
+	}); err != nil {
+		t.Fatalf("SaveCSGHubProviderCredentials() error = %v", err)
 	}
 
 	path, err := store.Path()
@@ -49,21 +58,44 @@ func TestStoreSaveLoadStatusAndDelete(t *testing.T) {
 	if !ok {
 		t.Fatal("Load() ok = false, want true")
 	}
-	if record.AIGatewayBuiltinAPIKey != "gk_api-key" || record.AccessToken != "access-token" {
+	if !record.LastRefresh.Equal(loggedInAt) {
+		t.Fatalf("record auth metadata not normalized: %+v", record)
+	}
+	if record.Tokens.AccessToken != "access-token" {
 		t.Fatalf("record secrets not normalized: %+v", record)
 	}
 	rawStore, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read auth store: %v", err)
 	}
-	if !strings.Contains(string(rawStore), `"ai_gateway_builtin_api_key"`) {
-		t.Fatalf("auth store does not use ai_gateway_builtin_api_key: %s", rawStore)
+	var rawJSON map[string]any
+	if err := json.Unmarshal(rawStore, &rawJSON); err != nil {
+		t.Fatalf("decode raw auth store: %v", err)
+	}
+	if strings.Contains(string(rawStore), `"ai_gateway_builtin_api_key"`) {
+		t.Fatalf("auth store should not contain provider credentials: %s", rawStore)
 	}
 	if strings.Contains(string(rawStore), `"api_key"`) {
 		t.Fatalf("auth store still writes api_key: %s", rawStore)
 	}
-	if record.CSGHubBaseURL != "https://hub.example.test" {
-		t.Fatalf("CSGHubBaseURL = %q", record.CSGHubBaseURL)
+	if _, ok := rawJSON["auth_mode"]; ok {
+		t.Fatalf("auth store should not contain auth_mode: %s", rawStore)
+	}
+	tokens, ok := rawJSON["tokens"].(map[string]any)
+	if !ok {
+		t.Fatalf("tokens = %#v, want object", rawJSON["tokens"])
+	}
+	if tokens["access_token"] != "access-token" {
+		t.Fatalf("tokens.access_token = %v, want access-token", tokens["access_token"])
+	}
+	if _, ok := rawJSON["account"].(map[string]any); !ok {
+		t.Fatalf("account = %#v, want object", rawJSON["account"])
+	}
+	if rawJSON["last_refresh"] == "" {
+		t.Fatalf("last_refresh is empty in auth store: %s", rawStore)
+	}
+	if record.Account.BaseURL != "https://hub.example.test" {
+		t.Fatalf("BaseURL = %q", record.Account.BaseURL)
 	}
 
 	status, err := store.Status()
@@ -79,6 +111,21 @@ func TestStoreSaveLoadStatusAndDelete(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "access-token") || strings.Contains(string(raw), "gk_api-key") {
 		t.Fatalf("status leaks secrets: %s", raw)
+	}
+
+	providerPath, err := store.CSGHubProviderPath()
+	if err != nil {
+		t.Fatalf("CSGHubProviderPath() error = %v", err)
+	}
+	providerRaw, err := os.ReadFile(providerPath)
+	if err != nil {
+		t.Fatalf("read provider auth store: %v", err)
+	}
+	if !strings.Contains(string(providerRaw), `"ai_gateway_builtin_api_key"`) {
+		t.Fatalf("provider auth store does not contain ai gateway key: %s", providerRaw)
+	}
+	if strings.Contains(string(providerRaw), "access-token") || strings.Contains(string(providerRaw), "alice") {
+		t.Fatalf("provider auth store should not contain account state: %s", providerRaw)
 	}
 
 	baseURL, token, ok, err := store.Credentials()
@@ -107,14 +154,17 @@ func TestStoreSaveLoadStatusAndDelete(t *testing.T) {
 	if status.Authenticated {
 		t.Fatalf("status after delete = %+v, want unauthenticated", status)
 	}
+	if _, err := os.Stat(providerPath); !os.IsNotExist(err) {
+		t.Fatalf("provider auth store still exists after delete: %v", err)
+	}
 }
 
 func TestStoreSaveRequiresRuntimeCredentials(t *testing.T) {
-	store := NewStore(filepath.Join(t.TempDir(), "csghub.json"))
-	if err := store.Save(Record{CSGHubBaseURL: "https://hub.example.test"}); err == nil {
+	store := newTestStore(t)
+	if err := store.Save(Record{Account: Account{BaseURL: "https://hub.example.test"}}); err == nil {
 		t.Fatal("Save() error = nil, want access token error")
 	}
-	if err := store.Save(Record{AccessToken: "token"}); err == nil {
+	if err := store.Save(Record{Tokens: Tokens{AccessToken: "token"}}); err == nil {
 		t.Fatal("Save() error = nil, want base url error")
 	}
 }
@@ -123,10 +173,10 @@ func TestAIGatewayCredentialsRequiresStoredAPIKey(t *testing.T) {
 	t.Setenv("CSGHUB_AIGATEWAY_BASE_URL", "https://gateway.example.test")
 	t.Setenv("CSGHUB_AIGATEWAY_URL", "")
 
-	store := NewStore(filepath.Join(t.TempDir(), "csghub.json"))
+	store := newTestStore(t)
 	if err := store.Save(Record{
-		AccessToken:   "access-token",
-		CSGHubBaseURL: "https://hub.example.test",
+		Tokens:  Tokens{AccessToken: "access-token"},
+		Account: Account{BaseURL: "https://hub.example.test"},
 	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -165,15 +215,21 @@ func TestEnsureAIGatewayCredentialsFetchesAndCachesBuiltinAPIKey(t *testing.T) {
 	}))
 	defer hub.Close()
 
-	store := NewStore(filepath.Join(t.TempDir(), "csghub.json"))
+	store := newTestStore(t)
 	if err := store.Save(Record{
-		AIGatewayBuiltinAPIKey: "non-builtin-key",
-		AccessToken:            "access-token",
-		UserID:                 "alice",
-		UserUUID:               "user-1",
-		CSGHubBaseURL:          hub.URL,
+		Tokens: Tokens{AccessToken: "access-token"},
+		Account: Account{
+			UserID:   "alice",
+			UserUUID: "user-1",
+			BaseURL:  hub.URL,
+		},
 	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
+	}
+	if err := store.SaveCSGHubProviderCredentials(CSGHubProviderCredentials{
+		AIGatewayBuiltinAPIKey: "non-builtin-key",
+	}); err != nil {
+		t.Fatalf("SaveCSGHubProviderCredentials() error = %v", err)
 	}
 
 	baseURL, apiKey, ok, err := store.EnsureAIGatewayCredentials(context.Background(), hub.Client())
@@ -186,11 +242,20 @@ func TestEnsureAIGatewayCredentialsFetchesAndCachesBuiltinAPIKey(t *testing.T) {
 	if !sawBuiltin {
 		t.Fatal("builtin api key endpoint was not called")
 	}
-	record, ok, err := store.Load()
+	credentials, ok, err := store.LoadCSGHubProviderCredentials()
 	if err != nil || !ok {
-		t.Fatalf("Load() = %+v, %v, %v", record, ok, err)
+		t.Fatalf("LoadCSGHubProviderCredentials() = %+v, %v, %v", credentials, ok, err)
 	}
-	if record.AIGatewayBuiltinAPIKey != "gk_builtin" {
-		t.Fatalf("stored AIGatewayBuiltinAPIKey = %q, want builtin key", record.AIGatewayBuiltinAPIKey)
+	if credentials.AIGatewayBuiltinAPIKey != "gk_builtin" {
+		t.Fatalf("stored AIGatewayBuiltinAPIKey = %q, want builtin key", credentials.AIGatewayBuiltinAPIKey)
 	}
+}
+
+func newTestStore(t *testing.T) Store {
+	t.Helper()
+	root := t.TempDir()
+	return NewStoreWithProviderPath(
+		filepath.Join(root, "auth.json"),
+		filepath.Join(root, "auth", "csghub.json"),
+	)
 }

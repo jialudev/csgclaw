@@ -19,7 +19,7 @@ import { useWorkspaceShellController } from "./useWorkspaceShellController";
 import { useWorkspaceHubController } from "./useWorkspaceHubController";
 import { useUpgradeController } from "./useUpgradeController";
 import { useConfigController } from "./useConfigController";
-import { useCSGHubAuthController } from "./useCSGHubAuthController";
+import { useAuthController } from "./useAuthController";
 import { useAgentController } from "./useAgentController";
 import { useConversationController } from "./useConversationController";
 import { useProfilePreviewController } from "./useProfilePreviewController";
@@ -237,7 +237,7 @@ export function useWorkspaceController() {
     refreshWorkspaceAppVersion,
     t,
   });
-  const csghubAuth = useCSGHubAuthController(t);
+  const auth = useAuthController(t);
   const agent = useAgentController({
     activeConversationId,
     activePane,
@@ -607,12 +607,12 @@ export function useWorkspaceController() {
       upgradeError: upgrade.upgradeError,
       onOpenUpgrade: upgrade.openUpgradeModal,
       onOpenConfigSettings: configSettings.openConfigModal,
-      csghubAuthStatus: csghubAuth.csghubAuthStatus,
-      csghubAuthBusy: csghubAuth.csghubAuthBusy,
-      csghubAuthPending: csghubAuth.csghubAuthPending,
-      csghubAuthError: csghubAuth.csghubAuthError,
-      onCSGHubLogin: csghubAuth.loginCSGHub,
-      onCSGHubLogout: csghubAuth.logoutCSGHub,
+      authStatus: auth.status,
+      authBusy: auth.busy,
+      authPending: auth.pending,
+      authError: auth.error,
+      onLogin: auth.login,
+      onLogout: auth.logout,
     },
     hubViewProps: {
       t,

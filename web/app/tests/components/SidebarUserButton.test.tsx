@@ -218,7 +218,7 @@ describe("SidebarUserButton", () => {
 
   it("shows CSGHub sign-in when no account is connected", async () => {
     const user = userEvent.setup();
-    const onCSGHubLogin = vi.fn();
+    const onLogin = vi.fn();
 
     render(
       <SidebarUserButton
@@ -229,7 +229,7 @@ describe("SidebarUserButton", () => {
         onOpenConfigSettings={() => {}}
         onLocaleChange={() => {}}
         onThemeChange={() => {}}
-        onCSGHubLogin={onCSGHubLogin}
+        onLogin={onLogin}
         t={t}
         theme="light"
         upgradeStatus={updateAvailableStatus}
@@ -242,12 +242,12 @@ describe("SidebarUserButton", () => {
     expect(screen.getAllByText("Not signed in")).toHaveLength(2);
     expect(screen.queryByText("Sign in with CSGHub")).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Sign in" }));
-    expect(onCSGHubLogin).toHaveBeenCalledTimes(1);
+    expect(onLogin).toHaveBeenCalledTimes(1);
   });
 
   it("shows CSGHub account metadata and signs out", async () => {
     const user = userEvent.setup();
-    const onCSGHubLogout = vi.fn();
+    const onLogout = vi.fn();
 
     render(
       <SidebarUserButton
@@ -258,13 +258,13 @@ describe("SidebarUserButton", () => {
         onOpenConfigSettings={() => {}}
         onLocaleChange={() => {}}
         onThemeChange={() => {}}
-        onCSGHubLogout={onCSGHubLogout}
-        csghubAuthStatus={{
+        onLogout={onLogout}
+        authStatus={{
           authenticated: true,
           user_id: "alice",
           user_uuid: "user-1",
           avatar: "https://example.test/avatar.png",
-          csghub_base_url: "https://hub.example.test",
+          base_url: "https://hub.example.test",
           portal_url: "https://hub.example.test/portal",
           logged_in_at: "2026-06-22T09:00:00Z",
         }}
@@ -280,6 +280,6 @@ describe("SidebarUserButton", () => {
     expect(screen.getByText("alice")).toBeInTheDocument();
     expect(screen.queryByText("https://hub.example.test")).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
-    expect(onCSGHubLogout).toHaveBeenCalledTimes(1);
+    expect(onLogout).toHaveBeenCalledTimes(1);
   });
 });

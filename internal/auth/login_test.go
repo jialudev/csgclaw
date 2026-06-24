@@ -1,4 +1,4 @@
-package csghubauth
+package auth
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -56,7 +55,7 @@ func TestCompleteCallbackStoresCredentials(t *testing.T) {
 	}))
 	t.Cleanup(api.Close)
 
-	store := NewStore(filepath.Join(t.TempDir(), "csghub.json"))
+	store := newTestStore(t)
 	now := time.Date(2026, 6, 22, 9, 0, 0, 0, time.UTC)
 	service := &Service{
 		Store:         store,
@@ -87,17 +86,27 @@ func TestCompleteCallbackStoresCredentials(t *testing.T) {
 	if !ok {
 		t.Fatal("auth record not saved")
 	}
-	if record.AIGatewayBuiltinAPIKey != "gk_aigateway-key" || record.AccessToken != "access-token" {
-		t.Fatalf("record = %+v, want saved credentials", record)
+	if record.Tokens.AccessToken != "access-token" {
+		t.Fatalf("record = %+v, want saved access token", record)
 	}
-	if record.UserID != "alice" || record.UserUUID != "user-1" {
-		t.Fatalf("record user = %q/%q", record.UserID, record.UserUUID)
+	if record.Account.UserID != "alice" || record.Account.UserUUID != "user-1" {
+		t.Fatalf("record user = %q/%q", record.Account.UserID, record.Account.UserUUID)
 	}
-	if record.CSGHubBaseURL != api.URL {
-		t.Fatalf("record CSGHubBaseURL = %q, want %q", record.CSGHubBaseURL, api.URL)
+	if record.Account.BaseURL != api.URL {
+		t.Fatalf("record BaseURL = %q, want %q", record.Account.BaseURL, api.URL)
 	}
-	if !record.LoggedInAt.Equal(now) {
-		t.Fatalf("LoggedInAt = %s, want %s", record.LoggedInAt, now)
+	if !record.Account.LoggedInAt.Equal(now) {
+		t.Fatalf("LoggedInAt = %s, want %s", record.Account.LoggedInAt, now)
+	}
+	if !record.LastRefresh.Equal(now) {
+		t.Fatalf("LastRefresh = %s, want %s", record.LastRefresh, now)
+	}
+	credentials, ok, err := store.LoadCSGHubProviderCredentials()
+	if err != nil || !ok {
+		t.Fatalf("LoadCSGHubProviderCredentials() = %+v, %v, %v", credentials, ok, err)
+	}
+	if credentials.AIGatewayBuiltinAPIKey != "gk_aigateway-key" {
+		t.Fatalf("AIGatewayBuiltinAPIKey = %q, want gk_aigateway-key", credentials.AIGatewayBuiltinAPIKey)
 	}
 }
 
@@ -107,7 +116,7 @@ func TestLoginUsesOpenCSGSSOCallbackURL(t *testing.T) {
 	}
 
 	returnURL := "http://127.0.0.1:18080/#/dms/room-1"
-	callbackURL := "http://127.0.0.1:18080/api/v1/csghub/auth/callback"
+	callbackURL := "http://127.0.0.1:18080/api/v1/auth/callback"
 	login, err := service.Login(context.Background(), LoginOptions{
 		ReturnURL:   returnURL,
 		CallbackURL: callbackURL,
@@ -180,7 +189,7 @@ func TestCallbackAllowsMissingBuiltinAPIKey(t *testing.T) {
 	}))
 	t.Cleanup(api.Close)
 
-	store := NewStore(filepath.Join(t.TempDir(), "csghub.json"))
+	store := newTestStore(t)
 	service := &Service{Store: store, CSGHubBaseURL: api.URL, HTTPClient: api.Client()}
 	redirect, err := service.completeCallback(context.Background(), url.Values{
 		"jwt_token": []string{testJWT("alice", "user-1")},
@@ -198,8 +207,12 @@ func TestCallbackAllowsMissingBuiltinAPIKey(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Load() = %+v, %v, %v", record, ok, err)
 	}
-	if record.AIGatewayBuiltinAPIKey != "" {
-		t.Fatalf("AIGatewayBuiltinAPIKey = %q, want empty when builtin fetch fails", record.AIGatewayBuiltinAPIKey)
+	_, ok, err = store.LoadCSGHubProviderCredentials()
+	if err != nil {
+		t.Fatalf("LoadCSGHubProviderCredentials() error = %v", err)
+	}
+	if ok {
+		t.Fatal("provider credentials saved when builtin fetch fails")
 	}
 }
 
@@ -224,8 +237,11 @@ func TestCallbackReturnURLRejectsExternalURLs(t *testing.T) {
 }
 
 func TestLogoutDeletesAuth(t *testing.T) {
-	store := NewStore(filepath.Join(t.TempDir(), "csghub.json"))
-	if err := store.Save(Record{AccessToken: "token", CSGHubBaseURL: "https://hub.example.test"}); err != nil {
+	store := newTestStore(t)
+	if err := store.Save(Record{
+		Tokens:  Tokens{AccessToken: "token"},
+		Account: Account{BaseURL: "https://hub.example.test"},
+	}); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
 	service := &Service{Store: store}

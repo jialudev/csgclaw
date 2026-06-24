@@ -1,4 +1,4 @@
-package csghubauth
+package auth
 
 import (
 	"context"
@@ -12,34 +12,43 @@ import (
 )
 
 func (s Store) EnsureAIGatewayCredentials(ctx context.Context, client *http.Client) (baseURL, apiKey string, ok bool, err error) {
-	record, found, err := s.Load()
-	if err != nil || !found {
+	baseURL = AIGatewayBaseURL("")
+	credentials, found, err := s.LoadCSGHubProviderCredentials()
+	if err != nil {
 		return "", "", false, err
 	}
-	baseURL = AIGatewayBaseURL(record.CSGHubBaseURL)
-	apiKey = strings.TrimSpace(record.AIGatewayBuiltinAPIKey)
-	if apiKey != "" && isBuiltinAIGatewayAPIKey(apiKey) {
-		return baseURL, apiKey, baseURL != "", nil
+	if found {
+		apiKey = strings.TrimSpace(credentials.AIGatewayBuiltinAPIKey)
+		if apiKey != "" && isBuiltinAIGatewayAPIKey(apiKey) {
+			return baseURL, apiKey, baseURL != "", nil
+		}
 	}
-	if strings.TrimSpace(record.AccessToken) == "" {
+
+	record, found, err := s.Load()
+	if err != nil {
+		return "", "", false, err
+	}
+	if !found {
 		return baseURL, "", false, nil
 	}
-	if strings.TrimSpace(record.CSGHubBaseURL) == "" {
+	if strings.TrimSpace(record.Tokens.AccessToken) == "" {
+		return baseURL, "", false, nil
+	}
+	if strings.TrimSpace(record.Account.BaseURL) == "" {
 		return baseURL, "", false, fmt.Errorf("csghub base url is required to fetch aigateway api key")
 	}
-	if strings.TrimSpace(record.UserID) == "" {
+	if strings.TrimSpace(record.Account.UserID) == "" {
 		return baseURL, "", false, fmt.Errorf("csghub user id is required to fetch aigateway api key")
 	}
-	if strings.TrimSpace(record.UserUUID) == "" {
+	if strings.TrimSpace(record.Account.UserUUID) == "" {
 		return baseURL, "", false, fmt.Errorf("csghub user uuid is required to fetch aigateway api key")
 	}
 
-	apiKey, err = fetchBuiltinAPIKey(ctx, client, record.CSGHubBaseURL, record.AccessToken, record.UserID, record.UserUUID)
+	apiKey, err = fetchBuiltinAPIKey(ctx, client, record.Account.BaseURL, record.Tokens.AccessToken, record.Account.UserID, record.Account.UserUUID)
 	if err != nil {
 		return baseURL, "", false, err
 	}
-	record.AIGatewayBuiltinAPIKey = apiKey
-	if err := s.Save(record); err != nil {
+	if err := s.SaveCSGHubProviderCredentials(CSGHubProviderCredentials{AIGatewayBuiltinAPIKey: apiKey}); err != nil {
 		return "", "", false, err
 	}
 	return baseURL, apiKey, baseURL != "" && apiKey != "", nil

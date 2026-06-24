@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/auth"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/codexmodel"
 	"csgclaw/internal/config"
-	"csgclaw/internal/csghubauth"
 
 	"github.com/gorilla/websocket"
 )
@@ -1180,7 +1180,7 @@ func (s *Service) agentProfileTarget(ctx context.Context, profile agent.AgentPro
 }
 
 func csghubAIGatewayTarget(ctx context.Context, client *http.Client) (string, string, error) {
-	store, err := csghubauth.DefaultStore()
+	store, err := auth.DefaultStore()
 	if err != nil {
 		return "", "", &HTTPError{Status: http.StatusBadGateway, Message: fmt.Sprintf("csghub auth unavailable: %v", err)}
 	}

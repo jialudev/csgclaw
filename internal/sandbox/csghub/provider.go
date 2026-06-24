@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"csgclaw/internal/csghubauth"
+	"csgclaw/internal/auth"
 	"csgclaw/internal/sandbox"
 	"csgclaw/internal/sandbox/csghub/csghubsdk"
 )
@@ -621,7 +621,7 @@ func loadRuntimeConfigFromEnv() (runtimeConfig, error) {
 }
 
 func loadRuntimeCredentialsFromAuthStore() (baseURL, token string, ok bool) {
-	store, err := csghubauth.DefaultStore()
+	store, err := auth.DefaultStore()
 	if err != nil {
 		return "", "", false
 	}

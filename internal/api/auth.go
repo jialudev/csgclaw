@@ -10,32 +10,32 @@ import (
 	"net/url"
 	"strings"
 
-	"csgclaw/internal/csghubauth"
+	"csgclaw/internal/auth"
 )
 
-const csghubAuthCallbackPath = "/api/v1/csghub/auth/callback"
+const authCallbackPath = "/api/v1/auth/callback"
 
-type csghubAuthLoginRequest struct {
+type authLoginRequest struct {
 	ReturnURL   string `json:"return_url,omitempty"`
 	CallbackURL string `json:"-"`
 }
 
-var csghubAuthStatus = func(r *http.Request) (csghubauth.Status, error) {
-	return csghubauth.Default().Status(r.Context())
+var appAuthStatus = func(r *http.Request) (auth.Status, error) {
+	return auth.Default().Status(r.Context())
 }
 
-var csghubAuthLogin = func(r *http.Request, req csghubAuthLoginRequest) (csghubauth.LoginResponse, error) {
-	return csghubauth.Default().Login(r.Context(), csghubauth.LoginOptions{
+var appAuthLogin = func(r *http.Request, req authLoginRequest) (auth.LoginResponse, error) {
+	return auth.Default().Login(r.Context(), auth.LoginOptions{
 		ReturnURL:   req.ReturnURL,
 		CallbackURL: req.CallbackURL,
 	})
 }
 
-var csghubAuthLogout = func(r *http.Request) (csghubauth.Status, error) {
-	return csghubauth.Default().Logout(r.Context())
+var appAuthLogout = func(r *http.Request) (auth.Status, error) {
+	return auth.Default().Logout(r.Context())
 }
 
-var csghubAuthCallback = func(r *http.Request) (string, error) {
+var appAuthCallback = func(r *http.Request) (string, error) {
 	values := r.URL.Query()
 	if values.Get("jwt_token") == "" {
 		if token := bearerToken(r.Header.Get("Authorization")); token != "" {
@@ -43,15 +43,15 @@ var csghubAuthCallback = func(r *http.Request) (string, error) {
 			values.Set("jwt_token", token)
 		}
 	}
-	return csghubauth.Default().CompleteCallback(r.Context(), values)
+	return auth.Default().CompleteCallback(r.Context(), values)
 }
 
-func (h *Handler) handleCSGHubAuthStatus(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	status, err := csghubAuthStatus(r)
+	status, err := appAuthStatus(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -59,15 +59,15 @@ func (h *Handler) handleCSGHubAuthStatus(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, status)
 }
 
-func (h *Handler) handleCSGHubAuthCallback(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	redirectURL, err := csghubAuthCallback(r)
+	redirectURL, err := appAuthCallback(r)
 	if err != nil {
 		status := http.StatusBadRequest
-		if !csghubauth.IsCallbackValidationError(err) {
+		if !auth.IsCallbackValidationError(err) {
 			status = http.StatusBadGateway
 		}
 		http.Error(w, err.Error(), status)
@@ -80,12 +80,12 @@ func (h *Handler) handleCSGHubAuthCallback(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusFound)
 }
 
-func (h *Handler) handleCSGHubAuthLogin(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req csghubAuthLoginRequest
+	var req authLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
@@ -94,9 +94,9 @@ func (h *Handler) handleCSGHubAuthLogin(w http.ResponseWriter, r *http.Request) 
 		req.ReturnURL = r.Referer()
 	}
 	if req.CallbackURL == "" {
-		req.CallbackURL = csghubAuthLocalCallbackURL(r)
+		req.CallbackURL = authLocalCallbackURL(r)
 	}
-	resp, err := csghubAuthLogin(r, req)
+	resp, err := appAuthLogin(r, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -104,12 +104,12 @@ func (h *Handler) handleCSGHubAuthLogin(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *Handler) handleCSGHubAuthLogout(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	status, err := csghubAuthLogout(r)
+	status, err := appAuthLogout(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -117,7 +117,7 @@ func (h *Handler) handleCSGHubAuthLogout(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, status)
 }
 
-func csghubAuthLocalCallbackURL(r *http.Request) string {
+func authLocalCallbackURL(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
@@ -135,7 +135,7 @@ func csghubAuthLocalCallbackURL(r *http.Request) string {
 	u := url.URL{
 		Scheme: scheme,
 		Host:   host,
-		Path:   csghubAuthCallbackPath,
+		Path:   authCallbackPath,
 	}
 	return u.String()
 }
