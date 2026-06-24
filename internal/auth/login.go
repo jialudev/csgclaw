@@ -99,6 +99,12 @@ func (s *Service) completeCallback(ctx context.Context, values url.Values) (stri
 	}
 
 	csgHubBaseURL := s.csghubBaseURL()
+	if portalURL != "" {
+		portalURL = sanitizePortalURL(portalURL, csgHubBaseURL)
+		if portalURL == "" {
+			return "", callbackValidationError("portal_url must match csghub base url")
+		}
+	}
 	accessToken, builtinAPIKey, avatar, err := s.fetchAuthDetails(ctx, csgHubBaseURL, jwtToken, userID, userUUID)
 	if err != nil {
 		return "", err
@@ -310,6 +316,22 @@ func portalRedirectURL(portalURL, jwtToken string) string {
 	q.Set("jwt", jwtToken)
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+func sanitizePortalURL(raw, baseURL string) string {
+	portal, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !strings.EqualFold(portal.Scheme, "https") || portal.Host == "" {
+		return ""
+	}
+	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
+	if err != nil || !strings.EqualFold(base.Scheme, "https") || base.Host == "" {
+		return ""
+	}
+
+	if !strings.EqualFold(portal.Hostname(), base.Hostname()) {
+		return ""
+	}
+	return portal.String()
 }
 
 func joinAPIPath(baseURL, apiPath string) (*url.URL, error) {

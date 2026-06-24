@@ -236,6 +236,104 @@ func TestCallbackReturnURLRejectsExternalURLs(t *testing.T) {
 	}
 }
 
+func TestCompleteCallbackRedirectsToTrustedPortalURL(t *testing.T) {
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/user/alice/tokens":
+			writeJSON(t, w, map[string]any{
+				"msg":  "OK",
+				"data": []map[string]any{{"token": "access-token"}},
+			})
+		case "/api/v1/user/alice":
+			writeJSON(t, w, map[string]any{"msg": "OK", "data": map[string]any{}})
+		case "/api/v1/namespaces/user-1/apikeys/builtin":
+			http.Error(w, "not available", http.StatusNotFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+
+	store := newTestStore(t)
+	service := &Service{Store: store, CSGHubBaseURL: api.URL, HTTPClient: api.Client()}
+	jwtToken := testJWT("alice", "user-1")
+	portalURL := api.URL + "/portal?next=workspace"
+
+	redirect, err := service.completeCallback(context.Background(), url.Values{
+		"jwt_token":  []string{jwtToken},
+		"portal_url": []string{portalURL},
+	})
+	if err != nil {
+		t.Fatalf("completeCallback() error = %v", err)
+	}
+	want := portalRedirectURL(portalURL, jwtToken)
+	if redirect != want {
+		t.Fatalf("redirect = %q, want %q", redirect, want)
+	}
+	record, ok, err := store.Load()
+	if err != nil || !ok {
+		t.Fatalf("Load() = %+v, %v, %v", record, ok, err)
+	}
+	if record.Account.PortalURL != portalURL {
+		t.Fatalf("PortalURL = %q, want %q", record.Account.PortalURL, portalURL)
+	}
+}
+
+func TestCallbackRejectsUntrustedPortalURL(t *testing.T) {
+	service := &Service{CSGHubBaseURL: "https://hub.opencsg.com"}
+	_, err := service.completeCallback(context.Background(), url.Values{
+		"jwt_token":  []string{testJWT("alice", "user-1")},
+		"portal_url": []string{"https://evil.example.test/callback"},
+	})
+	if err == nil || !isCallbackValidationError(err) {
+		t.Fatalf("completeCallback() error = %v, want validation error", err)
+	}
+}
+
+func TestSanitizePortalURLRequiresSameOrigin(t *testing.T) {
+	baseURL := "https://hub.opencsg.com"
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "same origin",
+			raw:  "https://hub.opencsg.com/portal?next=workspace",
+			want: "https://hub.opencsg.com/portal?next=workspace",
+		},
+		{
+			name: "default port",
+			raw:  "https://hub.opencsg.com:443/portal",
+			want: "https://hub.opencsg.com:443/portal",
+		},
+		{
+			name: "external host",
+			raw:  "https://evil.example.test/portal",
+		},
+		{
+			name: "lookalike host",
+			raw:  "https://hub.opencsg.com.evil.example/portal",
+		},
+		{
+			name: "different scheme",
+			raw:  "http://hub.opencsg.com/portal",
+		},
+		{
+			name: "relative URL",
+			raw:  "/portal",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sanitizePortalURL(tt.raw, baseURL); got != tt.want {
+				t.Fatalf("sanitizePortalURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLogoutDeletesAuth(t *testing.T) {
 	store := newTestStore(t)
 	if err := store.Save(Record{

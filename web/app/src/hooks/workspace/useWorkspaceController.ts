@@ -614,6 +614,8 @@ export function useWorkspaceController() {
       onLogin: auth.login,
       onLogout: auth.logout,
     },
+    authNotice: auth.notice,
+    onDismissAuthNotice: auth.dismissNotice,
     hubViewProps: {
       t,
       locale,
