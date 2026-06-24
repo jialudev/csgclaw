@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"csgclaw/internal/auth"
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
 	"csgclaw/internal/modelprovider"
@@ -17,6 +18,7 @@ import (
 const (
 	ProviderAPI        = "api"
 	ProviderCSGHubLite = "csghub_lite"
+	ProviderCSGHub     = "csghub"
 	ProviderCodex      = "codex"
 	ProviderClaudeCode = "claude_code"
 
@@ -26,7 +28,14 @@ const (
 var (
 	defaultCSGHubLiteBaseURL = modelprovider.CSGHubLiteDefaultBaseURL
 	defaultCSGHubLiteAPIKey  = modelprovider.CSGHubLiteDefaultAPIKey
-	listCLIProxyModels       = func(ctx context.Context, provider string) ([]string, error) {
+	defaultCSGHubCredentials = func(ctx context.Context, client *http.Client) (string, string, bool, error) {
+		store, err := auth.DefaultStore()
+		if err != nil {
+			return "", "", false, err
+		}
+		return store.EnsureAIGatewayCredentials(ctx, client)
+	}
+	listCLIProxyModels = func(ctx context.Context, provider string) ([]string, error) {
 		return cliproxy.Default().ListModels(ctx, provider)
 	}
 	listCLIProxyModelChoices = func(ctx context.Context, provider string) ([]string, error) {
@@ -129,6 +138,8 @@ func normalizeProfileProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "", ProviderCSGHubLite, "csghub-lite":
 		return ProviderCSGHubLite
+	case ProviderCSGHub:
+		return ProviderCSGHub
 	case ProviderAPI, "llm-api", "openai", "openai_compatible":
 		return ProviderAPI
 	case ProviderCodex:
@@ -147,7 +158,7 @@ func profileIsComplete(profile AgentProfile) bool {
 	switch normalizeProfileProvider(profile.Provider) {
 	case ProviderAPI:
 		return strings.TrimSpace(profile.BaseURL) != "" && strings.TrimSpace(profile.APIKey) != "" && strings.TrimSpace(profile.ModelID) != ""
-	case ProviderCSGHubLite, ProviderCodex, ProviderClaudeCode:
+	case ProviderCSGHubLite, ProviderCSGHub, ProviderCodex, ProviderClaudeCode:
 		return strings.TrimSpace(profile.ModelID) != ""
 	default:
 		return false
@@ -318,6 +329,8 @@ func profileBaseURL(profile AgentProfile) string {
 		return strings.TrimRight(strings.TrimSpace(profile.BaseURL), "/")
 	case ProviderCSGHubLite:
 		return defaultCSGHubLiteBaseURL
+	case ProviderCSGHub:
+		return ""
 	case ProviderCodex, ProviderClaudeCode:
 		return ""
 	default:
@@ -335,6 +348,8 @@ func profileAPIKey(profile AgentProfile) string {
 		return strings.TrimSpace(profile.APIKey)
 	case ProviderCSGHubLite:
 		return defaultCSGHubLiteAPIKey
+	case ProviderCSGHub:
+		return ""
 	default:
 		return strings.TrimSpace(profile.APIKey)
 	}
@@ -413,6 +428,20 @@ func ListModelsForProfile(ctx context.Context, profile AgentProfile) ([]string, 
 	switch profile.Provider {
 	case ProviderCodex, ProviderClaudeCode:
 		models, err := listCLIProxyModels(ctx, profile.Provider)
+		if err != nil {
+			return nil, err
+		}
+		return sortModelIDs(models), nil
+	case ProviderCSGHub:
+		client := &http.Client{Timeout: 3 * time.Second}
+		baseURL, apiKey, ok, err := defaultCSGHubCredentials(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("csghub login is required")
+		}
+		models, err := modelprovider.ListOpenAIModelsWithClient(ctx, client, baseURL, apiKey, profile.Headers)
 		if err != nil {
 			return nil, err
 		}

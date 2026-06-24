@@ -215,6 +215,38 @@ func TestListModelsForRequestUsesCLIProxyChoicesForDropdown(t *testing.T) {
 	}
 }
 
+func TestListModelsForRequestUsesCSGHubCredentials(t *testing.T) {
+	var authHeader string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("path = %q, want /v1/models", r.URL.Path)
+		}
+		authHeader = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"data":[{"id":"deepseek-v4-flash"}]}`))
+	}))
+	defer upstream.Close()
+
+	oldCredentials := defaultCSGHubCredentials
+	defer func() {
+		defaultCSGHubCredentials = oldCredentials
+	}()
+	defaultCSGHubCredentials = func(context.Context, *http.Client) (string, string, bool, error) {
+		return upstream.URL + "/v1", "gk_aigateway-key", true, nil
+	}
+
+	svc := &Service{}
+	models, err := svc.ListModelsForRequest(context.Background(), ProfileModelRequest{Provider: ProviderCSGHub})
+	if err != nil {
+		t.Fatalf("ListModelsForRequest() error = %v", err)
+	}
+	if authHeader != "Bearer gk_aigateway-key" {
+		t.Fatalf("Authorization = %q, want aigateway key", authHeader)
+	}
+	if got, want := strings.Join(models, ","), "deepseek-v4-flash"; got != want {
+		t.Fatalf("models = %v, want %s", models, want)
+	}
+}
+
 func TestListModelsForRequestUsesStoredAgentAPIKeyForMatchingProfile(t *testing.T) {
 	var authHeader string
 	var gotHeader string

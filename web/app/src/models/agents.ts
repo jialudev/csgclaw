@@ -13,6 +13,7 @@ import {
   MANAGER_AGENT_NAME,
   MANAGER_PARTICIPANT_ID,
   MANAGER_AGENT_ROLE,
+  PROVIDER_OPTIONS,
   RUNTIME_KIND_OPTIONS,
   WORKER_AGENT_ROLE,
 } from "@/shared/constants/agents";
@@ -21,7 +22,7 @@ import type { LocaleCode } from "@/models/conversations";
 
 export type RuntimeKind = "picoclaw_sandbox" | "openclaw_sandbox" | "codex" | string;
 export type BotType = typeof BOT_TYPE_NORMAL | typeof BOT_TYPE_NOTIFICATION | string;
-export type ProviderName = "csghub_lite" | "codex" | "claude_code" | "api" | string;
+export type ProviderName = "csghub_lite" | "csghub" | "codex" | "claude_code" | "api" | string;
 export type JSONRecord = Record<string, unknown>;
 
 export type RuntimeOptionSchema = {
@@ -1462,18 +1463,7 @@ export function providerNeedsAuth(provider: unknown): boolean {
 }
 
 export function formatProviderLabel(provider: ProviderName | null | undefined): string {
-  switch (provider) {
-    case "csghub_lite":
-      return "CSGHub Lite";
-    case "codex":
-      return "Codex";
-    case "claude_code":
-      return "Claude Code";
-    case "api":
-      return "OpenAI API";
-    default:
-      return provider || "";
-  }
+  return PROVIDER_OPTIONS.find((option) => option.value === provider)?.label || provider || "";
 }
 
 export function normalizeRuntimeKind(kind: unknown): RuntimeKind {

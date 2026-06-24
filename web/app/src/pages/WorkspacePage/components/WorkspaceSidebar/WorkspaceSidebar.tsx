@@ -23,6 +23,10 @@ export function WorkspaceSidebar({
   activePane,
   activeThreadRootID,
   currentUserID,
+  authBusy,
+  authError,
+  authPending,
+  authStatus,
   usersById,
   collapsedWorkspaceGroups,
   showUpgradeControls,
@@ -54,6 +58,8 @@ export function WorkspaceSidebar({
   upgradeError,
   onOpenUpgrade,
   onOpenConfigSettings,
+  onLogin,
+  onLogout,
   taskItems,
   teams,
   planningTaskID = "",
@@ -90,6 +96,12 @@ export function WorkspaceSidebar({
             showUpgradeControls={showUpgradeControls}
             onOpenUpgrade={onOpenUpgrade}
             onOpenConfigSettings={onOpenConfigSettings}
+            authStatus={authStatus}
+            authBusy={authBusy}
+            authPending={authPending}
+            authError={authError}
+            onLogin={onLogin}
+            onLogout={onLogout}
             t={t}
           />
         </div>

@@ -288,6 +288,29 @@ describe("agent model helpers", () => {
       headers: {},
       model_id: "Qwen3-0.6B-GGUF",
     });
+
+    expect(
+      draftToProfile({
+        api_key: "stale-key",
+        api_key_preview: "",
+        api_key_set: false,
+        base_url: "https://api.deepseek.com",
+        enable_fast_mode: false,
+        envRows: [],
+        headersText: '{"X-Stale":"1"}',
+        model_id: "deepseek-v4-flash",
+        provider: "csghub",
+        reasoning_effort: "medium",
+        requestOptionsText: "{}",
+        runtime_kind: "picoclaw_sandbox",
+      }),
+    ).toMatchObject({
+      provider: "csghub",
+      base_url: "",
+      api_key: "",
+      headers: {},
+      model_id: "deepseek-v4-flash",
+    });
   });
 
   it("merges generic runtime options into the saved payload", () => {
@@ -565,6 +588,7 @@ describe("agent model helpers", () => {
     expect(providerNeedsAuth("claude")).toBe(true);
     expect(providerNeedsAuth("api")).toBe(false);
     expect(formatProviderLabel("csghub_lite")).toBe("CSGHub Lite");
+    expect(formatProviderLabel("csghub")).toBe("CSGHub");
   });
 
   it("advances agent creation progress toward each step target", () => {

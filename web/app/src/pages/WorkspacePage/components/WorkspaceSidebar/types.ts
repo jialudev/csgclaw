@@ -9,6 +9,7 @@ import type {
   TranslateFn,
   UsersById,
 } from "@/models/conversations";
+import type { AuthStatus } from "@/models/auth";
 import type { HubTemplate } from "@/models/hubWorkspace";
 import type { SkillSummary } from "@/models/skillhub";
 import type { CollapsedWorkspaceGroups, WorkspacePane, WorkspaceTab } from "@/models/routing";
@@ -27,6 +28,10 @@ export type WorkspaceSidebarProps = {
   collapsedWorkspaceGroups: CollapsedWorkspaceGroups;
   currentUserID: string;
   currentWorkspaceLabel: string;
+  authBusy: boolean;
+  authError: string;
+  authPending: boolean;
+  authStatus: AuthStatus;
   directMessages: IMConversation[];
   showUpgradeControls: boolean;
   hub: WorkspaceHubController["hub"];
@@ -43,6 +48,8 @@ export type WorkspaceSidebarProps = {
   onExpandSidebar: () => void;
   onOpenUpgrade: () => void;
   onOpenConfigSettings: () => void;
+  onLogin: () => void | Promise<void>;
+  onLogout: () => void | Promise<void>;
   onPreviewAgent: (item: AgentLike | null | undefined, anchor: HTMLElement | null | undefined) => void;
   onPreviewUser: (user: IMUser | null | undefined, anchor: HTMLElement | null | undefined) => void;
   onSelectAgent: (item: AgentLike | null | undefined) => void;

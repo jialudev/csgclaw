@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage } from "@/api/client";
-import { PROVIDERS, REASONING_EFFORTS, SHOW_AGENT_LIFECYCLE_ACTIONS } from "@/shared/constants/agents";
+import { PROVIDER_OPTIONS, REASONING_EFFORTS, SHOW_AGENT_LIFECYCLE_ACTIONS } from "@/shared/constants/agents";
 import {
   APIKeyField,
   CLIProxyAuthControl,
@@ -471,10 +471,7 @@ export function AgentDetailPane({
                     value={draft.provider}
                     onValueChange={(value) => updateDraft({ provider: value, model_id: "" })}
                     triggerProps={{ "aria-label": t("profileProvider") }}
-                    options={PROVIDERS.map((provider) => ({
-                      value: provider,
-                      label: formatProviderLabel(provider),
-                    }))}
+                    options={PROVIDER_OPTIONS}
                   />
                 </label>
                 <label className="field">
@@ -699,7 +696,12 @@ export function AgentDetailPane({
             )}
           </div>
           <div className="agent-skills-dialog-actions">
-            <Button variant="secondaryGray" size="sm" disabled={skillAddBusy} onClick={() => setAddSkillsDialogOpen(false)}>
+            <Button
+              variant="secondaryGray"
+              size="sm"
+              disabled={skillAddBusy}
+              onClick={() => setAddSkillsDialogOpen(false)}
+            >
               {t("cancel")}
             </Button>
             <Button
