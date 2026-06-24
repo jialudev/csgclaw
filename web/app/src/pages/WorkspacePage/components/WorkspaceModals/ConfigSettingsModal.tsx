@@ -8,9 +8,12 @@ import {
 } from "@/models/configSettings";
 import type { TranslateFn } from "@/models/conversations";
 import type { HubTemplate } from "@/models/hubWorkspace";
+import type { UpgradeStatus } from "@/models/upgradeStatus";
+import { ConfigSettingsFeedback } from "./ConfigSettingsFeedback";
 import { ModalCloseButton } from "./ModalCloseButton";
 
 type ConfigSettingsModalProps = {
+  appVersion: string;
   t: TranslateFn;
   configDraft: ConfigSettingsDraft;
   hubTemplates: readonly HubTemplate[];
@@ -22,9 +25,11 @@ type ConfigSettingsModalProps = {
   onClose: () => void;
   onReload: () => void;
   onSaveAndRestart: () => Promise<void>;
+  upgradeStatus: UpgradeStatus | null;
 };
 
 export function ConfigSettingsModal({
+  appVersion,
   t,
   configDraft,
   hubTemplates,
@@ -36,6 +41,7 @@ export function ConfigSettingsModal({
   onClose,
   onReload,
   onSaveAndRestart,
+  upgradeStatus,
 }: ConfigSettingsModalProps) {
   const restarting = configPhase === "restarting" || configPhase === "saving";
   const disabled = configBusy || configPhase === "loading";
@@ -142,6 +148,7 @@ export function ConfigSettingsModal({
               />
             </label>
           </section>
+          <ConfigSettingsFeedback appVersion={appVersion} t={t} upgradeStatus={upgradeStatus} />
         </div>
         {configError ? <div className="form-error">{configError}</div> : null}
         <div className="modal-actions">

@@ -22,9 +22,11 @@ const emptyDraft = (): ConfigSettingsDraft => ({
 });
 
 export function useConfigController({
+  appVersion,
   hubTemplates,
   refreshWorkspaceAppVersion,
   t,
+  upgradeStatus,
 }: UseConfigControllerArgs): ConfigController {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [configDraft, setConfigDraft] = useState<ConfigSettingsDraft>(emptyDraft);
@@ -168,6 +170,7 @@ export function useConfigController({
     openConfigModal,
     configModalProps: showConfigModal
       ? {
+          appVersion,
           t,
           configDraft,
           hubTemplates: hubTemplates || [],
@@ -185,6 +188,7 @@ export function useConfigController({
           },
           onReload: () => window.location.reload(),
           onSaveAndRestart: saveAndRestart,
+          upgradeStatus,
         }
       : null,
   };
