@@ -756,7 +756,7 @@ export function AgentDetailPane({
                         <small>{skills.length}</small>
                       </div>
                       <Button
-                        className="agent-skill-icon-button"
+                        className="agent-skill-add-button"
                         variant="secondaryGray"
                         size="sm"
                         aria-label={t("agentSkillAdd")}

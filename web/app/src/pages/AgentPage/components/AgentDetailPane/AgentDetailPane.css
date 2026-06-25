@@ -542,17 +542,28 @@
   flex: 0 0 auto;
 }
 
+.agent-skill-add-button,
 .agent-skill-icon-button {
   --btn-height: 28px;
   --btn-min-width: 28px;
   --btn-padding-x: 0;
 
-  position: absolute;
-  top: 12px;
-  right: 14px;
   width: 28px;
   min-width: 28px;
   padding: 0;
+}
+
+.agent-skill-add-button {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.agent-skill-icon-button {
+
+  position: absolute;
+  top: 12px;
+  right: 14px;
   opacity: 0;
   pointer-events: none;
 }
@@ -563,6 +574,7 @@
   pointer-events: auto;
 }
 
+.agent-skill-add-button svg,
 .agent-skill-icon-button svg {
   width: 12px;
   height: 12px;
