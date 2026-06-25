@@ -121,7 +121,6 @@ export type UpgradeController = {
 };
 
 export type ConfigModalControllerProps = {
-  appVersion: string;
   configBusy: boolean;
   configDraft: ConfigSettingsDraft;
   configError: string;
@@ -133,15 +132,12 @@ export type ConfigModalControllerProps = {
   onSaveAndRestart: () => Promise<void>;
   sandboxProviders: string[];
   t: TranslateFn;
-  upgradeStatus: UpgradeStatus | null;
 };
 
 export type UseConfigControllerArgs = {
-  appVersion: string;
   hubTemplates?: readonly HubTemplate[];
   refreshWorkspaceAppVersion: (options?: FetchVersionOptions) => Promise<string>;
   t: TranslateFn;
-  upgradeStatus: UpgradeStatus | null;
 };
 
 export type ConfigController = {

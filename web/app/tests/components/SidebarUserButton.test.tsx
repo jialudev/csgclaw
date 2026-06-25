@@ -15,6 +15,8 @@ const labels: Record<string, string> = {
   versionInfo: "Version",
   versionSettings: "Version and updates",
   configSettingsMenu: "Settings",
+  configSettingsFeedbackSection: "Feedback",
+  configSettingsGithubIssueAction: "Open GitHub",
   csghubAccount: "OpenCSG",
   csghubLoginPending: "Waiting for auth",
   csghubLoginPendingDetail: "Finish authorization",
@@ -214,6 +216,36 @@ describe("SidebarUserButton", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await user.click(screen.getByRole("menuitem", { name: "Settings" }));
     expect(onOpenConfigSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows feedback below the version summary with user feedback prefilled", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SidebarUserButton
+        appVersion="v0.3.0"
+        showUpgradeControls={false}
+        locale="en"
+        onOpenUpgrade={() => {}}
+        onOpenConfigSettings={() => {}}
+        onLocaleChange={() => {}}
+        onThemeChange={() => {}}
+        t={t}
+        theme="light"
+        upgradeStatus={updateAvailableStatus}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    const link = screen.getByRole("menuitem", { name: "Feedback" });
+    const href = link.getAttribute("href") || "";
+    const url = new URL(href);
+    expect(`${url.origin}${url.pathname}`).toBe("https://github.com/OpenCSGs/csgclaw/issues/new");
+    expect(url.searchParams.has("title")).toBe(false);
+    expect(url.searchParams.get("labels")).toBe("user-feedback");
+    expect(url.searchParams.get("body")).toBe("## Version information\n- CSGClaw version: v0.3.0\n");
+    expect(link).toHaveAttribute("target", "_blank");
   });
 
   it("shows OpenCSG sign-in when no account is connected", async () => {

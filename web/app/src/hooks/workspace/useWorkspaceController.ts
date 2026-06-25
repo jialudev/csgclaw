@@ -238,11 +238,9 @@ export function useWorkspaceController() {
     upgradeStatus,
   });
   const configSettings = useConfigController({
-    appVersion,
     hubTemplates,
     refreshWorkspaceAppVersion,
     t,
-    upgradeStatus,
   });
   const auth = useAuthController(t);
   const agent = useAgentController({
