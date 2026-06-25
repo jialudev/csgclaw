@@ -1806,7 +1806,7 @@ func isResolvedWorkspacePath(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func (s *Service) provisionRuntime(ctx context.Context, rt agentruntime.Runtime, runtimeKind string, req agentruntime.ProvisionRequest) error {
+func (s *Service) provisionRuntimeRequest(ctx context.Context, rt agentruntime.Runtime, runtimeKind string, req agentruntime.ProvisionRequest) error {
 	if rt == nil {
 		return fmt.Errorf("runtime is required")
 	}
@@ -1822,6 +1822,16 @@ func (s *Service) provisionRuntime(ctx context.Context, rt agentruntime.Runtime,
 		return nil
 	}
 	return provisioner.Provision(ctx, req)
+}
+
+func (s *Service) provisionRuntime(ctx context.Context, rt agentruntime.Runtime, runtimeKind string, req agentruntime.ProvisionRequest) error {
+	if err := s.provisionRuntimeRequest(ctx, rt, runtimeKind, req); err != nil {
+		return err
+	}
+	if err := s.installDefaultSystemSkills(req.AgentName, runtimeKind); err != nil {
+		return fmt.Errorf("install default system skills: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) provisionRuntimeForAgent(ctx context.Context, rt agentruntime.Runtime, got Agent, workspaceOverlay string) error {
