@@ -1,5 +1,5 @@
-name = "picoclaw-worker"
-description = "Builtin PicoClaw worker template"
+name = "generic-assistant-lite"
+description = "通用型助手（轻量版）"
 role = "worker"
 runtime_kind = "picoclaw_sandbox"
 updated_at = "2026-05-27T00:00:00Z"
