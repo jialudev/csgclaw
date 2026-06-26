@@ -424,7 +424,6 @@ describe("useAgentController", () => {
         enable_fast_mode: false,
         profile_complete: true,
       },
-      profile: "csghub-lite.MiniMax-M2.5",
       profile_complete: true,
       provider: "csghub_lite",
       model_provider_id: "csghub-lite",

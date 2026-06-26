@@ -332,7 +332,7 @@ export function useAgentController({
       name: selectedAgentForPage.name || "",
       description: selectedAgentForPage.description || "",
       instructions: selectedAgentForPage.instructions || "",
-      profile: selectedAgentForPage.profile || "",
+      profile: profileSelectorFromDraft(agentToDraft(selectedAgentForPage)),
       profile_complete:
         selectedAgentForPage.profile_complete ?? selectedAgentForPage.agent_profile?.profile_complete ?? null,
       provider: selectedAgentForPage.provider || selectedAgentForPage.agent_profile?.provider || "",
