@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import { FileCode2, Plus, UploadCloud } from "lucide-react";
-import { TaskSubtaskIndicator } from "@/components/business";
 import {
   Button,
   DialogBody,
@@ -15,7 +14,7 @@ import { HubIcon, UsersIcon } from "@/components/ui/Icons";
 import { isDirectConversation, resolveConversationUser } from "@/models/conversations";
 import { modelProviderAvatarPath, providerStatusTone, type ModelProvider } from "@/models/modelProviders";
 import { WorkspacePaneTypes, WorkspaceTabs } from "@/models/routing";
-import { displayTaskTeam, displayTeam, resolveTaskSidebarPhase, rootTasks, taskChildren } from "@/models/tasks";
+import { displayTeam } from "@/models/tasks";
 import { localizeTemplateSourceTag } from "@/shared/i18n";
 import { WORKSPACE_SECTION_ORDER_STORAGE_KEY } from "@/shared/storage/keys";
 import {
@@ -332,10 +331,7 @@ function reorderSection(order: readonly SectionId[], sourceId: SectionId, target
 export function WorkspaceTabPanels({
   workspaceTab,
   taskCount = 0,
-  taskItems = [],
   teams = [],
-  planningTaskID = "",
-  startingTaskID = "",
   channels,
   directMessages,
   threadGroups = [],
@@ -354,8 +350,6 @@ export function WorkspaceTabPanels({
   onOpenCreateTask,
   hub,
   onSelectHubTemplate,
-  onSelectTask,
-  onViewTaskDetails,
   onSelectTeam,
   agentsError,
   onSelectConversation,
@@ -385,11 +379,6 @@ export function WorkspaceTabPanels({
   const selectedHubResourceType = hub?.selectedHubResourceType ?? "template";
   const selectedHubSkillName = hub?.selectedHubSkillName ?? "";
   const selectedHubTemplateId = hub?.selectedHubTemplateId ?? "";
-  const roomsById = useMemo(
-    () => new Map([...channels, ...directMessages].map((room) => [room.id, room])),
-    [channels, directMessages],
-  );
-  const parentTaskItems = useMemo(() => rootTasks(taskItems), [taskItems]);
   const threadCount = useMemo(
     () => threadGroups.reduce((count, group) => count + group.threads.length, 0),
     [threadGroups],
@@ -724,8 +713,7 @@ export function WorkspaceTabPanels({
         >
           {teams.length ? (
             teams.map((team) => {
-              const room = roomsById.get(team.room_id);
-              const memberCount = room?.members?.length ?? 0;
+              const memberCount = team.member_agent_ids.length + (team.lead_agent_id ? 1 : 0);
               return (
                 <button
                   key={team.id}
@@ -740,8 +728,7 @@ export function WorkspaceTabPanels({
                   <span className="workspace-row-main">
                     <span className="workspace-row-title truncate">{displayTeam(team)}</span>
                     <span className="workspace-row-meta truncate">
-                      {t("teamMembersCount", { count: memberCount })} ·{" "}
-                      {team.room_id ? `${t("teamRecordRoomShort")} ${room?.title || team.room_id}` : team.status}
+                      {t("teamMembersCount", { count: memberCount })} · {team.status}
                     </span>
                   </span>
                 </button>
@@ -926,32 +913,7 @@ export function WorkspaceTabPanels({
             addLabel={t("taskCreate")}
             addIcon={<Plus size={15} strokeWidth={2.2} aria-hidden="true" />}
           >
-            {parentTaskItems.length ? (
-              parentTaskItems.map((task, index) => {
-                const children = taskChildren(taskItems, task.id);
-                const phase = resolveTaskSidebarPhase(task, children, { planningTaskID, startingTaskID });
-                const active =
-                  activePane.type === WorkspacePaneTypes.task &&
-                  (activePane.id === task.id || (!activePane.id && index === 0));
-                return (
-                  <button
-                    key={task.id}
-                    type="button"
-                    className={`workspace-row task-sidebar-row ${active ? "active" : ""}`}
-                    onClick={() => onSelectTask?.(task.id)}
-                    onDoubleClick={() => onViewTaskDetails?.(task.id)}
-                  >
-                    <span className="workspace-row-main">
-                      <span className="workspace-row-title truncate">{task.title}</span>
-                      <span className="workspace-row-meta truncate">{displayTaskTeam(task)}</span>
-                    </span>
-                    <TaskSubtaskIndicator subtasks={children} phase={phase} t={t} compact />
-                  </button>
-                );
-              })
-            ) : (
-              <div className="workspace-empty">{t("tasksSidebarHint")}</div>
-            )}
+            {null}
           </WorkspaceGroup>
         </div>
       ) : (

@@ -360,7 +360,6 @@ export function useWorkspaceController() {
   });
   const selectedTeamID = activePane.type === WorkspacePaneTypes.team ? String(activePane.id || "") : "";
   const selectedTeam = agent.teams.find((item) => item.id === selectedTeamID) ?? null;
-  const selectedTeamRoom = selectedTeam ? (rooms.find((room) => room.id === selectedTeam.room_id) ?? null) : null;
   const selectedTeamTasks = selectedTeam ? task.tasks.filter((item) => item.team_id === selectedTeam.id) : [];
   const selectedHumanID = activePane.type === WorkspacePaneTypes.human ? String(activePane.id || "") : "";
   const selectedHuman = selectedHumanID ? (conversation.usersById.get(selectedHumanID) ?? null) : null;
@@ -627,10 +626,7 @@ export function useWorkspaceController() {
       onCreateModelProvider: openCreateModelProviderModal,
       onCreateNotificationParticipant: agent.openCreateNotificationParticipantModal,
       onCreateTeam: async (payload: CreateTeamPayload) => {
-        await agent.agentViewProps.onCreateTeam?.({
-          channel: "csgclaw",
-          ...payload,
-        });
+        await agent.agentViewProps.onCreateTeam?.(payload);
       },
       teamActionBusy: agent.agentViewProps.teamActionBusy,
       teamActionError: agent.agentViewProps.teamActionError,
@@ -705,14 +701,13 @@ export function useWorkspaceController() {
       t,
       team: selectedTeam,
       teamsLoading: agent.teamsLoading,
-      room: selectedTeamRoom,
       agents,
       usersById: conversation.usersById,
       tasks: selectedTeamTasks,
       teamActionBusy: agent.agentViewProps.teamActionBusy,
       teamActionError: agent.agentViewProps.teamActionError,
-      onAddAgentsToTeam: agent.agentViewProps.onAddAgentsToTeam,
-      onOpenRoom: selectConversation,
+      onManageMembers: agent.openManageTeamMembers,
+      onDeleteTeam: agent.deleteTeam,
       onSelectAgent: selectAgent,
       onSelectTask: selectTasks,
     },

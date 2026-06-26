@@ -3113,6 +3113,31 @@
   transition: opacity 120ms ease;
 }
 
+.workspace-group-actions[data-tooltip] {
+  position: relative;
+  display: inline-flex;
+}
+
+.workspace-group-actions[data-tooltip]::after {
+  top: 50%;
+  right: calc(100% + 8px);
+  left: auto;
+  width: max-content;
+  min-width: max-content;
+  max-width: 180px;
+  padding: 5px 8px;
+  border-color: transparent;
+  border-radius: 6px;
+  background: var(--portal-gray-900);
+  color: var(--portal-white);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-50%);
+}
+
+.workspace-group-actions[data-tooltip]:focus-within::after {
+  opacity: 1;
+}
+
 .workspace-group:hover .workspace-group-actions,
 .workspace-group:focus-within .workspace-group-actions {
   opacity: 1;

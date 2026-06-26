@@ -5,6 +5,7 @@ import { WorkspacePaneTypes, WorkspaceTabs } from "@/models/routing";
 import { WORKSPACE_SECTION_ORDER_STORAGE_KEY } from "@/shared/storage/keys";
 import type { AgentLike } from "@/models/agents";
 import type { TranslateFn } from "@/models/conversations";
+import type { WorkspaceTask } from "@/models/tasks";
 import type { WorkspaceSidebarProps } from "@/pages/WorkspacePage/components/WorkspaceSidebar/types";
 
 const labels: Record<string, string> = {
@@ -21,6 +22,8 @@ const labels: Record<string, string> = {
   noTeams: "No teams yet.",
   notificationsSection: "Notifications",
   profilePreview: "Profile preview",
+  taskCreate: "New task",
+  tasksTab: "Tasks",
   teamsSection: "Teams",
 };
 
@@ -214,5 +217,81 @@ describe("WorkspaceTabPanels", () => {
     expect(screen.getByRole("button", { name: /Skills1/ })).toBeInTheDocument();
     expect(screen.getByText("demo-template")).toBeInTheDocument();
     expect(screen.getByText("demo-skill")).toBeInTheDocument();
+  });
+
+  it("keeps the Tasks sidebar group empty while preserving the task count", () => {
+    const taskItem = {
+      id: "task-1",
+      team_id: "team-1",
+      team_title: "te-team",
+      execution_channel: "csgclaw",
+      room_id: "room-1",
+      room_title: "Room 1",
+      parent_id: "",
+      title: "Build blog",
+      body: "Create the blog site",
+      status: "pending",
+      created_by: "manager",
+      created_by_agent_name: "manager",
+      assigned_to: "",
+      assigned_to_agent_name: "",
+      claimed_by: "",
+      claimed_by_agent_name: "",
+      priority: 0,
+      depends_on: [],
+      plan_summary: "",
+      dispatched_at: "",
+      result: "",
+      error: "",
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-01T00:00:00Z",
+    } satisfies WorkspaceTask;
+
+    render(
+      <WorkspaceTabPanels
+        activePane={{ type: WorkspacePaneTypes.task, id: "" }}
+        activeThreadRootID=""
+        agentItems={[managerAgent]}
+        agentsError=""
+        channels={[]}
+        collapsedWorkspaceGroups={{}}
+        currentUserID="u-admin"
+        directMessages={[]}
+        hub={hub}
+        locale="en"
+        notificationAgentItems={[]}
+        onCreateAgent={() => {}}
+        onCreateNotificationParticipant={() => {}}
+        onCreateRoom={() => {}}
+        onOpenCreateTask={() => {}}
+        onOpenCreateTeam={() => {}}
+        onPreviewAgent={() => {}}
+        onPreviewUser={() => {}}
+        onSelectAgent={() => {}}
+        onSelectComputer={() => {}}
+        onSelectConversation={() => {}}
+        onSelectHuman={() => {}}
+        onSelectHubSkill={() => {}}
+        onSelectHubTemplate={() => {}}
+        onSelectTask={() => {}}
+        onSelectTeam={() => {}}
+        onSelectThread={() => {}}
+        onToggleWorkspaceGroup={() => {}}
+        onViewTaskDetails={() => {}}
+        t={t}
+        taskCount={1}
+        taskItems={[taskItem]}
+        teams={[]}
+        threadGroups={[]}
+        usersById={new Map()}
+        workerAgentItems={[managerAgent]}
+        workspaceTab={WorkspaceTabs.tasks}
+      />,
+    );
+
+    const panel = screen.getByRole("tabpanel", { name: "Tasks" });
+    expect(screen.getByRole("button", { name: /Tasks1/ })).toBeInTheDocument();
+    expect(within(panel).queryByText("Build blog")).not.toBeInTheDocument();
+    expect(panel.querySelector(".workspace-group-items")).toBeEmptyDOMElement();
   });
 });
