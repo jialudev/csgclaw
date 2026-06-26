@@ -7,6 +7,7 @@ import { classNames } from "@/shared/lib/classNames";
 export type SelectSize = "sm" | "md";
 
 export type SelectOption = {
+  description?: ReactNode;
   disabled?: boolean;
   label: ReactNode;
   textValue?: string;
@@ -115,16 +116,22 @@ export const SelectLabel = forwardRef<ComponentRef<typeof RadixSelect.Label>, Se
   return <RadixSelect.Label ref={ref} className={classNames("csg-select-label px-2 py-1.5", className)} {...props} />;
 });
 
-export type SelectItemProps = ComponentPropsWithoutRef<typeof RadixSelect.Item>;
+export type SelectItemProps = ComponentPropsWithoutRef<typeof RadixSelect.Item> & {
+  description?: ReactNode;
+};
 
 export const SelectItem = forwardRef<ComponentRef<typeof RadixSelect.Item>, SelectItemProps>(function SelectItem(
-  { children, className, ...props },
+  { children, className, description, ...props },
   ref,
 ) {
   return (
     <RadixSelect.Item
       ref={ref}
-      className={classNames("csg-select-item relative flex w-full items-center rounded-md py-2 pr-3 pl-8", className)}
+      className={classNames(
+        "csg-select-item relative flex w-full items-center rounded-md py-2 pr-3 pl-8",
+        description ? "csg-select-item-with-description" : "",
+        className,
+      )}
       {...props}
     >
       <span className="csg-select-item-indicator absolute left-2 inline-flex items-center justify-center">
@@ -132,7 +139,10 @@ export const SelectItem = forwardRef<ComponentRef<typeof RadixSelect.Item>, Sele
           <Check aria-hidden="true" size={16} strokeWidth={2} />
         </RadixSelect.ItemIndicator>
       </span>
-      <RadixSelect.ItemText>{children}</RadixSelect.ItemText>
+      <span className="csg-select-item-copy">
+        <RadixSelect.ItemText>{children}</RadixSelect.ItemText>
+        {description ? <span className="csg-select-item-description">{description}</span> : null}
+      </span>
     </RadixSelect.Item>
   );
 });
@@ -302,6 +312,7 @@ export function Select({
                     key={option.value}
                     value={toRadixValue(option.value, hasEmptyOption) ?? option.value}
                     disabled={option.disabled}
+                    description={option.description}
                     textValue={option.textValue}
                   >
                     {option.label}

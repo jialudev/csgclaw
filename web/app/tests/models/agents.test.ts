@@ -43,6 +43,7 @@ import {
   localizedRuntimeOptionLabel,
   localizedRuntimeOptionDescription,
   shouldWaitForManagerRuntimeAfterProfileSave,
+  workerSelectableTemplates,
 } from "@/models/agents";
 import { AGENT_AVATAR_OPTIONS, selectUnusedAgentAvatar } from "@/shared/avatarOptions";
 
@@ -397,6 +398,7 @@ describe("agent model helpers", () => {
 
   it("selects runtime-specific templates and images", () => {
     const templates = [
+      { id: "builtin.picoclaw-manager", name: "picoclaw-manager", role: "manager", runtime_kind: "picoclaw_sandbox" },
       { id: "custom/worker", name: "custom-worker", runtime_kind: "picoclaw_sandbox" },
       { id: "builtin.openclaw-worker", name: "openclaw-worker", runtime_kind: "openclaw_sandbox" },
       { id: "builtin.picoclaw-worker", name: "picoclaw-worker", runtime_kind: "picoclaw_sandbox" },
@@ -436,7 +438,7 @@ describe("agent model helpers", () => {
           requestOptionsText: "{}",
           runtime_kind: "picoclaw_sandbox",
         },
-        templates[1],
+        templates[2],
         bootstrapConfig,
       ),
     ).toMatchObject({
@@ -445,6 +447,20 @@ describe("agent model helpers", () => {
       runtime_kind: "openclaw_sandbox",
       template_name: "openclaw-worker",
     });
+  });
+
+  it("excludes manager templates from worker template choices", () => {
+    const templates = [
+      { id: "builtin.picoclaw-manager", name: "picoclaw-manager", role: "manager", runtime_kind: "picoclaw_sandbox" },
+      { id: "builtin.picoclaw-worker", name: "picoclaw-worker", role: "worker", runtime_kind: "picoclaw_sandbox" },
+      { id: "custom/roleless", name: "roleless", runtime_kind: "picoclaw_sandbox" },
+    ];
+
+    expect(workerSelectableTemplates(templates).map((item) => item.id)).toEqual([
+      "builtin.picoclaw-worker",
+      "custom/roleless",
+    ]);
+    expect(pickDefaultAgentTemplate(templates, "picoclaw_sandbox", null)?.id).toBe("builtin.picoclaw-worker");
   });
 
   it("applies template image_env contracts to draft env rows", () => {

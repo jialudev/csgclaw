@@ -1039,18 +1039,33 @@ export function templateMatchesRuntime(template: AgentTemplateLike | null | unde
   return !templateRuntime || templateRuntime === requestedRuntime;
 }
 
+export function workerSelectableTemplates(
+  templates: readonly AgentTemplateLike[] | null | undefined,
+): AgentTemplateLike[] {
+  if (!Array.isArray(templates) || templates.length === 0) {
+    return [];
+  }
+  return templates.filter((item) => {
+    const role = String(item?.role ?? "")
+      .trim()
+      .toLowerCase();
+    return role !== MANAGER_AGENT_ROLE;
+  });
+}
+
 export function pickDefaultAgentTemplate(
   templates: readonly AgentTemplateLike[] | null | undefined,
   runtimeKind = "",
   bootstrapConfig: RuntimeBootstrapConfig | null = null,
 ): AgentTemplateLike | null {
-  if (!Array.isArray(templates) || templates.length === 0) {
+  const selectableTemplates = workerSelectableTemplates(templates);
+  if (selectableTemplates.length === 0) {
     return null;
   }
   const requestedRuntime = normalizeRuntimeKind(runtimeKind || bootstrapConfig?.runtime_kind);
   const candidates = requestedRuntime
-    ? templates.filter((item) => templateMatchesRuntime(item, requestedRuntime))
-    : templates.slice();
+    ? selectableTemplates.filter((item) => templateMatchesRuntime(item, requestedRuntime))
+    : selectableTemplates.slice();
   if (!candidates.length) {
     return null;
   }
