@@ -462,6 +462,99 @@ models = ["minimax-m2.7"]
 	}
 }
 
+func TestLoadLegacyOfficialHubRegistryURLAndSaveMigratesIt(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[bootstrap]
+default_manager_template = "builtin.picoclaw-manager"
+default_worker_template = "builtin.picoclaw-worker"
+
+[[hub.registries]]
+name = "official"
+kind = "remote"
+url = "https://csgclaw.opencsg.com"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	officialRegistry := cfg.Hub.Registries[2]
+	if got, want := officialRegistry.URL, DefaultOfficialHubRegistryURL; got != want {
+		t.Fatalf("official registry URL = %q, want %q", got, want)
+	}
+	if !cfg.NeedsMigrationRewrite() {
+		t.Fatal("NeedsMigrationRewrite() = false, want true")
+	}
+
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	saved := string(data)
+	if strings.Contains(saved, LegacyOfficialHubRegistryURL) {
+		t.Fatalf("saved config still contains legacy official URL:\n%s", saved)
+	}
+	if !strings.Contains(saved, `url = "https://hub.opencsg.com"`) {
+		t.Fatalf("saved config missing migrated official URL:\n%s", saved)
+	}
+}
+
+func TestLoadCustomRemoteHubRegistryURLAndSavePreservesIt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[server]
+listen_addr = "127.0.0.1:18080"
+
+[bootstrap]
+default_manager_template = "builtin.picoclaw-manager"
+default_worker_template = "builtin.picoclaw-worker"
+
+[[hub.registries]]
+name = "team"
+kind = "remote"
+url = "https://hub.example.com/"
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	registry := cfg.Hub.Registries[3]
+	if got, want := registry.URL, "https://hub.example.com"; got != want {
+		t.Fatalf("custom remote registry URL = %q, want %q", got, want)
+	}
+	if cfg.NeedsMigrationRewrite() {
+		t.Fatal("NeedsMigrationRewrite() = true, want false")
+	}
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	saved := string(data)
+	if !strings.Contains(saved, `name = "team"`+"\n"+`kind = "remote"`+"\n"+`url = "https://hub.example.com/"`) {
+		t.Fatalf("saved config missing custom remote URL in team registry:\n%s", saved)
+	}
+}
+
 func TestLoadLegacyBootstrapTemplateRefsAndSaveMigratesThem(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
