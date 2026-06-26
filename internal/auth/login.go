@@ -25,6 +25,10 @@ type LoginOptions struct {
 	CallbackURL string
 }
 
+type CallbackOptions struct {
+	AllowedReturnURLBase string
+}
+
 type Service struct {
 	Store          Store
 	HTTPClient     *http.Client
@@ -51,8 +55,9 @@ func (s *Service) Login(_ context.Context, opts ...LoginOptions) (LoginResponse,
 	returnURL := ""
 	callbackURL := ""
 	if len(opts) > 0 {
-		returnURL = sanitizeReturnURL(opts[0].ReturnURL)
-		callbackURL = callbackURLWithReturnURL(sanitizeCallbackURL(opts[0].CallbackURL), returnURL)
+		callbackURL = sanitizeCallbackURL(opts[0].CallbackURL)
+		returnURL = sanitizeReturnURL(opts[0].ReturnURL, callbackURL)
+		callbackURL = callbackURLWithReturnURL(callbackURL, returnURL)
 	}
 	if callbackURL == "" {
 		return LoginResponse{}, fmt.Errorf("auth callback url is required")
@@ -71,11 +76,11 @@ func (s *Service) Logout(context.Context) (Status, error) {
 	return Status{}, nil
 }
 
-func (s *Service) CompleteCallback(ctx context.Context, values url.Values) (string, error) {
-	return s.completeCallback(ctx, values)
+func (s *Service) CompleteCallback(ctx context.Context, values url.Values, opts ...CallbackOptions) (string, error) {
+	return s.completeCallback(ctx, values, opts...)
 }
 
-func (s *Service) completeCallback(ctx context.Context, values url.Values) (string, error) {
+func (s *Service) completeCallback(ctx context.Context, values url.Values, opts ...CallbackOptions) (string, error) {
 	jwtToken := strings.TrimSpace(values.Get("jwt_token"))
 	if jwtToken == "" {
 		jwtToken = strings.TrimSpace(values.Get("jwt"))
@@ -140,7 +145,11 @@ func (s *Service) completeCallback(ctx context.Context, values url.Values) (stri
 		}
 	}
 
-	if returnURL := callbackReturnURL(values); returnURL != "" {
+	allowedReturnURLBase := ""
+	if len(opts) > 0 {
+		allowedReturnURLBase = opts[0].AllowedReturnURLBase
+	}
+	if returnURL := callbackReturnURL(values, allowedReturnURLBase); returnURL != "" {
 		return returnURL, nil
 	}
 	if portalURL == "" {
@@ -346,7 +355,7 @@ func joinAPIPath(baseURL, apiPath string) (*url.URL, error) {
 	return base.ResolveReference(ref), nil
 }
 
-func sanitizeReturnURL(raw string) string {
+func sanitizeReturnURL(raw, allowedBase string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return ""
@@ -355,7 +364,7 @@ func sanitizeReturnURL(raw string) string {
 	if scheme != "http" && scheme != "https" {
 		return ""
 	}
-	if isLocalHostname(u.Hostname()) {
+	if sameOrigin(u, allowedBase) {
 		return u.String()
 	}
 	return ""
@@ -368,9 +377,6 @@ func sanitizeCallbackURL(raw string) string {
 	}
 	scheme := strings.ToLower(u.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return ""
-	}
-	if !isLocalHostname(u.Hostname()) {
 		return ""
 	}
 	return u.String()
@@ -390,22 +396,24 @@ func callbackURLWithReturnURL(callbackURL, returnURL string) string {
 	return u.String()
 }
 
-func callbackReturnURL(values url.Values) string {
+func callbackReturnURL(values url.Values, allowedBase string) string {
 	for _, key := range []string{"return_url", "url"} {
-		if returnURL := sanitizeReturnURL(values.Get(key)); returnURL != "" {
+		if returnURL := sanitizeReturnURL(values.Get(key), allowedBase); returnURL != "" {
 			return returnURL
 		}
 	}
 	return ""
 }
 
-func isLocalHostname(hostname string) bool {
-	switch strings.ToLower(strings.Trim(hostname, "[]")) {
-	case "127.0.0.1", "localhost", "::1":
-		return true
-	default:
+func sameOrigin(u *url.URL, allowedBase string) bool {
+	if u == nil {
 		return false
 	}
+	base, err := url.Parse(strings.TrimSpace(allowedBase))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, base.Scheme) && strings.EqualFold(u.Host, base.Host)
 }
 
 type callbackValidationError string

@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"csgclaw/internal/auth"
+	"csgclaw/internal/config"
 )
 
 const authCallbackPath = "/api/v1/auth/callback"
@@ -35,7 +35,7 @@ var appAuthLogout = func(r *http.Request) (auth.Status, error) {
 	return auth.Default().Logout(r.Context())
 }
 
-var appAuthCallback = func(r *http.Request) (string, error) {
+var appAuthCallback = func(r *http.Request, opts auth.CallbackOptions) (string, error) {
 	values := r.URL.Query()
 	if values.Get("jwt_token") == "" {
 		if token := bearerToken(r.Header.Get("Authorization")); token != "" {
@@ -43,7 +43,7 @@ var appAuthCallback = func(r *http.Request) (string, error) {
 			values.Set("jwt_token", token)
 		}
 	}
-	return auth.Default().CompleteCallback(r.Context(), values)
+	return auth.Default().CompleteCallback(r.Context(), values, opts)
 }
 
 func (h *Handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,9 @@ func (h *Handler) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	redirectURL, err := appAuthCallback(r)
+	redirectURL, err := appAuthCallback(r, auth.CallbackOptions{
+		AllowedReturnURLBase: h.authCallbackURL(r),
+	})
 	if err != nil {
 		status := http.StatusBadRequest
 		if !auth.IsCallbackValidationError(err) {
@@ -94,7 +96,7 @@ func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		req.ReturnURL = r.Referer()
 	}
 	if req.CallbackURL == "" {
-		req.CallbackURL = authLocalCallbackURL(r)
+		req.CallbackURL = h.authCallbackURL(r, req.ReturnURL)
 	}
 	resp, err := appAuthLogin(r, req)
 	if err != nil {
@@ -117,7 +119,25 @@ func (h *Handler) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-func authLocalCallbackURL(r *http.Request) string {
+func (h *Handler) authCallbackURL(r *http.Request, pageURLs ...string) string {
+	if h != nil && strings.TrimSpace(h.server.AdvertiseBaseURL) != "" {
+		return authCallbackURLFromBase(config.ResolveAdvertiseBaseURL(h.server))
+	}
+	for _, pageURL := range pageURLs {
+		if callbackURL := authCallbackURLFromPageURL(pageURL); callbackURL != "" {
+			return callbackURL
+		}
+	}
+	if callbackURL := authRequestCallbackURL(r); callbackURL != "" {
+		return callbackURL
+	}
+	if h != nil && (strings.TrimSpace(h.server.ListenAddr) != "" || strings.TrimSpace(h.server.AdvertiseBaseURL) != "") {
+		return authCallbackURLFromBase(config.ResolveAdvertiseBaseURL(h.server))
+	}
+	return ""
+}
+
+func authRequestCallbackURL(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
@@ -125,7 +145,7 @@ func authLocalCallbackURL(r *http.Request) string {
 	if host == "" && r.URL != nil {
 		host = strings.TrimSpace(r.URL.Host)
 	}
-	if !isLocalRequestHost(host) {
+	if host == "" {
 		return ""
 	}
 	scheme := "http"
@@ -140,21 +160,37 @@ func authLocalCallbackURL(r *http.Request) string {
 	return u.String()
 }
 
-func isLocalRequestHost(hostport string) bool {
-	hostport = strings.TrimSpace(hostport)
-	if hostport == "" {
-		return false
+func authCallbackURLFromPageURL(pageURL string) string {
+	u, err := url.Parse(strings.TrimSpace(pageURL))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
 	}
-	host, _, err := net.SplitHostPort(hostport)
-	if err != nil {
-		host = hostport
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
 	}
-	switch strings.ToLower(strings.Trim(host, "[]")) {
-	case "127.0.0.1", "localhost", "::1":
-		return true
-	default:
-		return false
+	u.RawQuery = ""
+	u.Fragment = ""
+	return authCallbackURLFromBase(u.String())
+}
+
+func authCallbackURLFromBase(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return ""
 	}
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + authCallbackPath
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 func bearerToken(authHeader string) string {

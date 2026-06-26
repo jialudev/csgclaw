@@ -58,6 +58,7 @@ type Handler struct {
 	activityDecider            ActivityDecider
 	localDirectoryPicker       func(context.Context) (string, error)
 	feishuRegistrationStateDir string
+	server                     config.ServerConfig
 
 	participantActivityTurnsMu sync.Mutex
 	participantActivityTurns   map[string]participantActivityTurn
@@ -467,6 +468,12 @@ func (h *Handler) SetUpgradeApplyFunc(apply func(upgrade.ApplyHelperOptions) err
 func (h *Handler) SetConfigPath(path string) {
 	if h != nil {
 		h.configPath = strings.TrimSpace(path)
+	}
+}
+
+func (h *Handler) SetServerConfig(server config.ServerConfig) {
+	if h != nil {
+		h.server = server
 	}
 }
 

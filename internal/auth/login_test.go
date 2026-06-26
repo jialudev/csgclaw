@@ -68,6 +68,8 @@ func TestCompleteCallbackStoresCredentials(t *testing.T) {
 	redirectURL, err := service.CompleteCallback(context.Background(), url.Values{
 		"jwt_token":  []string{testJWT("alice", "user-1")},
 		"return_url": []string{returnURL},
+	}, CallbackOptions{
+		AllowedReturnURLBase: "http://127.0.0.1:18080/api/v1/auth/callback",
 	})
 	if err != nil {
 		t.Fatalf("CompleteCallback() error = %v", err)
@@ -148,6 +150,98 @@ func TestLoginUsesOpenCSGSSOCallbackURL(t *testing.T) {
 	}
 }
 
+func TestLoginAllowsCallbackURLFromReturnURLOrigin(t *testing.T) {
+	service := &Service{
+		OpenCSGBaseURL: "https://opencsg.example.test",
+	}
+
+	returnURL := "http://172.17.0.1:18080/#/workspace"
+	callbackURL := "http://172.17.0.1:18080/api/v1/auth/callback"
+	login, err := service.Login(context.Background(), LoginOptions{
+		ReturnURL:   returnURL,
+		CallbackURL: callbackURL,
+	})
+	if err != nil {
+		t.Fatalf("Login() error = %v", err)
+	}
+
+	parsedLogin, err := url.Parse(login.LoginURL)
+	if err != nil {
+		t.Fatalf("parse LoginURL: %v", err)
+	}
+	redirectURL := parsedLogin.Query().Get("redirect_url")
+	parsedRedirect, err := url.Parse(redirectURL)
+	if err != nil {
+		t.Fatalf("parse redirect_url: %v", err)
+	}
+	if got := parsedRedirect.Scheme + "://" + parsedRedirect.Host + parsedRedirect.Path; got != callbackURL {
+		t.Fatalf("redirect callback = %q, want %q", got, callbackURL)
+	}
+	if got := parsedRedirect.Query().Get("return_url"); got != returnURL {
+		t.Fatalf("return_url = %q, want %q", got, returnURL)
+	}
+}
+
+func TestLoginAllowsPublicCallbackURLWithSameOriginReturnURL(t *testing.T) {
+	service := &Service{
+		OpenCSGBaseURL: "https://opencsg.example.test",
+	}
+
+	returnURL := "https://csgclaw.example.test/#/workspace"
+	callbackURL := "https://csgclaw.example.test/api/v1/auth/callback"
+	login, err := service.Login(context.Background(), LoginOptions{
+		ReturnURL:   returnURL,
+		CallbackURL: callbackURL,
+	})
+	if err != nil {
+		t.Fatalf("Login() error = %v", err)
+	}
+
+	parsedLogin, err := url.Parse(login.LoginURL)
+	if err != nil {
+		t.Fatalf("parse LoginURL: %v", err)
+	}
+	redirectURL := parsedLogin.Query().Get("redirect_url")
+	parsedRedirect, err := url.Parse(redirectURL)
+	if err != nil {
+		t.Fatalf("parse redirect_url: %v", err)
+	}
+	if got := parsedRedirect.Scheme + "://" + parsedRedirect.Host + parsedRedirect.Path; got != callbackURL {
+		t.Fatalf("redirect callback = %q, want %q", got, callbackURL)
+	}
+	if got := parsedRedirect.Query().Get("return_url"); got != returnURL {
+		t.Fatalf("return_url = %q, want %q", got, returnURL)
+	}
+}
+
+func TestLoginDropsDifferentOriginReturnURL(t *testing.T) {
+	service := &Service{
+		OpenCSGBaseURL: "https://opencsg.example.test",
+	}
+
+	callbackURL := "https://csgclaw.example.test/api/v1/auth/callback"
+	login, err := service.Login(context.Background(), LoginOptions{
+		ReturnURL:   "https://evil.example.test/callback",
+		CallbackURL: callbackURL,
+	})
+	if err != nil {
+		t.Fatalf("Login() error = %v", err)
+	}
+
+	parsedLogin, err := url.Parse(login.LoginURL)
+	if err != nil {
+		t.Fatalf("parse LoginURL: %v", err)
+	}
+	redirectURL := parsedLogin.Query().Get("redirect_url")
+	parsedRedirect, err := url.Parse(redirectURL)
+	if err != nil {
+		t.Fatalf("parse redirect_url: %v", err)
+	}
+	if got := parsedRedirect.Query().Get("return_url"); got != "" {
+		t.Fatalf("return_url = %q, want dropped", got)
+	}
+}
+
 func TestCallbackRejectsMissingParams(t *testing.T) {
 	service := &Service{}
 	_, err := service.completeCallback(context.Background(), url.Values{})
@@ -220,7 +314,27 @@ func TestCallbackReturnURLAcceptsLangflowURLParam(t *testing.T) {
 	returnURL := "http://127.0.0.1:18080/#/workspace"
 	got := callbackReturnURL(url.Values{
 		"url": []string{returnURL},
-	})
+	}, "http://127.0.0.1:18080/api/v1/auth/callback")
+	if got != returnURL {
+		t.Fatalf("callbackReturnURL() = %q, want %q", got, returnURL)
+	}
+}
+
+func TestCallbackReturnURLAcceptsSameOriginURL(t *testing.T) {
+	returnURL := "http://172.17.0.1:18080/#/workspace"
+	got := callbackReturnURL(url.Values{
+		"return_url": []string{returnURL},
+	}, "http://172.17.0.1:18080/api/v1/auth/callback")
+	if got != returnURL {
+		t.Fatalf("callbackReturnURL() = %q, want %q", got, returnURL)
+	}
+}
+
+func TestCallbackReturnURLAcceptsAllowedSameOriginURL(t *testing.T) {
+	returnURL := "https://csgclaw.example.test/#/workspace"
+	got := callbackReturnURL(url.Values{
+		"return_url": []string{returnURL},
+	}, "https://csgclaw.example.test/api/v1/auth/callback")
 	if got != returnURL {
 		t.Fatalf("callbackReturnURL() = %q, want %q", got, returnURL)
 	}
@@ -230,7 +344,7 @@ func TestCallbackReturnURLRejectsExternalURLs(t *testing.T) {
 	got := callbackReturnURL(url.Values{
 		"return_url": []string{"https://evil.example.test/callback"},
 		"url":        []string{"https://also-evil.example.test/callback"},
-	})
+	}, "https://csgclaw.example.test/api/v1/auth/callback")
 	if got != "" {
 		t.Fatalf("callbackReturnURL() = %q, want empty for external URLs", got)
 	}

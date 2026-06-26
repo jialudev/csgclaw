@@ -599,6 +599,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		Upgrade:           upgradeManager,
 		ActivityDecider:   channelActivityDecider(codexBridgeMgr),
 		ConfigPath:        configPath,
+		ServerConfig:      cfg.Server,
 		AccessToken:       cfg.Server.AccessToken,
 		NoAuth:            cfg.Server.NoAuth,
 		Context:           ctx,

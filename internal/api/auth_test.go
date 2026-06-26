@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"csgclaw/internal/auth"
+	"csgclaw/internal/config"
 )
 
 func TestHandleAuthStatus(t *testing.T) {
@@ -72,16 +73,74 @@ func TestHandleAuthLogin(t *testing.T) {
 	}
 }
 
+func TestHandleAuthLoginUsesReturnURLOrigin(t *testing.T) {
+	var gotCallbackURL string
+	restore := stubAuthLogin(func(_ *http.Request, req authLoginRequest) (auth.LoginResponse, error) {
+		gotCallbackURL = req.CallbackURL
+		return auth.LoginResponse{LoginURL: "https://iam.example.test/login"}, nil
+	})
+	defer restore()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"return_url":"https://current.example.test/#/workspace"}`))
+	req.Host = "fallback.example.test"
+	(&Handler{}).Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if gotCallbackURL != "https://current.example.test/api/v1/auth/callback" {
+		t.Fatalf("callback_url = %q", gotCallbackURL)
+	}
+}
+
+func TestHandleAuthLoginUsesAdvertiseBaseURL(t *testing.T) {
+	var gotCallbackURL string
+	restore := stubAuthLogin(func(_ *http.Request, req authLoginRequest) (auth.LoginResponse, error) {
+		gotCallbackURL = req.CallbackURL
+		return auth.LoginResponse{LoginURL: "https://iam.example.test/login"}, nil
+	})
+	defer restore()
+
+	srv := &Handler{}
+	srv.SetServerConfig(config.ServerConfig{
+		AdvertiseBaseURL: "https://csgclaw.example.test/base/",
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"return_url":"https://csgclaw.example.test/base/#/workspace"}`))
+	req.Host = "evil.example.test"
+	srv.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if gotCallbackURL != "https://csgclaw.example.test/base/api/v1/auth/callback" {
+		t.Fatalf("callback_url = %q", gotCallbackURL)
+	}
+}
+
+func TestAuthCallbackURLUsesRequestHostWhenUnconfigured(t *testing.T) {
+	srv := &Handler{}
+	srv.SetServerConfig(config.ServerConfig{ListenAddr: "0.0.0.0:18080"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", nil)
+	req.Host = "evil.example.test"
+	if got := srv.authCallbackURL(req); got != "http://evil.example.test/api/v1/auth/callback" {
+		t.Fatalf("authCallbackURL() = %q", got)
+	}
+}
+
 func TestHandleAuthCallback(t *testing.T) {
 	var gotToken string
-	restore := stubAuthCallback(func(r *http.Request) (string, error) {
+	restore := stubAuthCallback(func(r *http.Request, opts auth.CallbackOptions) (string, error) {
 		gotToken = r.URL.Query().Get("jwt_token")
+		if opts.AllowedReturnURLBase != "http://127.0.0.1:18080/api/v1/auth/callback" {
+			t.Fatalf("AllowedReturnURLBase = %q", opts.AllowedReturnURLBase)
+		}
 		return "http://127.0.0.1:18080/#/workspace", nil
 	})
 	defer restore()
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/callback?jwt_token=jwt-value", nil)
+	req.Host = "127.0.0.1:18080"
 	(&Handler{}).Routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusFound, rec.Body.String())
@@ -126,7 +185,7 @@ func stubAuthLogin(fn func(*http.Request, authLoginRequest) (auth.LoginResponse,
 	return func() { appAuthLogin = previous }
 }
 
-func stubAuthCallback(fn func(*http.Request) (string, error)) func() {
+func stubAuthCallback(fn func(*http.Request, auth.CallbackOptions) (string, error)) func() {
 	previous := appAuthCallback
 	appAuthCallback = fn
 	return func() { appAuthCallback = previous }
