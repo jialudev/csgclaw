@@ -39,8 +39,8 @@ type Dependencies struct {
 
 	SandboxProviderName func() string
 	SandboxToolsDir     func() (string, error)
-	EnsureRuntime       func(agentName string) (sandbox.Runtime, error)
-	RuntimeHome         func(agentName string) (string, error)
+	EnsureRuntime       func(agentID string) (sandbox.Runtime, error)
+	RuntimeHome         func(agentID string) (string, error)
 	CloseRuntime        func(homeDir string, rt sandbox.Runtime) error
 	ResolveBox          func(ctx context.Context, rt sandbox.Runtime, got AgentRef) (sandbox.Instance, string, error)
 	CreateGatewayBox    func(ctx context.Context, rt sandbox.Runtime, image, name, botID string, profile agentruntime.Profile) (sandbox.Instance, sandbox.Info, error)
@@ -133,7 +133,7 @@ func (r *Runtime) New(ctx context.Context, spec agentruntime.Spec) (agentruntime
 		return agentruntime.Handle{}, fmt.Errorf("runtime agent name and id are required")
 	}
 
-	rt, runtimeHome, err := r.openSandboxRuntime(agentName)
+	rt, runtimeHome, err := r.openSandboxRuntime(agentID)
 	if err != nil {
 		return agentruntime.Handle{}, err
 	}
@@ -212,7 +212,7 @@ func (r *Runtime) Delete(ctx context.Context, h agentruntime.Handle) error {
 		return err
 	}
 
-	rt, runtimeHome, err := r.openSandboxRuntime(got.Name)
+	rt, runtimeHome, err := r.openSandboxRuntime(got.ID)
 	if err != nil {
 		return err
 	}
@@ -244,6 +244,9 @@ func (r *Runtime) Delete(ctx context.Context, h agentruntime.Handle) error {
 	}
 	if boxIDOrName == "" {
 		boxIDOrName = strings.TrimSpace(got.BoxID)
+	}
+	if boxIDOrName == "" {
+		boxIDOrName = agentruntime.SandboxNameForAgentID(got.ID)
 	}
 	if boxIDOrName == "" {
 		boxIDOrName = strings.TrimSpace(got.Name)
@@ -352,6 +355,10 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	if participantID == "" {
 		participantID = agentID
 	}
+	sandboxName := agentruntime.SandboxNameForAgentID(agentID)
+	if sandboxName == "" {
+		return sandbox.CreateSpec{}, fmt.Errorf("runtime sandbox name is required")
+	}
 	modelID := prepared.ModelID
 	managerBaseURL := strings.TrimRight(strings.TrimSpace(prepared.ManagerBaseURL), "/")
 	llmBaseURL := llmBridgeBaseURL(managerBaseURL, agentID)
@@ -400,7 +407,7 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	envVars["HOME"] = homeEnv
 	spec := sandbox.CreateSpec{
 		Image:      image,
-		Name:       name,
+		Name:       sandboxName,
 		Detach:     true,
 		AutoRemove: false,
 		Env:        envVars,
@@ -595,12 +602,12 @@ func normalizeWorkspaceLayout(deps Dependencies, layout WorkspaceLayout) Workspa
 	return layout
 }
 
-func (r *Runtime) openSandboxRuntime(agentName string) (sandbox.Runtime, string, error) {
-	rt, err := r.deps.EnsureRuntime(agentName)
+func (r *Runtime) openSandboxRuntime(agentID string) (sandbox.Runtime, string, error) {
+	rt, err := r.deps.EnsureRuntime(agentID)
 	if err != nil {
 		return nil, "", err
 	}
-	runtimeHome, err := r.deps.RuntimeHome(agentName)
+	runtimeHome, err := r.deps.RuntimeHome(agentID)
 	if err != nil {
 		_ = r.deps.CloseRuntime("", rt)
 		return nil, "", err
@@ -613,7 +620,7 @@ func (r *Runtime) openBoxForHandle(ctx context.Context, h agentruntime.Handle) (
 	if err != nil {
 		return nil, nil, err
 	}
-	rt, runtimeHome, err := r.openSandboxRuntime(got.Name)
+	rt, runtimeHome, err := r.openSandboxRuntime(got.ID)
 	if err != nil {
 		return nil, nil, err
 	}

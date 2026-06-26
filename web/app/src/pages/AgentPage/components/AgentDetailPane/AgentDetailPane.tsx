@@ -23,6 +23,9 @@ import {
 } from "@/components/business/ProfileControls";
 import {
   agentProfilePageSaveDisabled,
+  agentProfileConfig,
+  agentRuntimeKind,
+  agentRuntimeState,
   agentStatusLabel,
   agentModelID,
   agentToDraft,
@@ -34,8 +37,8 @@ import {
   isAgentRestartNeeded,
   isAgentUpgradeNeeded,
   isAgentRunning,
+  isManagerAgent,
   isNotifierRuntimeDraftOnAgentPage,
-  normalizeRuntimeKind,
   runtimeOptionSchemasForAgent,
 } from "@/models/agents";
 import type { AgentDraft, AgentLike } from "@/models/agents";
@@ -187,6 +190,7 @@ export function AgentDetailPane({
   onDeleteSkill,
 }: AgentDetailPaneProps) {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
   const [activeProfileSection, setActiveProfileSection] = useState<AgentProfileSectionID>("channels");
   const [addSkillsDialogOpen, setAddSkillsDialogOpen] = useState(false);
   const [selectedSkillNames, setSelectedSkillNames] = useState<string[]>([]);
@@ -194,6 +198,7 @@ export function AgentDetailPane({
   const [skillPendingDelete, setSkillPendingDelete] = useState<SlashSkillOption | null>(null);
   const [profileTabScrollPadding, setProfileTabScrollPadding] = useState(0);
   const descriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const profileScrollRegionRef = useRef<HTMLDivElement | null>(null);
   const channelsSectionRef = useRef<HTMLElement | null>(null);
   const runtimeSectionRef = useRef<HTMLElement | null>(null);
@@ -201,21 +206,23 @@ export function AgentDetailPane({
   const instructionsSectionRef = useRef<HTMLElement | null>(null);
   const skillsSectionRef = useRef<HTMLElement | null>(null);
   const advancedSectionRef = useRef<HTMLElement | null>(null);
-  const isManager = item.role === "manager" || item.id === "u-manager";
+  const isManager = isManagerAgent(item);
+  const canEditAgentName = Boolean(draft && !isManager);
   const running = isAgentRunning(item);
   const draftBelongsToItem = Boolean(draft) && String(draft?.agent_id ?? "").trim() === String(item?.id ?? "").trim();
   const incomplete = isAgentIncomplete(item, draftBelongsToItem ? draft : undefined);
   const restartNeeded = isAgentRestartNeeded(item);
   const upgradeNeeded = isAgentUpgradeNeeded(item);
   const busyPrefix = `${item.id}:`;
-  const provider = item.provider || item.agent_profile?.provider;
-  const runtimeKind = normalizeRuntimeKind(item.runtime_kind);
+  const profile = agentProfileConfig(item);
+  const provider = item.provider || profile?.provider || providerNameForProviderID(profile?.model_provider_id || "");
+  const runtimeKind = agentRuntimeKind(item);
   const canPublish = runtimeKind === "picoclaw_sandbox" || runtimeKind === "openclaw_sandbox";
   const hasUnsavedChanges =
     hasUnsavedChangesProp ?? Boolean(draft && savedDraft && JSON.stringify(draft) !== JSON.stringify(savedDraft));
   const saveDisabled = agentProfilePageSaveDisabled(draft, item, { saving, savedDraft });
   const updateDraft = (patch: Partial<AgentDraft>) => onDraftChange?.({ ...(draft || agentToDraft(item)), ...patch });
-  const runtimeOptionSchemas = runtimeOptionSchemasForAgent(draft?.runtime_kind || item.runtime_kind, item);
+  const runtimeOptionSchemas = runtimeOptionSchemasForAgent(draft?.runtime_kind || runtimeKind, item);
   const fallbackProviderID = String(draft?.model_provider_id || "").trim();
   const fallbackModelOptions =
     modelOptions.length > 0
@@ -294,8 +301,23 @@ export function AgentDetailPane({
   useEffect(() => {
     if (!draft) {
       setIsEditingDescription(false);
+      setIsEditingName(false);
     }
   }, [draft]);
+
+  useEffect(() => {
+    if (!canEditAgentName) {
+      setIsEditingName(false);
+    }
+  }, [canEditAgentName]);
+
+  useEffect(() => {
+    if (!isEditingName) {
+      return;
+    }
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, [isEditingName]);
 
   useEffect(() => {
     if (!isEditingDescription) {
@@ -346,17 +368,54 @@ export function AgentDetailPane({
             </div>
           ) : (
             <div className="entity-avatar">
-              <AgentAvatarContent
-                avatar={item.avatar}
-                fallback={avatarFallbackText(item.avatar, item.name, item.handle, item.id)}
-              />
+              <AgentAvatarContent avatar={item.avatar} fallback={avatarFallbackText(item.avatar, item.name, item.id)} />
             </div>
           )}
           <div className="entity-heading">
             <div className="entity-title-row">
-              <h1>{item.name}</h1>
+              {draft ? (
+                canEditAgentName && isEditingName ? (
+                  <label className="agent-title-edit-field">
+                    <span className="sr-only">{t("agentName")}</span>
+                    <input
+                      ref={nameInputRef}
+                      className="agent-title-input"
+                      value={draft.name}
+                      required
+                      aria-required="true"
+                      onBlur={() => setIsEditingName(false)}
+                      onInput={(event) => updateDraft({ name: event.currentTarget.value })}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape" || event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      placeholder={t("agentName")}
+                    />
+                  </label>
+                ) : canEditAgentName ? (
+                  <button
+                    type="button"
+                    className={`agent-title-display ${draft.name ? "" : "is-empty"}`.trim()}
+                    aria-label={t("editAgentName")}
+                    onClick={() => setIsEditingName(true)}
+                  >
+                    <span className="agent-title-display-copy">{draft.name || t("agentName")}</span>
+                    <span className="agent-title-display-icon" aria-hidden="true">
+                      <Edit3 size={16} strokeWidth={1.8} />
+                    </span>
+                  </button>
+                ) : (
+                  <h1>{draft.name || item.name || t("agentName")}</h1>
+                )
+              ) : (
+                <h1>{item.name}</h1>
+              )}
               <span className={`agent-status-dot ${running ? "online" : ""}`} aria-hidden="true"></span>
-              <span className={`status-pill ${running ? "online" : ""}`}>{agentStatusLabel(item.status, t)}</span>
+              <span className={`status-pill ${running ? "online" : ""}`}>
+                {agentStatusLabel(agentRuntimeState(item), t)}
+              </span>
               <span className={`status-pill profile-state-pill ${incomplete ? "warn" : "ready"}`}>
                 {incomplete ? t("profileIncompleteBadge") : t("profileCompleteBadge")}
               </span>
@@ -514,7 +573,7 @@ export function AgentDetailPane({
             <div className="entity-grid">
               <div className="entity-field">
                 <span>{t("profileRuntimeKind")}</span>
-                <strong>{formatRuntimeKindLabel(item.runtime_kind, t)}</strong>
+                <strong>{formatRuntimeKindLabel(runtimeKind, t)}</strong>
               </div>
               <div className="entity-field">
                 <span>{t("profileProvider")}</span>
@@ -526,11 +585,11 @@ export function AgentDetailPane({
               </div>
               <div className="entity-field">
                 <span>{t("profileReasoning")}</span>
-                <strong>{item.reasoning_effort || item.agent_profile?.reasoning_effort || "medium"}</strong>
+                <strong>{item.reasoning_effort || profile?.reasoning_effort || "medium"}</strong>
               </div>
               <div className="entity-field">
                 <span>{t("profileFastMode")}</span>
-                <strong>{item.enable_fast_mode || item.agent_profile?.enable_fast_mode ? "on" : "off"}</strong>
+                <strong>{item.enable_fast_mode || profile?.enable_fast_mode ? "on" : "off"}</strong>
               </div>
             </div>
             <section className="profile-section agent-instructions-section">
@@ -556,7 +615,7 @@ export function AgentDetailPane({
                     <div className="agent-runtime-image-row span-2">
                       <label className="field">
                         <span>{t("profileRuntimeKind")}</span>
-                        <input value={draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
+                        <input value={draft.runtime_kind || runtimeKind || ""} readOnly disabled />
                       </label>
                       <label className="field agent-image-field">
                         <span>{t("agentImage")}</span>
@@ -574,7 +633,7 @@ export function AgentDetailPane({
                   ) : (
                     <label className="field">
                       <span>{t("profileRuntimeKind")}</span>
-                      <input value={draft.runtime_kind || item.runtime_kind || ""} readOnly disabled />
+                      <input value={draft.runtime_kind || runtimeKind || ""} readOnly disabled />
                     </label>
                   )}
                   {!isNotifierRuntimeDraftOnAgentPage(draft, item) && runtimeOptionSchemas.length > 0 ? (

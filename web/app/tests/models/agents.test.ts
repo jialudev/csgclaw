@@ -49,7 +49,7 @@ import { AGENT_AVATAR_OPTIONS, selectUnusedAgentAvatar } from "@/shared/avatarOp
 describe("agent model helpers", () => {
   it("normalizes agent profiles into editable drafts", () => {
     const draft = agentToDraft({
-      agent_profile: {
+      model_config: {
         api_key_preview: "sk-...",
         api_key_set: true,
         env: { ZED: 1, alpha: "two" },
@@ -85,6 +85,17 @@ describe("agent model helpers", () => {
     ]);
     expect(JSON.parse(draft.headersText)).toEqual({ "X-Trace": "1" });
     expect(JSON.parse(draft.requestOptionsText)).toEqual({ temperature: 0.2 });
+  });
+
+  it("preserves an already-resolved avatar as a draft-only value", () => {
+    expect(
+      agentToDraft({
+        avatar: "avatar/cartoon-1.png",
+        id: "worker-1",
+        name: "Worker",
+        role: "worker",
+      }).avatar,
+    ).toBe("avatar/cartoon-1.png");
   });
 
   it("converts env rows to maps while rejecting missing and duplicate keys", () => {
@@ -256,11 +267,9 @@ describe("agent model helpers", () => {
         runtime_kind: "picoclaw_sandbox",
       }),
     ).toMatchObject({
-      description: "Manager Worker Dispatch",
       enable_fast_mode: true,
       env: { MODEL_HOME: "/models" },
       headers: {},
-      name: "manager",
       reasoning_effort: "medium",
       request_options: { top_p: 0.9 },
     });
@@ -283,7 +292,6 @@ describe("agent model helpers", () => {
         runtime_kind: "codex",
       }),
     ).toMatchObject({
-      provider: "csghub_lite",
       base_url: "",
       api_key: "",
       headers: {},
@@ -306,7 +314,6 @@ describe("agent model helpers", () => {
         runtime_kind: "picoclaw_sandbox",
       }),
     ).toMatchObject({
-      provider: "csghub",
       base_url: "",
       api_key: "",
       headers: {},
@@ -503,6 +510,31 @@ describe("agent model helpers", () => {
         usersById,
       ),
     ).toBe("avatar/cartoon-3.png");
+  });
+
+  it("resolves migrated agent avatars from linked IM users", () => {
+    const usersById = new Map([["user-dahym7", { id: "user-dahym7", avatar: "avatar/3D-5.png", name: "qa" }]]);
+
+    expect(
+      resolveAgentAvatarSource(
+        {
+          id: "agent-dahym7",
+          name: "qa",
+          role: "worker",
+          participants: [
+            {
+              agent_id: "agent-dahym7",
+              channel: "csgclaw",
+              channel_user_kind: "local_user_id",
+              channel_user_ref: "user-dahym7",
+              id: "pt-dahym7",
+              type: "agent",
+            },
+          ],
+        },
+        usersById,
+      ),
+    ).toBe("avatar/3D-5.png");
   });
 
   it("selects a built-in avatar that is not already used", () => {

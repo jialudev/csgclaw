@@ -2,6 +2,7 @@ import {
   agentMatchesUser,
   applyIMEvent,
   appendMessageToData,
+  buildUsersById,
   conversationThreadViews,
   formatConversationPreview,
   formatEventMessage,
@@ -18,6 +19,8 @@ import {
   removeUserFromData,
   sortConversations,
   THREAD_RELATION_TYPE,
+  resolveConversationUser,
+  resolveUserByLocalIdentity,
   userDisplayName,
 } from "@/models/conversations";
 import { AgentActivityMsgTypes, CSGCLAW_AGENT_ACTIVITY_TYPE } from "@/shared/constants/messages";
@@ -51,7 +54,7 @@ describe("conversation model helpers", () => {
   it("formats structured event messages in English and Chinese", () => {
     const usersById = new Map([
       ["u-1", { id: "u-1", name: "Alice" }],
-      ["u-2", { handle: "bob", id: "u-2" }],
+      ["u-2", { id: "u-2" }],
     ]);
 
     expect(
@@ -184,15 +187,40 @@ describe("conversation model helpers", () => {
   it("resolves display names and agent/user matches defensively", () => {
     const usersById = new Map([
       ["u-1", { id: "u-1", name: "Alice" }],
-      ["u-2", { handle: "worker", id: "u-2" }],
+      ["u-2", { id: "u-2" }],
     ]);
 
     expect(userDisplayName("u-1", usersById)).toBe("Alice");
-    expect(userDisplayName("u-2", usersById)).toBe("@worker");
+    expect(userDisplayName("u-2", usersById)).toBe("u-2");
     expect(userDisplayName("missing", usersById)).toBe("missing");
-    expect(agentMatchesUser({ handle: "Worker" }, { handle: "worker", id: "u-2" })).toBe(true);
+    expect(agentMatchesUser({ name: "Worker" }, { id: "u-2", name: "worker" })).toBe(true);
     expect(agentMatchesUser({ name: "Manager" }, { id: "u-3", name: "manager" })).toBe(true);
     expect(agentMatchesUser(null, { id: "u-1" })).toBe(false);
+  });
+
+  it("resolves typed participant IDs through canonical local users", () => {
+    const usersById = buildUsersById([
+      { avatar: "avatar/admin.png", id: "user-admin", name: "admin" },
+      { avatar: "avatar/ux.png", id: "user-zaha7h", name: "UX" },
+    ]);
+
+    expect(resolveUserByLocalIdentity("pt-zaha7h", usersById)?.avatar).toBe("avatar/ux.png");
+    expect(resolveUserByLocalIdentity("pt-agent-zaha7h-d59735ad", usersById)?.name).toBe("UX");
+    expect(userDisplayName("pt-zaha7h", usersById)).toBe("UX");
+    expect(
+      resolveConversationUser(
+        {
+          description: "",
+          id: "room-ux",
+          is_direct: true,
+          members: ["pt-admin", "pt-zaha7h"],
+          messages: [],
+          title: "UX",
+        },
+        "user-admin",
+        usersById,
+      )?.id,
+    ).toBe("user-zaha7h");
   });
 
   it("detects Feishu-bound human channels from participants", () => {

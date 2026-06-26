@@ -98,6 +98,23 @@ func TestCreateGatewayBoxSkipsReadinessForBoxlite(t *testing.T) {
 	}
 }
 
+func TestGatewayCreateSpecUsesAgentIDSandboxName(t *testing.T) {
+	rt := New(testGatewayDeps(func() string { return "docker" }, func(context.Context, sandbox.Instance, string, []string, io.Writer) (int, error) {
+		return 0, nil
+	}))
+	prepared := testPreparedGatewayProvision()
+	prepared.AgentID = "agent-qa"
+	rt.RememberPreparedGatewayProvision("agent-qa", prepared)
+
+	spec, err := rt.GatewayCreateSpec("image:1", "测试工程师", "agent-qa", agentruntime.Profile{})
+	if err != nil {
+		t.Fatalf("GatewayCreateSpec() error = %v", err)
+	}
+	if spec.Name != "csgclaw-agent-qa" {
+		t.Fatalf("GatewayCreateSpec() name = %q, want %q", spec.Name, "csgclaw-agent-qa")
+	}
+}
+
 func TestStartWaitsForDockerReadiness(t *testing.T) {
 	var attempts int
 	rt := New(testGatewayDeps(func() string { return "docker" }, func(context.Context, sandbox.Instance, string, []string, io.Writer) (int, error) {
@@ -137,6 +154,36 @@ func TestDeleteStopsBoxBeforeForceRemove(t *testing.T) {
 	}
 	if strings.Join(calls, ",") != "stop,remove" {
 		t.Fatalf("Delete() sandbox calls = %q, want stop then remove", strings.Join(calls, ","))
+	}
+}
+
+func TestResolvedAgentRuntimeHomeUsesAgentID(t *testing.T) {
+	var ensureRuntimeID string
+	var runtimeHomeID string
+	deps := testGatewayDeps(func() string { return "boxlite" }, func(context.Context, sandbox.Instance, string, []string, io.Writer) (int, error) {
+		return 0, nil
+	})
+	deps.EnsureRuntime = func(agentID string) (sandbox.Runtime, error) {
+		ensureRuntimeID = agentID
+		return testSandboxRuntime{}, nil
+	}
+	deps.RuntimeHome = func(agentID string) (string, error) {
+		runtimeHomeID = agentID
+		return "/tmp/runtime", nil
+	}
+	deps.ResolveAgent = func(agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{ID: "agent-dahym7", Name: "qa", RuntimeID: "rt-agent-dahym7", BoxID: "box-qa"}, nil
+	}
+
+	rt := New(deps)
+	if _, err := rt.Info(context.Background(), agentruntime.Handle{RuntimeID: "rt-agent-dahym7", HandleID: "box-qa"}); err != nil {
+		t.Fatalf("Info() error = %v", err)
+	}
+	if ensureRuntimeID != "agent-dahym7" {
+		t.Fatalf("EnsureRuntime() agent id = %q, want agent-dahym7", ensureRuntimeID)
+	}
+	if runtimeHomeID != "agent-dahym7" {
+		t.Fatalf("RuntimeHome() agent id = %q, want agent-dahym7", runtimeHomeID)
 	}
 }
 

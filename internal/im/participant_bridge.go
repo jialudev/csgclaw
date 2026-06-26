@@ -120,6 +120,7 @@ func NewParticipantBridge(string) *ParticipantBridge {
 }
 
 func (b *ParticipantBridge) Subscribe(participantID string) (<-chan ParticipantEvent, func()) {
+	participantID = canonicalIMParticipantID(participantID)
 	ch := make(chan ParticipantEvent, 16)
 
 	b.mu.Lock()
@@ -158,6 +159,7 @@ func (b *ParticipantBridge) Subscribe(participantID string) (<-chan ParticipantE
 }
 
 func (b *ParticipantBridge) SubscriberCount(participantID string) int {
+	participantID = canonicalIMParticipantID(participantID)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return len(b.subscribers[participantID])
@@ -177,6 +179,7 @@ func (b *ParticipantBridge) PublishMessageEvent(room Room, sender User, message 
 }
 
 func (b *ParticipantBridge) EnqueueMessageEvent(room Room, sender User, message Message, participantID string) bool {
+	participantID = canonicalIMParticipantID(participantID)
 	if !shouldNotifyParticipant(room, message, participantID) {
 		return true
 	}
@@ -184,6 +187,7 @@ func (b *ParticipantBridge) EnqueueMessageEvent(room Room, sender User, message 
 }
 
 func (b *ParticipantBridge) EnqueueMessageEventWithText(room Room, sender User, message Message, participantID string, text string) bool {
+	participantID = canonicalIMParticipantID(participantID)
 	if !shouldNotifyParticipant(room, message, participantID) {
 		return true
 	}
@@ -196,6 +200,7 @@ func (b *ParticipantBridge) EnqueueMessageEventWithText(room Room, sender User, 
 }
 
 func (b *ParticipantBridge) enqueue(participantID string, evt ParticipantEvent) bool {
+	participantID = canonicalIMParticipantID(participantID)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.hasSeenOrInflightLocked(participantID, evt.MessageID) {
@@ -224,7 +229,7 @@ func (b *ParticipantBridge) enqueue(participantID string, evt ParticipantEvent) 
 }
 
 func (b *ParticipantBridge) Ack(participantID, messageID string) {
-	participantID = strings.TrimSpace(participantID)
+	participantID = canonicalIMParticipantID(participantID)
 	messageID = strings.TrimSpace(messageID)
 	if participantID == "" || messageID == "" {
 		return
@@ -242,7 +247,7 @@ func (b *ParticipantBridge) Ack(participantID, messageID string) {
 }
 
 func (b *ParticipantBridge) Requeue(participantID string, evt ParticipantEvent) {
-	participantID = strings.TrimSpace(participantID)
+	participantID = canonicalIMParticipantID(participantID)
 	if participantID == "" {
 		return
 	}
@@ -359,7 +364,7 @@ func messageEventForParticipant(room Room, sender User, message Message, partici
 		ThreadRootID: threadRootID,
 		Sender: ParticipantSender{
 			ID:          sender.ID,
-			Username:    sender.Handle,
+			Username:    sender.Name,
 			DisplayName: sender.Name,
 			Description: sender.Description,
 		},
@@ -387,13 +392,13 @@ func messageEventForParticipant(room Room, sender User, message Message, partici
 
 func textForParticipantEvent(message Message, participantID string) string {
 	content := message.Content
-	participantID = strings.TrimSpace(participantID)
-	if content == "" || participantID == "" || HasMentionTagForUser(content, participantID) {
+	userID := userIDForParticipantID(participantID)
+	if content == "" || userID == "" || HasMentionTagForUser(content, userID) {
 		return content
 	}
 	for _, mention := range message.Mentions {
-		if strings.TrimSpace(mention.ID) == participantID {
-			return replaceMentionHandleWithTag(content, mention)
+		if canonicalIMUserID(mention.ID) == userID {
+			return replaceMentionNameWithTag(content, mentionForUserID(mention, userID))
 		}
 	}
 	return content
@@ -401,55 +406,56 @@ func textForParticipantEvent(message Message, participantID string) string {
 
 func participantActionTextForEvent(message Message, participantID, text string) string {
 	text = strings.TrimSpace(text)
-	participantID = strings.TrimSpace(participantID)
-	if text == "" || participantID == "" || HasMentionTagForUser(text, participantID) || !messageMentionsParticipant(message, participantID) {
+	userID := userIDForParticipantID(participantID)
+	if text == "" || userID == "" || HasMentionTagForUser(text, userID) || !messageMentionsParticipant(message, participantID) {
 		return text
 	}
 	return text + " " + mentionTagForParticipant(message, participantID)
 }
 
 func messageMentionsParticipant(message Message, participantID string) bool {
-	participantID = strings.TrimSpace(participantID)
-	if participantID == "" {
+	userID := userIDForParticipantID(participantID)
+	if userID == "" {
 		return false
 	}
 	for _, mention := range message.Mentions {
-		if strings.TrimSpace(mention.ID) == participantID {
+		if canonicalIMUserID(mention.ID) == userID {
 			return true
 		}
 	}
-	return HasMentionTagForUser(message.Content, participantID)
+	return HasMentionTagForUser(message.Content, userID)
 }
 
 func ensureParticipantMentioned(evt *ParticipantEvent, participantID string) {
 	if evt == nil {
 		return
 	}
-	participantID = strings.TrimSpace(participantID)
-	if participantID == "" {
+	userID := userIDForParticipantID(participantID)
+	if userID == "" {
 		return
 	}
 	for _, mention := range evt.Mentions {
-		if strings.TrimSpace(mention) == participantID {
+		if canonicalIMUserID(mention) == userID {
 			evt.Context.Mentioned = true
 			return
 		}
 	}
-	evt.Mentions = append(evt.Mentions, participantID)
+	evt.Mentions = append(evt.Mentions, userID)
 	evt.Context.Mentioned = true
 }
 
 func mentionTagForParticipant(message Message, participantID string) string {
+	userID := userIDForParticipantID(participantID)
 	for _, mention := range message.Mentions {
-		if strings.TrimSpace(mention.ID) == strings.TrimSpace(participantID) {
-			return fmt.Sprintf(`<at user_id="%s">%s</at>`, strings.TrimSpace(participantID), mentionDisplayName(mention))
+		if canonicalIMUserID(mention.ID) == userID {
+			return fmt.Sprintf(`<at user_id="%s">%s</at>`, strings.TrimSpace(userID), mentionDisplayName(mention))
 		}
 	}
-	return fmt.Sprintf(`<at user_id="%s">%s</at>`, strings.TrimSpace(participantID), strings.TrimSpace(participantID))
+	return fmt.Sprintf(`<at user_id="%s">%s</at>`, strings.TrimSpace(userID), strings.TrimSpace(userID))
 }
 
-func replaceMentionHandleWithTag(content string, mention Mention) string {
-	candidates := mentionHandleCandidates(mention)
+func replaceMentionNameWithTag(content string, mention Mention) string {
+	candidates := mentionNameCandidates(mention)
 	if len(candidates) == 0 {
 		return content
 	}
@@ -466,8 +472,8 @@ func replaceMentionHandleWithTag(content string, mention Mention) string {
 		if len(match) < 6 || match[4] < 0 || match[5] < 0 {
 			continue
 		}
-		handle := strings.ToLower(strings.TrimSpace(content[match[4]:match[5]]))
-		if _, ok := candidates[handle]; !ok {
+		name := strings.ToLower(strings.TrimSpace(content[match[4]:match[5]]))
+		if _, ok := candidates[name]; !ok {
 			continue
 		}
 		replaced = true
@@ -485,18 +491,18 @@ func replaceMentionHandleWithTag(content string, mention Mention) string {
 	return out.String()
 }
 
-func mentionHandleCandidates(mention Mention) map[string]struct{} {
+func mentionNameCandidates(mention Mention) map[string]struct{} {
 	candidates := make(map[string]struct{}, 2)
-	if name := normalizeMentionHandle(mention.Name); name != "" {
+	if name := normalizeMentionName(mention.Name); name != "" {
 		candidates[name] = struct{}{}
 	}
-	if idHandle := strings.TrimPrefix(strings.TrimSpace(mention.ID), "u-"); idHandle != "" {
-		candidates[strings.ToLower(idHandle)] = struct{}{}
+	if idName := trimLocalIdentityPrefixes(mention.ID); idName != "" {
+		candidates[strings.ToLower(idName)] = struct{}{}
 	}
 	return candidates
 }
 
-func normalizeMentionHandle(value string) string {
+func normalizeMentionName(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = strings.TrimPrefix(value, "@")
 	return value
@@ -537,7 +543,8 @@ func (e ParticipantEvent) MarshalJSONLine() ([]byte, error) {
 }
 
 func shouldNotifyParticipant(room Room, message Message, participantID string) bool {
-	if message.SenderID == participantID {
+	userID := userIDForParticipantID(participantID)
+	if canonicalIMUserID(message.SenderID) == userID {
 		return false
 	}
 	if !containsUserIDInRoom(room, participantID) {
@@ -550,13 +557,19 @@ func mentionsForParticipant(mentions []Mention, participantID string) []string {
 	if len(mentions) == 0 {
 		return nil
 	}
+	userID := userIDForParticipantID(participantID)
 	result := make([]string, 0, len(mentions))
 	for _, mention := range mentions {
-		if mention.ID == participantID {
-			result = append(result, mention.ID)
+		if canonicalIMUserID(mention.ID) == userID {
+			result = append(result, userID)
 		}
 	}
 	return result
+}
+
+func mentionForUserID(mention Mention, userID string) Mention {
+	mention.ID = canonicalIMUserID(userID)
+	return mention
 }
 
 func chatTypeForRoom(room Room) string {

@@ -9,7 +9,27 @@ import (
 
 func cleanParticipantID(id string) string {
 	id = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(id), "@"))
-	return id
+	switch id {
+	case "", "admin", "u-admin", "user-admin":
+		if id == "" {
+			return ""
+		}
+		return "pt-admin"
+	case "manager", "u-manager", "user-manager", agent.ManagerUserID:
+		return agent.ManagerParticipantID
+	}
+	if strings.HasPrefix(id, "pt-") {
+		return id
+	}
+	for _, prefix := range []string{"user-", "agent-", "u-"} {
+		if strings.HasPrefix(id, prefix) {
+			suffix := strings.TrimPrefix(id, prefix)
+			if suffix != "" {
+				return "pt-" + suffix
+			}
+		}
+	}
+	return "pt-" + id
 }
 
 func requireCanonicalParticipantID(field, id string) (string, error) {
@@ -19,9 +39,6 @@ func requireCanonicalParticipantID(field, id string) (string, error) {
 	}
 	if strings.ContainsAny(id, " \t\r\n") {
 		return "", invalidParticipantIDError(field, id)
-	}
-	if strings.HasPrefix(id, "u-") {
-		return "", legacyUserIDAsParticipantIDError(field, id)
 	}
 	return id, nil
 }
@@ -39,10 +56,6 @@ func requireAgentID(field, id string) (string, error) {
 
 func invalidParticipantIDError(field, id string) error {
 	return fmt.Errorf("%s must be a stable participant id without whitespace: %s", field, id)
-}
-
-func legacyUserIDAsParticipantIDError(field, id string) error {
-	return fmt.Errorf("%s must be a participant id, not CSGClaw user/agent id %q", field, id)
 }
 
 // ParticipantIDsMatch reports whether two participant ids refer to the same team participant.
@@ -77,8 +90,11 @@ func defaultParticipantIDForAgentID(agentID string) string {
 	if agentID == agent.ManagerUserID {
 		return agent.ManagerParticipantID
 	}
-	if strings.HasPrefix(agentID, "u-") && len(agentID) > len("u-") {
-		return strings.TrimPrefix(agentID, "u-")
+	if strings.HasPrefix(agentID, "agent-") && len(agentID) > len("agent-") {
+		return "pt-" + strings.TrimPrefix(agentID, "agent-")
 	}
-	return agentID
+	if strings.HasPrefix(agentID, "u-") && len(agentID) > len("u-") {
+		return "pt-" + strings.TrimPrefix(agentID, "u-")
+	}
+	return cleanParticipantID(agentID)
 }

@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
+	"unicode"
 
 	"csgclaw/internal/apiclient"
 	"csgclaw/internal/apitypes"
 
 	"golang.org/x/term"
+	textwidth "golang.org/x/text/width"
 )
 
 type Command interface {
@@ -144,10 +145,15 @@ func RenderAction(output string, w io.Writer, result ActionResult) error {
 		return err
 	}
 
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "COMMAND\tACTION\tSTATUS\tID")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", result.Command, result.Action, result.Status, displayValueField(result.ID))
-	return tw.Flush()
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "COMMAND"},
+			{Header: "ACTION"},
+			{Header: "STATUS"},
+			{Header: "ID"},
+		},
+		[][]string{{result.Command, result.Action, result.Status, displayValueField(result.ID)}},
+	)
 }
 
 func RenderAgents(output string, w io.Writer, agents []apitypes.Agent) error {
@@ -239,12 +245,41 @@ func RenderTeamApprovals(output string, w io.Writer, approvals []apitypes.TeamAp
 }
 
 func RenderAgentsTable(w io.Writer, agents []apitypes.Agent) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tNAME\tROLE\tSTATUS\tRUNTIME\tPROFILE\tIMAGE")
-	for _, a := range agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.Role, a.Status, displayAgentField(a.RuntimeKind), displayAgentProfile(a.Profile), displayAgentField(a.Image))
+	showParticipants := agentsHaveParticipants(agents)
+	columns := []tableColumn{
+		{Header: "ID"},
+		{Header: "NAME"},
+		{Header: "ROLE"},
+		{Header: "STATUS"},
+		{Header: "RUNTIME"},
+		{Header: "MODEL"},
 	}
-	return tw.Flush()
+	if showParticipants {
+		columns = append(columns, tableColumn{Header: "PARTICIPANTS"})
+	}
+	columns = append(columns, tableColumn{Header: "IMAGE"})
+	rows := make([][]string, 0, len(agents))
+	for _, a := range agents {
+		status := displayAgentStatus(a)
+		runtimeKind := displayAgentRuntime(a)
+		model := displayAgentModel(a)
+		row := []string{a.ID, a.Name, a.Role, status, runtimeKind, model}
+		if showParticipants {
+			row = append(row, displayParticipantList(a.ParticipantNames, a.ParticipantIDs))
+		}
+		row = append(row, displayAgentField(a.Image))
+		rows = append(rows, row)
+	}
+	return renderTable(w, columns, rows)
+}
+
+func agentsHaveParticipants(agents []apitypes.Agent) bool {
+	for _, item := range agents {
+		if len(item.ParticipantNames) > 0 || len(item.ParticipantIDs) > 0 || len(item.Participants) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func displayAgentField(value string) string {
@@ -255,26 +290,63 @@ func displayAgentField(value string) string {
 	return value
 }
 
-func displayAgentProfile(profile string) string {
-	return displayAgentField(profile)
+func displayAgentStatus(a apitypes.Agent) string {
+	if status := strings.TrimSpace(a.Status); status != "" {
+		return status
+	}
+	return displayAgentField(a.Runtime.State)
+}
+
+func displayAgentRuntime(a apitypes.Agent) string {
+	if runtimeKind := strings.TrimSpace(a.RuntimeKind); runtimeKind != "" {
+		return runtimeKind
+	}
+	return displayAgentField(a.Runtime.Kind)
+}
+
+func displayAgentModel(a apitypes.Agent) string {
+	if profile := strings.TrimSpace(a.Profile); profile != "" {
+		return profile
+	}
+	providerID := strings.TrimSpace(a.ProfileConfig.ModelProviderID)
+	modelID := strings.TrimSpace(a.ProfileConfig.ModelID)
+	switch {
+	case providerID != "" && modelID != "":
+		return providerID + "." + modelID
+	case modelID != "":
+		return modelID
+	default:
+		return "-"
+	}
 }
 
 func RenderParticipantsTable(w io.Writer, participants []apitypes.Participant) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tCHANNEL\tAGENT_ID\tCHANNEL_USER\tAPP_REF\tSTATUS")
+	rows := make([][]string, 0, len(participants))
 	for _, p := range participants {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		rows = append(rows, []string{
 			displayValueField(p.ID),
 			displayValueField(p.Name),
 			displayValueField(p.Type),
 			displayValueField(p.Channel),
-			displayValueField(p.AgentID),
-			displayValueField(p.ChannelUserRef),
+			displayNameWithID(p.AgentName, p.AgentID),
+			displayNameWithID(p.UserName, firstNonEmpty(p.UserID, p.ChannelUserRef)),
 			displayValueField(p.ChannelAppRef),
 			displayValueField(p.LifecycleStatus),
-		)
+		})
 	}
-	return tw.Flush()
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "NAME"},
+			{Header: "TYPE"},
+			{Header: "CHANNEL"},
+			{Header: "AGENT"},
+			{Header: "USER"},
+			{Header: "APP_REF"},
+			{Header: "STATUS"},
+		},
+		rows,
+	)
 }
 
 func displayValueField(value string) string {
@@ -285,62 +357,263 @@ func displayValueField(value string) string {
 	return value
 }
 
-func RenderRoomsTable(w io.Writer, rooms []apitypes.Room) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tTITLE\tDIRECT\tMEMBERS\tMESSAGES")
-	for _, room := range rooms {
-		fmt.Fprintf(tw, "%s\t%s\t%t\t%d\t%d\n", room.ID, room.Title, room.IsDirect, len(room.Members), len(room.Messages))
+func displayNameWithID(name, id string) string {
+	name = strings.TrimSpace(name)
+	id = strings.TrimSpace(id)
+	switch {
+	case name != "" && id != "" && name != id:
+		return name + "(" + id + ")"
+	case name != "":
+		return name
+	case id != "":
+		return id
+	default:
+		return "-"
 	}
-	return tw.Flush()
+}
+
+func displayParticipantList(names, ids []string) string {
+	if len(names) == 0 && len(ids) == 0 {
+		return "-"
+	}
+	if len(names) == 0 {
+		return displayList(ids)
+	}
+	values := make([]string, 0, len(names))
+	for i, name := range names {
+		id := ""
+		if i < len(ids) {
+			id = ids[i]
+		}
+		values = append(values, displayNameWithID(name, id))
+	}
+	return strings.Join(values, ",")
+}
+
+func displayList(values []string) string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	if len(out) == 0 {
+		return "-"
+	}
+	return strings.Join(out, ",")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func RenderRoomsTable(w io.Writer, rooms []apitypes.Room) error {
+	showNames := roomsHaveMemberNames(rooms)
+	columns := []tableColumn{
+		{Header: "ID"},
+		{Header: "TITLE"},
+		{Header: "DIRECT"},
+		{Header: "MEMBERS"},
+	}
+	if showNames {
+		columns = append(columns, tableColumn{Header: "MEMBER_NAMES"})
+	}
+	columns = append(columns, tableColumn{Header: "MESSAGES"})
+	rows := make([][]string, 0, len(rooms))
+	for _, room := range rooms {
+		row := []string{room.ID, room.Title, fmt.Sprintf("%t", room.IsDirect), fmt.Sprintf("%d", len(room.Members))}
+		if showNames {
+			row = append(row, displayList(room.MemberNames))
+		}
+		row = append(row, fmt.Sprintf("%d", len(room.Messages)))
+		rows = append(rows, row)
+	}
+	return renderTable(w, columns, rows)
+}
+
+func roomsHaveMemberNames(rooms []apitypes.Room) bool {
+	for _, room := range rooms {
+		if len(room.MemberNames) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func RenderUsersTable(w io.Writer, users []apitypes.User) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tNAME\tHANDLE\tROLE\tONLINE")
+	rows := make([][]string, 0, len(users))
 	for _, user := range users {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\n", user.ID, user.Name, user.Handle, user.Role, user.IsOnline)
+		rows = append(rows, []string{user.ID, user.Name, user.Role, fmt.Sprintf("%t", user.IsOnline)})
 	}
-	return tw.Flush()
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "NAME"},
+			{Header: "ROLE"},
+			{Header: "ONLINE"},
+		},
+		rows,
+	)
 }
 
 func RenderMessagesTable(w io.Writer, messages []apitypes.Message) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tSENDER\tKIND\tCONTENT")
+	rows := make([][]string, 0, len(messages))
 	for _, message := range messages {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", message.ID, message.SenderID, message.Kind, message.Content)
+		rows = append(rows, []string{message.ID, message.SenderID, message.Kind, message.Content})
 	}
-	return tw.Flush()
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "SENDER"},
+			{Header: "KIND"},
+			{Header: "CONTENT"},
+		},
+		rows,
+	)
 }
 
 func RenderTeamsTable(w io.Writer, teams []apitypes.Team) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tROOM\tCHANNEL\tLEAD_AGENT\tSTATUS\tTITLE")
+	rows := make([][]string, 0, len(teams))
 	for _, item := range teams {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", displayValueField(item.ID), displayValueField(item.RoomID), displayValueField(item.Channel), displayValueField(item.LeadAgentID), displayValueField(item.Status), displayValueField(item.Title))
+		rows = append(rows, []string{displayValueField(item.ID), displayValueField(item.RoomID), displayValueField(item.Channel), displayNameWithID(item.LeadAgentName, item.LeadAgentID), displayValueField(item.Status), displayValueField(item.Title)})
 	}
-	return tw.Flush()
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "ROOM"},
+			{Header: "CHANNEL"},
+			{Header: "LEAD_AGENT"},
+			{Header: "STATUS"},
+			{Header: "TITLE"},
+		},
+		rows,
+	)
 }
 
 func RenderTeamTasksTable(w io.Writer, tasks []apitypes.TeamTask) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tTEAM\tSTATUS\tASSIGNED\tCLAIMED\tPRIORITY\tTITLE")
+	rows := make([][]string, 0, len(tasks))
 	for _, item := range tasks {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n", displayValueField(item.ID), displayValueField(item.TeamID), displayValueField(item.Status), displayValueField(item.AssignedTo), displayValueField(item.ClaimedBy), item.Priority, displayValueField(item.Title))
+		rows = append(rows, []string{displayValueField(item.ID), displayValueField(item.TeamID), displayValueField(item.Status), displayNameWithID(item.AssignedToAgentName, item.AssignedTo), displayNameWithID(item.ClaimedByAgentName, item.ClaimedBy), fmt.Sprintf("%d", item.Priority), displayValueField(item.Title)})
 	}
-	return tw.Flush()
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "TEAM"},
+			{Header: "STATUS"},
+			{Header: "ASSIGNED"},
+			{Header: "CLAIMED"},
+			{Header: "PRIORITY"},
+			{Header: "TITLE"},
+		},
+		rows,
+	)
 }
 
 func RenderTeamApprovalsTable(w io.Writer, approvals []apitypes.TeamApproval) error {
-	tw := NewTableWriter(w)
-	fmt.Fprintln(tw, "ID\tTEAM\tTASK\tSTATUS\tREQUESTED_BY\tAPPROVER\tSUMMARY")
+	rows := make([][]string, 0, len(approvals))
 	for _, item := range approvals {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", displayValueField(item.ID), displayValueField(item.TeamID), displayValueField(item.TaskID), displayValueField(item.Status), displayValueField(item.RequestedBy), displayValueField(item.ApproverID), displayValueField(item.Summary))
+		rows = append(rows, []string{displayValueField(item.ID), displayValueField(item.TeamID), displayValueField(item.TaskID), displayValueField(item.Status), displayValueField(item.RequestedBy), displayValueField(item.ApproverID), displayValueField(item.Summary)})
 	}
-	return tw.Flush()
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "TEAM"},
+			{Header: "TASK"},
+			{Header: "STATUS"},
+			{Header: "REQUESTED_BY"},
+			{Header: "APPROVER"},
+			{Header: "SUMMARY"},
+		},
+		rows,
+	)
 }
 
-func NewTableWriter(w io.Writer) *tabwriter.Writer {
-	return tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+type tableColumn struct {
+	Header string
+}
+
+func renderTable(w io.Writer, columns []tableColumn, rows [][]string) error {
+	if len(columns) == 0 {
+		return nil
+	}
+	table := make([][]string, 0, len(rows)+1)
+	header := make([]string, len(columns))
+	for i, col := range columns {
+		header[i] = col.Header
+	}
+	table = append(table, header)
+	table = append(table, rows...)
+
+	widths := make([]int, len(columns))
+	cells := make([][]string, len(table))
+	for rowIdx, row := range table {
+		cells[rowIdx] = make([]string, len(columns))
+		for colIdx := range columns {
+			cell := ""
+			if colIdx < len(row) {
+				cell = row[colIdx]
+			}
+			cell = cleanTableCell(cell)
+			cells[rowIdx][colIdx] = cell
+			if width := displayWidth(cell); width > widths[colIdx] {
+				widths[colIdx] = width
+			}
+		}
+	}
+
+	for _, row := range cells {
+		for colIdx, cell := range row {
+			if _, err := io.WriteString(w, cell); err != nil {
+				return err
+			}
+			if colIdx == len(row)-1 {
+				continue
+			}
+			padding := widths[colIdx] - displayWidth(cell) + 2
+			if padding < 2 {
+				padding = 2
+			}
+			if _, err := io.WriteString(w, strings.Repeat(" ", padding)); err != nil {
+				return err
+			}
+		}
+		if _, err := io.WriteString(w, "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cleanTableCell(value string) string {
+	value = strings.TrimSpace(value)
+	replacer := strings.NewReplacer("\t", " ", "\r", " ", "\n", " ")
+	return replacer.Replace(value)
+}
+
+func displayWidth(value string) int {
+	width := 0
+	for _, r := range value {
+		width += runeDisplayWidth(r)
+	}
+	return width
+}
+
+func runeDisplayWidth(r rune) int {
+	if r == 0 || unicode.IsControl(r) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) {
+		return 0
+	}
+	switch textwidth.LookupRune(r).Kind() {
+	case textwidth.EastAsianFullwidth, textwidth.EastAsianWide:
+		return 2
+	default:
+		return 1
+	}
 }
 
 func ParseCSV(raw string) []string {
