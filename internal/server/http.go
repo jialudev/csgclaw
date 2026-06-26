@@ -12,6 +12,7 @@ import (
 	"csgclaw/internal/agent"
 	"csgclaw/internal/api"
 	"csgclaw/internal/channel/feishu"
+	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/participant"
@@ -35,6 +36,7 @@ type Options struct {
 	Upgrade           *upgrade.Manager
 	ActivityDecider   api.ActivityDecider
 	ConfigPath        string
+	ServerConfig      config.ServerConfig
 	AccessToken       string
 	NoAuth            bool
 	Context           context.Context
@@ -51,6 +53,7 @@ func newHandler(opts Options) *api.Handler {
 	handler.SetActivityDecider(opts.ActivityDecider)
 	handler.SetUpgradeConfigPath(opts.ConfigPath)
 	handler.SetConfigPath(opts.ConfigPath)
+	handler.SetServerConfig(opts.ServerConfig)
 	return handler
 }
 
