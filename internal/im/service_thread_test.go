@@ -1,6 +1,8 @@
 package im
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -286,14 +288,49 @@ func TestThreadStatePersistsAcrossReload(t *testing.T) {
 	}
 }
 
+func TestThreadContextPersistsOutOfLine(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state.json")
+	svc := NewServiceFromBootstrap(threadTestBootstrap())
+	svc.statePath = statePath
+
+	if _, _, err := svc.StartThread(StartThreadRequest{RoomID: "room-1", RootMessageID: "msg-4"}); err != nil {
+		t.Fatalf("StartThread() error = %v", err)
+	}
+
+	stateData, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(state.json) error = %v", err)
+	}
+	if strings.Contains(string(stateData), `"context"`) {
+		t.Fatalf("state.json contains inline thread context: %s", string(stateData))
+	}
+
+	contextPath := filepath.Join(dir, "threads", "room-1", "msg-4.json")
+	contextData, err := os.ReadFile(contextPath)
+	if err != nil {
+		t.Fatalf("ReadFile(thread context) error = %v", err)
+	}
+	var stored struct {
+		RootMessageID string    `json:"root_message_id"`
+		Context       []Message `json:"context"`
+	}
+	if err := json.Unmarshal(contextData, &stored); err != nil {
+		t.Fatalf("Unmarshal(thread context) error = %v", err)
+	}
+	if stored.RootMessageID != "msg-4" || len(stored.Context) != 6 {
+		t.Fatalf("thread context = %+v, want msg-4 with six messages", stored)
+	}
+}
+
 func TestDeleteUserRebuildsThreadStateFromSurvivingMessages(t *testing.T) {
 	base := time.Date(2026, 5, 20, 8, 0, 0, 0, time.UTC)
 	svc := NewServiceFromBootstrap(Bootstrap{
 		CurrentUserID: "u-admin",
 		Users: []User{
-			{ID: "u-admin", Name: "admin", Handle: "admin"},
-			{ID: "u-alice", Name: "Alice", Handle: "alice"},
-			{ID: "u-bob", Name: "Bob", Handle: "bob"},
+			{ID: "u-admin", Name: "admin"},
+			{ID: "u-alice", Name: "Alice"},
+			{ID: "u-bob", Name: "Bob"},
 		},
 		Rooms: []Room{{
 			ID:      "room-1",
@@ -365,8 +402,8 @@ func threadTestBootstrap() Bootstrap {
 	return Bootstrap{
 		CurrentUserID: "u-admin",
 		Users: []User{
-			{ID: "u-admin", Name: "admin", Handle: "admin"},
-			{ID: "manager", Name: "manager", Handle: "manager"},
+			{ID: "u-admin", Name: "admin"},
+			{ID: "manager", Name: "manager"},
 		},
 		Rooms: []Room{
 			{ID: "room-1", Title: "Room One", Members: []string{"u-admin", "manager"}, Messages: messages},

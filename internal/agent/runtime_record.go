@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"time"
@@ -15,20 +16,63 @@ const (
 )
 
 type RuntimeRecord struct {
-	ID        string             `json:"id"`
+	ID        string             `json:"id,omitempty"`
 	Kind      string             `json:"kind"`
 	State     agentruntime.State `json:"state,omitempty"`
 	AgentIDs  []string           `json:"agent_ids,omitempty"`
 	SandboxID string             `json:"sandbox_id,omitempty"`
-	CreatedAt time.Time          `json:"created_at"`
+	Options   map[string]any     `json:"options,omitempty"`
+	CreatedAt time.Time          `json:"created_at,omitempty"`
+}
+
+func (rt RuntimeRecord) MarshalJSON() ([]byte, error) {
+	out := map[string]any{}
+	if strings.TrimSpace(rt.ID) != "" {
+		out["id"] = rt.ID
+	}
+	if strings.TrimSpace(rt.Kind) != "" {
+		out["kind"] = rt.Kind
+	}
+	if rt.State != "" {
+		out["state"] = rt.State
+	}
+	if len(rt.AgentIDs) > 0 {
+		out["agent_ids"] = rt.AgentIDs
+	}
+	if strings.TrimSpace(rt.SandboxID) != "" {
+		out["sandbox_id"] = rt.SandboxID
+	}
+	if len(rt.Options) > 0 {
+		out["options"] = rt.Options
+	}
+	if !rt.CreatedAt.IsZero() {
+		out["created_at"] = rt.CreatedAt
+	}
+	return json.Marshal(out)
 }
 
 func normalizeRuntimeID(runtimeID, agentID string) string {
 	runtimeID = strings.TrimSpace(runtimeID)
-	if runtimeID != "" {
+	agentID = canonicalAgentID(agentID)
+	if runtimeID == "" {
+		return runtimeIDForAgentID(agentID)
+	}
+	if strings.HasPrefix(runtimeID, "rt-u-") {
+		legacyAgentID := strings.TrimPrefix(runtimeID, "rt-")
+		if migrated := runtimeIDForAgentID(canonicalAgentID(legacyAgentID)); migrated != "" {
+			return migrated
+		}
+	}
+	if runtimeID == "rt-"+ManagerName {
+		return runtimeIDForAgentID(ManagerUserID)
+	}
+	if strings.HasPrefix(runtimeID, "rt-"+AgentIDPrefix) {
 		return runtimeID
 	}
-	return runtimeIDForAgentID(agentID)
+	if agentID != "" && strings.TrimPrefix(runtimeID, "rt-") == strings.TrimPrefix(agentID, AgentIDPrefix) {
+		return runtimeIDForAgentID(agentID)
+	}
+	return runtimeID
 }
 
 func runtimeIDForAgentID(agentID string) string {
@@ -37,6 +81,28 @@ func runtimeIDForAgentID(agentID string) string {
 		return ""
 	}
 	return "rt-" + agentID
+}
+
+func runtimeIDLookupAliases(runtimeID string) []string {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return nil
+	}
+	aliases := []string{runtimeID}
+	switch {
+	case strings.HasPrefix(runtimeID, "rt-u-"):
+		if migrated := runtimeIDForAgentID(canonicalAgentID(strings.TrimPrefix(runtimeID, "rt-"))); migrated != "" {
+			aliases = append(aliases, migrated)
+		}
+	case runtimeID == "rt-"+ManagerName:
+		aliases = append(aliases, runtimeIDForAgentID(ManagerUserID))
+	case strings.HasPrefix(runtimeID, "rt-") && !strings.HasPrefix(runtimeID, "rt-"+AgentIDPrefix):
+		suffix := strings.TrimPrefix(runtimeID, "rt-")
+		if suffix != "" {
+			aliases = append(aliases, runtimeIDForAgentID(AgentIDPrefix+suffix))
+		}
+	}
+	return aliases
 }
 
 func isGatewayRuntimeKind(kind string) bool {
@@ -98,6 +164,7 @@ func runtimeRecordForAgent(a Agent) RuntimeRecord {
 		State:     agentruntime.State(strings.TrimSpace(a.Status)),
 		AgentIDs:  []string{strings.TrimSpace(a.ID)},
 		SandboxID: strings.TrimSpace(a.BoxID),
+		Options:   a.RuntimeOptions,
 		CreatedAt: createdAt,
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"csgclaw/internal/config"
 	"csgclaw/internal/modelprovider"
@@ -214,6 +215,109 @@ func TestProfileDefaultsPersistAfterProfileUpdate(t *testing.T) {
 	}
 	if state.ProfileDefaults.Provider != ProviderCSGHubLite || state.ProfileDefaults.ModelID != "qwen-default" {
 		t.Fatalf("profile_defaults = %+v, want csghub_lite qwen-default", state.ProfileDefaults)
+	}
+}
+
+func TestServiceReadsRootAgentsSection(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".csgclaw")
+	statePath := filepath.Join(root, "state.json")
+	data, err := json.MarshalIndent(map[string]any{
+		"version": 1,
+		"agents": map[string]any{
+			"items": []map[string]any{{
+				"id":           ManagerUserID,
+				"name":         ManagerName,
+				"role":         RoleManager,
+				"runtime_id":   runtimeIDForAgentID(ManagerUserID),
+				"runtime_kind": RuntimeKindPicoClawSandbox,
+				"created_at":   time.Date(2026, 6, 24, 1, 2, 3, 0, time.UTC),
+				"runtime": map[string]any{
+					"id":        runtimeIDForAgentID(ManagerUserID),
+					"kind":      RuntimeKindPicoClawSandbox,
+					"agent_ids": []string{ManagerUserID},
+				},
+			}},
+		},
+		"participants": map[string]any{"items": []any{}},
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent() error = %v", err)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	got, ok := svc.Agent(ManagerUserID)
+	if !ok {
+		t.Fatalf("Agent(%q) ok=false", ManagerUserID)
+	}
+	if got.RuntimeID != runtimeIDForAgentID(ManagerUserID) || got.RuntimeKind != RuntimeKindPicoClawSandbox {
+		t.Fatalf("agent runtime = %q/%q", got.RuntimeID, got.RuntimeKind)
+	}
+}
+
+func TestRootAgentsSectionWritesModelConfigNames(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".csgclaw")
+	statePath := filepath.Join(root, "state.json")
+	svc, err := NewService(config.ModelConfig{}, config.ServerConfig{}, "manager-image:test", statePath)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	createdAt := time.Date(2026, 6, 24, 1, 2, 3, 0, time.UTC)
+	svc.agents[ManagerUserID] = Agent{
+		ID:          ManagerUserID,
+		Name:        ManagerName,
+		Role:        RoleManager,
+		RuntimeID:   runtimeIDForAgentID(ManagerUserID),
+		RuntimeKind: RuntimeKindPicoClawSandbox,
+		Status:      "running",
+		CreatedAt:   createdAt,
+		AgentProfile: AgentProfile{
+			ModelProviderID: "codex",
+			ModelID:         "gpt-5.5",
+			ReasoningEffort: "medium",
+		},
+	}
+	svc.profileDefaults = AgentProfile{
+		ModelProviderID: "codex",
+		ModelID:         "gpt-5.5",
+		ReasoningEffort: "medium",
+	}
+	if err := svc.saveLocked(); err != nil {
+		t.Fatalf("saveLocked() error = %v", err)
+	}
+
+	var rootState map[string]any
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if err := json.Unmarshal(data, &rootState); err != nil {
+		t.Fatalf("Unmarshal() error = %v\n%s", err, data)
+	}
+	agents := rootState["agents"].(map[string]any)
+	if _, ok := agents["profile_defaults"]; ok {
+		t.Fatalf("legacy profile_defaults persisted: %#v", agents)
+	}
+	modelDefaults := agents["model_defaults"].(map[string]any)
+	if modelDefaults["model_provider_id"] != "codex" || modelDefaults["model_id"] != "gpt-5.5" {
+		t.Fatalf("model_defaults = %#v, want codex/gpt-5.5", modelDefaults)
+	}
+	items := agents["items"].([]any)
+	manager := items[0].(map[string]any)
+	if _, ok := manager["profile"]; ok {
+		t.Fatalf("legacy profile persisted: %#v", manager)
+	}
+	modelConfig := manager["model_config"].(map[string]any)
+	if modelConfig["model_provider_id"] != "codex" || modelConfig["model_id"] != "gpt-5.5" {
+		t.Fatalf("model_config = %#v, want codex/gpt-5.5", modelConfig)
 	}
 }
 

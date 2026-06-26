@@ -1,9 +1,10 @@
 import { AgentAvatarContent } from "@/components/business/AgentAvatar";
 import { avatarFallbackText } from "@/shared/avatar";
+import { localIdentitiesMatch, resolveUserByLocalIdentity } from "@/models/conversations";
 import type { IMConversation, IMUser, UsersById } from "@/models/conversations";
 import "./RoomAvatar.css";
 
-type RoomAvatarMember = Pick<IMUser, "accent_hex" | "avatar" | "handle" | "id" | "name">;
+type RoomAvatarMember = Pick<IMUser, "accent_hex" | "avatar" | "id" | "name">;
 type RoomAvatarSlot = RoomAvatarMember & { placeholder?: boolean };
 
 type RoomAvatarProps = {
@@ -20,7 +21,7 @@ function normalizeMemberFallback(member: RoomAvatarSlot): string {
   if (member.placeholder) {
     return "#";
   }
-  return avatarFallbackText(member.name, member.handle, member.id);
+  return avatarFallbackText(member.name, member.id);
 }
 
 function pickTileColor(member: RoomAvatarMember, index: number): string {
@@ -58,13 +59,12 @@ export function resolveRoomAvatarMembers(
   currentUserID?: string | null,
 ): RoomAvatarMember[] {
   return (conversation?.members || [])
-    .filter((memberID) => memberID !== currentUserID)
-    .map((memberID) => usersById.get(memberID))
+    .filter((memberID) => !localIdentitiesMatch(memberID, currentUserID))
+    .map((memberID) => resolveUserByLocalIdentity(memberID, usersById))
     .filter((member): member is IMUser => Boolean(member))
     .map((member) => ({
       id: member.id,
-      name: member.name || member.handle || member.id,
-      handle: member.handle,
+      name: member.name || member.id,
       avatar: member.avatar,
       accent_hex: member.accent_hex,
     }));

@@ -17,7 +17,6 @@ func TestProvisionerEnsureAgentUserPublishesBootstrapRoom(t *testing.T) {
 		ID:          "u-alice",
 		Name:        "Alice",
 		Description: "test lead",
-		Handle:      "alice",
 		Role:        "Worker",
 	})
 	if err != nil {
@@ -28,8 +27,8 @@ func TestProvisionerEnsureAgentUserPublishesBootstrapRoom(t *testing.T) {
 	if first.Type != EventTypeUserCreated {
 		t.Fatalf("first event.Type = %q, want %q", first.Type, EventTypeUserCreated)
 	}
-	if first.User == nil || first.User.ID != "u-alice" {
-		t.Fatalf("first event.User = %+v, want u-alice", first.User)
+	if first.User == nil || first.User.ID != "user-alice" {
+		t.Fatalf("first event.User = %+v, want user-alice", first.User)
 	}
 
 	second := mustReceiveEvent(t, events)
@@ -39,8 +38,8 @@ func TestProvisionerEnsureAgentUserPublishesBootstrapRoom(t *testing.T) {
 	if second.Room == nil {
 		t.Fatal("second event.Room = nil, want bootstrap room")
 	}
-	if second.Room.Title != "alice" {
-		t.Fatalf("second event.Room.Title = %q, want %q", second.Room.Title, "alice")
+	if second.Room.Title != "Alice" {
+		t.Fatalf("second event.Room.Title = %q, want %q", second.Room.Title, "Alice")
 	}
 	if !containsUserIDInRoom(*second.Room, "admin") || !containsUserIDInRoom(*second.Room, "u-alice") {
 		t.Fatalf("second event.Room.Members = %+v, want admin and worker", second.Room.Members)
@@ -59,15 +58,15 @@ func TestProvisionerEnsureAgentUserPublishesBootstrapRoom(t *testing.T) {
 	if third.Message == nil {
 		t.Fatal("third event.Message = nil, want bootstrap message")
 	}
-	if third.Message.SenderID != "admin" {
-		t.Fatalf("third event.Message.SenderID = %q, want %q", third.Message.SenderID, "admin")
+	if third.Message.SenderID != "user-admin" {
+		t.Fatalf("third event.Message.SenderID = %q, want %q", third.Message.SenderID, "user-admin")
 	}
 	wantContent := "Write this down in your memory: your name is Alice. Your responsibility is test lead"
 	if third.Message.Content != wantContent {
 		t.Fatalf("third event.Message.Content = %q, want %q", third.Message.Content, wantContent)
 	}
-	if third.Sender == nil || third.Sender.ID != "admin" {
-		t.Fatalf("third event.Sender = %+v, want admin", third.Sender)
+	if third.Sender == nil || third.Sender.ID != "user-admin" {
+		t.Fatalf("third event.Sender = %+v, want user-admin", third.Sender)
 	}
 }
 

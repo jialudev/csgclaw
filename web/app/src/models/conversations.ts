@@ -23,7 +23,6 @@ export type IMUser = {
   accent_hex?: string | null;
   avatar?: string | null;
   description?: string | null;
-  handle?: string | null;
   id: string;
   is_online?: boolean | null;
   name?: string | null;
@@ -134,6 +133,145 @@ export type ThreadView = {
 };
 
 export type UsersById = Map<string, IMUser>;
+
+export function buildUsersById(users: readonly IMUser[] | null | undefined): UsersById {
+  const result: UsersById = new Map();
+  (users || []).forEach((user) => {
+    addUserIdentityAliases(result, user);
+  });
+  return result;
+}
+
+export function resolveUserByLocalIdentity(id: string | null | undefined, usersById: UsersById): IMUser | undefined {
+  const aliases = localIdentityAliases(id);
+  for (const alias of aliases) {
+    const user = usersById.get(alias);
+    if (user) {
+      return user;
+    }
+  }
+  return undefined;
+}
+
+export function localIdentitiesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  const aUserID = userIDForLocalIdentity(a);
+  const bUserID = userIDForLocalIdentity(b);
+  return Boolean(aUserID && bUserID && aUserID === bUserID);
+}
+
+export function userIDForLocalIdentity(id: string | null | undefined): string {
+  const raw = String(id || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const base = localIdentityBase(raw);
+  if (!base) {
+    return "";
+  }
+  return `user-${base}`;
+}
+
+export function participantIDForLocalIdentity(id: string | null | undefined): string {
+  const raw = String(id || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const base = localIdentityBase(raw);
+  if (!base) {
+    return "";
+  }
+  return `pt-${base}`;
+}
+
+function addUserIdentityAliases(usersById: UsersById, user: IMUser): void {
+  for (const alias of localIdentityAliases(user.id)) {
+    addUserAlias(usersById, alias, user);
+  }
+  (user.participants || []).forEach((participant) => {
+    for (const alias of localIdentityAliases(participant.id)) {
+      addUserAlias(usersById, alias, user);
+    }
+    for (const alias of localIdentityAliases(participant.channel_user_ref)) {
+      addUserAlias(usersById, alias, user);
+    }
+  });
+}
+
+function addUserAlias(usersById: UsersById, alias: string, user: IMUser): void {
+  if (!alias || usersById.has(alias)) {
+    return;
+  }
+  usersById.set(alias, user);
+}
+
+function localIdentityAliases(id: string | null | undefined): string[] {
+  const raw = String(id || "").trim();
+  if (!raw) {
+    return [];
+  }
+  const userID = userIDForLocalIdentity(raw);
+  const participantID = participantIDForLocalIdentity(raw);
+  const base = localIdentityBase(raw);
+  return uniqueStrings([
+    raw,
+    userID,
+    participantID,
+    base,
+    base ? `agent-${base}` : "",
+    base ? `u-${base}` : "",
+    base ? `user-agent-${base}` : "",
+    base ? `pt-agent-${base}` : "",
+  ]);
+}
+
+function localIdentityBase(id: string): string {
+  let value = String(id || "").trim();
+  if (!value) {
+    return "";
+  }
+  for (;;) {
+    const stripped = stripLocalIdentityPrefixes(value);
+    const hashTrimmed = trimStableHashSuffix(stripped);
+    const next = stripLocalIdentityPrefixes(hashTrimmed);
+    if (next === value) {
+      return next;
+    }
+    value = next;
+  }
+}
+
+function stripLocalIdentityPrefixes(id: string): string {
+  let value = String(id || "").trim();
+  for (;;) {
+    const next = ["user-", "agent-", "pt-", "u-"].find((prefix) => value.startsWith(prefix));
+    if (!next) {
+      return value;
+    }
+    value = value.slice(next.length);
+  }
+}
+
+function trimStableHashSuffix(id: string): string {
+  const idx = id.lastIndexOf("-");
+  if (idx <= 0 || id.length - idx - 1 !== 8) {
+    return id;
+  }
+  return /^[0-9a-f]{8}$/.test(id.slice(idx + 1)) ? id.slice(0, idx) : id;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  values.forEach((value) => {
+    const trimmed = String(value || "").trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return;
+    }
+    seen.add(trimmed);
+    out.push(trimmed);
+  });
+  return out;
+}
 
 export function isToolCallMessage(messageOrContent: IMMessage | unknown): boolean {
   if (isMessageLike(messageOrContent)) {
@@ -327,11 +465,11 @@ export function userDisplayName(userID: string | null | undefined, usersById: Us
   if (!userID) {
     return "";
   }
-  const user = usersById.get(userID);
+  const user = resolveUserByLocalIdentity(userID, usersById);
   if (!user) {
     return userID;
   }
-  return user.name || (user.handle ? `@${user.handle}` : userID);
+  return user.name || userID;
 }
 
 export function resolveConversationUser(
@@ -339,27 +477,20 @@ export function resolveConversationUser(
   currentUserID: string,
   usersById: UsersById,
 ): IMUser | undefined {
-  const otherID = conversation.members.find((id) => id !== currentUserID) ?? currentUserID;
-  return usersById.get(otherID);
+  const otherID = conversation.members.find((id) => !localIdentitiesMatch(id, currentUserID)) ?? currentUserID;
+  return resolveUserByLocalIdentity(otherID, usersById);
 }
 
 export function agentMatchesUser(
-  agent: { handle?: string | null; id?: string | null; name?: string | null; user_id?: string | null } | null,
-  user: { handle?: string | null; id?: string | null; name?: string | null } | null | undefined,
+  agent: { id?: string | null; name?: string | null; user_id?: string | null } | null,
+  user: { id?: string | null; name?: string | null } | null | undefined,
 ): boolean {
   if (!agent || !user) {
     return false;
   }
-  const agentHandle = normalizeComparable(agent.handle);
-  const userHandle = normalizeComparable(user.handle);
   const agentName = normalizeComparable(agent.name);
   const userName = normalizeComparable(user.name);
-  return (
-    agent.id === user.id ||
-    agent.user_id === user.id ||
-    Boolean(agentHandle && userHandle && agentHandle === userHandle) ||
-    Boolean(agentName && userName && agentName === userName)
-  );
+  return agent.id === user.id || agent.user_id === user.id || Boolean(agentName && userName && agentName === userName);
 }
 
 export function feishuHumanParticipant(user: IMUser | null | undefined): IMParticipantLike | null {

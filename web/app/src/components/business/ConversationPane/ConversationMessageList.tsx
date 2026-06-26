@@ -11,6 +11,8 @@ import {
   formatMessageTimestampParts,
   formatThreadReplyCount,
   isEventMessage,
+  localIdentitiesMatch,
+  resolveUserByLocalIdentity,
   type IMConversation,
   type IMMessage,
   type IMUser,
@@ -93,18 +95,18 @@ export const ConversationMessageList = memo(function ConversationMessageList({
             </Fragment>
           );
         }
-        const user = usersById.get(message.sender_id || "");
+        const user = resolveUserByLocalIdentity(message.sender_id, usersById);
         if (!user) {
           return null;
         }
-        const own = message.sender_id === currentUserID;
+        const own = localIdentitiesMatch(message.sender_id, currentUserID);
         const isAdmin = user?.role === "admin";
         const messageAgent = agents.find((item) => agentMatchesUser(item, user));
         const messageAgentRunning = isAgentRunning(messageAgent);
-        const messageAvatar = messageAgent?.avatar || user.avatar;
+        const messageAvatar = user.avatar || messageAgent?.avatar;
         const messageAvatarFallback = messageAgent
           ? resolveAgentAvatarFallback(messageAgent, usersById)
-          : avatarFallbackText(user.avatar, user.name, user.handle, user.id);
+          : avatarFallbackText(user.avatar, user.name, user.id);
         const threadSummary = message.thread;
         const latestThreadReply = threadSummary?.latest_reply;
         return (
