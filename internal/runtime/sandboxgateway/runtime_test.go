@@ -161,6 +161,38 @@ func TestResolveSandboxToolsDirSupportsCSGHubProvider(t *testing.T) {
 	}
 }
 
+func TestGatewayCreateSpecPrependsSandboxToolsToRuntimePATH(t *testing.T) {
+	toolsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(toolsDir, "csgclaw-cli"), []byte("cli"), 0o755); err != nil {
+		t.Fatalf("WriteFile(csgclaw-cli) error = %v", err)
+	}
+	deps := testGatewayDeps(func() string { return config.DockerProvider }, func(context.Context, sandbox.Instance, string, []string, io.Writer) (int, error) {
+		return 0, nil
+	})
+	deps.SandboxToolsDir = func() (string, error) { return toolsDir, nil }
+	deps.AddProfileEnv = func(envVars map[string]string, profileEnv map[string]string) {
+		for key, value := range profileEnv {
+			envVars[key] = value
+		}
+	}
+	rt := New(deps)
+	prepared := testPreparedGatewayProvision()
+	prepared.Profile.Env = map[string]string{"PATH": "/custom/bin:/usr/bin"}
+	rt.RememberPreparedGatewayProvision("u-manager", prepared)
+
+	spec, err := rt.GatewayCreateSpec("image:1", "manager", "u-manager", agentruntime.Profile{})
+	if err != nil {
+		t.Fatalf("GatewayCreateSpec() error = %v", err)
+	}
+	if got, want := spec.Env["PATH"], "/custom/bin:/usr/bin"; got != want {
+		t.Fatalf("GatewayCreateSpec() PATH = %q, want %q", got, want)
+	}
+	cmd := strings.Join(spec.Cmd, " ")
+	if !strings.Contains(cmd, `export PATH="/opt/csgclaw/bin${PATH:+:$PATH}";`) {
+		t.Fatalf("GatewayCreateSpec() cmd = %q, want runtime PATH prepend", spec.Cmd)
+	}
+}
+
 func testGatewayDeps(providerName func() string, run func(context.Context, sandbox.Instance, string, []string, io.Writer) (int, error)) Dependencies {
 	return Dependencies{
 		RuntimeKind:         agentruntime.KindOpenClawSandbox,

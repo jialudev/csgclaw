@@ -388,7 +388,7 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 		return sandbox.CreateSpec{}, err
 	}
 	if mountTools {
-		gatewayCommand = "export PATH=" + sandboxToolsGuestDir + ":$PATH; " + gatewayCommand
+		gatewayCommand = prependSandboxToolsToCommand(gatewayCommand)
 	}
 	envVars["HOME"] = homeEnv
 	spec := sandbox.CreateSpec{
@@ -414,6 +414,10 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 		})
 	}
 	return spec, nil
+}
+
+func prependSandboxToolsToCommand(command string) string {
+	return `export PATH="` + sandboxToolsGuestDir + `${PATH:+:$PATH}"; ` + command
 }
 
 func (r *Runtime) resolveSandboxToolsDir() (string, bool, error) {
