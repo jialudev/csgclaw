@@ -47,9 +47,9 @@
   pointer-events: none;
   background: linear-gradient(
     120deg,
-    color-mix(in oklab, var(--portal-success-50) 22%, transparent),
+    color-mix(in oklab, var(--success-50) 22%, transparent),
     transparent 55%,
-    color-mix(in oklab, var(--portal-brand-100) 22%, transparent)
+    color-mix(in oklab, var(--brand-100) 22%, transparent)
   );
   opacity: 0.3;
 }
@@ -101,8 +101,8 @@
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: var(--portal-brand-700);
-  background: color-mix(in oklab, var(--portal-brand-100) 30%, transparent);
+  color: var(--brand-700);
+  background: color-mix(in oklab, var(--brand-100) 30%, transparent);
 }
 
 .toastText {
