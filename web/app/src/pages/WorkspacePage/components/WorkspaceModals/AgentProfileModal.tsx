@@ -32,6 +32,7 @@ import {
   runtimeOptionSchemasForAgent,
   runtimeImageForKind,
   templateMatchesRuntime,
+  workerSelectableTemplates,
 } from "@/models/agents";
 import type { AgentDraft, AgentLike, RuntimeBootstrapConfig } from "@/models/agents";
 import {
@@ -138,6 +139,7 @@ export function AgentProfileModal({
   const selectedProvider = providerOptions.find((option) => option.id === selectedProviderID) ?? null;
   const selectedProviderModels = selectedProvider?.models ?? [];
   const selectedModelValue = agentDraft.model_id || "";
+  const workerTemplates = workerSelectableTemplates(hubTemplates);
 
   useEffect(
     () => () => {
@@ -324,9 +326,13 @@ export function AgentProfileModal({
                         triggerProps={{ "aria-label": t("templateLabel") }}
                         options={[
                           { value: "", label: t("templateNone") },
-                          ...hubTemplates
+                          ...workerTemplates
                             .filter((item) => item.id)
-                            .map((item) => ({ value: item.id || "", label: item.name || item.id || "" })),
+                            .map((item) => ({
+                              value: item.id || "",
+                              label: item.name || item.id || "",
+                              description: String(item.description || "").trim() || undefined,
+                            })),
                         ]}
                       />
                       <small className="field-hint">{t("templateHelp")}</small>

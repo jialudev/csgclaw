@@ -22,6 +22,8 @@ const labels: Record<string, string> = {
   profileRuntimeOptions: "Runtime Options",
   profileProvider: "Provider",
   profileRuntimeKind: "Runtime",
+  templateLabel: "Template",
+  templateNone: "No template",
 };
 
 function t(key: string): string {
@@ -211,6 +213,60 @@ describe("AgentProfileModal", () => {
     expect(screen.getByDisplayValue("/tmp/project")).toBeInTheDocument();
     expect(screen.getByText("本地工作目录")).toBeInTheDocument();
     expect(screen.getByText("留空时使用默认 Agent 工作目录。")).toBeInTheDocument();
+  });
+
+  it("hides manager templates from the worker template dropdown in create mode", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AgentProfileModal
+        t={t}
+        agentModalMode="create"
+        editingAgent={null}
+        agentDraft={agentToDraft(worker)}
+        onAgentDraftChange={vi.fn()}
+        onAgentModelsReset={vi.fn()}
+        hubTemplates={[
+          {
+            id: "builtin.picoclaw-manager",
+            name: "Manager",
+            role: "manager",
+            runtime_kind: "picoclaw_sandbox",
+            description: "Coordinates workers.",
+          },
+          {
+            id: "builtin.picoclaw-worker",
+            name: "Worker",
+            role: "worker",
+            runtime_kind: "picoclaw_sandbox",
+            description: "Handles coding tasks.",
+          },
+        ]}
+        bootstrapConfig={{}}
+        managerAgent={null}
+        agentModels={[]}
+        agentModelBusy={false}
+        locale="en"
+        authStatuses={{}}
+        authBusyProvider=""
+        agentCreateBotKind="worker"
+        onAgentCreateBotKindChange={vi.fn()}
+        notifierWebhookPublicOrigin="http://127.0.0.1:18080"
+        onProviderLogin={vi.fn()}
+        agentError=""
+        agentProgress={null}
+        agentBusy={false}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Template" }));
+    expect(screen.getByRole("option", { name: "No template" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Worker" })).toBeInTheDocument();
+    expect(screen.getByText("Handles coding tasks.")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Manager" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Coordinates workers.")).not.toBeInTheDocument();
   });
 
   it("shows provider logos only in the provider field, not in the model field", () => {
