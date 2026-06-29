@@ -177,14 +177,7 @@ export function TasksView({
       {!error ? (
         <div className={styles.tasksBoardWorkbench} aria-busy={loading}>
           <div className={styles.tasksBoardPanel}>
-            <div
-              className={classNames(
-                styles.headerRow,
-                styles.justifyEnd,
-                styles.buttonContentScope,
-                styles.tasksBoardHead,
-              )}
-            >
+            <div className={classNames(styles.headerRow, styles.justifyEnd, styles.tasksBoardHead)}>
               <div className={styles.tasksBoardHeading}>
                 <h1>{t("mainTaskBoardTitle")}</h1>
               </div>
@@ -253,7 +246,7 @@ export function TasksView({
         onOpenConversation={onOpenConversation}
       />
       <DialogRoot open={showCreateTaskModal} onOpenChange={(open) => (!open ? onCloseCreateTaskModal?.() : null)}>
-        <DialogContent className={classNames(styles.buttonContentScope, styles.taskCreateDialog)}>
+        <DialogContent className={styles.taskCreateDialog}>
           <DialogHeader>
             <div>
               <DialogTitle>{t("taskCreateTitle")}</DialogTitle>
@@ -263,7 +256,7 @@ export function TasksView({
           </DialogHeader>
           <DialogBody>
             <div className={classNames(styles.taskCreateForm, styles.taskCreateFormCompact)}>
-              <label className="field">
+              <label className={classNames("field", styles.taskCreateField)}>
                 <span>{t("taskTitleLabel")}</span>
                 <input
                   value={createDraft.title}
@@ -272,7 +265,7 @@ export function TasksView({
                   placeholder={t("taskTitlePlaceholder")}
                 />
               </label>
-              <label className="field">
+              <label className={classNames("field", styles.taskCreateField)}>
                 <span>{t("taskDescriptionLabel")}</span>
                 <textarea
                   value={createDraft.description}
@@ -282,7 +275,7 @@ export function TasksView({
                   placeholder={t("taskDescriptionPlaceholder")}
                 />
               </label>
-              <label className="field">
+              <label className={classNames("field", styles.taskCreateField)}>
                 <span>{t("taskTeamLabel")}</span>
                 <Select
                   value={createDraft.team_id}
@@ -354,7 +347,7 @@ function TaskActionStrip({
 }: TaskActionStripProps) {
   return (
     <div
-      className={classNames(styles.headerRow, styles.justifyEnd, styles.buttonContentScope, styles.tasksToolbar)}
+      className={classNames(styles.headerRow, styles.justifyEnd, styles.tasksToolbar)}
       aria-label={t("tasksActionsLabel")}
     >
       <TaskToolbarButton label={t("tasksRefreshShort")} title={t("tasksRefresh")} onClick={onRefresh} />
@@ -400,7 +393,7 @@ type TaskToolbarButtonProps = {
 function TaskToolbarButton({ label, title = label, variant = "secondaryGray", ...props }: TaskToolbarButtonProps) {
   return (
     <Button
-      className={styles.taskToolbarButton}
+      className={classNames(styles.taskToolbarButton, variant === "secondaryGray" && styles.taskToolbarButtonSecondary)}
       aria-label={title}
       title={title}
       size="sm"
@@ -458,7 +451,7 @@ function taskBoardStatusProgress(status: string): number {
   if (status === "completed" || status === "done") {
     return 1;
   }
-  if (status === "blocked") {
+  if (status === "blocked" || status === "in_review") {
     return 0.75;
   }
   if (status === "in_progress" || status === "running") {
@@ -570,7 +563,7 @@ function TaskDetailDialog({
 
   return (
     <DialogRoot open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose?.() : null)}>
-      <DialogContent className={classNames(styles.buttonContentScope, styles.taskDetailDialog)}>
+      <DialogContent className={styles.taskDetailDialog}>
         <DialogHeader className={styles.taskDetailDialogHeader}>
           <div className={styles.taskDetailDialogHeading}>
             <div className={styles.taskDetailDialogTitleRow}>

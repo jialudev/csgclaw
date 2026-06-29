@@ -76,19 +76,35 @@ export function TeamDetailPane({
         <div className={classNames("entity-avatar", styles.teamDetailAvatar)}>
           <UsersIcon />
         </div>
-        <div className="entity-heading">
-          <div className="entity-title-row">
-            <h1>{displayTeam(team)}</h1>
-            <span className="status-pill online">{teamStatusLabel(team.status, t)}</span>
+        <div className={classNames("entity-heading", styles.teamDetailHeading)}>
+          <div className={classNames("entity-title-row", styles.teamDetailTitleRow)}>
+            <h1 className={styles.teamDetailTitle}>{displayTeam(team)}</h1>
+            <span
+              className={classNames("status-pill", "online", styles.teamDetailStatus, styles.teamDetailStatusOnline)}
+            >
+              {teamStatusLabel(team.status, t)}
+            </span>
           </div>
-          <p>{t("teamDetailSubtitle")}</p>
+          <p className={styles.teamDetailSubtitle}>{t("teamDetailSubtitle")}</p>
         </div>
-        <div className="entity-toolbar" aria-label={t("teamPanelManage")}>
-          <Button variant="secondaryGray" size="md" disabled={teamActionBusy} onClick={() => onManageMembers(team)}>
+        <div className={classNames("entity-toolbar", styles.teamDetailToolbar)} aria-label={t("teamPanelManage")}>
+          <Button
+            className={styles.teamDetailToolbarButton}
+            variant="secondaryGray"
+            size="md"
+            disabled={teamActionBusy}
+            onClick={() => onManageMembers(team)}
+          >
             <UserPlus size={16} aria-hidden="true" />
             {t("teamManageMembers")}
           </Button>
-          <Button variant="outlineDanger" size="md" disabled={teamActionBusy} onClick={() => void onDeleteTeam(team)}>
+          <Button
+            className={styles.teamDetailToolbarButton}
+            variant="outlineDanger"
+            size="md"
+            disabled={teamActionBusy}
+            onClick={() => void onDeleteTeam(team)}
+          >
             <Trash2 size={16} aria-hidden="true" />
             {t("teamDelete")}
           </Button>
@@ -216,7 +232,11 @@ export function TeamDetailPane({
                           onClick={() => onSelectTask?.(task.id)}
                         >
                           <span
-                            className={`task-sidebar-status task-sidebar-status-${task.status}`}
+                            className={classNames(
+                              "task-sidebar-status",
+                              `task-sidebar-status-${task.status}`,
+                              styles.teamTaskStatus,
+                            )}
                             aria-hidden="true"
                           />
                           <span className={classNames(styles.rowMain, styles.teamTaskMain)}>
