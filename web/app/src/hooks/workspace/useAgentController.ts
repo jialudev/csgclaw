@@ -25,9 +25,9 @@ import {
 import type { AgentUpdatePayload, FeishuRegistration, FetchAgentsOptions } from "@/api/agents";
 import { patchCsgclawUserRequest } from "@/api/participants";
 import { publishAgentTemplateRequest } from "@/api/hub";
-import { createUserRequest, inviteRoomUsersRequest, joinAgentToRoomRequest } from "@/api/im";
+import { createUserRequest, joinAgentToRoomRequest } from "@/api/im";
 import { fetchSkills } from "@/api/skills";
-import { createTeamRequest, fetchTeams } from "@/api/tasks";
+import { createTeamRequest, deleteTeamRequest, fetchTeams, updateTeamRequest } from "@/api/tasks";
 import type { CreateTeamPayload } from "@/api/tasks";
 import {
   BOT_CREATE_KIND_NOTIFICATION,
@@ -91,9 +91,10 @@ import type {
 import {
   isDirectConversation,
   localIdentitiesMatch,
-  resolveRoomInviterID,
   upsertUserInData,
 } from "@/models/conversations";
+import { displayTeam } from "@/models/tasks";
+import type { WorkspaceTeam } from "@/models/tasks";
 import { modelProviderOptionsFromCatalog, providerNameForProviderID } from "@/models/modelProviders";
 import type { ModelProviderOption } from "@/models/modelProviders";
 import { WorkspacePaneTypes } from "@/models/routing";
@@ -325,6 +326,7 @@ export function useAgentController({
   const [teamActionBusy, setTeamActionBusy] = useState(false);
   const [teamActionError, setTeamActionError] = useState("");
   const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<WorkspaceTeam | null>(null);
   const [createTeamTitle, setCreateTeamTitle] = useState("");
   const [createTeamMemberIDs, setCreateTeamMemberIDs] = useState<string[]>([]);
   const agentPageHasUnsavedChanges = Boolean(
@@ -979,8 +981,27 @@ export function useAgentController({
 
   function openCreateTeamModal(): void {
     const firstAgentID = createTeamCandidateIDs[0] || "";
+    setEditingTeam(null);
     setCreateTeamTitle("");
     setCreateTeamMemberIDs(firstAgentID ? [firstAgentID] : []);
+    setTeamActionError("");
+    setShowCreateTeamModal(true);
+  }
+
+  function closeCreateTeamModal(): void {
+    setShowCreateTeamModal(false);
+    setEditingTeam(null);
+    setTeamActionError("");
+  }
+
+  function openManageTeamMembers(item: WorkspaceTeam | null | undefined): void {
+    if (!item?.id) {
+      return;
+    }
+    setEditingTeam(item);
+    setCreateTeamTitle(displayTeam(item));
+    setCreateTeamMemberIDs([...(item.member_agent_ids ?? [])]);
+    setTeamActionError("");
     setShowCreateTeamModal(true);
   }
 
@@ -1619,50 +1640,56 @@ export function useAgentController({
 
   async function createTeam(): Promise<void> {
     await createAgentTeam({
-      channel: "csgclaw",
       title: createTeamTitle.trim() || t("teamNewFallbackTitle"),
       lead_agent_id: MANAGER_AGENT_ID,
       member_agent_ids: createTeamMemberIDs,
     });
-    setShowCreateTeamModal(false);
+    closeCreateTeamModal();
   }
 
-  async function addAgentsToTeamRoom(teamID: string, agentIDs: string[]): Promise<void> {
-    if (teamActionBusy || !data?.current_user_id) {
+  async function saveTeamMembers(): Promise<void> {
+    if (!editingTeam?.id || teamActionBusy) {
       return;
     }
-    const team = teamsQuery.data?.find((item) => item.id === teamID);
-    if (!team?.room_id) {
-      setTeamActionError(t("teamActionFailed"));
-      return;
-    }
-    const room = rooms.find((item) => item.id === team.room_id);
-    const roomMembers = new Set(room?.members ?? []);
-    const nextAgentIDs = agentIDs.filter((id) => id && !roomMembers.has(id));
-    if (!nextAgentIDs.length) {
-      return;
-    }
-    const inviterID = resolveRoomInviterID(room, {
-      preferredInviterIDs: [team.lead_agent_id, data.current_user_id, MANAGER_AGENT_ID],
-    });
-    if (!inviterID) {
-      setTeamActionError(t("teamActionFailed"));
-      return;
-    }
-
     setTeamActionBusy(true);
     setTeamActionError("");
     try {
-      await inviteRoomUsersRequest({
-        room_id: team.room_id,
-        inviter_id: inviterID,
-        user_ids: nextAgentIDs,
-        locale,
+      await updateTeamRequest(editingTeam.id, {
+        member_agent_ids: createTeamMemberIDs,
       });
+      await teamsQuery.refetch();
       await refreshWorkspaceBootstrap();
+      closeCreateTeamModal();
     } catch (err) {
       setTeamActionError(errorMessage(err, t("teamActionFailed")));
       throw err;
+    } finally {
+      setTeamActionBusy(false);
+    }
+  }
+
+  async function deleteTeam(item: WorkspaceTeam | null | undefined): Promise<boolean> {
+    const teamID = String(item?.id || "").trim();
+    if (!teamID || teamActionBusy) {
+      return false;
+    }
+    const teamTitle = item ? displayTeam(item) : teamID;
+    if (!window.confirm(t("teamDeleteConfirm", { title: teamTitle }))) {
+      return false;
+    }
+    setTeamActionBusy(true);
+    setTeamActionError("");
+    try {
+      await deleteTeamRequest(teamID);
+      await teamsQuery.refetch();
+      await refreshWorkspaceBootstrap();
+      if (activePane.type === WorkspacePaneTypes.team && activePane.id === teamID) {
+        selectComputer({ replace: true });
+      }
+      return true;
+    } catch (err) {
+      setTeamActionError(errorMessage(err, t("teamActionFailed")));
+      return false;
     } finally {
       setTeamActionBusy(false);
     }
@@ -1789,6 +1816,7 @@ export function useAgentController({
     notificationAgentItems,
     openCreateAgentModal,
     openCreateTeamModal,
+    openManageTeamMembers,
     openCreateNotificationParticipantModal,
     openEditAgentModal,
     runningAgentCount,
@@ -1798,6 +1826,7 @@ export function useAgentController({
     selectedAgentForPage,
     teams: teamsQuery.data ?? [],
     teamsLoading: teamsQuery.isLoading,
+    deleteTeam,
     workerAgentItems,
     notifierWebhookPublicOrigin,
     agentViewProps: {
@@ -1854,7 +1883,6 @@ export function useAgentController({
       teamActionBusy,
       teamActionError,
       onCreateTeam: createAgentTeam,
-      onAddAgentsToTeam: addAgentsToTeamRoom,
     },
     computerViewProps: {
       t,
@@ -1914,6 +1942,7 @@ export function useAgentController({
     createTeamModalProps: showCreateTeamModal
       ? {
           t,
+          mode: editingTeam ? ("edit" as const) : ("create" as const),
           candidates: createTeamCandidates,
           teamTitle: createTeamTitle,
           onTeamTitleChange: setCreateTeamTitle,
@@ -1921,8 +1950,8 @@ export function useAgentController({
           onTeamMemberIDsChange: setCreateTeamMemberIDs,
           submitError: teamActionError,
           teamActionBusy,
-          onClose: () => setShowCreateTeamModal(false),
-          onCreate: createTeam,
+          onClose: closeCreateTeamModal,
+          onCreate: editingTeam ? saveTeamMembers : createTeam,
         }
       : null,
   };
