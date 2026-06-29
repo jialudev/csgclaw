@@ -29,6 +29,13 @@ func New(deps Dependencies) *Runtime {
 	deps.WorkspaceGuestPath = BoxWorkspaceDir
 	deps.ProjectsGuestPath = BoxProjectsDir
 	deps.GatewayLogPath = BoxGatewayLogPath
+	prevApplyRuntimeEnv := deps.ApplyRuntimeEnv
+	deps.ApplyRuntimeEnv = func(envVars map[string]string) {
+		if prevApplyRuntimeEnv != nil {
+			prevApplyRuntimeEnv(envVars)
+		}
+		applyOpenClawRuntimeEnv(envVars)
+	}
 	if deps.GatewayCommand == nil {
 		deps.GatewayCommand = GatewayRunCommand
 	}
@@ -105,7 +112,15 @@ func (r *Runtime) Provision(_ context.Context, req agentruntime.ProvisionRequest
 }
 
 func GatewayRunCommand() string {
-	return "exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 18789 1>" + BoxGatewayLogPath + " 2>&1"
+	return "mkdir -p " + BoxStateDir + " && " +
+		"([ ! -f " + BoxDir + "/" + HostExecApproval + " ] || cp " + BoxDir + "/" + HostExecApproval + " " + BoxStateDir + "/" + HostExecApproval + ") && " +
+		"exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan --port 18789 1>" + BoxGatewayLogPath + " 2>&1"
+}
+
+func applyOpenClawRuntimeEnv(envVars map[string]string) {
+	envVars["OPENCLAW_HOME"] = BoxRuntimeHome
+	envVars["OPENCLAW_STATE_DIR"] = BoxStateDir
+	envVars["OPENCLAW_CONFIG_PATH"] = BoxConfigPath
 }
 
 func fixedBaseURL(baseURL string) BaseURLResolver {

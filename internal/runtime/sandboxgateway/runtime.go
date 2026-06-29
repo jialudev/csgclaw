@@ -56,6 +56,7 @@ type Dependencies struct {
 	SyncHandle         func(h agentruntime.Handle) error
 	BuildRuntimeEnv    func(baseURL, accessToken, participantID, agentID, llmBaseURL, modelID string, feishuProvider feishu.AgentCredentialProvider) map[string]string
 	AddProfileEnv      func(envVars map[string]string, profileEnv map[string]string)
+	ApplyRuntimeEnv    func(envVars map[string]string)
 	HomeEnv            string
 	MountGuestPath     string
 	WorkspaceGuestPath string
@@ -358,7 +359,13 @@ func (r *Runtime) GatewayCreateSpec(image, name, botID string, profile agentrunt
 	workspaceLayout := prepared.WorkspaceLayout
 	projectsRoot := prepared.ProjectsRoot
 	envVars := r.deps.BuildRuntimeEnv(managerBaseURL, prepared.Server.AccessToken, participantID, agentID, llmBaseURL, modelID, r.CurrentFeishuProvider())
+	if envVars == nil {
+		envVars = map[string]string{}
+	}
 	r.deps.AddProfileEnv(envVars, profile.Env)
+	if r.deps.ApplyRuntimeEnv != nil {
+		r.deps.ApplyRuntimeEnv(envVars)
+	}
 	homeEnv := r.homeEnv()
 	projectsGuestPath := r.projectsGuestPath()
 	gatewayCommand := r.gatewayCommand()

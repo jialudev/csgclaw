@@ -82,6 +82,9 @@ func TestRenderAgentOpenClawConfigUsesBridgeForMinimaxBaseURL(t *testing.T) {
 	if got, want := defaults["verboseDefault"], "on"; got != want {
 		t.Fatalf("verboseDefault = %v, want %v", got, want)
 	}
+	if got, want := defaults["workspace"], BoxWorkspaceDir; got != want {
+		t.Fatalf("workspace = %v, want %v", got, want)
+	}
 	tools := cfg["tools"].(map[string]any)
 	if got, want := tools["deny"], []any{"image"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("tools.deny = %#v, want %#v", got, want)

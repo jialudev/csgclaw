@@ -46,7 +46,7 @@
       "model": {
         "primary": "csgclaw-llm/REPLACE_WITH_MODEL_ID"
       },
-      "workspace": "~/.openclaw/workspace",
+      "workspace": "/home/node/.openclaw/workspace",
       "compaction": {
         "mode": "safeguard"
       },
