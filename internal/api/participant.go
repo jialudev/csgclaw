@@ -9,6 +9,7 @@ import (
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/apitypes"
+	"csgclaw/internal/im"
 	"csgclaw/internal/participant"
 )
 
@@ -43,7 +44,9 @@ func (h *Handler) handleParticipants(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusCreated, h.presentParticipant(created))
+		presented := h.presentParticipant(created)
+		h.publishParticipantEvent(im.EventTypeParticipantCreated, presented)
+		writeJSON(w, http.StatusCreated, presented)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -84,7 +87,9 @@ func (h *Handler) handleParticipantByIDPath(w http.ResponseWriter, r *http.Reque
 			http.NotFound(w, r)
 			return
 		}
-		writeJSON(w, http.StatusOK, h.presentParticipant(updated))
+		presented := h.presentParticipant(updated)
+		h.publishParticipantEvent(im.EventTypeParticipantUpdated, presented)
+		writeJSON(w, http.StatusOK, presented)
 	case http.MethodDelete:
 		deleted, ok, err := h.participant.Delete(r.Context(), channelName, id, participant.DeleteOptions{
 			DeleteAgent: r.URL.Query().Get("delete_agent"),
@@ -101,6 +106,7 @@ func (h *Handler) handleParticipantByIDPath(w http.ResponseWriter, r *http.Reque
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		h.publishParticipantEvent(im.EventTypeParticipantDeleted, h.presentParticipant(deleted))
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

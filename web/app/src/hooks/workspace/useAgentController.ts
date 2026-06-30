@@ -88,11 +88,7 @@ import type {
   AgentTemplateLike,
   RuntimeKind,
 } from "@/models/agents";
-import {
-  isDirectConversation,
-  localIdentitiesMatch,
-  upsertUserInData,
-} from "@/models/conversations";
+import { isDirectConversation, localIdentitiesMatch, upsertUserInData } from "@/models/conversations";
 import { displayTeam } from "@/models/tasks";
 import type { WorkspaceTeam } from "@/models/tasks";
 import { modelProviderOptionsFromCatalog, providerNameForProviderID } from "@/models/modelProviders";

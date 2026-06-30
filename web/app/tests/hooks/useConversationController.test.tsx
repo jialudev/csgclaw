@@ -62,7 +62,6 @@ function renderConversationController(
     agents?: AgentLike[];
     data?: IMData;
     messageListActive?: boolean;
-    onRefreshAgentState?: (agentID: string) => Promise<AgentLike | null>;
   } = {},
 ) {
   const agents: AgentLike[] = options.agents ?? [
@@ -95,8 +94,6 @@ function renderConversationController(
         navigatePane: vi.fn(),
         onMessageAction: vi.fn(),
         onProviderLogin: vi.fn(),
-        onRefreshAgentState: options.onRefreshAgentState ?? vi.fn(),
-        onUpgradeStatusChange: vi.fn(),
         rooms: data.rooms,
         selectComputer: vi.fn(),
         selectConversation: vi.fn(),
@@ -179,37 +176,9 @@ describe("useConversationController", () => {
     await waitFor(() => expect(messageList.scrollTop).toBe(1120));
   });
 
-  it("refreshes a non-running agent when that agent sends a message", () => {
-    let eventHandler: ((payload: unknown) => void) | null = null;
-    subscribeIMEventsMock.mockImplementation((handler: (payload: unknown) => void) => {
-      eventHandler = handler;
-      return () => {};
-    });
-    const onRefreshAgentState = vi.fn(async () => null);
-    renderConversationController({
-      agents: [
-        {
-          id: "u-demo",
-          name: "demo",
-          role: "worker",
-          runtime_kind: "picoclaw_sandbox",
-          status: "unknown",
-        },
-      ],
-      onRefreshAgentState,
-    });
+  it("does not open its own IM event subscription", () => {
+    renderConversationController();
 
-    act(() => {
-      eventHandler?.({
-        message: {
-          content: "reply",
-          sender_id: "u-demo",
-        },
-        room_id: directConversation.id,
-        type: "message.created",
-      });
-    });
-
-    expect(onRefreshAgentState).toHaveBeenCalledWith("u-demo");
+    expect(subscribeIMEventsMock).not.toHaveBeenCalled();
   });
 });

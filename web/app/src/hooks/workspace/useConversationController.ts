@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { errorMessage } from "@/api/client";
 import {
@@ -16,7 +16,6 @@ import {
   agentMatchesUser,
   appendMessageToData,
   appendReplyToThreadView,
-  applyIMEvent,
   buildUsersById,
   applyThreadToData,
   conversationThreadViews,
@@ -53,10 +52,9 @@ import {
   updateDrafts,
 } from "@/models/composer";
 import { WorkspacePaneTypes } from "@/models/routing";
-import { isAgentRunning, normalizeAuthProviderName, providerNeedsAuth } from "@/models/agents";
+import { normalizeAuthProviderName, providerNeedsAuth } from "@/models/agents";
 import { skillDescriptionFromMarkdown, skillOptionsFromWorkspace, type SlashSkillOption } from "@/models/slashCommands";
 import { localizeError } from "@/shared/i18n";
-import { subscribeIMEvents } from "@/shared/realtime/imEvents";
 import { MESSAGE_LIST_BOTTOM_THRESHOLD } from "@/shared/constants/workspace";
 import type { IMConversation, IMMessage, IMServerEvent, IMUser, ThreadView } from "@/models/conversations";
 import type { SlashPickerCandidate } from "@/models/slashCommands";
@@ -123,8 +121,6 @@ export function useConversationController({
   navigatePane,
   onMessageAction,
   onProviderLogin,
-  onRefreshAgentState,
-  onUpgradeStatusChange,
   preferredFallbackConversationId = "",
   rooms,
   selectComputer,
@@ -175,9 +171,6 @@ export function useConversationController({
   const shouldAutoScrollRef = useRef(true);
   const autoScrollConversationRef = useRef(activeConversationId);
   const activeThreadKeyRef = useRef("");
-  const agentsRef = useRef(agents);
-  const usersByIdRef = useRef<Map<string, IMUser>>(new Map());
-  const refreshAgentStateRef = useRef(onRefreshAgentState);
 
   const usersById = useMemo(() => buildUsersById(data?.users), [data]);
   const activeConversation = useMemo(
@@ -349,42 +342,18 @@ export function useConversationController({
     activeThreadKeyRef.current = activeThreadRootID ? threadKey(activeConversationId, activeThreadRootID) : "";
   }, [activeConversationId, activeThreadRootID]);
 
-  useEffect(() => {
-    agentsRef.current = agents;
-    usersByIdRef.current = usersById;
-    refreshAgentStateRef.current = onRefreshAgentState;
-  }, [agents, onRefreshAgentState, usersById]);
-
-  useEffect(() => {
-    const unsubscribe = subscribeIMEvents((payload: IMServerEvent) => {
-      setBootstrapData((current) => applyIMEvent(current, payload));
-      if ((payload?.type === "thread.created" || payload?.type === "thread.updated") && payload.thread) {
-        if (threadViewKey(payload.thread) === activeThreadKeyRef.current) {
-          setActiveThreadView(payload.thread);
-        }
+  const handleRealtimeEvent = useCallback((payload: IMServerEvent) => {
+    if ((payload?.type === "thread.created" || payload?.type === "thread.updated") && payload.thread) {
+      if (threadViewKey(payload.thread) === activeThreadKeyRef.current) {
+        setActiveThreadView(payload.thread);
       }
-      if (payload?.type === "message.created" && payload.message) {
-        const senderID = String(payload.message.sender_id || "").trim();
-        if (senderID) {
-          const sender = resolveUserByLocalIdentity(senderID, usersByIdRef.current) ?? { id: senderID };
-          const senderAgent = agentsRef.current.find((agent) => agentMatchesUser(agent, sender));
-          if (senderAgent?.id && !isAgentRunning(senderAgent)) {
-            void refreshAgentStateRef.current(String(senderAgent.id));
-          }
-        }
-        if (threadMessageKey(payload.room_id, payload.message) === activeThreadKeyRef.current) {
-          setActiveThreadView((current) => appendReplyToThreadView(current, payload.message) ?? null);
-        }
+    }
+    if (payload?.type === "message.created" && payload.message) {
+      if (threadMessageKey(payload.room_id, payload.message) === activeThreadKeyRef.current) {
+        setActiveThreadView((current) => appendReplyToThreadView(current, payload.message) ?? null);
       }
-      if (payload?.type === "upgrade.status_changed" && payload.upgrade) {
-        onUpgradeStatusChange(payload.upgrade);
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [onUpgradeStatusChange, setBootstrapData]);
+    }
+  }, []);
 
   useEffect(() => {
     setMentionIndex(0);
@@ -1133,6 +1102,7 @@ export function useConversationController({
     channels,
     closeConversationTools,
     directMessages,
+    handleRealtimeEvent,
     openThreadInConversation,
     roomCount,
     selectedConversation,
