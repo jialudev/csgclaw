@@ -1,12 +1,12 @@
 ---
 name: basics
-description: Handle routine CSGClaw CLI administration for rooms, Feishu group/chat creation, participant listing, room members, and IM mentions. Use for list participants, member create, message create, and room operations. Do NOT use for creating a new worker—use agent-creator instead (template list + participant create --type agent --bind create --from-template).
+description: Handle routine CSGClaw CLI administration for rooms, Feishu group/chat creation, participant listing, room members, and non-task IM mentions. Use for list participants, member create, message create, and room operations. Do NOT use for single-worker task assignment—use `csgclaw-cli task create` instead. Do NOT use for creating a new worker—use agent-creator instead (template list + participant create --type agent --bind create --from-template).
 ---
 
 # CSGClaw CLI Basics
 
 Execute common `csgclaw-cli` operations directly and keep the flow simple.
-Prefer this skill for room, member, and message operations after workers already exist.
+Prefer this skill for room, member, and non-task message operations after workers already exist.
 
 ## Scope
 
@@ -18,13 +18,16 @@ This skill covers direct CLI actions such as:
 - list all participants
 - list room members
 - add a participant as a room member
-- send a message, including a message with a mention
+- send a routine message, including a message with a mention
 - check command help for the current CLI surface before assuming flags
 
 Do **not** use this skill to **create a new worker**. For any new agent/worker provisioning, use `agent-creator` (`template list`, `template get`, `participant create --type agent --bind create --from-template`).
 
+Do **not** use this skill to assign a task to one worker. Use `csgclaw-cli task create --agent-id <worker_agent_id> --title <task_title> --body <task_body>` so the task is recorded on the server and the worker is notified in its direct room.
+
 Do not use this skill when the task requires any of the following:
 
+- assign work to one worker as a tracked task
 - break a request into multiple worker-owned tasks
 - orchestrate a multi-worker workflow
 - manage cross-worker sequencing or tracking state
@@ -34,7 +37,7 @@ For hub template selection and `--from-template` creation, use `agent-creator` i
 
 ## Workflow
 
-1. Identify the exact room, participant, or member operation the user needs.
+1. Identify the exact room, participant, member, or routine message operation the user needs.
 2. If room context matters, inspect it first with `room list` or `member list`, especially to see whether the room is direct.
 3. Run `csgclaw-cli <entity> -h` or `csgclaw-cli <entity> <verb> -h` if the current command surface is not already clear.
 4. Execute the smallest direct CLI command that completes the request.
@@ -62,6 +65,14 @@ List participants:
 ```bash
 csgclaw-cli participant list --channel <current_channel> --type agent
 ```
+
+Assign a tracked task to one existing worker:
+
+```bash
+csgclaw-cli task create --agent-id <worker-agent-id> --title "Run smoke tests" --body "Check the checkout flow." --created-by manager
+```
+
+For one-worker task assignment, resolve the worker's `agent_id` from `participant list`, not just the participant ID. The server creates a task record, reuses the worker's direct room, and sends the worker a claim/update notification. Do not manually create a task room or send the task body through `message create`.
 
 Create a worker participant:
 
@@ -115,25 +126,26 @@ Workers are configured with **`mention_only`**: they only process group messages
 |----|--------|
 | `csgclaw-cli message create ... --mention-id gitlab-worker` (participant ID from `participant list`) | Type `@gitlab-worker` or `@worker-name` in `--content`, room replies, or the PicoClaw `message` tool |
 | Verify delivery with `message list` — content must include a structured `<at user_id="...">` tag | Assume a human-style `@` in prose wakes the worker |
-| Run `participant list` and `member list` before the first dispatch | Skip membership checks and post assignment text only |
+| Run `participant list` and `member list` before non-task group notifications | Skip membership checks and post notification text only |
 
-Minimal handoff flow:
+Routine non-task notification flow:
 
 1. `csgclaw-cli participant list` — resolve the worker participant ID (e.g. `gitlab-worker`, not the display name).
 2. `csgclaw-cli member list` — confirm the worker is in the room; `member create` if missing.
-3. `csgclaw-cli message create` with `--mention-id` and the task body.
+3. `csgclaw-cli message create` with `--mention-id` and the message body.
 4. `csgclaw-cli message list` — confirm the stored message contains `<at user_id="...">`.
 
+For single-worker task assignments, use `csgclaw-cli task create` instead of manual room messages.
 For multi-worker team tasks, use `agent-teams` (`csgclaw-cli team` plan/start) instead of manual room messages.
 
-Example worker handoff (replace room ID, participant ID, and channel):
+Example routine notification (replace room ID, participant ID, and channel):
 
 ```bash
 csgclaw-cli message create \
   --room-id <room_id> \
   --sender-id manager \
   --mention-id alex \
-  --content "Please implement the login page changes we discussed." \
+  --content "Please review the latest note in this room." \
   --channel csgclaw
 ```
 
@@ -143,6 +155,7 @@ Do **not** post `@alex` plain text in the room instead of `--mention-id`.
 
 - Prefer direct `csgclaw-cli` commands over ad hoc HTTP calls.
 - Use `participant list` before creating a new worker if the user may be referring to an existing one.
+- For one-worker task assignment, use `csgclaw-cli task create --agent-id <worker_agent_id>`; do not create a room and send assignment text manually.
 - When a **new** worker is needed, use `agent-creator`; do not run bare `participant create --bind create` from this skill.
 - Verify room membership with `member list` after adding a member when room presence matters.
 - A direct room cannot accept an added participant as a new member. Create a new room with `--member-ids` containing the existing DM participants and the new participant.

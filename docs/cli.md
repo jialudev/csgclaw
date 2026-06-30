@@ -52,7 +52,8 @@ Common local defaults:
 - config: `~/.csgclaw/config.toml`
 - daemon log: `~/.csgclaw/server.log`
 - daemon PID: `~/.csgclaw/server.pid`
-- agents state: `~/.csgclaw/agents/state.json`
+- root state for agents, participants, model providers, and teams: `~/.csgclaw/state.json`
+- task state: `~/.csgclaw/tasks`
 - built-in IM state: `~/.csgclaw/im/state.json`
 
 ## `csgclaw`

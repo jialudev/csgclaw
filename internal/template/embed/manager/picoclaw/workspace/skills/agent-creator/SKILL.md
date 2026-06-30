@@ -7,7 +7,7 @@ description: Mandatory skill for provisioning any new CSGClaw agent-backed parti
 
 Guide users through hub template selection and agent creation. This skill owns **all new worker provisioning**.
 
-Use `basics` only after create for room membership or IM mentions. Use `agent-teams` after the worker exists and the user wants task handoff.
+Use `basics` only after create for room membership or non-task IM mentions. Use `csgclaw-cli task create` after the worker exists and the user wants one-worker task handoff. Use `agent-teams` for multi-worker task handoff.
 
 ## Routing Gate (mandatory)
 
@@ -27,11 +27,11 @@ Use this skill when:
 - the user asks to create, add, set up, or provision an agent, robot, worker, or user-facing "bot"
 - the user names a capability (GitLab, frontend, backend, QA, review, etc.) and needs a matching worker
 - `participant list` shows no suitable available worker for the required capability
-- dispatch needs a new worker (pause dispatch, complete provisioning here, then resume with `basics` + dispatch)
+- dispatch needs a new worker (pause dispatch, complete provisioning here, then resume with `csgclaw-cli task create` for one worker or `agent-teams` for multiple workers)
 
 Do **not** use this skill when:
 
-- reusing an existing available worker (use `basics` + dispatch)
+- reusing an existing available worker (use `csgclaw-cli task create` for one-worker task dispatch or `agent-teams` for multiple workers)
 - only dispatching a task to workers that already exist
 - only room/member/message CLI without creating anyone new
 

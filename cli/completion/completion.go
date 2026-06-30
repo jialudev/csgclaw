@@ -93,6 +93,7 @@ func FullSpec() CommandSpec {
 			roomSpec(),
 			memberSpec(),
 			messageSpec(),
+			taskSpec(),
 			teamSpec(),
 			completionSpec(),
 		},
@@ -110,6 +111,7 @@ func LiteSpec() CommandSpec {
 			roomSpec(),
 			memberSpec(),
 			messageSpec(),
+			taskSpec(),
 			teamSpec(),
 			skillSpec(),
 			completionSpec(),
@@ -616,6 +618,46 @@ func teamSpec() CommandSpec {
 							{Name: "reason", TakesValue: true},
 						},
 					},
+				},
+			},
+		},
+	}
+}
+
+func taskSpec() CommandSpec {
+	return CommandSpec{
+		Name:    "task",
+		Summary: "Manage agent tasks.",
+		Children: []CommandSpec{
+			{Name: "list", Summary: "List global tasks"},
+			{
+				Name:    "create",
+				Summary: "Create an agent task",
+				Flags: []FlagSpec{
+					{Name: "agent-id", TakesValue: true},
+					{Name: "title", TakesValue: true},
+					{Name: "body", TakesValue: true},
+					{Name: "created-by", TakesValue: true},
+				},
+			},
+			{
+				Name:    "claim",
+				Summary: "Claim an agent task",
+				Flags: []FlagSpec{
+					{Name: "task", TakesValue: true},
+					{Name: "participant-id", TakesValue: true},
+				},
+			},
+			{
+				Name:    "update",
+				Summary: "Update an agent task status",
+				Flags: []FlagSpec{
+					{Name: "task", TakesValue: true},
+					{Name: "actor-id", TakesValue: true},
+					{Name: "status", TakesValue: true, Values: []string{"blocked", "completed", "failed"}},
+					{Name: "result", TakesValue: true},
+					{Name: "error", TakesValue: true},
+					{Name: "reason", TakesValue: true},
 				},
 			},
 		},

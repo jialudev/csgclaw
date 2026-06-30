@@ -150,6 +150,14 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 				r.Get("/events", h.listTeamEvents)
 			})
 		})
+		r.Route("/agent-tasks", func(r chi.Router) {
+			r.Get("/", h.listAgentTasks)
+			r.Post("/", h.createAgentTask)
+			r.Route("/{task_id}", func(r chi.Router) {
+				r.Post("/claim", h.claimAgentTask)
+				r.Patch("/", h.updateAgentTask)
+			})
+		})
 		r.Get("/tasks", h.listGlobalTasks)
 	})
 }

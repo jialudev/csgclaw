@@ -233,6 +233,28 @@ func RenderTeamTasks(output string, w io.Writer, tasks []apitypes.TeamTask) erro
 	}
 }
 
+func RenderTasks(output string, w io.Writer, tasks []apitypes.TeamTask) error {
+	switch output {
+	case "", "table":
+		return RenderTasksTable(w, tasks)
+	case "json":
+		return WriteJSON(w, tasks)
+	default:
+		return fmt.Errorf("unsupported output format %q", output)
+	}
+}
+
+func RenderGlobalTasks(output string, w io.Writer, tasks []apitypes.GlobalTask) error {
+	switch output {
+	case "", "table":
+		return RenderGlobalTasksTable(w, tasks)
+	case "json":
+		return WriteJSON(w, tasks)
+	default:
+		return fmt.Errorf("unsupported output format %q", output)
+	}
+}
+
 func RenderTeamApprovals(output string, w io.Writer, approvals []apitypes.TeamApproval) error {
 	switch output {
 	case "", "table":
@@ -514,6 +536,86 @@ func RenderTeamTasksTable(w io.Writer, tasks []apitypes.TeamTask) error {
 		},
 		rows,
 	)
+}
+
+func RenderTasksTable(w io.Writer, tasks []apitypes.TeamTask) error {
+	rows := make([][]string, 0, len(tasks))
+	for _, item := range tasks {
+		rows = append(rows, []string{
+			displayValueField(item.ID),
+			displayValueField(item.AssignmentType),
+			displayTaskAssignment(item),
+			displayValueField(item.ExecutionChannel),
+			displayValueField(item.RoomID),
+			displayValueField(item.Status),
+			displayNameWithID(item.AssignedToAgentName, item.AssignedTo),
+			displayNameWithID(item.ClaimedByAgentName, item.ClaimedBy),
+			displayValueField(item.Title),
+		})
+	}
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "TYPE"},
+			{Header: "ASSIGNMENT"},
+			{Header: "CHANNEL"},
+			{Header: "ROOM"},
+			{Header: "STATUS"},
+			{Header: "ASSIGNED"},
+			{Header: "CLAIMED"},
+			{Header: "TITLE"},
+		},
+		rows,
+	)
+}
+
+func RenderGlobalTasksTable(w io.Writer, tasks []apitypes.GlobalTask) error {
+	rows := make([][]string, 0, len(tasks))
+	for _, item := range tasks {
+		rows = append(rows, []string{
+			displayValueField(item.ID),
+			displayValueField(item.AssignmentType),
+			displayGlobalTaskAssignment(item),
+			displayValueField(item.ExecutionChannel),
+			displayNameWithID(item.RoomTitle, item.RoomID),
+			displayValueField(item.Status),
+			displayNameWithID(item.AssignedToAgentName, item.AssignedTo),
+			displayNameWithID(item.ClaimedByAgentName, item.ClaimedBy),
+			displayValueField(item.Title),
+		})
+	}
+	return renderTable(w,
+		[]tableColumn{
+			{Header: "ID"},
+			{Header: "TYPE"},
+			{Header: "ASSIGNMENT"},
+			{Header: "CHANNEL"},
+			{Header: "ROOM"},
+			{Header: "STATUS"},
+			{Header: "ASSIGNED"},
+			{Header: "CLAIMED"},
+			{Header: "TITLE"},
+		},
+		rows,
+	)
+}
+
+func displayTaskAssignment(item apitypes.TeamTask) string {
+	switch strings.TrimSpace(item.AssignmentType) {
+	case "team":
+		return displayValueField(firstNonEmpty(item.TeamID, item.AssignmentID))
+	default:
+		return displayValueField(item.AssignmentID)
+	}
+}
+
+func displayGlobalTaskAssignment(item apitypes.GlobalTask) string {
+	switch strings.TrimSpace(item.AssignmentType) {
+	case "team":
+		return displayNameWithID(item.TeamTitle, firstNonEmpty(item.TeamID, item.AssignmentID))
+	default:
+		return displayTaskAssignment(item.TeamTask)
+	}
 }
 
 func RenderTeamApprovalsTable(w io.Writer, approvals []apitypes.TeamApproval) error {

@@ -31,6 +31,8 @@ func TestManagerBasicsRoomCreationKeepsRequesterAsCreator(t *testing.T) {
 				"include `manager` plus the requested participants in `--member-ids`",
 				"Do not use `manager` as the creator just because the manager runs the CLI command.",
 				"a display name such as `dev` or `qa` is not necessarily a valid participant ID.",
+				"csgclaw-cli task create --agent-id <worker-agent-id>",
+				"For single-worker task assignments, use `csgclaw-cli task create` instead of manual room messages.",
 			} {
 				if !strings.Contains(skill, want) {
 					t.Fatalf("basics skill missing requester creator guidance %q", want)
@@ -41,6 +43,78 @@ func TestManagerBasicsRoomCreationKeepsRequesterAsCreator(t *testing.T) {
 			}
 			if strings.Contains(skill, "--member-ids manager,dev") {
 				t.Fatalf("basics skill still teaches sample dev as a literal participant ID:\n%s", skill)
+			}
+			for _, notWant := range []string{
+				"Minimal handoff flow:",
+				"with `--mention-id` and the task body",
+				"Please implement the login page changes we discussed.",
+			} {
+				if strings.Contains(skill, notWant) {
+					t.Fatalf("basics skill still teaches manual task dispatch %q:\n%s", notWant, skill)
+				}
+			}
+		})
+	}
+}
+
+func TestManagerInstructionsPreferAgentTasksForSingleWorkerDispatch(t *testing.T) {
+	tests := []struct {
+		name string
+		root string
+		file string
+	}{
+		{name: "picoclaw", root: PicoClawManagerRoot, file: "AGENT.md"},
+		{name: "openclaw", root: OpenClawManagerRoot, file: "AGENTS.md"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := fs.ReadFile(FS(), path.Join(tt.root, WorkspaceDirName, tt.file))
+			if err != nil {
+				t.Fatalf("read manager instructions: %v", err)
+			}
+			instructions := string(data)
+			for _, want := range []string{
+				"Single-worker task assignment second",
+				"csgclaw-cli task create --agent-id <worker_agent_id>",
+				"Do not use `basics` to create a room or send a manual assignment message",
+			} {
+				if !strings.Contains(instructions, want) {
+					t.Fatalf("manager instructions missing task API dispatch guidance %q", want)
+				}
+			}
+			if strings.Contains(instructions, "Dispatch means waking a worker with a real IM mention") {
+				t.Fatalf("manager instructions still define dispatch as manual IM mention:\n%s", instructions)
+			}
+		})
+	}
+}
+
+func TestWorkerInstructionsMentionDirectAgentTaskCLI(t *testing.T) {
+	tests := []struct {
+		name string
+		root string
+		file string
+	}{
+		{name: "picoclaw", root: PicoClawWorkerRoot, file: "AGENT.md"},
+		{name: "openclaw", root: OpenClawWorkerRoot, file: "AGENTS.md"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := fs.ReadFile(FS(), path.Join(tt.root, WorkspaceDirName, tt.file))
+			if err != nil {
+				t.Fatalf("read worker instructions: %v", err)
+			}
+			instructions := string(data)
+			for _, want := range []string{
+				"csgclaw-cli task claim --task <task_id>",
+				"csgclaw-cli task update --task <task_id>",
+				"Do not use `team task` commands for direct agent tasks.",
+			} {
+				if !strings.Contains(instructions, want) {
+					t.Fatalf("worker instructions missing direct agent task guidance %q", want)
+				}
 			}
 		})
 	}

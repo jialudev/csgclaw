@@ -42,7 +42,7 @@ Suggested capability bullets (pick 3–4 that fit; keep the whole reply concise)
 
 - **Create workers** from hub templates (GitLab, frontend, QA, review, etc.) —
   e.g. "帮我创建一个 GitLab worker"
-- **Assign work** to existing workers in IM rooms and track multi-step handoffs —
+- **Assign work** to existing workers through tracked tasks and coordinate multi-step handoffs —
   e.g. "把登录页 UI 交给 frontend worker 做"
 - **Manage participants and rooms** — list workers, create rooms or Feishu groups, add
   members — e.g. "列出当前所有 worker"
@@ -79,7 +79,13 @@ or identity onboarding.
   agent, robot, or worker—or needs a new capability-specific worker—read
   `skills/agent-creator/SKILL.md` immediately. Never run `participant create --bind create` without
   `--from-template` for a new worker.
-- **Team orchestration second:** for multi-worker handoff when workers exist (or
+- **Single-worker task assignment second:** for executable one-worker handoff
+  when the worker already exists, run `csgclaw-cli participant list --channel csgclaw --type agent`,
+  resolve the worker's `agent_id`, then use
+  `csgclaw-cli task create --agent-id <worker_agent_id> --title <task_title> --body <task_body>`.
+  Do not use `basics` to create a room or send a manual assignment message for
+  this path.
+- **Team orchestration third:** for multi-worker handoff when workers exist (or
   after `agent-creator` finishes), read `skills/agent-teams/SKILL.md` and use
   `csgclaw-cli team` (create tasks, plan, start). Each main task gets its own
   execution room when created.
@@ -91,9 +97,10 @@ or identity onboarding.
   `skills/skill-installer/SKILL.md` and run `csgclaw-cli skill`. Install skills
   by dispatching the target worker to follow `skill-installer` in its own
   sandbox (not from the manager).
-- To wake a worker in a group room, use `csgclaw-cli message create --mention-id`
-  (see `skills/basics/SKILL.md` — **Notifying workers in IM**). Plain-text
-  `@worker-name` does not satisfy `mention_only` and the worker will not respond.
+- For routine non-task messages in a group room, use
+  `csgclaw-cli message create --mention-id` (see `skills/basics/SKILL.md` —
+  **Notifying workers in IM**). Plain-text `@worker-name` does not satisfy
+  `mention_only` and the worker will not respond.
 - Use `TOOLS.md` for local tool notes and operational details.
 
 ## Working Principles

@@ -165,6 +165,18 @@ func (h *Handler) resolveTeamApproval(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) listTeamEvents(w http.ResponseWriter, r *http.Request) {
 	h.handleListTeamEvents(w, r)
 }
+func (h *Handler) listAgentTasks(w http.ResponseWriter, r *http.Request) {
+	h.handleListAgentTasks(w, r)
+}
+func (h *Handler) createAgentTask(w http.ResponseWriter, r *http.Request) {
+	h.handleCreateAgentTask(w, r)
+}
+func (h *Handler) claimAgentTask(w http.ResponseWriter, r *http.Request) {
+	h.handleClaimAgentTask(w, r)
+}
+func (h *Handler) updateAgentTask(w http.ResponseWriter, r *http.Request) {
+	h.handleUpdateAgentTask(w, r)
+}
 func (h *Handler) listGlobalTasks(w http.ResponseWriter, r *http.Request) {
 	h.handleListGlobalTasks(w, r)
 }

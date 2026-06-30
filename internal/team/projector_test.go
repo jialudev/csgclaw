@@ -24,7 +24,7 @@ func TestProjectorProjectsBuiltInChannelMessages(t *testing.T) {
 		},
 	})
 	svc := NewService(
-		WithProjector(NewProjector(NewCSGClawAdapter(imSvc), nil)),
+		WithProjector(NewProjectorWithRegistry(NewAdapterRegistry(NewCSGClawAdapter(imSvc)), nil)),
 		WithNowFunc(sequenceNow(
 			time.Date(2026, 5, 29, 16, 0, 0, 0, time.UTC),
 			time.Date(2026, 5, 29, 16, 0, 1, 0, time.UTC),
@@ -98,7 +98,7 @@ func TestProjectorProjectsBuiltInChannelMessages(t *testing.T) {
 
 func TestProjectionFailureAppendsAuditEventWithoutBreakingTaskState(t *testing.T) {
 	svc := NewService(
-		WithProjector(NewProjector(failingAdapter{err: errors.New("send boom")}, nil)),
+		WithProjector(NewProjectorWithRegistry(NewAdapterRegistry(failingAdapter{err: errors.New("send boom")}), nil)),
 		WithNowFunc(sequenceNow(
 			time.Date(2026, 5, 29, 17, 0, 0, 0, time.UTC),
 			time.Date(2026, 5, 29, 17, 0, 1, 0, time.UTC),
@@ -177,7 +177,7 @@ func TestProjectorRenderTaskLifecycleMessages(t *testing.T) {
 			{ID: "room-exec", Title: "[task-14] blog", Members: []string{"u-manager", "u-backend-dev"}},
 		},
 	})
-	projector := NewProjector(NewCSGClawAdapter(imSvc), nil)
+	projector := NewProjectorWithRegistry(NewAdapterRegistry(NewCSGClawAdapter(imSvc)), nil)
 	meta := TeamMeta{
 		ID:          "team-5",
 		LeadAgentID: agent.ManagerUserID,
@@ -215,7 +215,13 @@ func TestProjectorRenderTaskLifecycleMessages(t *testing.T) {
 	if strings.Contains(execMessages[1].Content, "started assigning tasks") {
 		t.Fatalf("exec room should not include dispatch preamble: %q", execMessages[1].Content)
 	}
-	if execMessages[1].Kind != im.MessageKindMessage || !strings.Contains(execMessages[1].Content, "dispatched task-15") || strings.Contains(execMessages[1].Content, "dispatched task-15 to") || !strings.Contains(execMessages[1].Content, "claim --team team-5 --task task-15 --participant-id backend-dev") {
+	if execMessages[1].Kind != im.MessageKindEvent || execMessages[1].Event == nil || execMessages[1].Event.Key != "task_assigned" {
+		t.Fatalf("dispatch projection event = kind %q payload %+v, want task_assigned event", execMessages[1].Kind, execMessages[1].Event)
+	}
+	if execMessages[1].Event.Title != "task-15 [Imple...]" || len(execMessages[1].Event.TargetIDs) != 1 || execMessages[1].Event.TargetIDs[0] != "user-backend-dev" {
+		t.Fatalf("dispatch projection event = %+v, want compact title and backend-dev target", execMessages[1].Event)
+	}
+	if !strings.Contains(execMessages[1].Content, "dispatched task-15") || strings.Contains(execMessages[1].Content, "dispatched task-15 to") || !strings.Contains(execMessages[1].Content, "claim --team team-5 --task task-15 --participant-id backend-dev") {
 		t.Fatalf("dispatch projection = %q, want @mention task dispatch with claim command", execMessages[1].Content)
 	}
 	if len(execMessages[1].Mentions) != 1 || execMessages[1].Mentions[0].ID != "user-backend-dev" {
@@ -238,7 +244,7 @@ func TestProjectorSuccessorDispatchSkipsPreamble(t *testing.T) {
 			{ID: "room-exec", Title: "[task-14] blog", Members: []string{"u-manager", "u-backend-dev"}},
 		},
 	})
-	projector := NewProjector(NewCSGClawAdapter(imSvc), nil)
+	projector := NewProjectorWithRegistry(NewAdapterRegistry(NewCSGClawAdapter(imSvc)), nil)
 	meta := TeamMeta{ID: "team-5", LeadAgentID: agent.ManagerUserID}
 	events := []TeamEvent{
 		{Seq: 1, TeamID: meta.ID, Channel: DefaultExecutionChannel, RoomID: "room-exec", Type: EventTaskCompleted, ActorID: "backend-dev", TaskID: "task-15", Summary: "done", CreatedAt: time.Now()},
@@ -271,7 +277,7 @@ func TestProjectorResolvesWorkerAliasSender(t *testing.T) {
 			{ID: "room-task", Title: "task", Members: []string{"u-manager", "u-p-w-1512"}},
 		},
 	})
-	projector := NewProjector(NewCSGClawAdapter(imSvc), nil)
+	projector := NewProjectorWithRegistry(NewAdapterRegistry(NewCSGClawAdapter(imSvc)), nil)
 	meta := TeamMeta{
 		ID:          "team-5",
 		LeadAgentID: agent.ManagerUserID,

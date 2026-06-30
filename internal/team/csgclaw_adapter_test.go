@@ -3,6 +3,7 @@ package team
 import (
 	"context"
 	"testing"
+	"time"
 
 	"csgclaw/internal/agent"
 	"csgclaw/internal/im"
@@ -55,4 +56,52 @@ func TestCSGClawAdapterAcceptsLegacyUserIDAsParticipantAlias(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureRoom() error = %v", err)
 	}
+}
+
+func TestCSGClawAdapterEnsureRoomPublishesRoomCreatedEvent(t *testing.T) {
+	bus := im.NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	imSvc := im.NewServiceWithBus(bus)
+	adapter := NewCSGClawAdapter(imSvc)
+	roomRef, err := adapter.EnsureRoom(context.Background(), EnsureRoomRequest{
+		Title:                "[task-1] Today and yesterday AI news",
+		LeadParticipantID:    agent.ManagerParticipantID,
+		MemberParticipantIDs: []string{"pt-dev"},
+	})
+	if err != nil {
+		t.Fatalf("EnsureRoom() error = %v", err)
+	}
+
+	event := mustReceiveAdapterIMEvent(t, events)
+	if event.Type != im.EventTypeRoomCreated || event.RoomID != roomRef.RoomID || event.Room == nil {
+		t.Fatalf("event = %+v, want room.created for %s", event, roomRef.RoomID)
+	}
+	if event.Room.Title != "[task-1] Today and yesterday AI news" {
+		t.Fatalf("event room title = %q, want task title", event.Room.Title)
+	}
+	if !roomMembersContain(event.Room.Members, im.ManagerUserID) || !roomMembersContain(event.Room.Members, "user-dev") {
+		t.Fatalf("event room members = %+v, want manager and dev", event.Room.Members)
+	}
+}
+
+func mustReceiveAdapterIMEvent(t *testing.T, events <-chan im.Event) im.Event {
+	t.Helper()
+	select {
+	case event := <-events:
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for IM event")
+		return im.Event{}
+	}
+}
+
+func roomMembersContain(members []string, id string) bool {
+	for _, member := range members {
+		if member == id {
+			return true
+		}
+	}
+	return false
 }

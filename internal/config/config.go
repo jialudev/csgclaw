@@ -402,8 +402,12 @@ func DefaultIMDir() (string, error) {
 	return DefaultDomainDir(IMDirName)
 }
 
-func DefaultTeamsDir() (string, error) {
-	return DefaultDomainDir("teams")
+func DefaultTeamsPath() (string, error) {
+	return DefaultStatePath()
+}
+
+func DefaultTasksDir() (string, error) {
+	return DefaultDomainDir("tasks")
 }
 
 func DefaultHubRegistryPath() string {
