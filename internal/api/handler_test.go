@@ -4832,6 +4832,10 @@ func TestHandleFeishuUsersDeleteRemovesUser(t *testing.T) {
 }
 
 func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
+	bus := im.NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
 	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
 			CurrentUserID: "u-admin",
@@ -4839,6 +4843,7 @@ func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
 				{ID: "room-1", Title: "Room One", Members: []string{"u-admin", "u-manager"}},
 			},
 		}),
+		imBus: bus,
 	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/rooms/room-1", nil)
@@ -4850,6 +4855,10 @@ func TestHandleRoomsDeleteRemovesRoom(t *testing.T) {
 	}
 	if _, ok := srv.im.Room("room-1"); ok {
 		t.Fatal("Room() ok = true, want false after delete")
+	}
+	event := mustReceiveIMEvent(t, events)
+	if event.Type != im.EventTypeRoomDeleted || event.RoomID != "room-1" || event.Room == nil || event.Room.ID != "room-1" {
+		t.Fatalf("event = %+v, want room.deleted for room-1", event)
 	}
 }
 

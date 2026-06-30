@@ -72,8 +72,6 @@ function useConversationControllerHarness() {
     navigatePane: vi.fn(),
     onMessageAction: vi.fn(),
     onProviderLogin: vi.fn(),
-    onRefreshAgentState: vi.fn(async () => null),
-    onUpgradeStatusChange: vi.fn(),
     rooms: [directConversation],
     selectComputer: vi.fn(),
     selectConversation: vi.fn(),

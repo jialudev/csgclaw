@@ -17,6 +17,8 @@ export type IMParticipantLike = {
   metadata?: Record<string, unknown> | null;
   name?: string | null;
   type?: string | null;
+  user_id?: string | null;
+  user_name?: string | null;
 };
 
 export type IMUser = {
@@ -116,6 +118,7 @@ export type IMData = {
 
 export type IMServerEvent = {
   message?: IMMessage | null;
+  participant?: IMParticipantLike | null;
   room?: Partial<IMConversation> | null;
   room_id?: string | null;
   thread?: ThreadView | null;
@@ -704,10 +707,14 @@ export function applyIMEvent<T extends IMData | null | undefined>(
       event.type === "conversation.members_added" ||
       event.type === "room.created" ||
       event.type === "room.members_added" ||
+      event.type === "room.members_removed" ||
       event.type === "room.messages_cleared") &&
     event.room?.id
   ) {
     return upsertConversationInData(current, event.room as IMConversation);
+  }
+  if (event.type === "room.deleted") {
+    return removeConversationFromData(current, event.room_id || event.room?.id);
   }
   return current;
 }
@@ -763,6 +770,13 @@ export function isAgentRosterEvent(event: IMServerEvent | null | undefined): boo
     return false;
   }
   if (event.type === "user.created" || event.type === "user.updated" || event.type === "user.deleted") {
+    return true;
+  }
+  if (
+    event.type === "participant.created" ||
+    event.type === "participant.updated" ||
+    event.type === "participant.deleted"
+  ) {
     return true;
   }
   if (event.type === "conversation.created" || event.type === "room.created") {
