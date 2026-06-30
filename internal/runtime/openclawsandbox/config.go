@@ -26,7 +26,6 @@ const (
 	BoxUserHome            = "/home/node"
 	BoxDir                 = "/home/node/.openclaw"
 	BoxConfigPath          = BoxDir + "/" + HostConfig
-	BoxExecApprovalPath    = BoxDir + "/" + HostExecApproval
 	BoxWorkspaceDir        = BoxDir + "/workspace"
 	BoxProjectsDir         = BoxDir + "/workspace/projects"
 	BoxGatewayLogPath      = BoxDir + "/" + HostGatewayLog
