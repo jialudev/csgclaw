@@ -176,11 +176,12 @@ func (a *CSGClawAdapter) SendMessage(_ context.Context, req SendMessageRequest) 
 	senderID := sender.ID
 
 	mentionID := a.channelUserIDForParticipant(strings.TrimSpace(req.MentionID))
-	if strings.TrimSpace(req.Kind) == "team_event" {
+	if key := csgclawEventKey(req.Kind); key != "" {
 		targetIDs := []string(nil)
 		if mentionID != "" {
 			targetIDs = []string{mentionID}
 		}
+		eventTitle := firstNonEmpty(strings.TrimSpace(req.EventTitle), strings.TrimSpace(req.Content))
 		msg, err := a.im.DeliverEvent(im.DeliverEventRequest{
 			RoomID:    roomID,
 			SenderID:  senderID,
@@ -188,9 +189,9 @@ func (a *CSGClawAdapter) SendMessage(_ context.Context, req SendMessageRequest) 
 			Content:   strings.TrimSpace(req.Content),
 			MessageID: strings.TrimSpace(req.IdempotencyKey),
 			Event: &im.EventPayload{
-				Key:       "team_event",
+				Key:       key,
 				ActorID:   senderID,
-				Title:     strings.TrimSpace(req.Content),
+				Title:     eventTitle,
 				TargetIDs: targetIDs,
 			},
 		})
@@ -219,6 +220,15 @@ func (a *CSGClawAdapter) SendMessage(_ context.Context, req SendMessageRequest) 
 		RoomID:    roomID,
 		MessageID: msg.ID,
 	}, nil
+}
+
+func csgclawEventKey(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "team_event", "task_assigned":
+		return strings.TrimSpace(kind)
+	default:
+		return ""
+	}
 }
 
 func (a *CSGClawAdapter) ensureParticipantUser(participantID string, role string) (im.User, error) {

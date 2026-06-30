@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { vi } from "vitest";
 import { TasksView } from "@/pages/TasksPage/components";
 import type { TranslateFn } from "@/models/conversations";
@@ -15,9 +15,11 @@ const labels: Record<string, string> = {
   taskCardUpdatedAt: "Updated {time}",
   taskChildrenCount: "{count} child tasks",
   taskChildrenLabel: "Child tasks",
+  taskClaimedByLabel: "Claimed by",
   taskDependencyGraphLabel: "Dependency flow",
   taskDependsOnLabel: "Depends on",
   taskDescriptionLabel: "Description",
+  taskDescriptionPlaceholder: "Optional: add background, target outcome, scope, and acceptance notes",
   taskExecutionChannelLabel: "Channel type",
   taskMetadataLabel: "Task info",
   taskNoDependencies: "No dependencies",
@@ -52,8 +54,14 @@ const labels: Record<string, string> = {
   tasksRefresh: "Refresh tasks",
   tasksRefreshShort: "Refresh",
   taskTitleLabel: "Title",
-  taskTitlePlaceholder: "Title placeholder",
+  taskTitlePlaceholder: "Required: add a task title",
+  taskTitleRequired: "Title is required.",
   taskStatus: "Status",
+  taskAssignmentLabel: "Assign to",
+  taskAssignmentTeamGroup: "Teams",
+  taskAssignmentAgentGroup: "Agents",
+  taskAssignmentPlaceholder: "Choose an assignee",
+  taskAssignmentRequired: "Choose an assignee.",
   taskTeamLabel: "Team",
   cancel: "Cancel",
   close: "Close",
@@ -84,6 +92,8 @@ const t: TranslateFn = (key, params = {}) => {
 function task(overrides: Partial<WorkspaceTask>): WorkspaceTask {
   return {
     id: "task-1",
+    assignment_type: "team",
+    assignment_id: "team-1",
     team_id: "team-1",
     team_title: "te-team",
     execution_channel: "csgclaw",
@@ -231,6 +241,33 @@ describe("TasksView", () => {
     expect(screen.getByText(/Dispatch quality check/)).toBeInTheDocument();
   });
 
+  it("hides unresolved technical ids from parent task metadata", () => {
+    const parent = task({
+      id: "task-1",
+      assignment_id: "picoclaw",
+      team_id: "picoclaw",
+      team_title: "",
+      room_id: "picoclaw",
+      room_title: "",
+      status: "completed",
+      assigned_to: "picoclaw",
+      assigned_to_agent_name: "",
+      claimed_by: "picoclaw",
+      claimed_by_agent_name: "",
+    });
+
+    render(<TasksView tasks={[parent]} t={t} />);
+
+    fireEvent.click(screen.getByText("Build blog").closest("button")!);
+
+    const metadata = screen.getByRole("complementary", { name: "Task info" });
+    expect(within(metadata).queryByText("Assignee")).not.toBeInTheDocument();
+    expect(within(metadata).queryByText("Claimed by")).not.toBeInTheDocument();
+    expect(within(metadata).queryByText("Assign to")).not.toBeInTheDocument();
+    expect(within(metadata).queryByText("Room")).not.toBeInTheDocument();
+    expect(within(metadata).queryByText("picoclaw")).not.toBeInTheDocument();
+  });
+
   it("creates parent tasks with the CSGClaw channel without exposing channel selection", async () => {
     const onCreateTask = vi.fn();
 
@@ -238,9 +275,13 @@ describe("TasksView", () => {
 
     expect(screen.getByRole("dialog", { name: "New task" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Channel type")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Required/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Optional/)).toBeInTheDocument();
 
     fireEvent.input(screen.getByLabelText("Title"), { target: { value: "Ship review" } });
     fireEvent.input(screen.getByLabelText("Description"), { target: { value: "Review the release" } });
+    fireEvent.click(screen.getByRole("combobox", { name: "Assign to" }));
+    fireEvent.click(await screen.findByRole("option", { name: /dev-team/ }));
 
     const submit = screen.getByRole("button", { name: "Create" });
     await waitFor(() => expect(submit).not.toBeDisabled());
@@ -248,9 +289,77 @@ describe("TasksView", () => {
 
     await waitFor(() =>
       expect(onCreateTask).toHaveBeenCalledWith({
+        assignment_id: "team-1",
+        assignment_type: "team",
         team_id: "team-1",
         title: "Ship review",
         body: "Review the release",
+        execution_channel: "csgclaw",
+      }),
+    );
+  });
+
+  it("requires title and assignment without generating a title from description", async () => {
+    const onCreateTask = vi.fn();
+
+    render(<TasksView showCreateTaskModal teams={[team()]} onCreateTask={onCreateTask} t={t} />);
+
+    const submit = screen.getByRole("button", { name: "Create" });
+    expect(submit).not.toBeDisabled();
+
+    fireEvent.click(submit);
+
+    expect(await screen.findByText("Title is required.")).toBeInTheDocument();
+    expect(screen.getByText("Choose an assignee.")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Required: add a task title")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("combobox", { name: "Assign to" })).toHaveAttribute("aria-invalid", "true");
+    expect(onCreateTask).not.toHaveBeenCalled();
+
+    fireEvent.input(screen.getByPlaceholderText("Required: add a task title"), {
+      target: { value: "Review Beta 1 release readiness" },
+    });
+    fireEvent.input(
+      screen.getByPlaceholderText("Optional: add background, target outcome, scope, and acceptance notes"),
+      {
+        target: { value: "Review Beta 1 release readiness.\nCheck acceptance criteria." },
+      },
+    );
+    fireEvent.click(screen.getByRole("combobox", { name: "Assign to" }));
+    fireEvent.click(await screen.findByRole("option", { name: /dev-team/ }));
+    expect(screen.queryByText("Title is required.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Choose an assignee.")).not.toBeInTheDocument();
+
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(onCreateTask).toHaveBeenCalledWith({
+        assignment_id: "team-1",
+        assignment_type: "team",
+        team_id: "team-1",
+        title: "Review Beta 1 release readiness",
+        body: "Review Beta 1 release readiness.\nCheck acceptance criteria.",
+        execution_channel: "csgclaw",
+      }),
+    );
+  });
+
+  it("creates a task with an explicit title and optional description omitted", async () => {
+    const onCreateTask = vi.fn();
+
+    render(<TasksView showCreateTaskModal teams={[team()]} onCreateTask={onCreateTask} t={t} />);
+
+    fireEvent.input(screen.getByLabelText("Title"), { target: { value: "Ship review" } });
+    fireEvent.click(screen.getByRole("combobox", { name: "Assign to" }));
+    fireEvent.click(await screen.findByRole("option", { name: /dev-team/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(onCreateTask).toHaveBeenCalledWith({
+        assignment_id: "team-1",
+        assignment_type: "team",
+        team_id: "team-1",
+        title: "Ship review",
         execution_channel: "csgclaw",
       }),
     );

@@ -1,5 +1,7 @@
 export type WorkspaceTask = {
   id: string;
+  assignment_type: string;
+  assignment_id: string;
   team_id: string;
   team_title: string;
   execution_channel: string;
@@ -145,13 +147,17 @@ export function normalizeTask(input: unknown): WorkspaceTask | null {
   const item = input as Record<string, unknown>;
   const id = text(item.id);
   const teamID = text(item.team_id);
+  const assignmentType = text(item.assignment_type) || (teamID ? "team" : "");
+  const assignmentID = text(item.assignment_id) || teamID;
   const roomID = text(item.room_id);
-  if (!id || !teamID) {
+  if (!id || !assignmentType || !assignmentID) {
     return null;
   }
   return {
     id,
-    team_id: teamID,
+    assignment_type: assignmentType,
+    assignment_id: assignmentID,
+    team_id: teamID || (assignmentType === "team" ? assignmentID : ""),
     team_title: text(item.team_title),
     execution_channel: text(item.execution_channel) || "csgclaw",
     room_id: roomID,
@@ -236,11 +242,40 @@ export function formatTaskUpdatedRelative(value: string, locale?: string, now = 
 }
 
 export function displayTaskTeam(task: WorkspaceTask): string {
+  if (task.assignment_type === "agent") {
+    return task.assigned_to_agent_name || task.assigned_to || task.assignment_id;
+  }
   return task.team_title || task.team_id;
 }
 
 export function displayTaskRoom(task: WorkspaceTask): string {
   return task.room_title || task.room_id;
+}
+
+export function displayTaskAssignedAgent(task: WorkspaceTask): string {
+  return task.assigned_to_agent_name;
+}
+
+export function displayTaskClaimedAgent(task: WorkspaceTask): string {
+  return task.claimed_by_agent_name;
+}
+
+export function displayTaskWorker(task: WorkspaceTask): string {
+  return displayTaskClaimedAgent(task) || displayTaskAssignedAgent(task);
+}
+
+export function displayTaskAssignmentTarget(task: WorkspaceTask): string {
+  if (task.parent_id) {
+    return displayTaskAssignedAgent(task);
+  }
+  if (task.assignment_type === "agent") {
+    return displayTaskAssignedAgent(task);
+  }
+  return task.team_title;
+}
+
+export function displayTaskRoomTitle(task: WorkspaceTask): string {
+  return task.room_title;
 }
 
 export function taskExecutionRoomID(
@@ -338,6 +373,9 @@ export function resolveTaskSidebarPhase(
   }
 
   if (children.length === 0) {
+    if (task.assignment_type === "agent") {
+      return "idle";
+    }
     if ((status === "pending" || status === "assigned") && !task.plan_summary.trim()) {
       return "planning";
     }
@@ -411,6 +449,9 @@ function compareTasks(left: WorkspaceTask, right: WorkspaceTask): number {
   }
   if (left.team_id !== right.team_id) {
     return left.team_id.localeCompare(right.team_id);
+  }
+  if (left.assignment_id !== right.assignment_id) {
+    return left.assignment_id.localeCompare(right.assignment_id);
   }
   return left.id.localeCompare(right.id);
 }

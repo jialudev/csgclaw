@@ -47,14 +47,28 @@ func TestDefaultIMStatePathUsesDomainSubdirectory(t *testing.T) {
 	}
 }
 
-func TestDefaultTeamsDirUsesDomainSubdirectory(t *testing.T) {
-	dir, err := DefaultTeamsDir()
+func TestDefaultTeamsPathUsesRootStateFile(t *testing.T) {
+	path, err := DefaultTeamsPath()
 	if err != nil {
-		t.Fatalf("DefaultTeamsDir() error = %v", err)
+		t.Fatalf("DefaultTeamsPath() error = %v", err)
 	}
 
-	if got, want := filepath.Base(dir), "teams"; got != want {
-		t.Fatalf("filepath.Base(DefaultTeamsDir()) = %q, want %q", got, want)
+	if got, want := filepath.Base(path), StateFileName; got != want {
+		t.Fatalf("filepath.Base(DefaultTeamsPath()) = %q, want %q", got, want)
+	}
+	if got, want := filepath.Base(filepath.Dir(path)), AppDirName; got != want {
+		t.Fatalf("filepath.Base(filepath.Dir(DefaultTeamsPath())) = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultTasksDirUsesDomainSubdirectory(t *testing.T) {
+	dir, err := DefaultTasksDir()
+	if err != nil {
+		t.Fatalf("DefaultTasksDir() error = %v", err)
+	}
+
+	if got, want := filepath.Base(dir), "tasks"; got != want {
+		t.Fatalf("filepath.Base(DefaultTasksDir()) = %q, want %q", got, want)
 	}
 }
 

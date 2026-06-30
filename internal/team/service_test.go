@@ -2,6 +2,7 @@ package team
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -95,7 +96,9 @@ func TestCreateTasksBatchResolvesParentRefs(t *testing.T) {
 }
 
 func TestUpdateAndDeleteTeamPersistWithStore(t *testing.T) {
-	store, err := NewStore(t.TempDir())
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.json")
+	store, err := NewStore(statePath)
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
@@ -119,6 +122,7 @@ func TestUpdateAndDeleteTeamPersistWithStore(t *testing.T) {
 	if !slices.Equal(updated.MemberAgentIDs, []string{"u-worker", "u-qa"}) {
 		t.Fatalf("updated members = %+v, want worker and qa without lead", updated.MemberAgentIDs)
 	}
+	assertRootTeamsState(t, statePath, []string{meta.ID})
 
 	reloaded := NewService(WithStore(store))
 	persisted, ok := reloaded.GetTeam(meta.ID)
@@ -135,6 +139,10 @@ func TestUpdateAndDeleteTeamPersistWithStore(t *testing.T) {
 	reloaded = NewService(WithStore(store))
 	if teams := reloaded.ListTeams(); len(teams) != 0 {
 		t.Fatalf("ListTeams() after delete = %+v, want empty", teams)
+	}
+	assertRootTeamsState(t, statePath, nil)
+	if _, err := os.Stat(filepath.Join(root, "teams")); !os.IsNotExist(err) {
+		t.Fatalf("legacy teams dir exists after root-state store write: %v", err)
 	}
 }
 
@@ -725,11 +733,7 @@ func TestStartTaskDoesNotBindExecutionRoomWhenNoRunnableChildren(t *testing.T) {
 }
 
 func TestServicePersistsAndRecoversState(t *testing.T) {
-	root := t.TempDir()
-	store, err := NewStore(root)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
+	store, _, _ := newPersistentTestStore(t)
 	svc := NewService(
 		WithStore(store),
 		WithNowFunc(sequenceNow(
@@ -777,28 +781,25 @@ func TestServicePersistsAndRecoversState(t *testing.T) {
 	if approvals := reloaded.ListApprovals(teamID); len(approvals) != 1 {
 		t.Fatalf("ListApprovals() len = %d, want 1", len(approvals))
 	}
-	if events := reloaded.ListEvents(teamID); len(events) < 4 {
-		t.Fatalf("ListEvents() len = %d, want at least 4", len(events))
+	if events := reloaded.ListEvents(teamID); len(events) < 3 {
+		t.Fatalf("ListEvents() len = %d, want at least 3 task-domain events", len(events))
 	}
 }
 
 func TestStoreTruncatesPartialFinalEvent(t *testing.T) {
-	root := t.TempDir()
-	store, err := NewStore(root)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
+	store, _, statePath := newPersistentTestStore(t)
 	svc := NewService(WithStore(store), WithNowFunc(sequenceNow(time.Date(2026, 5, 29, 13, 0, 0, 0, time.UTC))))
 	teamID := createTestTeam(t, svc)
-	if _, err := svc.CreateTask(CreateTaskInput{
+	task, err := svc.CreateTask(CreateTaskInput{
 		TeamID:    teamID,
 		Title:     "Task",
 		CreatedBy: "manager",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 
-	eventsPath := filepath.Join(root, teamID, eventsFileName)
+	eventsPath := filepath.Join(defaultTaskStoreRoot(statePath), task.ID, "events.jsonl")
 	data, err := os.ReadFile(eventsPath)
 	if err != nil {
 		t.Fatalf("ReadFile(events) error = %v", err)
@@ -810,8 +811,8 @@ func TestStoreTruncatesPartialFinalEvent(t *testing.T) {
 
 	reloaded := NewService(WithStore(store), WithNowFunc(sequenceNow(time.Date(2026, 5, 29, 13, 1, 0, 0, time.UTC))))
 	events := reloaded.ListEvents(teamID)
-	if len(events) != 2 {
-		t.Fatalf("ListEvents() len = %d, want 2", len(events))
+	if len(events) != 1 {
+		t.Fatalf("ListEvents() len = %d, want 1", len(events))
 	}
 	trimmed, err := os.ReadFile(eventsPath)
 	if err != nil {
@@ -823,11 +824,7 @@ func TestStoreTruncatesPartialFinalEvent(t *testing.T) {
 }
 
 func TestRecoverBlocksStaleInProgressTask(t *testing.T) {
-	root := t.TempDir()
-	store, err := NewStore(root)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
+	store, _, _ := newPersistentTestStore(t)
 	svc := NewService(
 		WithStore(store),
 		WithStaleTaskTTL(2*time.Minute),
@@ -869,24 +866,36 @@ func TestRecoverBlocksStaleInProgressTask(t *testing.T) {
 }
 
 func TestPresenceHeartbeatCheckpointPersistsWithoutImmediateEvent(t *testing.T) {
-	root := t.TempDir()
-	store, err := NewStore(root)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
+	store, _, _ := newPersistentTestStore(t)
 	svc := NewService(
 		WithStore(store),
 		WithNowFunc(sequenceNow(
 			time.Date(2026, 5, 29, 15, 0, 0, 0, time.UTC),
 			time.Date(2026, 5, 29, 15, 0, 10, 0, time.UTC),
 			time.Date(2026, 5, 29, 15, 0, 20, 0, time.UTC),
+			time.Date(2026, 5, 29, 15, 0, 30, 0, time.UTC),
+			time.Date(2026, 5, 29, 15, 0, 40, 0, time.UTC),
+			time.Date(2026, 5, 29, 15, 0, 50, 0, time.UTC),
 		)),
 	)
 	teamID := createTestTeam(t, svc)
+	task, err := svc.CreateTask(CreateTaskInput{
+		TeamID:    teamID,
+		Title:     "Task",
+		CreatedBy: "manager",
+		AssignTo:  "alice",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if _, err := svc.ClaimTask(ClaimTaskInput{TeamID: teamID, TaskID: task.ID, ParticipantID: "alice"}); err != nil {
+		t.Fatalf("ClaimTask() error = %v", err)
+	}
 	if _, err := svc.UpsertPresence(UpsertPresenceInput{
 		TeamID:        teamID,
 		ParticipantID: "alice",
 		State:         PresenceStateIdle,
+		CurrentTaskID: task.ID,
 	}); err != nil {
 		t.Fatalf("UpsertPresence(first) error = %v", err)
 	}
@@ -895,6 +904,7 @@ func TestPresenceHeartbeatCheckpointPersistsWithoutImmediateEvent(t *testing.T) 
 		TeamID:        teamID,
 		ParticipantID: "alice",
 		State:         PresenceStateIdle,
+		CurrentTaskID: task.ID,
 	}); err != nil {
 		t.Fatalf("UpsertPresence(heartbeat) error = %v", err)
 	}
@@ -910,17 +920,13 @@ func TestPresenceHeartbeatCheckpointPersistsWithoutImmediateEvent(t *testing.T) 
 	if !ok {
 		t.Fatal("GetPresence() found = false")
 	}
-	if !presence.LastHeartbeatAt.Equal(time.Date(2026, 5, 29, 15, 0, 20, 0, time.UTC)) {
+	if !presence.LastHeartbeatAt.Equal(time.Date(2026, 5, 29, 15, 0, 50, 0, time.UTC)) {
 		t.Fatalf("GetPresence().LastHeartbeatAt = %s, want latest checkpointed heartbeat", presence.LastHeartbeatAt)
 	}
 }
 
 func TestStoreWritesParticipantFields(t *testing.T) {
-	root := t.TempDir()
-	store, err := NewStore(root)
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
+	store, _, statePath := newPersistentTestStore(t)
 	svc := NewService(
 		WithStore(store),
 		WithNowFunc(sequenceNow(
@@ -929,30 +935,75 @@ func TestStoreWritesParticipantFields(t *testing.T) {
 		)),
 	)
 	teamID := createTestTeam(t, svc)
-	if _, err := svc.UpsertPresence(UpsertPresenceInput{
+	task, err := svc.CreateTask(CreateTaskInput{
+		TeamID:    teamID,
+		Title:     "Task",
+		CreatedBy: "manager",
+		AssignTo:  "alice",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if _, err := svc.ClaimTask(ClaimTaskInput{
 		TeamID:        teamID,
+		TaskID:        task.ID,
 		ParticipantID: "alice",
-		State:         PresenceStateIdle,
 	}); err != nil {
-		t.Fatalf("UpsertPresence() error = %v", err)
+		t.Fatalf("ClaimTask() error = %v", err)
 	}
 	if err := svc.CheckpointPresence(); err != nil {
 		t.Fatalf("CheckpointPresence() error = %v", err)
 	}
 
-	teamJSON, err := os.ReadFile(filepath.Join(root, teamID, teamFileName))
+	teamJSON, err := os.ReadFile(statePath)
 	if err != nil {
-		t.Fatalf("read team.json error = %v", err)
+		t.Fatalf("read root state error = %v", err)
 	}
 	if !bytes.Contains(teamJSON, []byte(`"lead_agent_id"`)) || bytes.Contains(teamJSON, []byte(`"lead_bot_id"`)) {
-		t.Fatalf("team.json = %s, want lead_agent_id without lead_bot_id", string(teamJSON))
+		t.Fatalf("root state = %s, want lead_agent_id without lead_bot_id", string(teamJSON))
 	}
-	presenceJSON, err := os.ReadFile(filepath.Join(root, teamID, presenceFileName))
+	presenceJSON, err := os.ReadFile(filepath.Join(defaultTaskStoreRoot(statePath), task.ID, "presence.json"))
 	if err != nil {
 		t.Fatalf("read presence.json error = %v", err)
 	}
 	if !bytes.Contains(presenceJSON, []byte(`"participant_id"`)) || bytes.Contains(presenceJSON, []byte(`"bot_id"`)) {
 		t.Fatalf("presence.json = %s, want participant_id without bot_id", string(presenceJSON))
+	}
+}
+
+func newPersistentTestStore(t *testing.T) (*Store, string, string) {
+	t.Helper()
+
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.json")
+	store, err := NewStore(statePath)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	return store, root, statePath
+}
+
+func assertRootTeamsState(t *testing.T, statePath string, wantIDs []string) {
+	t.Helper()
+
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("ReadFile(root state) error = %v", err)
+	}
+	var root struct {
+		Teams struct {
+			Items []TeamMeta `json:"items"`
+		} `json:"teams"`
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("Unmarshal(root state) error = %v", err)
+	}
+	gotIDs := make([]string, 0, len(root.Teams.Items))
+	for _, item := range root.Teams.Items {
+		gotIDs = append(gotIDs, item.ID)
+	}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("root teams ids = %+v, want %+v; state = %s", gotIDs, wantIDs, string(data))
 	}
 }
 

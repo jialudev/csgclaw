@@ -239,6 +239,8 @@ describe("WorkspaceTabPanels", () => {
   it("keeps the Tasks sidebar group empty while preserving the task count", () => {
     const taskItem = {
       id: "task-1",
+      assignment_type: "team",
+      assignment_id: "team-1",
       team_id: "team-1",
       team_title: "te-team",
       execution_channel: "csgclaw",

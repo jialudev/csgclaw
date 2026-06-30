@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/agenttask"
 	"csgclaw/internal/apitypes"
 	csgclawchannel "csgclaw/internal/channel/csgclaw"
 	"csgclaw/internal/channel/csgclaw/notification"
@@ -45,8 +46,10 @@ type Handler struct {
 	llm                        *llm.Service
 	hub                        *hub.Service
 	teamSvc                    *team.Service
-	teamAdapter                team.TeamChannelAdapter
+	agentTaskSvc               *agenttask.Service
 	teamAdapters               *team.AdapterRegistry
+	teamPlanJobsMu             sync.Mutex
+	teamPlanJobs               map[string]struct{}
 	configPath                 string
 	serverAccessToken          string
 	serverNoAuth               bool
@@ -608,10 +611,9 @@ func (h *Handler) SetTeamService(svc *team.Service) {
 	}
 }
 
-func (h *Handler) SetTeamAdapter(adapter team.TeamChannelAdapter) {
+func (h *Handler) SetAgentTaskService(svc *agenttask.Service) {
 	if h != nil {
-		h.teamAdapter = adapter
-		h.teamAdapters = team.NewAdapterRegistry(adapter)
+		h.agentTaskSvc = svc
 	}
 }
 
@@ -1671,7 +1673,6 @@ func (h *Handler) handleRoomMemberDeletePath(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.publishRoomEvent(im.EventTypeRoomMembersRemoved, room)
 	writeJSON(w, http.StatusOK, room)
 }
 
@@ -2056,7 +2057,6 @@ func (h *Handler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.publishRoomEvent(im.EventTypeRoomCreated, room)
 	writeJSON(w, http.StatusCreated, room)
 }
 
@@ -2117,7 +2117,6 @@ func (h *Handler) handleAddRoomMembers(w http.ResponseWriter, r *http.Request, p
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.publishRoomEvent(im.EventTypeRoomMembersAdded, room)
 	writeJSON(w, http.StatusOK, room)
 }
 
@@ -2713,10 +2712,14 @@ func (h *Handler) publishMessageCreated(conversationID, senderID string, message
 }
 
 func (h *Handler) handleTeamRoomCommand(ctx context.Context, roomID string, senderID string, content string) {
-	if h == nil || h.teamSvc == nil || h.teamAdapter == nil {
+	if h == nil || h.teamSvc == nil {
 		return
 	}
-	parser := team.NewCommandParser(h.teamSvc, h.teamAdapter, func(id string) bool {
+	adapter, ok := h.teamAdapterForChannel(team.DefaultExecutionChannel)
+	if !ok {
+		return
+	}
+	parser := team.NewCommandParser(h.teamSvc, adapter, func(id string) bool {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			return false

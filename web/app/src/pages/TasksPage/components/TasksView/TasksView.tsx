@@ -20,8 +20,11 @@ import type { AgentLike } from "@/models/agents";
 import type { TranslateFn } from "@/models/conversations";
 import {
   TASK_BOARD_STATUSES,
-  displayTaskRoom,
-  displayTaskTeam,
+  displayTaskAssignedAgent,
+  displayTaskAssignmentTarget,
+  displayTaskClaimedAgent,
+  displayTaskRoomTitle,
+  displayTaskWorker,
   displayTeam,
   formatTaskUpdatedAt,
   formatTaskUpdatedRelative,
@@ -37,6 +40,7 @@ import { classNames } from "@/shared/lib/classNames";
 import styles from "./TasksView.module.css";
 
 const TASK_TITLE_MAX_LENGTH = 80;
+const EMPTY_AGENTS: AgentLike[] = [];
 
 function moduleSuffixStyle(prefix: string, suffix: string | undefined): string {
   if (!suffix) {
@@ -48,16 +52,90 @@ function moduleSuffixStyle(prefix: string, suffix: string | undefined): string {
 }
 
 type TaskCreateDraft = {
-  team_id: string;
+  assignee: string;
   title: string;
   description: string;
 };
 
+type TaskCreateFieldErrors = {
+  assignment?: string;
+  title?: string;
+};
+
 const emptyCreateDraft: TaskCreateDraft = {
-  team_id: "",
+  assignee: "",
   title: "",
   description: "",
 };
+
+function truncateTaskTitle(value: string): string {
+  const chars = Array.from(value);
+  if (chars.length <= TASK_TITLE_MAX_LENGTH) {
+    return value;
+  }
+  return `${chars.slice(0, TASK_TITLE_MAX_LENGTH - 3).join("")}...`;
+}
+
+type TaskAssignmentTarget = {
+  id: string;
+  type: "team" | "agent";
+};
+
+function taskAssignmentValue(type: TaskAssignmentTarget["type"], id: string): string {
+  return `${type}:${id}`;
+}
+
+function parseTaskAssignmentValue(value: string): TaskAssignmentTarget | null {
+  const [type, ...rest] = String(value || "").split(":");
+  const id = rest.join(":").trim();
+  if ((type === "team" || type === "agent") && id) {
+    return { type, id };
+  }
+  return null;
+}
+
+function assignableAgents(agents: readonly AgentLike[]): AgentLike[] {
+  return agents
+    .filter((item) => String(item.id || "").trim())
+    .filter(
+      (item) =>
+        String(item.role || "")
+          .trim()
+          .toLowerCase() !== "manager",
+    )
+    .slice()
+    .sort((left, right) => displayAgent(left).localeCompare(displayAgent(right)));
+}
+
+function displayAgent(agent: AgentLike): string {
+  return String(agent.name || agent.user_name || agent.id || "").trim();
+}
+
+function taskAssignmentOptions(teams: readonly WorkspaceTeam[], agents: readonly AgentLike[], t: TranslateFn) {
+  const workerAgents = assignableAgents(agents);
+  return [
+    ...(teams.length
+      ? [
+          { value: "__group_teams", label: t("taskAssignmentTeamGroup"), disabled: true },
+          ...teams.map((team) => ({
+            value: taskAssignmentValue("team", team.id),
+            label: displayTeam(team),
+            description: team.lead_agent_id,
+          })),
+        ]
+      : []),
+    ...(workerAgents.length
+      ? [
+          { value: "__group_agents", label: t("taskAssignmentAgentGroup"), disabled: true },
+          ...workerAgents.map((agent) => ({
+            value: taskAssignmentValue("agent", String(agent.id || "")),
+            label: displayAgent(agent),
+            description: String(agent.id || ""),
+          })),
+        ]
+      : []),
+  ];
+}
 
 type VoidOrPromise = void | Promise<void>;
 
@@ -92,6 +170,7 @@ export type TasksViewProps = {
 
 export function TasksView({
   t = (key) => key,
+  agents = EMPTY_AGENTS,
   tasks = [],
   taskEvents = [],
   teams = [],
@@ -114,6 +193,7 @@ export function TasksView({
   onOpenConversation = () => {},
 }: TasksViewProps) {
   const parentTasks = useMemo(() => rootTasks(tasks), [tasks]);
+  const assignmentOptions = useMemo(() => taskAssignmentOptions(teams, agents, t), [agents, t, teams]);
   const [parentDialogTaskID, setParentDialogTaskID] = useState("");
   const dialogStateRootTask = useMemo(
     () => (parentDialogTaskID ? (parentTasks.find((item) => item.id === parentDialogTaskID) ?? null) : null),
@@ -133,28 +213,57 @@ export function TasksView({
   );
   const parentColumns = useMemo(() => boardColumnsForParentTasks(parentTasks), [parentTasks]);
   const [createDraft, setCreateDraft] = useState<TaskCreateDraft>(emptyCreateDraft);
+  const [createFieldErrors, setCreateFieldErrors] = useState<TaskCreateFieldErrors>({});
 
   useEffect(() => {
     if (!showCreateTaskModal) {
       return;
     }
-    setCreateDraft({
-      ...emptyCreateDraft,
-      team_id: teams[0]?.id || "",
-    });
-  }, [showCreateTaskModal, teams]);
+    setCreateDraft(emptyCreateDraft);
+    setCreateFieldErrors({});
+  }, [showCreateTaskModal]);
 
   async function submitCreateTask() {
-    const title = createDraft.title.trim();
+    const title = truncateTaskTitle(createDraft.title.trim());
     const description = createDraft.description.trim();
-    if (!createDraft.team_id || !title || !description) {
+    const assignment = parseTaskAssignmentValue(createDraft.assignee);
+    const nextFieldErrors: TaskCreateFieldErrors = {};
+    if (!title) {
+      nextFieldErrors.title = t("taskTitleRequired");
+    }
+    if (!assignment) {
+      nextFieldErrors.assignment = t("taskAssignmentRequired");
+    }
+    if (!title || !assignment) {
+      setCreateFieldErrors(nextFieldErrors);
       return;
     }
-    await onCreateTask?.({
-      team_id: createDraft.team_id,
+    setCreateFieldErrors({});
+    const payload: CreateWorkspaceTaskPayload = {
+      assignment_type: assignment.type,
+      assignment_id: assignment.id,
       title,
-      body: description,
       execution_channel: "csgclaw",
+    };
+    if (description) {
+      payload.body = description;
+    }
+    if (assignment.type === "team") {
+      payload.team_id = assignment.id;
+    } else {
+      payload.agent_id = assignment.id;
+    }
+    await onCreateTask?.(payload);
+  }
+
+  function clearCreateFieldError(field: keyof TaskCreateFieldErrors) {
+    setCreateFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[field];
+      return next;
     });
   }
 
@@ -256,33 +365,63 @@ export function TasksView({
           </DialogHeader>
           <DialogBody>
             <div className={classNames(styles.taskCreateForm, styles.taskCreateFormCompact)}>
-              <label className={classNames("field", styles.taskCreateField)}>
+              <label
+                className={classNames("field", styles.taskCreateField)}
+                data-invalid={createFieldErrors.title ? true : undefined}
+              >
                 <span>{t("taskTitleLabel")}</span>
                 <input
                   value={createDraft.title}
                   maxLength={TASK_TITLE_MAX_LENGTH}
-                  onInput={(event) => setCreateDraft((current) => ({ ...current, title: event.currentTarget.value }))}
+                  aria-describedby={createFieldErrors.title ? "task-create-title-error" : undefined}
+                  aria-invalid={createFieldErrors.title ? true : undefined}
+                  onInput={(event) => {
+                    setCreateDraft((current) => ({ ...current, title: event.currentTarget.value }));
+                    clearCreateFieldError("title");
+                  }}
                   placeholder={t("taskTitlePlaceholder")}
                 />
+                {createFieldErrors.title ? (
+                  <span id="task-create-title-error" className="form-error" role="alert">
+                    {createFieldErrors.title}
+                  </span>
+                ) : null}
               </label>
               <label className={classNames("field", styles.taskCreateField)}>
                 <span>{t("taskDescriptionLabel")}</span>
                 <textarea
                   value={createDraft.description}
-                  onInput={(event) =>
-                    setCreateDraft((current) => ({ ...current, description: event.currentTarget.value }))
-                  }
+                  aria-label={t("taskDescriptionLabel")}
+                  onInput={(event) => {
+                    setCreateDraft((current) => ({ ...current, description: event.currentTarget.value }));
+                  }}
                   placeholder={t("taskDescriptionPlaceholder")}
                 />
               </label>
-              <label className={classNames("field", styles.taskCreateField)}>
-                <span>{t("taskTeamLabel")}</span>
+              <label
+                className={classNames("field", styles.taskCreateField)}
+                data-invalid={createFieldErrors.assignment ? true : undefined}
+              >
+                <span>{t("taskAssignmentLabel")}</span>
                 <Select
-                  value={createDraft.team_id}
-                  onValueChange={(teamID) => setCreateDraft((current) => ({ ...current, team_id: teamID }))}
-                  triggerProps={{ "aria-label": t("taskTeamLabel") }}
-                  options={teams.map((team) => ({ value: team.id, label: displayTeam(team) }))}
+                  value={createDraft.assignee}
+                  onValueChange={(assignee) => {
+                    setCreateDraft((current) => ({ ...current, assignee }));
+                    clearCreateFieldError("assignment");
+                  }}
+                  triggerProps={{
+                    "aria-describedby": createFieldErrors.assignment ? "task-create-assignment-error" : undefined,
+                    "aria-invalid": createFieldErrors.assignment ? true : undefined,
+                    "aria-label": t("taskAssignmentLabel"),
+                  }}
+                  options={assignmentOptions}
+                  placeholder={t("taskAssignmentPlaceholder")}
                 />
+                {createFieldErrors.assignment ? (
+                  <span id="task-create-assignment-error" className="form-error" role="alert">
+                    {createFieldErrors.assignment}
+                  </span>
+                ) : null}
               </label>
             </div>
             {createTaskError ? (
@@ -298,9 +437,7 @@ export function TasksView({
               size="md"
               loading={createTaskBusy}
               loadingLabel={t("taskCreating")}
-              disabled={
-                createTaskBusy || !createDraft.team_id || !createDraft.title.trim() || !createDraft.description.trim()
-              }
+              disabled={createTaskBusy}
               onClick={submitCreateTask}
             >
               {t("taskCreateSubmit")}
@@ -473,6 +610,7 @@ function ParentTaskBoardCard({ task, children, phase, t, onSelect }: ParentTaskB
   const activeWorker = taskActiveWorker(task, children, t);
   const updatedRelative = formatTaskUpdatedRelative(task.updated_at, document.documentElement.lang);
   const updatedLabel = updatedRelative === "-" ? "" : t("taskCardUpdatedAt", { time: updatedRelative });
+  const assignmentTarget = displayTaskAssignmentTarget(task);
 
   return (
     <button
@@ -496,12 +634,18 @@ function ParentTaskBoardCard({ task, children, phase, t, onSelect }: ParentTaskB
       <strong className={classNames(styles.lineClampText, styles.taskBoardCardTitle)}>{task.title}</strong>
       <span className={classNames(styles.lineClampText, styles.taskBoardCardDescription)}>{description}</span>
       <span className={styles.taskBoardCardFooter}>
-        <span className={styles.taskBoardCardTeam} title={displayTaskTeam(task)}>
-          <span className={styles.taskBoardCardTeamIcon} aria-hidden="true">
-            <Users size={13} strokeWidth={1.8} />
+        {assignmentTarget ? (
+          <span className={styles.taskBoardCardTeam} title={assignmentTarget}>
+            <span className={styles.taskBoardCardTeamIcon} aria-hidden="true">
+              {task.assignment_type === "agent" ? (
+                <Bot size={13} strokeWidth={1.8} />
+              ) : (
+                <Users size={13} strokeWidth={1.8} />
+              )}
+            </span>
+            <span>{assignmentTarget}</span>
           </span>
-          <span>{displayTaskTeam(task)}</span>
-        </span>
+        ) : null}
         {updatedLabel ? <span className={styles.taskBoardCardUpdated}>{updatedLabel}</span> : null}
       </span>
     </button>
@@ -567,7 +711,9 @@ function TaskDetailDialog({
         <DialogHeader className={styles.taskDetailDialogHeader}>
           <div className={styles.taskDetailDialogHeading}>
             <div className={styles.taskDetailDialogTitleRow}>
-              <DialogTitle className={styles.taskDetailDialogTitle}>{dialogTitle}</DialogTitle>
+              <DialogTitle className={styles.taskDetailDialogTitle} title={dialogTitle}>
+                {dialogTitle}
+              </DialogTitle>
               {task ? <TaskStatusPill status={task.status} t={t} showFullLabel /> : null}
             </div>
             <DialogDescription className={styles.taskDetailDialogSubtitle}>
@@ -757,8 +903,7 @@ function TaskGroupedActivityTimeline({
                   const expanded = expandedTaskIDs.has(group.task.id);
                   const entryCount = group.entries.length;
                   const latestEntry = group.entries[entryCount - 1];
-                  const assignee =
-                    group.task.assigned_to_agent_name || group.task.assigned_to || t("taskAssigneeUnassigned");
+                  const assignee = displayTaskWorker(group.task) || t("taskAssigneeUnassigned");
                   return (
                     <section key={`child-${group.task.id}`} className={styles.taskChildActivityItem}>
                       <button
@@ -951,7 +1096,7 @@ function activeWorkerStatusRank(status: string): number {
 }
 
 function taskWorkerName(task: WorkspaceTask): string {
-  const name = task.claimed_by_agent_name || task.claimed_by || task.assigned_to_agent_name || task.assigned_to || "";
+  const name = displayTaskWorker(task);
   return isDisplayableWorkerName(name) ? name : "";
 }
 
@@ -1023,12 +1168,17 @@ function taskMetaTags(
     addTag("children", t("taskChildrenLabel"), String(childCount));
   }
 
-  addTag("assignee", t("taskAssigneeLabel"), task.assigned_to_agent_name || task.assigned_to);
-  addTag("claimed_by", t("taskClaimedByLabel"), task.claimed_by_agent_name || task.claimed_by);
+  const claimedBy = displayTaskClaimedAgent(task);
+  if (task.parent_id || task.assignment_type === "agent") {
+    addTag("claimed_by", t("taskClaimedByLabel"), claimedBy);
+  }
   addTag("parent", t("taskParentLabel"), task.parent_id);
-  addTag("team", t("taskTeamLabel"), displayTaskTeam(task));
+  const assignmentTarget = displayTaskAssignmentTarget(task);
+  if (!claimedBy || assignmentTarget !== claimedBy) {
+    addTag("assignment", t("taskAssignmentLabel"), assignmentTarget);
+  }
   addTag("execution_channel", t("taskExecutionChannelLabel"), task.execution_channel);
-  addTag("room", t("taskRoomLabel"), displayTaskRoom(task));
+  addTag("room", t("taskRoomLabel"), displayTaskRoomTitle(task));
   addTag("priority", t("taskPriorityLabel"), String(task.priority || 0));
   const updatedAt = formatTaskUpdatedAt(task.updated_at, locale);
   addTag("updated_at", t("taskUpdatedAtLabel"), updatedAt === "-" ? "" : updatedAt);
@@ -1137,8 +1287,8 @@ function syntheticTimelineEntries(
 ): TaskTimelineEntry[] {
   const entries: TaskTimelineEntry[] = [];
   const syntheticOrder = () => Number.MAX_SAFE_INTEGER - 100 + entries.length;
-  if ((task.assigned_to_agent_name || task.assigned_to) && !existingEventTypes.has("task.assigned")) {
-    const assignee = task.assigned_to_agent_name || task.assigned_to;
+  if (displayTaskAssignedAgent(task) && !existingEventTypes.has("task.assigned")) {
+    const assignee = displayTaskAssignedAgent(task);
     entries.push({
       id: `synthetic-assigned-${task.id}`,
       title: t("taskTimelineAssigned"),
@@ -1148,8 +1298,8 @@ function syntheticTimelineEntries(
       order: syntheticOrder(),
     });
   }
-  if ((task.claimed_by_agent_name || task.claimed_by) && !existingEventTypes.has("task.claimed")) {
-    const claimedBy = task.claimed_by_agent_name || task.claimed_by;
+  if (displayTaskClaimedAgent(task) && !existingEventTypes.has("task.claimed")) {
+    const claimedBy = displayTaskClaimedAgent(task);
     entries.push({
       id: `synthetic-claimed-${task.id}`,
       title: t("taskTimelineClaimed"),
@@ -1170,7 +1320,7 @@ function syntheticTimelineEntries(
     });
   }
   if (task.dispatched_at && !existingEventTypes.has("task.dispatched")) {
-    const assignee = task.assigned_to_agent_name || task.assigned_to;
+    const assignee = displayTaskAssignedAgent(task);
     entries.push({
       id: `synthetic-dispatched-${task.id}`,
       title: t("taskTimelineDispatched"),
@@ -1241,9 +1391,7 @@ function taskEventTitle(type: string, t: TranslateFn): string {
 }
 
 function taskEventMeta(event: WorkspaceTeamEvent, locale: string): string {
-  return [formatTaskUpdatedAt(event.created_at, locale), event.actor_agent_name || event.actor_id]
-    .filter(Boolean)
-    .join(" · ");
+  return [formatTaskUpdatedAt(event.created_at, locale), event.actor_agent_name].filter(Boolean).join(" · ");
 }
 
 function taskEventBody(event: WorkspaceTeamEvent, t: TranslateFn): string {
@@ -1251,7 +1399,7 @@ function taskEventBody(event: WorkspaceTeamEvent, t: TranslateFn): string {
   if (event.summary) {
     lines.push(event.summary);
   }
-  const target = event.target_agent_name || event.target_id;
+  const target = event.target_agent_name;
   if (target) {
     lines.push(`${t("taskActivityTargetLabel")}: ${target}`);
   }

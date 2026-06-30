@@ -424,13 +424,34 @@ export function latestThreadTimestamp(thread: ThreadView | null | undefined): nu
 
 export function formatEventMessage(
   message: IMMessage | null | undefined,
-  _usersById: UsersById,
-  _locale: LocaleCode,
+  usersById: UsersById,
+  locale: LocaleCode,
 ): string {
   if (!message) {
     return "";
   }
+  if (message.event?.key === "task_assigned") {
+    return formatTaskAssignedEventMessage(message.event, usersById, locale);
+  }
   return message.content || "";
+}
+
+function formatTaskAssignedEventMessage(event: IMMessageEvent, usersById: UsersById, locale: LocaleCode): string {
+  const taskLabel = String(event.title || "").trim() || "task";
+  const targets = (event.target_ids || [])
+    .map((id) => userDisplayName(id, usersById))
+    .filter(Boolean)
+    .join(isChineseLocale(locale) ? "、" : ", ");
+  if (!targets) {
+    return isChineseLocale(locale) ? `${taskLabel} 已指派` : `${taskLabel} assigned`;
+  }
+  return isChineseLocale(locale) ? `${taskLabel} 指派给 ${targets}` : `${taskLabel} assigned to ${targets}`;
+}
+
+function isChineseLocale(locale: LocaleCode): boolean {
+  return String(locale || "")
+    .toLowerCase()
+    .startsWith("zh");
 }
 
 export function mentionIDs(mentions: readonly MessageMention[] | null | undefined): string[] {

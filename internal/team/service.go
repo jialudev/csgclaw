@@ -1226,6 +1226,43 @@ func (s *Service) FailTask(input FailTaskInput) (TeamTask, error) {
 	return cloneTask(*task), nil
 }
 
+func (s *Service) RecordPlanFailure(teamID, taskID, actorID string, planErr error) (TeamTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task, meta, err := s.requireTaskLocked(teamID, taskID)
+	if err != nil {
+		return TeamTask{}, err
+	}
+	if task.Status == TaskStatusCompleted || task.Status == TaskStatusCancelled {
+		return cloneTask(*task), nil
+	}
+	message := strings.TrimSpace(fmt.Sprint(planErr))
+	if message == "" {
+		message = "planner failed"
+	}
+	before := s.captureTeamStateLocked(meta.ID)
+	eventStart := len(s.events[meta.ID])
+	now := s.now()
+	task.Status = TaskStatusFailed
+	task.Error = message
+	task.Result = ""
+	task.CompletedAt = nil
+	task.UpdatedAt = now
+	s.appendEventLocked(meta.ID, TeamEvent{
+		RoomID:    EventRoomID(meta, task),
+		Type:      EventTaskFailed,
+		ActorID:   cleanParticipantID(normalizeTeamActorID(meta, actorID)),
+		TaskID:    task.ID,
+		Summary:   task.Error,
+		CreatedAt: now,
+	})
+	if err := s.persistMutationLocked(meta.ID, before, eventStart); err != nil {
+		return TeamTask{}, err
+	}
+	return cloneTask(*task), nil
+}
+
 func (s *Service) CancelTask(input CancelTaskInput) (TeamTask, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

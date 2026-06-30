@@ -556,14 +556,19 @@
 }
 
 .taskDetailDialogTitle {
+  display: -webkit-box;
   margin: 0;
   min-width: 0;
+  max-height: 60px;
+  overflow: hidden;
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 24px;
   font-weight: 650;
   line-height: 30px;
-  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
 }
 
 .taskDetailDialogSubtitle {
@@ -891,6 +896,7 @@
   font-size: 13px;
   line-height: 18px;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .taskActivityGroupTitle strong {
@@ -1022,6 +1028,7 @@
   font-size: 13px;
   line-height: 18px;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .taskChildActivityMain strong {

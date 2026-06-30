@@ -180,6 +180,42 @@ func TestClientUsesExpectedRoutes(t *testing.T) {
 			},
 		},
 		{
+			name: "list agent tasks",
+			body: `[]`,
+			want: "GET /api/v1/agent-tasks",
+			call: func(c *Client) error {
+				_, err := c.ListAgentTasks(ctx)
+				return err
+			},
+		},
+		{
+			name: "create agent task",
+			body: `{}`,
+			want: "POST /api/v1/agent-tasks",
+			call: func(c *Client) error {
+				_, err := c.CreateAgentTask(ctx, apitypes.CreateAgentTaskRequest{AgentID: "agent-dev", Title: "Run tests"})
+				return err
+			},
+		},
+		{
+			name: "claim agent task",
+			body: `{}`,
+			want: "POST /api/v1/agent-tasks/task-1/claim",
+			call: func(c *Client) error {
+				_, err := c.ClaimAgentTask(ctx, "task-1", "pt-dev")
+				return err
+			},
+		},
+		{
+			name: "update agent task",
+			body: `{}`,
+			want: "PATCH /api/v1/agent-tasks/task-1",
+			call: func(c *Client) error {
+				_, err := c.UpdateAgentTask(ctx, "task-1", apitypes.PatchAgentTaskRequest{ActorID: "pt-dev", Status: "completed", Result: "done"})
+				return err
+			},
+		},
+		{
 			name: "list team tasks",
 			body: `[]`,
 			want: "GET /api/v1/teams/team-1/tasks",

@@ -23,6 +23,7 @@ import (
 
 	"csgclaw/cli/command"
 	"csgclaw/internal/agent"
+	"csgclaw/internal/agenttask"
 	"csgclaw/internal/api"
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/app/channelwiring"
@@ -44,6 +45,7 @@ import (
 	runtimecodex "csgclaw/internal/runtime/codex"
 	"csgclaw/internal/sandboxproviders"
 	"csgclaw/internal/server"
+	"csgclaw/internal/taskcore"
 	"csgclaw/internal/team"
 	hub "csgclaw/internal/template"
 	"csgclaw/internal/upgrade"
@@ -57,6 +59,7 @@ var (
 	NewFeishuService          = newFeishuService
 	NewLLMService             = newLLMService
 	NewTeamService            = newTeamService
+	NewAgentTaskService       = newAgentTaskService
 	CheckModelProvider        = checkModelProvider
 	CheckCatalogModelProvider = agent.CheckModelProvider
 	EnsureCLIProxy            = func(ctx context.Context) error {
@@ -588,7 +591,11 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	if err != nil {
 		return err
 	}
-	teamSvc, teamAdapter, teamAdapters, err := NewTeamService(imSvc, feishuSvc, participantSvc)
+	teamSvc, teamAdapters, err := NewTeamService(imSvc, feishuSvc, participantSvc)
+	if err != nil {
+		return err
+	}
+	agentTaskSvc, err := NewAgentTaskService(svc, imSvc, participantSvc)
 	if err != nil {
 		return err
 	}
@@ -605,7 +612,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		Feishu:            feishuSvc,
 		LLM:               llmSvc,
 		Team:              teamSvc,
-		TeamAdapter:       teamAdapter,
+		AgentTask:         agentTaskSvc,
 		TeamAdapters:      teamAdapters,
 		Upgrade:           upgradeManager,
 		ActivityDecider:   channelActivityDecider(codexBridgeMgr),
@@ -1078,19 +1085,32 @@ func newParticipantService(agentSvc *agent.Service, imSvc *im.Service) (*partici
 	), nil
 }
 
-func newTeamService(imSvc *im.Service, feishuSvc *feishu.Service, participantSvc *participant.Service) (*team.Service, team.TeamChannelAdapter, *team.AdapterRegistry, error) {
-	teamsDir, err := config.DefaultTeamsDir()
+func newTeamService(imSvc *im.Service, feishuSvc *feishu.Service, participantSvc *participant.Service) (*team.Service, *team.AdapterRegistry, error) {
+	teamsPath, err := config.DefaultTeamsPath()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	store, err := team.NewStore(teamsDir)
+	store, err := team.NewStore(teamsPath)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	adapter := team.NewCSGClawAdapter(imSvc, participantSvc)
 	registry := team.NewAdapterRegistry(adapter, team.NewFeishuAdapter(feishuSvc, participantSvc))
 	projector := team.NewProjectorWithRegistry(registry, nil)
-	return team.NewService(team.WithStore(store), team.WithProjector(projector)), adapter, registry, nil
+	return team.NewService(team.WithStore(store), team.WithProjector(projector)), registry, nil
+}
+
+func newAgentTaskService(agentSvc *agent.Service, imSvc *im.Service, participantSvc *participant.Service) (*agenttask.Service, error) {
+	tasksDir, err := config.DefaultTasksDir()
+	if err != nil {
+		return nil, err
+	}
+	store, err := taskcore.NewStore(tasksDir)
+	if err != nil {
+		return nil, err
+	}
+	core := taskcore.NewService(taskcore.WithStore(store))
+	return agenttask.NewService(core, imSvc, agentSvc, participantSvc), nil
 }
 
 func buildFeishuComponents() (feishu.AgentCredentialProvider, *feishu.Service, error) {

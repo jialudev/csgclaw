@@ -52,7 +52,8 @@
 - 配置文件：`~/.csgclaw/config.toml`
 - 守护进程日志：`~/.csgclaw/server.log`
 - 守护进程 PID：`~/.csgclaw/server.pid`
-- agents 状态：`~/.csgclaw/agents/state.json`
+- agents、participants、model providers、teams 的 root state：`~/.csgclaw/state.json`
+- task 状态：`~/.csgclaw/tasks`
 - 内置 IM 状态：`~/.csgclaw/im/state.json`
 
 ## `csgclaw`

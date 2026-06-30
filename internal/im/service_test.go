@@ -285,6 +285,72 @@ func TestCreateRoomStoresStructuredEvent(t *testing.T) {
 	}
 }
 
+func TestRoomMutationsPublishRoomEvents(t *testing.T) {
+	bus := NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	svc := NewServiceFromBootstrapWithBus(Bootstrap{
+		CurrentUserID: "u-admin",
+		Users: []User{
+			{ID: "u-admin", Name: "admin"},
+			{ID: "u-dev", Name: "dev"},
+			{ID: "u-qa", Name: "qa"},
+		},
+	}, bus)
+
+	room, err := svc.CreateRoom(CreateRoomRequest{
+		Title:     "Ops",
+		CreatorID: "u-admin",
+		MemberIDs: []string{"u-dev"},
+		Locale:    "en",
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+	created := mustReceiveEvent(t, events)
+	if created.Type != EventTypeRoomCreated || created.RoomID != room.ID || created.Room == nil {
+		t.Fatalf("created event = %+v, want room.created for %s", created, room.ID)
+	}
+	if !containsUserIDInRoom(*created.Room, "u-dev") {
+		t.Fatalf("created room members = %+v, want u-dev", created.Room.Members)
+	}
+
+	updated, err := svc.AddRoomMembers(AddRoomMembersRequest{
+		RoomID:    room.ID,
+		InviterID: "u-admin",
+		UserIDs:   []string{"u-qa"},
+		Locale:    "en",
+	})
+	if err != nil {
+		t.Fatalf("AddRoomMembers() error = %v", err)
+	}
+	added := mustReceiveEvent(t, events)
+	if added.Type != EventTypeRoomMembersAdded || added.RoomID != room.ID || added.Room == nil {
+		t.Fatalf("added event = %+v, want room.members_added for %s", added, room.ID)
+	}
+	if !containsUserIDInRoom(*added.Room, "u-qa") {
+		t.Fatalf("added room members = %+v, want u-qa", added.Room.Members)
+	}
+
+	_, err = svc.RemoveRoomMembers(AddRoomMembersRequest{
+		RoomID:    room.ID,
+		InviterID: "u-admin",
+		UserIDs:   []string{"u-qa"},
+		Locale:    "en",
+	})
+	if err != nil {
+		t.Fatalf("RemoveRoomMembers() error = %v", err)
+	}
+	removed := mustReceiveEvent(t, events)
+	if removed.Type != EventTypeRoomMembersRemoved || removed.RoomID != updated.ID || removed.Room == nil {
+		t.Fatalf("removed event = %+v, want room.members_removed for %s", removed, updated.ID)
+	}
+	if containsUserIDInRoom(*removed.Room, "u-qa") {
+		t.Fatalf("removed room members = %+v, want u-qa removed", removed.Room.Members)
+	}
+}
+
 func TestCreateMessagePrefixesMentionTag(t *testing.T) {
 	svc := NewServiceFromBootstrap(Bootstrap{
 		CurrentUserID: "u-admin",

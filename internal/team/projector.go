@@ -13,10 +13,6 @@ type Projector struct {
 	logger   *log.Logger
 }
 
-func NewProjector(adapter TeamChannelAdapter, logger *log.Logger) *Projector {
-	return NewProjectorWithRegistry(NewAdapterRegistry(adapter), logger)
-}
-
 func NewProjectorWithRegistry(registry *AdapterRegistry, logger *log.Logger) *Projector {
 	if logger == nil {
 		logger = log.Default()
@@ -59,6 +55,7 @@ func (p *Projector) Project(ctx context.Context, meta TeamMeta, events []TeamEve
 				SenderParticipantID: projectionSenderParticipantID(firstNonEmpty(plan.senderID, leadParticipantID), leadParticipantID),
 				MentionID:           strings.TrimSpace(plan.mentionID),
 				Kind:                firstNonEmpty(plan.kind, "team_event"),
+				EventTitle:          strings.TrimSpace(plan.eventTitle),
 				Content:             plan.content,
 				IdempotencyKey:      projectionIdempotencyKey(meta.ID, plan),
 			}); err != nil {
@@ -70,14 +67,15 @@ func (p *Projector) Project(ctx context.Context, meta TeamMeta, events []TeamEve
 }
 
 type projectionPlan struct {
-	anchorSeq int64
-	channel   string
-	senderID  string
-	mentionID string
-	roomID    string
-	kind      string
-	eventType string
-	content   string
+	anchorSeq  int64
+	channel    string
+	senderID   string
+	mentionID  string
+	roomID     string
+	kind       string
+	eventType  string
+	eventTitle string
+	content    string
 }
 
 func buildProjectionPlans(events []TeamEvent, renderer projectionRenderer, meta TeamMeta) []projectionPlan {
@@ -96,14 +94,15 @@ func buildProjectionPlans(events []TeamEvent, renderer projectionRenderer, meta 
 			batch := events[i : i+size]
 			for _, event := range batch {
 				plans = append(plans, projectionPlan{
-					anchorSeq: event.Seq,
-					channel:   NormalizeExecutionChannel(event.Channel),
-					senderID:  event.ActorID,
-					mentionID: projectionMentionID(event),
-					roomID:    strings.TrimSpace(event.RoomID),
-					kind:      "message",
-					eventType: EventTaskDispatched,
-					content:   renderTaskDispatched(event, renderer, meta),
+					anchorSeq:  event.Seq,
+					channel:    NormalizeExecutionChannel(event.Channel),
+					senderID:   event.ActorID,
+					mentionID:  projectionMentionID(event),
+					roomID:     strings.TrimSpace(event.RoomID),
+					kind:       "task_assigned",
+					eventType:  EventTaskDispatched,
+					eventTitle: renderTaskAssignmentEventTitle(event.TaskID, event.Summary),
+					content:    renderTaskDispatched(event, renderer, meta),
 				})
 			}
 			i += size
@@ -342,6 +341,28 @@ func renderTaskLabel(taskID string) string {
 		return "task"
 	}
 	return taskID
+}
+
+func renderTaskAssignmentEventTitle(taskID, title string) string {
+	taskLabel := renderTaskLabel(taskID)
+	title = compactTaskAssignmentTitle(title)
+	if title == "" {
+		return taskLabel
+	}
+	return taskLabel + " [" + title + "]"
+}
+
+func compactTaskAssignmentTitle(title string) string {
+	const maxRunes = 5
+	title = strings.Join(strings.Fields(strings.TrimSpace(title)), " ")
+	if title == "" {
+		return ""
+	}
+	runes := []rune(title)
+	if len(runes) <= maxRunes {
+		return title
+	}
+	return string(runes[:maxRunes]) + "..."
 }
 
 func renderTitleSuffix(title string) string {

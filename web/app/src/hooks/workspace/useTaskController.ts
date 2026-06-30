@@ -65,7 +65,12 @@ export function useTaskController({
   const selectedTask = useMemo(() => tasks.find((item) => item.id === selectedTaskID) ?? null, [selectedTaskID, tasks]);
   const activeRootTask = useMemo(() => rootTaskForTask(tasks, selectedTask), [selectedTask, tasks]);
   const visibleRootTask = activeRootTask ?? parentTasks[0] ?? null;
-  const activeEventsTeamID = activeRootTask?.team_id || selectedTask?.team_id || "";
+  const activeEventsTeamID =
+    activeRootTask?.assignment_type === "team"
+      ? activeRootTask.team_id
+      : selectedTask?.assignment_type === "team"
+        ? selectedTask.team_id
+        : "";
   const shouldPollActiveTaskBoard = useMemo(() => shouldPollTaskBoard(tasks, activeRootTask), [activeRootTask, tasks]);
   const shouldPollTasks = useMemo(
     () => shouldPollActiveTaskBoard || shouldPollTransitionalTasks(tasks),
@@ -152,7 +157,14 @@ export function useTaskController({
     onSelectTask(targetID);
   }
 
-  async function createTask(draft: { team_id: string; title: string; body?: string }): Promise<void> {
+  async function createTask(draft: {
+    agent_id?: string;
+    assignment_id?: string;
+    assignment_type?: "team" | "agent";
+    team_id?: string;
+    title: string;
+    body?: string;
+  }): Promise<void> {
     if (createTaskBusy) {
       return;
     }
@@ -161,11 +173,15 @@ export function useTaskController({
     try {
       const created = await createWorkspaceTask(draft);
       await tasksQuery.refetch();
-      await queryClient.invalidateQueries({ queryKey: teamEventsQueryKey(created.team_id) });
+      if (created.assignment_type === "team" && created.team_id) {
+        await queryClient.invalidateQueries({ queryKey: teamEventsQueryKey(created.team_id) });
+      }
       await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.bootstrap() });
       setShowCreateTaskModal(false);
       onSelectTask(created.id);
-      await autoPlanAndStartTask(created.id, created.team_id);
+      if (created.assignment_type === "team") {
+        await autoPlanAndStartTask(created.id, created.team_id);
+      }
     } catch (err) {
       setCreateTaskError(errorMessage(err, t("taskCreateFailed")));
     } finally {
@@ -210,6 +226,9 @@ export function useTaskController({
       setTaskActionError(t("taskPlanFailed"));
       return;
     }
+    if (target.assignment_type !== "team") {
+      return;
+    }
     setPlanTaskBusy(true);
     setPlanningTaskID(target.id);
     setTaskActionError("");
@@ -245,6 +264,9 @@ export function useTaskController({
     const target = getPlanTarget(taskId);
     if (!target) {
       setTaskActionError(t("taskStartFailed"));
+      return;
+    }
+    if (target.assignment_type !== "team") {
       return;
     }
     setStartTaskBusy(true);
@@ -370,6 +392,8 @@ function mergeWorkspaceTaskList(current: readonly WorkspaceTask[], next: readonl
 function workspaceTasksEqual(left: WorkspaceTask, right: WorkspaceTask): boolean {
   return (
     left.id === right.id &&
+    left.assignment_type === right.assignment_type &&
+    left.assignment_id === right.assignment_id &&
     left.team_id === right.team_id &&
     left.team_title === right.team_title &&
     left.execution_channel === right.execution_channel &&
