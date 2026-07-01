@@ -39,6 +39,7 @@ type rootState struct {
 	ModelProviders map[string]any `json:"model_providers"`
 	Agents         map[string]any `json:"agents"`
 	Participants   map[string]any `json:"participants"`
+	Teams          map[string]any `json:"teams,omitempty"`
 	Auth           map[string]any `json:"auth,omitempty"`
 }
 
@@ -441,6 +442,7 @@ func (m *typedIDMigrator) migrate() error {
 		ModelProviders: rootMapSection(existingRootState, "model_providers", map[string]any{"items": map[string]any{}}),
 		Agents:         rootMapSection(existingRootState, "agents", map[string]any{"items": []any{}}),
 		Participants:   rootMapSection(existingRootState, "participants", map[string]any{"items": []any{}}),
+		Teams:          rootMapSection(existingRootState, "teams", nil),
 		Auth:           authState,
 	}
 	defaultModel := legacyModelProviderDefault(state.ModelProviders)

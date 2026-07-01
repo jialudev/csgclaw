@@ -83,6 +83,19 @@ describe("conversation model helpers", () => {
     ).toBe("Alice 邀请 @bob 加入了房间");
   });
 
+  it("formats task assignment events from metadata instead of full task instructions", () => {
+    const usersById = new Map([["user-dev", { id: "user-dev", name: "dev" }]]);
+    const message = {
+      content: "Task task-2 assigned to you.\n\nClaim it with: csgclaw-cli task claim --task task-2",
+      event: { actor_id: "user-manager", key: "task_assigned", target_ids: ["user-dev"], title: "task-2 [查询成...]" },
+      kind: "event",
+      sender_id: "user-manager",
+    };
+
+    expect(formatEventMessage(message, usersById, "en")).toBe("task-2 [查询成...] assigned to dev");
+    expect(formatEventMessage(message, usersById, "zh")).toBe("task-2 [查询成...] 指派给 dev");
+  });
+
   it("uses message content or conversation subtitle for previews", () => {
     const usersById = new Map();
     expect(
@@ -344,6 +357,39 @@ describe("conversation model helpers", () => {
     expect(next.rooms.find((item) => item.id === "other")?.messages.map((item) => item.id)).toEqual(["other-message"]);
   });
 
+  it("applies room members removed events as authoritative room updates", () => {
+    const current = {
+      rooms: [
+        room("general", "2026-05-15T00:00:00Z", {
+          members: ["u-1", "u-2", "u-3"],
+        }),
+      ],
+      users: [],
+    };
+
+    const next = applyIMEvent(current, {
+      room: { ...current.rooms[0], members: ["u-1", "u-3"] },
+      room_id: "general",
+      type: "room.members_removed",
+    });
+
+    expect(next.rooms.find((item) => item.id === "general")?.members).toEqual(["u-1", "u-3"]);
+  });
+
+  it("removes deleted rooms from bootstrap data", () => {
+    const current = {
+      rooms: [room("general", "2026-05-15T00:00:00Z"), room("other", "2026-05-15T00:02:00Z")],
+      users: [],
+    };
+
+    const next = applyIMEvent(current, {
+      room_id: "general",
+      type: "room.deleted",
+    });
+
+    expect(next.rooms.map((item) => item.id)).toEqual(["other"]);
+  });
+
   it("applies thread event summaries to root messages and exposes thread views", () => {
     const root = message("root-1", "2026-05-15T00:00:00Z");
     const current = {
@@ -409,6 +455,7 @@ describe("conversation model helpers", () => {
   it("classifies agent roster events and latest timestamps", () => {
     expect(isAgentRosterEvent({ type: "user.created" })).toBe(true);
     expect(isAgentRosterEvent({ type: "user.updated" })).toBe(true);
+    expect(isAgentRosterEvent({ type: "participant.created", participant: { id: "pt-worker" } })).toBe(true);
     expect(isAgentRosterEvent({ room: { is_direct: true }, type: "room.created" })).toBe(true);
     expect(isAgentRosterEvent({ room: { is_direct: false }, type: "room.created" })).toBe(false);
     expect(latestAt({ messages: [] })).toBe(0);

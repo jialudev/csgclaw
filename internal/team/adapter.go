@@ -19,9 +19,6 @@ type TeamChannelAdapter interface {
 	SendMessage(ctx context.Context, req SendMessageRequest) (MessageRef, error)
 }
 
-// ChannelAdapter remains as a compatibility alias during the MVP rollout.
-type ChannelAdapter = TeamChannelAdapter
-
 type AdapterRegistry struct {
 	adapters map[string]TeamChannelAdapter
 }
@@ -99,6 +96,7 @@ type SendMessageRequest struct {
 	SenderParticipantID string  `json:"sender_participant_id"`
 	MentionID           string  `json:"mention_id,omitempty"`
 	Kind                string  `json:"kind,omitempty"`
+	EventTitle          string  `json:"event_title,omitempty"`
 	Content             string  `json:"content"`
 	IdempotencyKey      string  `json:"idempotency_key,omitempty"`
 }

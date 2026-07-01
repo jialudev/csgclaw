@@ -34,6 +34,7 @@ export const workspaceQueryKeys = {
   bootstrapConfig: () => [WORKSPACE_QUERY_SCOPE, "bootstrap-config"] as const,
   managerProfile: () => [WORKSPACE_QUERY_SCOPE, "manager-profile"] as const,
   agents: () => [WORKSPACE_QUERY_SCOPE, "agents"] as const,
+  teams: () => [WORKSPACE_QUERY_SCOPE, "teams"] as const,
   modelProviders: () => [WORKSPACE_QUERY_SCOPE, "model-providers"] as const,
   runtimeImages: () => [WORKSPACE_QUERY_SCOPE, "runtime-images"] as const,
   hubTemplates: () => [WORKSPACE_QUERY_SCOPE, "hub-templates"] as const,

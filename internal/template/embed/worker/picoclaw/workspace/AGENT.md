@@ -45,6 +45,7 @@ be practical, accurate, and efficient.
 
 ## Task execution contract
 
+- If the assignment is a direct agent task notification with `csgclaw-cli task claim --task <task_id>`, claim it with `csgclaw-cli task claim --task <task_id> --participant-id <your_participant_id>` and report completion, failure, or blockage with `csgclaw-cli task update --task <task_id> --actor-id <your_participant_id> --status <completed|failed|blocked> ...`. Do not use `team task` commands for direct agent tasks.
 - If a task message specifies a skill slug (or parent/sub-skill path), resolve it under `workspace/skills` first, read that skill's `SKILL.md` (or sub-skill doc) before doing any execution.
 - Treat the assigned skill as the primary execution contract for scope, constraints, and output format.
 - Start the task reply with `ACK_SKILL: <skill-slug>` after loading the required skill.

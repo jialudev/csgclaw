@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/agenttask"
 	"csgclaw/internal/api"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/im"
@@ -31,7 +32,7 @@ type Options struct {
 	Feishu            *feishu.Service
 	LLM               *llm.Service
 	Team              *team.Service
-	TeamAdapter       team.TeamChannelAdapter
+	AgentTask         *agenttask.Service
 	TeamAdapters      *team.AdapterRegistry
 	Upgrade           *upgrade.Manager
 	ActivityDecider   api.ActivityDecider
@@ -47,7 +48,7 @@ func newHandler(opts Options) *api.Handler {
 	handler.SetParticipantService(opts.Participant)
 	handler.SetHubService(opts.Hub)
 	handler.SetTeamService(opts.Team)
-	handler.SetTeamAdapter(opts.TeamAdapter)
+	handler.SetAgentTaskService(opts.AgentTask)
 	if opts.TeamAdapters != nil {
 		handler.SetTeamAdapterRegistry(opts.TeamAdapters)
 	}

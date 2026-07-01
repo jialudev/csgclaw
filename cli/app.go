@@ -19,6 +19,7 @@ import (
 	"csgclaw/cli/room"
 	servecmd "csgclaw/cli/serve"
 	skillcmd "csgclaw/cli/skill"
+	taskcmd "csgclaw/cli/task"
 	teamcmd "csgclaw/cli/team"
 	templatecmd "csgclaw/cli/template"
 	upgradecmd "csgclaw/cli/upgrade"
@@ -85,6 +86,7 @@ func (a *App) registerDefaultCommands() {
 		room.NewCmd(),
 		member.NewCmd(),
 		message.NewCmd(),
+		taskcmd.NewCmd(),
 		teamcmd.NewCmd(),
 		upgradecmd.NewCmd(),
 		completioncmd.NewCmd("csgclaw", completioncmd.FullSpec()),
@@ -221,6 +223,7 @@ func (a *App) usage() {
 	fmt.Fprintln(a.stderr, "  csgclaw template -h")
 	fmt.Fprintln(a.stderr, "  csgclaw skill -h")
 	fmt.Fprintln(a.stderr, "  csgclaw agent create -h")
+	fmt.Fprintln(a.stderr, "  csgclaw task create --agent-id u-dev --title \"Run smoke tests\"")
 	fmt.Fprintln(a.stderr, "  csgclaw message create --channel csgclaw --room-id room-1 --sender-id admin --content hello")
 	fmt.Fprintln(a.stderr)
 	fmt.Fprintln(a.stderr, "Global flags:")

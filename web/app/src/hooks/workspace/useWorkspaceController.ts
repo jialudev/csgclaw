@@ -25,6 +25,7 @@ import { useAgentController } from "./useAgentController";
 import { useConversationController } from "./useConversationController";
 import { useProfilePreviewController } from "./useProfilePreviewController";
 import { useTaskController } from "./useTaskController";
+import { useWorkspaceRealtime } from "./useWorkspaceRealtime";
 import type { CreateTeamPayload } from "@/api/tasks";
 import type { AgentLike } from "@/models/agents";
 import type { HubTemplate } from "@/models/hubWorkspace";
@@ -289,8 +290,6 @@ export function useWorkspaceController() {
     navigatePane,
     onMessageAction: agent.handleMessageAction,
     onProviderLogin: agent.loginCLIProxyProvider,
-    onRefreshAgentState: agent.refreshAgentState,
-    onUpgradeStatusChange: upgrade.handleUpgradeStatusChange,
     preferredFallbackConversationId: managerDirectConversation?.id ?? "",
     rooms,
     selectComputer,
@@ -329,8 +328,6 @@ export function useWorkspaceController() {
     navigatePane: ignoreFloatingChatNavigation,
     onMessageAction: agent.handleMessageAction,
     onProviderLogin: agent.loginCLIProxyProvider,
-    onRefreshAgentState: agent.refreshAgentState,
-    onUpgradeStatusChange: upgrade.handleUpgradeStatusChange,
     rooms: floatingChatRooms,
     selectComputer: ignoreFloatingChatNavigation,
     selectConversation: ignoreFloatingChatNavigation,
@@ -340,6 +337,17 @@ export function useWorkspaceController() {
     setShowToolCalls,
     t,
     theme,
+  });
+  useWorkspaceRealtime({
+    agents,
+    onConversationEvent: conversation.handleRealtimeEvent,
+    onFloatingConversationEvent: floatingConversation.handleRealtimeEvent,
+    onRefreshAgentState: agent.refreshAgentState,
+    onUpgradeStatusChange: upgrade.handleUpgradeStatusChange,
+    refreshWorkspaceAgents,
+    refreshWorkspaceBootstrap,
+    setBootstrapData,
+    usersById: conversation.usersById,
   });
   const profilePreview = useProfilePreviewController({
     agentItems: agent.agentItems,

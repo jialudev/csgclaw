@@ -1460,14 +1460,7 @@ func (s *Service) ClearRoomMessages(roomID string) (Room, error) {
 	bus := s.bus
 	s.mu.Unlock()
 
-	if bus != nil {
-		roomCopy := presented
-		bus.Publish(Event{
-			Type:   EventTypeRoomMessagesCleared,
-			RoomID: presented.ID,
-			Room:   &roomCopy,
-		})
-	}
+	publishRoomEvent(bus, EventTypeRoomMessagesCleared, presented)
 	return presented, nil
 }
 
@@ -1864,6 +1857,10 @@ func (s *Service) DeliverEvent(req DeliverEventRequest) (Message, error) {
 		return Message{}, fmt.Errorf("sender not found")
 	}
 	senderID = senderUserID
+	content, err := s.contentWithMentionPrefixLocked(content, mentionID)
+	if err != nil {
+		return Message{}, err
+	}
 	room, ok := s.rooms[roomID]
 	if !ok {
 		return Message{}, fmt.Errorf("room not found")
@@ -1925,6 +1922,22 @@ func (s *Service) publishMessageCreatedLocked(roomID, senderID string, message M
 	})
 }
 
+func (s *Service) publishRoomEventLocked(eventType string, room Room) {
+	publishRoomEvent(s.bus, eventType, room)
+}
+
+func publishRoomEvent(bus *Bus, eventType string, room Room) {
+	if bus == nil {
+		return
+	}
+	roomCopy := room
+	bus.Publish(Event{
+		Type:   eventType,
+		RoomID: room.ID,
+		Room:   &roomCopy,
+	})
+}
+
 func (s *Service) CreateRoom(req CreateRoomRequest) (Room, error) {
 	title := strings.TrimSpace(req.Title)
 	description := strings.TrimSpace(req.Description)
@@ -1976,7 +1989,9 @@ func (s *Service) CreateRoom(req CreateRoomRequest) (Room, error) {
 	if err := s.saveLocked(); err != nil {
 		return Room{}, err
 	}
-	return s.presentRoomLocked(room, messagePresentationLocale(req.Locale)), nil
+	presented := s.presentRoomLocked(room, messagePresentationLocale(req.Locale))
+	s.publishRoomEventLocked(EventTypeRoomCreated, presented)
+	return presented, nil
 }
 
 func (s *Service) CreateConversation(req CreateConversationRequest) (Conversation, error) {
@@ -2057,7 +2072,9 @@ func (s *Service) AddRoomMembers(req AddRoomMembersRequest) (Room, error) {
 		return Room{}, err
 	}
 
-	return s.presentRoomLocked(*room, messagePresentationLocale(req.Locale)), nil
+	presented := s.presentRoomLocked(*room, messagePresentationLocale(req.Locale))
+	s.publishRoomEventLocked(EventTypeRoomMembersAdded, presented)
+	return presented, nil
 }
 
 func (s *Service) RemoveRoomMembers(req AddRoomMembersRequest) (Room, error) {
@@ -2141,7 +2158,9 @@ func (s *Service) RemoveRoomMembers(req AddRoomMembersRequest) (Room, error) {
 		return Room{}, err
 	}
 
-	return s.presentRoomLocked(*room, messagePresentationLocale(req.Locale)), nil
+	presented := s.presentRoomLocked(*room, messagePresentationLocale(req.Locale))
+	s.publishRoomEventLocked(EventTypeRoomMembersRemoved, presented)
+	return presented, nil
 }
 
 func (s *Service) AddConversationMembers(req AddConversationMembersRequest) (Conversation, error) {

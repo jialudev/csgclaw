@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/participant"
+	"csgclaw/internal/taskcore"
 	"csgclaw/internal/team"
 )
 
@@ -46,9 +48,6 @@ func (h *Handler) teamAdapterForChannel(channel string) (team.TeamChannelAdapter
 		if adapter, ok := h.teamAdapters.Adapter(channel); ok {
 			return adapter, true
 		}
-	}
-	if h.teamAdapter != nil && strings.EqualFold(h.teamAdapter.Channel(), channel) {
-		return h.teamAdapter, true
 	}
 	return nil, false
 }
@@ -277,6 +276,8 @@ func (p teamIdentityPresenter) agentDisplayName(id string) string {
 func apiTask(item team.TeamTask, presenter teamIdentityPresenter) apitypes.TeamTask {
 	return apitypes.TeamTask{
 		ID:                  item.ID,
+		AssignmentType:      taskcore.AssignmentTypeTeam,
+		AssignmentID:        item.TeamID,
 		TeamID:              item.TeamID,
 		ExecutionChannel:    item.ExecutionChannel,
 		RoomID:              item.RoomID,
@@ -304,6 +305,41 @@ func apiTask(item team.TeamTask, presenter teamIdentityPresenter) apitypes.TeamT
 	}
 }
 
+func apiCoreTask(item taskcore.Task, presenter teamIdentityPresenter) apitypes.TeamTask {
+	resp := apitypes.TeamTask{
+		ID:                  item.ID,
+		AssignmentType:      item.AssignmentType,
+		AssignmentID:        item.AssignmentID,
+		ExecutionChannel:    item.ExecutionChannel,
+		RoomID:              item.RoomID,
+		ParentID:            item.ParentID,
+		Title:               item.Title,
+		Body:                item.Body,
+		Status:              item.Status,
+		CreatedBy:           item.CreatedBy,
+		CreatedByAgentName:  presenter.displayAgentName(item.CreatedBy),
+		AssignedTo:          item.AssignedTo,
+		AssignedToAgentName: presenter.displayAgentName(item.AssignedTo),
+		ClaimedBy:           item.ClaimedBy,
+		ClaimedByAgentName:  presenter.displayAgentName(item.ClaimedBy),
+		DependsOn:           append([]string(nil), item.DependsOn...),
+		Priority:            item.Priority,
+		PlanSummary:         item.PlanSummary,
+		DispatchedAt:        item.DispatchedAt,
+		DeadlineAt:          item.DeadlineAt,
+		TimeoutAt:           item.TimeoutAt,
+		Result:              item.Result,
+		Error:               item.Error,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
+		CompletedAt:         item.CompletedAt,
+	}
+	if item.AssignmentType == taskcore.AssignmentTypeTeam {
+		resp.TeamID = item.AssignmentID
+	}
+	return resp
+}
+
 func apiTasks(items []team.TeamTask, presenter teamIdentityPresenter) []apitypes.TeamTask {
 	resp := make([]apitypes.TeamTask, 0, len(items))
 	for _, item := range items {
@@ -328,6 +364,13 @@ func apiGlobalTasks(items []team.GlobalTaskView, presenter teamIdentityPresenter
 	return resp
 }
 
+func apiGlobalCoreTask(item taskcore.Task, roomTitle string, presenter teamIdentityPresenter) apitypes.GlobalTask {
+	return apitypes.GlobalTask{
+		TeamTask:  apiCoreTask(item, presenter),
+		RoomTitle: roomTitle,
+	}
+}
+
 func apiPlanTaskWorkflowResponse(result team.PlanTaskWorkflowResult, presenter teamIdentityPresenter) apitypes.PlanTeamTaskResponse {
 	return apitypes.PlanTeamTaskResponse{
 		Task:           apiTask(result.Parent, presenter),
@@ -336,6 +379,76 @@ func apiPlanTaskWorkflowResponse(result team.PlanTaskWorkflowResult, presenter t
 		Started:        result.Started,
 		ScheduledTasks: result.ScheduledCount,
 	}
+}
+
+func teamTaskHasChildren(svc *team.Service, teamID, taskID string) bool {
+	if svc == nil {
+		return false
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return false
+	}
+	for _, item := range svc.ListTasks(teamID) {
+		if strings.TrimSpace(item.ParentID) == taskID {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) startTeamPlanJob(teamID, taskID string) bool {
+	if h == nil {
+		return false
+	}
+	key := teamPlanJobKey(teamID, taskID)
+	if key == "" {
+		return false
+	}
+	h.teamPlanJobsMu.Lock()
+	defer h.teamPlanJobsMu.Unlock()
+	if h.teamPlanJobs == nil {
+		h.teamPlanJobs = make(map[string]struct{})
+	}
+	if _, exists := h.teamPlanJobs[key]; exists {
+		return false
+	}
+	h.teamPlanJobs[key] = struct{}{}
+	return true
+}
+
+func (h *Handler) finishTeamPlanJob(teamID, taskID string) {
+	if h == nil {
+		return
+	}
+	key := teamPlanJobKey(teamID, taskID)
+	if key == "" {
+		return
+	}
+	h.teamPlanJobsMu.Lock()
+	defer h.teamPlanJobsMu.Unlock()
+	delete(h.teamPlanJobs, key)
+}
+
+func teamPlanJobKey(teamID, taskID string) string {
+	teamID = strings.TrimSpace(teamID)
+	taskID = strings.TrimSpace(taskID)
+	if teamID == "" || taskID == "" {
+		return ""
+	}
+	return teamID + "\x00" + taskID
+}
+
+func (h *Handler) runTeamPlanJob(ctx context.Context, input team.PlanTaskWorkflowInput, adapter team.TeamChannelAdapter, directory teamDirectory) {
+	defer h.finishTeamPlanJob(input.TeamID, input.TaskID)
+	if h == nil || h.teamSvc == nil {
+		return
+	}
+	result, err := h.teamSvc.PlanTaskWithOptionalStart(ctx, input, adapter, directory, team.NewManagerPlanner(h.llm, directory))
+	if err == nil || result.AlreadyPlanned {
+		return
+	}
+	_, _ = h.teamSvc.RecordPlanFailure(input.TeamID, input.TaskID, input.ActorID, err)
 }
 
 func teamCreateTaskBatchInput(teamID string, req apitypes.CreateTeamTasksBatchRequest) team.CreateTaskBatchInput {

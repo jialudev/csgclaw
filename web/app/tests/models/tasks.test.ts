@@ -1,8 +1,14 @@
 import {
   boardColumnsForTask,
+  displayTaskAssignedAgent,
+  displayTaskAssignmentTarget,
+  displayTaskClaimedAgent,
+  displayTaskRoomTitle,
+  displayTaskWorker,
   formatTaskUpdatedAt,
   formatTaskUpdatedRelative,
   groupTasksByParent,
+  normalizeTask,
   normalizeTaskList,
   normalizeTeamEventList,
   normalizeTeamList,
@@ -72,6 +78,61 @@ describe("tasks model", () => {
       target_id: "agent-ymkx7q",
       target_agent_name: "data-2-worker",
     });
+  });
+
+  it("uses display names for task people and assignment labels without falling back to ids", () => {
+    const parent = normalizeTask({
+      id: "task-1",
+      assignment_type: "team",
+      assignment_id: "team-weather",
+      team_id: "team-weather",
+      team_title: "Weather team",
+      room_id: "room-1",
+      room_title: "[task-1] Weather",
+      title: "Fetch weather",
+      assigned_to: "picoclaw",
+      claimed_by: "picoclaw",
+    });
+    const child = normalizeTask({
+      id: "task-2",
+      assignment_type: "team",
+      assignment_id: "team-weather",
+      team_id: "team-weather",
+      parent_id: "task-1",
+      room_id: "room-1",
+      title: "Collect weather data",
+      assigned_to: "pt-weather",
+      assigned_to_agent_name: "Weather Agent",
+      claimed_by: "pt-weather",
+      claimed_by_agent_name: "Weather Agent",
+    });
+    const unresolved = normalizeTask({
+      id: "task-3",
+      assignment_type: "agent",
+      assignment_id: "picoclaw",
+      team_id: "",
+      room_id: "picoclaw",
+      title: "Unresolved task",
+      assigned_to: "picoclaw",
+      claimed_by: "picoclaw",
+    });
+
+    expect(parent).toBeTruthy();
+    expect(child).toBeTruthy();
+    expect(unresolved).toBeTruthy();
+
+    expect(displayTaskAssignmentTarget(parent!)).toBe("Weather team");
+    expect(displayTaskRoomTitle(parent!)).toBe("[task-1] Weather");
+    expect(displayTaskAssignmentTarget(child!)).toBe("Weather Agent");
+    expect(displayTaskAssignedAgent(child!)).toBe("Weather Agent");
+    expect(displayTaskClaimedAgent(child!)).toBe("Weather Agent");
+    expect(displayTaskWorker(child!)).toBe("Weather Agent");
+
+    expect(displayTaskAssignmentTarget(unresolved!)).toBe("");
+    expect(displayTaskAssignedAgent(unresolved!)).toBe("");
+    expect(displayTaskClaimedAgent(unresolved!)).toBe("");
+    expect(displayTaskWorker(unresolved!)).toBe("");
+    expect(displayTaskRoomTitle(unresolved!)).toBe("");
   });
 
   it("normalizes team lead agent ids", () => {

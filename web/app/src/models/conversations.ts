@@ -1,6 +1,7 @@
 import { flattenMentionText } from "@/components/business/MessageContent/mentions";
 import { isToolActivityMessage } from "@/models/agentActivity";
 import { renderSlashCommandPreviewText } from "@/models/slashCommands";
+import type { WorkspaceTeam } from "@/models/tasks";
 
 export type LocaleCode = "zh" | "en" | string;
 export type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
@@ -17,6 +18,8 @@ export type IMParticipantLike = {
   metadata?: Record<string, unknown> | null;
   name?: string | null;
   type?: string | null;
+  user_id?: string | null;
+  user_name?: string | null;
 };
 
 export type IMUser = {
@@ -116,8 +119,11 @@ export type IMData = {
 
 export type IMServerEvent = {
   message?: IMMessage | null;
+  participant?: IMParticipantLike | null;
   room?: Partial<IMConversation> | null;
   room_id?: string | null;
+  team?: WorkspaceTeam | null;
+  team_id?: string | null;
   thread?: ThreadView | null;
   type?: string | null;
   upgrade?: unknown;
@@ -424,13 +430,34 @@ export function latestThreadTimestamp(thread: ThreadView | null | undefined): nu
 
 export function formatEventMessage(
   message: IMMessage | null | undefined,
-  _usersById: UsersById,
-  _locale: LocaleCode,
+  usersById: UsersById,
+  locale: LocaleCode,
 ): string {
   if (!message) {
     return "";
   }
+  if (message.event?.key === "task_assigned") {
+    return formatTaskAssignedEventMessage(message.event, usersById, locale);
+  }
   return message.content || "";
+}
+
+function formatTaskAssignedEventMessage(event: IMMessageEvent, usersById: UsersById, locale: LocaleCode): string {
+  const taskLabel = String(event.title || "").trim() || "task";
+  const targets = (event.target_ids || [])
+    .map((id) => userDisplayName(id, usersById))
+    .filter(Boolean)
+    .join(isChineseLocale(locale) ? "、" : ", ");
+  if (!targets) {
+    return isChineseLocale(locale) ? `${taskLabel} 已指派` : `${taskLabel} assigned`;
+  }
+  return isChineseLocale(locale) ? `${taskLabel} 指派给 ${targets}` : `${taskLabel} assigned to ${targets}`;
+}
+
+function isChineseLocale(locale: LocaleCode): boolean {
+  return String(locale || "")
+    .toLowerCase()
+    .startsWith("zh");
 }
 
 export function mentionIDs(mentions: readonly MessageMention[] | null | undefined): string[] {
@@ -683,10 +710,14 @@ export function applyIMEvent<T extends IMData | null | undefined>(
       event.type === "conversation.members_added" ||
       event.type === "room.created" ||
       event.type === "room.members_added" ||
+      event.type === "room.members_removed" ||
       event.type === "room.messages_cleared") &&
     event.room?.id
   ) {
     return upsertConversationInData(current, event.room as IMConversation);
+  }
+  if (event.type === "room.deleted") {
+    return removeConversationFromData(current, event.room_id || event.room?.id);
   }
   return current;
 }
@@ -742,6 +773,13 @@ export function isAgentRosterEvent(event: IMServerEvent | null | undefined): boo
     return false;
   }
   if (event.type === "user.created" || event.type === "user.updated" || event.type === "user.deleted") {
+    return true;
+  }
+  if (
+    event.type === "participant.created" ||
+    event.type === "participant.updated" ||
+    event.type === "participant.deleted"
+  ) {
     return true;
   }
   if (event.type === "conversation.created" || event.type === "room.created") {

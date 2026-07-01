@@ -481,7 +481,7 @@ export function useAgentController({
   const agentsDisplayError =
     agentsError || (agentsQuery.isError ? errorMessage(agentsQuery.error, t("agentActionFailed")) : "");
   const teamsQuery = useQuery({
-    queryKey: ["workspace", "teams"],
+    queryKey: workspaceQueryKeys.teams(),
     queryFn: fetchTeams,
   });
 

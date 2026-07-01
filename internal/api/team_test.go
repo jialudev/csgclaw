@@ -1,10 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,11 +20,19 @@ import (
 	"csgclaw/internal/team"
 )
 
+func newTestTeamAdapterRegistry(adapter team.TeamChannelAdapter) *team.AdapterRegistry {
+	return team.NewAdapterRegistry(adapter)
+}
+
+func newTestTeamProjector(adapter team.TeamChannelAdapter) *team.Projector {
+	return team.NewProjectorWithRegistry(newTestTeamAdapterRegistry(adapter), nil)
+}
+
 func TestTeamRoutesCreateAndTaskFlow(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
 	createRec := httptest.NewRecorder()
@@ -109,7 +120,7 @@ func TestTeamRoutesReturnMembers(t *testing.T) {
 	}))
 	adapter := team.NewCSGClawAdapter(imSvc, participantSvc)
 	teamSvc := team.NewService()
-	h := &Handler{im: imSvc, participant: participantSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	h := &Handler{im: imSvc, participant: participantSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
 	createRec := httptest.NewRecorder()
@@ -216,6 +227,51 @@ func TestTeamRoutesUpdateAndDeleteTeam(t *testing.T) {
 	}
 }
 
+func TestTeamRoutesPublishLifecycleEvents(t *testing.T) {
+	bus := im.NewBus()
+	teamSvc := team.NewService()
+	h := &Handler{teamSvc: teamSvc, imBus: bus}
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
+	createRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create team status = %d, want %d: %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	var created apitypes.Team
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create team response: %v", err)
+	}
+	createdEvent := mustReceiveIMEvent(t, events)
+	if createdEvent.Type != im.EventTypeTeamCreated || createdEvent.TeamID != created.ID || createdEvent.Team == nil || createdEvent.Team.ID != created.ID {
+		t.Fatalf("created event = %+v, want team.created for %s", createdEvent, created.ID)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID, strings.NewReader(`{"title":"release ops"}`))
+	updateRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("update team status = %d, want %d: %s", updateRec.Code, http.StatusOK, updateRec.Body.String())
+	}
+	updatedEvent := mustReceiveIMEvent(t, events)
+	if updatedEvent.Type != im.EventTypeTeamUpdated || updatedEvent.TeamID != created.ID || updatedEvent.Team == nil || updatedEvent.Team.Title != "release ops" {
+		t.Fatalf("updated event = %+v, want team.updated for release ops", updatedEvent)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/teams/"+created.ID, nil)
+	deleteRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete team status = %d, want %d: %s", deleteRec.Code, http.StatusNoContent, deleteRec.Body.String())
+	}
+	deletedEvent := mustReceiveIMEvent(t, events)
+	if deletedEvent.Type != im.EventTypeTeamDeleted || deletedEvent.TeamID != created.ID || deletedEvent.Team == nil || deletedEvent.Team.ID != created.ID {
+		t.Fatalf("deleted event = %+v, want team.deleted for %s", deletedEvent, created.ID)
+	}
+}
+
 func TestTeamTaskResponsesIncludeParticipantDisplayNames(t *testing.T) {
 	agentSvc := mustNewSeededService(t, []agent.Agent{
 		{
@@ -257,11 +313,11 @@ func TestTeamTaskResponsesIncludeParticipantDisplayNames(t *testing.T) {
 	adapter := team.NewCSGClawAdapter(imSvc, participantSvc)
 	teamSvc := team.NewService()
 	h := &Handler{
-		svc:         agentSvc,
-		participant: participantSvc,
-		im:          imSvc,
-		teamSvc:     teamSvc,
-		teamAdapter: adapter,
+		svc:          agentSvc,
+		participant:  participantSvc,
+		im:           imSvc,
+		teamSvc:      teamSvc,
+		teamAdapters: newTestTeamAdapterRegistry(adapter),
 	}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"data","lead_agent_id":"u-manager","member_agent_ids":["u-agent-ymkx7q"]}`))
@@ -352,8 +408,8 @@ func TestTeamRoutesCreateResolvesAgentIDs(t *testing.T) {
 		},
 	}))
 	adapter := team.NewCSGClawAdapter(imSvc, participantSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{participant: participantSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{participant: participantSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
 	createRec := httptest.NewRecorder()
@@ -378,7 +434,7 @@ func TestTeamBatchCreateBindsExecutionRoomImmediately(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
 	teamSvc := team.NewService()
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
 	createRec := httptest.NewRecorder()
@@ -418,8 +474,8 @@ func TestTeamBatchCreateBindsExecutionRoomImmediately(t *testing.T) {
 func TestTeamPlanAutoStartCreatesExecutionRoomAndDispatches(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
 	createRec := httptest.NewRecorder()
@@ -480,7 +536,7 @@ func TestTeamPlanAutoStartCreatesExecutionRoomAndDispatches(t *testing.T) {
 }
 
 func TestTeamRoutesPlanStartDispatchesWithManagerLLM(t *testing.T) {
-	var sawPlannerRequest bool
+	var sawPlannerRequest atomic.Bool
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("planner path = %q, want /v1/chat/completions", r.URL.Path)
@@ -501,7 +557,7 @@ func TestTeamRoutesPlanStartDispatchesWithManagerLLM(t *testing.T) {
 		if len(payload.Messages) < 2 || !strings.Contains(payload.Messages[1].Content, "pt-writer") || !strings.Contains(payload.Messages[1].Content, "writer") {
 			t.Fatalf("planner context messages = %+v, want team member capabilities", payload.Messages)
 		}
-		sawPlannerRequest = true
+		sawPlannerRequest.Store(true)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id":     "chatcmpl-plan",
@@ -560,13 +616,13 @@ func TestTeamRoutesPlanStartDispatchesWithManagerLLM(t *testing.T) {
 	})
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
 	h := &Handler{
-		svc:         agentSvc,
-		im:          imSvc,
-		llm:         llm.NewService(config.ModelConfig{}, agentSvc),
-		teamSvc:     teamSvc,
-		teamAdapter: adapter,
+		svc:          agentSvc,
+		im:           imSvc,
+		llm:          llm.NewService(config.ModelConfig{}, agentSvc),
+		teamSvc:      teamSvc,
+		teamAdapters: newTestTeamAdapterRegistry(adapter),
 	}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-writer","u-tester"]}`))
@@ -595,33 +651,49 @@ func TestTeamRoutesPlanStartDispatchesWithManagerLLM(t *testing.T) {
 		t.Fatalf("parent.CreatedBy = %q, want team lead manager", parent.CreatedBy)
 	}
 
-	planReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/tasks/"+parent.ID+"/plan", strings.NewReader(`{}`))
+	cancelledCtx, cancelPlanRequest := context.WithCancel(context.Background())
+	cancelPlanRequest()
+	planReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/tasks/"+parent.ID+"/plan", strings.NewReader(`{}`)).WithContext(cancelledCtx)
 	planRec := httptest.NewRecorder()
 	h.Routes().ServeHTTP(planRec, planReq)
 	if planRec.Code != http.StatusOK {
 		t.Fatalf("plan task status = %d, want %d: %s", planRec.Code, http.StatusOK, planRec.Body.String())
 	}
-	if !sawPlannerRequest {
-		t.Fatal("planner upstream was not called")
-	}
 	var planResp apitypes.PlanTeamTaskResponse
 	if err := json.NewDecoder(planRec.Body).Decode(&planResp); err != nil {
 		t.Fatalf("decode plan response: %v", err)
 	}
-	if len(planResp.CreatedTasks) != 2 {
-		t.Fatalf("created plan tasks len = %d, want 2", len(planResp.CreatedTasks))
+	if !planResp.Planning || len(planResp.CreatedTasks) != 0 {
+		t.Fatalf("plan response = %+v, want planning accepted without synchronous child tasks", planResp)
 	}
-	if planResp.CreatedTasks[0].CreatedBy != "pt-manager" || planResp.CreatedTasks[1].CreatedBy != "pt-manager" {
-		t.Fatalf("planned task creators = %q/%q, want team lead manager", planResp.CreatedTasks[0].CreatedBy, planResp.CreatedTasks[1].CreatedBy)
+	waitForCondition(t, time.Second, 10*time.Millisecond, func() bool {
+		return sawPlannerRequest.Load() && len(teamSvc.ListTasks(created.ID)) == 3
+	})
+	plannedTasks := teamSvc.ListTasks(created.ID)
+	var plannedChildren []team.TeamTask
+	for _, item := range plannedTasks {
+		if item.ParentID == parent.ID {
+			plannedChildren = append(plannedChildren, item)
+		}
 	}
-	if planResp.Task.PlanSummary == "" || !strings.Contains(planResp.CreatedTasks[0].Body, "Assignee reason") {
-		t.Fatalf("plan response = %+v, want summary and detailed child body", planResp)
+	if len(plannedChildren) != 2 {
+		t.Fatalf("created plan tasks len = %d, want 2", len(plannedChildren))
 	}
-	if planResp.CreatedTasks[0].Status != team.TaskStatusPending || planResp.CreatedTasks[0].DispatchedAt != nil {
-		t.Fatalf("first child after plan = %+v, want pending and not dispatched", planResp.CreatedTasks[0])
+	if plannedChildren[0].CreatedBy != "pt-manager" || plannedChildren[1].CreatedBy != "pt-manager" {
+		t.Fatalf("planned task creators = %q/%q, want team lead manager", plannedChildren[0].CreatedBy, plannedChildren[1].CreatedBy)
 	}
-	if planResp.CreatedTasks[0].Priority != 9 {
-		t.Fatalf("first child priority = %d, want high mapped to 9", planResp.CreatedTasks[0].Priority)
+	plannedParent, ok := teamSvc.GetTask(created.ID, parent.ID)
+	if !ok {
+		t.Fatalf("GetTask(%s) ok = false, want true", parent.ID)
+	}
+	if plannedParent.PlanSummary == "" || !strings.Contains(plannedChildren[0].Body, "Assignee reason") {
+		t.Fatalf("planned parent/children = %+v/%+v, want summary and detailed child body", plannedParent, plannedChildren)
+	}
+	if plannedChildren[0].Status != team.TaskStatusPending || plannedChildren[0].DispatchedAt != nil {
+		t.Fatalf("first child after plan = %+v, want pending and not dispatched", plannedChildren[0])
+	}
+	if plannedChildren[0].Priority != 9 {
+		t.Fatalf("first child priority = %d, want high mapped to 9", plannedChildren[0].Priority)
 	}
 
 	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/tasks/"+parent.ID+"/start", strings.NewReader(`{}`))
@@ -648,37 +720,37 @@ func TestTeamRoutesPlanStartDispatchesWithManagerLLM(t *testing.T) {
 	if !strings.Contains(taskRoom.Title, parent.ID) {
 		t.Fatalf("task room title = %q, want to contain parent task id %q", taskRoom.Title, parent.ID)
 	}
-	if !roomContainsMention(taskRoom, "dispatched "+planResp.CreatedTasks[0].ID, "user-writer") || !roomContains(taskRoom, "claim --team "+created.ID+" --task "+planResp.CreatedTasks[0].ID+" --participant-id pt-writer") {
+	if !roomContainsMention(taskRoom, "dispatched "+plannedChildren[0].ID, "user-writer") || !roomContains(taskRoom, "claim --team "+created.ID+" --task "+plannedChildren[0].ID+" --participant-id pt-writer") {
 		t.Fatalf("task room messages missing first dispatch: %+v", taskRoom.Messages)
 	}
 	if roomContains(taskRoom, "started assigning tasks") {
 		t.Fatalf("task room should not include dispatch preamble: %+v", taskRoom.Messages)
 	}
 
-	claimReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/tasks/"+planResp.CreatedTasks[0].ID+"/claim", strings.NewReader(`{"participant_id":"writer"}`))
+	claimReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/tasks/"+plannedChildren[0].ID+"/claim", strings.NewReader(`{"participant_id":"writer"}`))
 	claimRec := httptest.NewRecorder()
 	h.Routes().ServeHTTP(claimRec, claimReq)
 	if claimRec.Code != http.StatusOK {
 		t.Fatalf("claim writer status = %d, want %d: %s", claimRec.Code, http.StatusOK, claimRec.Body.String())
 	}
-	completeReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID+"/tasks/"+planResp.CreatedTasks[0].ID, strings.NewReader(`{"actor_id":"writer","status":"completed","result":"draft ready"}`))
+	completeReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID+"/tasks/"+plannedChildren[0].ID, strings.NewReader(`{"actor_id":"writer","status":"completed","result":"draft ready"}`))
 	completeRec := httptest.NewRecorder()
 	h.Routes().ServeHTTP(completeRec, completeReq)
 	if completeRec.Code != http.StatusOK {
 		t.Fatalf("complete writer status = %d, want %d: %s", completeRec.Code, http.StatusOK, completeRec.Body.String())
 	}
 	taskRoom, _ = imSvc.Room(startResp.Task.RoomID)
-	if !roomContainsMention(taskRoom, "dispatched "+planResp.CreatedTasks[1].ID, "user-tester") {
+	if !roomContainsMention(taskRoom, "dispatched "+plannedChildren[1].ID, "user-tester") {
 		t.Fatalf("task room messages missing successor dispatch: %+v", taskRoom.Messages)
 	}
 
-	claimTesterReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/tasks/"+planResp.CreatedTasks[1].ID+"/claim", strings.NewReader(`{"participant_id":"tester"}`))
+	claimTesterReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams/"+created.ID+"/tasks/"+plannedChildren[1].ID+"/claim", strings.NewReader(`{"participant_id":"tester"}`))
 	claimTesterRec := httptest.NewRecorder()
 	h.Routes().ServeHTTP(claimTesterRec, claimTesterReq)
 	if claimTesterRec.Code != http.StatusOK {
 		t.Fatalf("claim tester status = %d, want %d: %s", claimTesterRec.Code, http.StatusOK, claimTesterRec.Body.String())
 	}
-	completeTesterReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID+"/tasks/"+planResp.CreatedTasks[1].ID, strings.NewReader(`{"actor_id":"tester","status":"completed","result":"checklist passed"}`))
+	completeTesterReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID+"/tasks/"+plannedChildren[1].ID, strings.NewReader(`{"actor_id":"tester","status":"completed","result":"checklist passed"}`))
 	completeTesterRec := httptest.NewRecorder()
 	h.Routes().ServeHTTP(completeTesterRec, completeTesterReq)
 	if completeTesterRec.Code != http.StatusOK {
@@ -734,8 +806,8 @@ func createTeamTaskBatchForTest(t *testing.T, h *Handler, teamID, payload string
 func TestListGlobalTasks(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager"}`))
 	createRec := httptest.NewRecorder()
@@ -793,8 +865,8 @@ func TestListGlobalTasks(t *testing.T) {
 func TestCreateBatchTasksWithParentRef(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager"}`))
 	createRec := httptest.NewRecorder()
@@ -830,8 +902,8 @@ func TestCreateBatchTasksWithParentRef(t *testing.T) {
 func TestTeamRoutesApprovalFlow(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"ops","lead_agent_id":"u-manager"}`))
 	createRec := httptest.NewRecorder()
@@ -877,8 +949,8 @@ func TestTeamRoutesApprovalFlow(t *testing.T) {
 func TestTeamRoomCommandApproveViaMessage(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"ops","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
 	createRec := httptest.NewRecorder()
@@ -958,8 +1030,8 @@ func TestTeamRoomCommandApproveViaMessage(t *testing.T) {
 func TestTeamRoomCommandReportsUsageErrors(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"ops","lead_agent_id":"u-manager"}`))
 	createRec := httptest.NewRecorder()
@@ -1006,8 +1078,8 @@ func TestTeamRoomCommandReportsUsageErrors(t *testing.T) {
 func TestTeamRoomCommandReassignsTask(t *testing.T) {
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"ops","lead_agent_id":"u-manager","member_agent_ids":["u-worker-a","u-worker-b"]}`))
 	createRec := httptest.NewRecorder()
@@ -1052,14 +1124,14 @@ func TestTeamRoomCommandReassignsTask(t *testing.T) {
 
 func TestTeamRoutesPhase3bPOCScenario(t *testing.T) {
 	root := t.TempDir()
-	store, err := team.NewStore(root)
+	store, err := team.NewStore(filepath.Join(root, "state.json"))
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	imSvc := im.NewService()
 	adapter := team.NewCSGClawAdapter(imSvc)
-	teamSvc := team.NewService(team.WithStore(store), team.WithProjector(team.NewProjector(adapter, nil)))
-	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapter: adapter}
+	teamSvc := team.NewService(team.WithStore(store), team.WithProjector(newTestTeamProjector(adapter)))
+	h := &Handler{im: imSvc, teamSvc: teamSvc, teamAdapters: newTestTeamAdapterRegistry(adapter)}
 	for _, member := range []struct {
 		id     string
 		name   string

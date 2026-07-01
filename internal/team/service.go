@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"csgclaw/internal/taskcore"
 )
 
 var (
@@ -33,7 +35,7 @@ type Service struct {
 	staleTaskTTL   time.Duration
 	nextSeq        int64
 	nextTeamID     int64
-	nextTaskID     int64
+	taskIDs        *taskcore.TaskIDAllocator
 	nextApprovalID int64
 	teams          map[string]TeamMeta
 	tasks          map[string]map[string]*TeamTask
@@ -235,6 +237,9 @@ func WithNowFunc(now func() time.Time) Option {
 func WithStore(store *Store) Option {
 	return func(s *Service) {
 		s.store = store
+		if store != nil && store.TaskStore() != nil && store.TaskStore().TaskIDAllocator() != nil {
+			s.taskIDs = store.TaskStore().TaskIDAllocator()
+		}
 	}
 }
 
@@ -256,6 +261,7 @@ func NewService(opts ...Option) *Service {
 	s := &Service{
 		now:           time.Now,
 		staleTaskTTL:  10 * time.Minute,
+		taskIDs:       taskcore.NewMemoryTaskIDAllocator(),
 		teams:         make(map[string]TeamMeta),
 		tasks:         make(map[string]map[string]*TeamTask),
 		approvals:     make(map[string]map[string]*TeamApproval),
@@ -492,7 +498,10 @@ func (s *Service) CreateTask(input CreateTaskInput) (TeamTask, error) {
 		return TeamTask{}, err
 	}
 
-	task := s.newTaskLocked(meta, input)
+	task, err := s.newTaskLocked(meta, input)
+	if err != nil {
+		return TeamTask{}, err
+	}
 	s.tasksForTeamLocked(meta.ID)[task.ID] = task
 	s.appendEventLocked(meta.ID, TeamEvent{
 		RoomID:    EventRoomID(meta, task),
@@ -582,7 +591,7 @@ func (s *Service) CreateTasks(input CreateTaskBatchInput) (CreateTasksResult, er
 		if err := s.validateParentLocked(input.TeamID, parentID, pendingTaskIDs); err != nil {
 			return CreateTasksResult{}, fmt.Errorf("tasks[%d].parent: %w", i, err)
 		}
-		task := s.newTaskLocked(meta, CreateTaskInput{
+		task, err := s.newTaskLocked(meta, CreateTaskInput{
 			TeamID:           input.TeamID,
 			ExecutionChannel: input.ExecutionChannel,
 			ParentID:         parentID,
@@ -595,6 +604,9 @@ func (s *Service) CreateTasks(input CreateTaskBatchInput) (CreateTasksResult, er
 			DeadlineAt:       item.DeadlineAt,
 			TimeoutAt:        item.TimeoutAt,
 		})
+		if err != nil {
+			return CreateTasksResult{}, fmt.Errorf("tasks[%d]: %w", i, err)
+		}
 		pending = append(pending, task)
 		if idRef := strings.TrimSpace(item.IDRef); idRef != "" {
 			result.IDRefs = append(result.IDRefs, BatchIDRef{IDRef: idRef, TaskID: task.ID})
@@ -701,7 +713,7 @@ func (s *Service) PlanTask(input PlanTaskInput) (PlanTaskResult, error) {
 		if _, err := requireCanonicalParticipantID("assign_to", assignTo); err != nil {
 			return PlanTaskResult{}, fmt.Errorf("plan tasks[%d].assign_to: %w", i, err)
 		}
-		child := s.newTaskLocked(meta, CreateTaskInput{
+		child, err := s.newTaskLocked(meta, CreateTaskInput{
 			TeamID:     meta.ID,
 			ParentID:   task.ID,
 			Title:      item.Title,
@@ -713,6 +725,9 @@ func (s *Service) PlanTask(input PlanTaskInput) (PlanTaskResult, error) {
 			DeadlineAt: item.DeadlineAt,
 			TimeoutAt:  item.TimeoutAt,
 		})
+		if err != nil {
+			return PlanTaskResult{}, fmt.Errorf("plan tasks[%d]: %w", i, err)
+		}
 		child.Status = TaskStatusPending
 		child.DispatchedAt = nil
 		s.tasksForTeamLocked(meta.ID)[child.ID] = child
@@ -1216,6 +1231,43 @@ func (s *Service) FailTask(input FailTaskInput) (TeamTask, error) {
 		RoomID:    EventRoomID(meta, task),
 		Type:      EventTaskFailed,
 		ActorID:   actorID,
+		TaskID:    task.ID,
+		Summary:   task.Error,
+		CreatedAt: now,
+	})
+	if err := s.persistMutationLocked(meta.ID, before, eventStart); err != nil {
+		return TeamTask{}, err
+	}
+	return cloneTask(*task), nil
+}
+
+func (s *Service) RecordPlanFailure(teamID, taskID, actorID string, planErr error) (TeamTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	task, meta, err := s.requireTaskLocked(teamID, taskID)
+	if err != nil {
+		return TeamTask{}, err
+	}
+	if task.Status == TaskStatusCompleted || task.Status == TaskStatusCancelled {
+		return cloneTask(*task), nil
+	}
+	message := strings.TrimSpace(fmt.Sprint(planErr))
+	if message == "" {
+		message = "planner failed"
+	}
+	before := s.captureTeamStateLocked(meta.ID)
+	eventStart := len(s.events[meta.ID])
+	now := s.now()
+	task.Status = TaskStatusFailed
+	task.Error = message
+	task.Result = ""
+	task.CompletedAt = nil
+	task.UpdatedAt = now
+	s.appendEventLocked(meta.ID, TeamEvent{
+		RoomID:    EventRoomID(meta, task),
+		Type:      EventTaskFailed,
+		ActorID:   cleanParticipantID(normalizeTeamActorID(meta, actorID)),
 		TaskID:    task.ID,
 		Summary:   task.Error,
 		CreatedAt: now,
@@ -1996,11 +2048,15 @@ func (s *Service) ensureWorkerFreeLocked(teamID string, participantID string) er
 	return nil
 }
 
-func (s *Service) newTaskLocked(meta TeamMeta, input CreateTaskInput) *TeamTask {
+func (s *Service) newTaskLocked(meta TeamMeta, input CreateTaskInput) (*TeamTask, error) {
 	now := s.now()
 	status := TaskStatusPending
 	if strings.TrimSpace(input.AssignTo) != "" {
 		status = TaskStatusAssigned
+	}
+	taskID, err := s.nextTaskIdentifier()
+	if err != nil {
+		return nil, err
 	}
 	parentID := strings.TrimSpace(input.ParentID)
 	executionChannel := NormalizeExecutionChannel(input.ExecutionChannel)
@@ -2012,7 +2068,7 @@ func (s *Service) newTaskLocked(meta TeamMeta, input CreateTaskInput) *TeamTask 
 		}
 	}
 	return &TeamTask{
-		ID:               s.nextTaskIdentifier(),
+		ID:               taskID,
 		TeamID:           meta.ID,
 		ExecutionChannel: executionChannel,
 		RoomID:           roomID,
@@ -2028,7 +2084,7 @@ func (s *Service) newTaskLocked(meta TeamMeta, input CreateTaskInput) *TeamTask 
 		TimeoutAt:        cloneTimePtr(input.TimeoutAt),
 		CreatedAt:        now,
 		UpdatedAt:        now,
-	}
+	}, nil
 }
 
 func (s *Service) appendEventLocked(teamID string, event TeamEvent) {
@@ -2239,7 +2295,9 @@ func (s *Service) loadStoreState() error {
 			taskCopy.AssignedTo = cleanParticipantID(taskCopy.AssignedTo)
 			taskCopy.ClaimedBy = cleanParticipantID(taskCopy.ClaimedBy)
 			taskMap[task.ID] = &taskCopy
-			s.bumpTaskIdentifierLocked(task.ID)
+			if err := s.bumpTaskIdentifierLocked(task.ID); err != nil {
+				return err
+			}
 		}
 		s.tasks[teamID] = taskMap
 		approvalMap := make(map[string]*TeamApproval, len(snapshot.Approvals))
@@ -2412,17 +2470,25 @@ func (s *Service) bumpTeamIdentifierLocked(id string) {
 	s.nextTeamID = maxCounterFromIdentifier(id, "team-", s.nextTeamID)
 }
 
-func (s *Service) nextTaskIdentifier() string {
-	s.nextTaskID++
-	return fmt.Sprintf("task-%d", s.nextTaskID)
+func (s *Service) nextTaskIdentifier() (string, error) {
+	if s.taskIDs == nil {
+		s.taskIDs = taskcore.NewMemoryTaskIDAllocator()
+	}
+	return s.taskIDs.Next()
 }
 
-func (s *Service) bumpTaskIdentifierLocked(id string) {
-	s.nextTaskID = maxCounterFromIdentifier(id, "task-", s.nextTaskID)
+func (s *Service) bumpTaskIdentifierLocked(id string) error {
+	if s.taskIDs == nil {
+		s.taskIDs = taskcore.NewMemoryTaskIDAllocator()
+	}
+	return s.taskIDs.Bump(id)
 }
 
 func (s *Service) peekNextTaskIdentifier(offset int) string {
-	return fmt.Sprintf("task-%d", s.nextTaskID+int64(offset)+1)
+	if s.taskIDs == nil {
+		s.taskIDs = taskcore.NewMemoryTaskIDAllocator()
+	}
+	return s.taskIDs.Peek(offset)
 }
 
 func (s *Service) nextApprovalIdentifier() string {

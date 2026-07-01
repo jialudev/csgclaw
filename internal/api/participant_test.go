@@ -88,6 +88,64 @@ func TestCreateCSGClawAgentParticipantViaAPI(t *testing.T) {
 	}
 }
 
+func TestHandleParticipantsPublishesLifecycleEvents(t *testing.T) {
+	bus := im.NewBus()
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	imSvc := im.NewService()
+	participantSvc := participant.NewService(
+		participant.NewMemoryStore(nil),
+		participant.WithIMService(imSvc),
+	)
+	srv := &Handler{
+		im:          imSvc,
+		imBus:       bus,
+		participant: participantSvc,
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/channels/csgclaw/participants", strings.NewReader(`{
+		"id": "qa",
+		"type": "human",
+		"name": "QA",
+		"channel_user": {
+			"ref": "u-qa",
+			"kind": "local_user_id"
+		}
+	}`))
+	createRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body=%s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	createdEvent := mustReceiveIMEvent(t, events)
+	if createdEvent.Type != im.EventTypeParticipantCreated || createdEvent.Participant == nil || createdEvent.Participant.ID != "pt-qa" {
+		t.Fatalf("created event = %+v, want participant.created for pt-qa", createdEvent)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/channels/csgclaw/participants/pt-qa", strings.NewReader(`{"name":"QAUpdated"}`))
+	updateRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d; body=%s", updateRec.Code, http.StatusOK, updateRec.Body.String())
+	}
+	updatedEvent := mustReceiveIMEvent(t, events)
+	if updatedEvent.Type != im.EventTypeParticipantUpdated || updatedEvent.Participant == nil || updatedEvent.Participant.Name != "QAUpdated" {
+		t.Fatalf("updated event = %+v, want participant.updated for QAUpdated", updatedEvent)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/channels/csgclaw/participants/pt-qa", nil)
+	deleteRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d; body=%s", deleteRec.Code, http.StatusNoContent, deleteRec.Body.String())
+	}
+	deletedEvent := mustReceiveIMEvent(t, events)
+	if deletedEvent.Type != im.EventTypeParticipantDeleted || deletedEvent.Participant == nil || deletedEvent.Participant.ID != "pt-qa" {
+		t.Fatalf("deleted event = %+v, want participant.deleted for pt-qa", deletedEvent)
+	}
+}
+
 func TestCreateFeishuAgentParticipantViaAPIReusesExistingAgent(t *testing.T) {
 	agentSvc, _ := mustNewSeededServiceWithPath(t, []agent.Agent{{
 		ID:          "u-qa",

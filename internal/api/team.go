@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -46,7 +47,9 @@ func (h *Handler) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, apiTeamWithPresenter(created, h.newTeamIdentityPresenter()))
+	resp := apiTeamWithPresenter(created, h.newTeamIdentityPresenter())
+	h.publishTeamEvent(im.EventTypeTeamCreated, resp)
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (h *Handler) resolveCreateTeamAgents(req apitypes.CreateTeamRequest) (string, []string, error) {
@@ -161,7 +164,9 @@ func (h *Handler) handleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, apiTeamWithPresenter(updated, h.newTeamIdentityPresenter()))
+	resp := apiTeamWithPresenter(updated, h.newTeamIdentityPresenter())
+	h.publishTeamEvent(im.EventTypeTeamUpdated, resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
@@ -169,10 +174,13 @@ func (h *Handler) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := svc.DeleteTeam(pathValue(r, "team_id")); err != nil {
+	teamID := pathValue(r, "team_id")
+	deleted, _ := svc.GetTeam(teamID)
+	if err := svc.DeleteTeam(teamID); err != nil {
 		writeTeamError(w, err)
 		return
 	}
+	h.publishTeamEvent(im.EventTypeTeamDeleted, apiTeamWithPresenter(deleted, h.newTeamIdentityPresenter()))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -203,11 +211,26 @@ func (h *Handler) handleListTeamTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleListGlobalTasks(w http.ResponseWriter, r *http.Request) {
-	svc, ok := h.requireTeamService(w)
-	if !ok {
+	if h == nil || (h.teamSvc == nil && h.agentTaskSvc == nil) {
+		http.Error(w, "task service is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	writeJSON(w, http.StatusOK, apiGlobalTasks(svc.ListGlobalTaskViews(h.teamDirectory()), h.newTeamIdentityPresenter()))
+	presenter := h.newTeamIdentityPresenter()
+	resp := make([]apitypes.GlobalTask, 0)
+	if h.teamSvc != nil {
+		resp = append(resp, apiGlobalTasks(h.teamSvc.ListGlobalTaskViews(h.teamDirectory()), presenter)...)
+	}
+	if h.agentTaskSvc != nil {
+		directory := h.teamDirectory()
+		for _, task := range h.agentTaskSvc.List() {
+			roomTitle := ""
+			if directory != nil {
+				roomTitle, _ = directory.RoomTitle(task.RoomID)
+			}
+			resp = append(resp, apiGlobalCoreTask(task, roomTitle, presenter))
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) handleCreateTeamTasksBatch(w http.ResponseWriter, r *http.Request) {
@@ -329,6 +352,21 @@ func (h *Handler) handlePlanTeamTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		directory = h.teamDirectory(parent.ExecutionChannel)
+	}
+	if !teamTaskHasChildren(svc, pathValue(r, "team_id"), pathValue(r, "task_id")) {
+		if h.startTeamPlanJob(pathValue(r, "team_id"), pathValue(r, "task_id")) {
+			go h.runTeamPlanJob(context.Background(), team.PlanTaskWorkflowInput{
+				TeamID:    pathValue(r, "team_id"),
+				TaskID:    pathValue(r, "task_id"),
+				ActorID:   strings.TrimSpace(req.ActorID),
+				AutoStart: req.AutoStart,
+			}, adapter, directory)
+		}
+		writeJSON(w, http.StatusOK, apitypes.PlanTeamTaskResponse{
+			Task:     apiTask(parent, h.newTeamIdentityPresenter()),
+			Planning: true,
+		})
+		return
 	}
 	result, err := svc.PlanTaskWithOptionalStart(r.Context(), team.PlanTaskWorkflowInput{
 		TeamID:    pathValue(r, "team_id"),

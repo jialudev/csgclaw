@@ -38,6 +38,7 @@ func TestExecuteExposesOnlyLiteCommands(t *testing.T) {
 		"room         Manage IM rooms",
 		"member       Manage IM room members",
 		"message      Manage IM messages.",
+		"task         Manage agent tasks.",
 		"team         Manage agent teams.",
 		"skill        Discover and install ClawHub skills.",
 		"completion   Generate shell completion scripts.",
@@ -107,7 +108,7 @@ func TestExecuteHiddenCompleteUsesLiteCommandSet(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	got := stdout.String()
-	for _, want := range []string{"participant\n", "pt\n", "template\n", "room\n", "member\n", "message\n", "team\n", "completion\n"} {
+	for _, want := range []string{"participant\n", "pt\n", "template\n", "room\n", "member\n", "message\n", "task\n", "team\n", "completion\n"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stdout = %q, want substring %q", got, want)
 		}
@@ -251,6 +252,132 @@ func TestExecuteTeamTaskListUsesHTTPClient(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "task-1") || !strings.Contains(stdout.String(), "blocked") {
 		t.Fatalf("stdout = %q, want rendered task row", stdout.String())
+	}
+}
+
+func TestExecuteTaskListUsesGlobalTasksRoute(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodGet {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodGet)
+			}
+			if req.URL.String() != "http://example.test/api/v1/tasks" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/tasks")
+			}
+			return jsonResponse(http.StatusOK, `[{"id":"task-1","assignment_type":"agent","assignment_id":"agent-qa","execution_channel":"csgclaw","room_id":"room-qa","room_title":"Admin and QA","title":"Run smoke tests","status":"assigned","created_by":"manager","assigned_to":"pt-qa","assigned_to_agent_name":"qa","created_at":"2026-05-30T00:00:00Z","updated_at":"2026-05-30T00:01:00Z"}]`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "task", "list"}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "task-1") || !strings.Contains(stdout.String(), "agent-qa") || !strings.Contains(stdout.String(), "Run smoke tests") {
+		t.Fatalf("stdout = %q, want rendered global task row", stdout.String())
+	}
+}
+
+func TestExecuteTaskCreateUsesAgentTaskAPI(t *testing.T) {
+	var stdout bytes.Buffer
+	app := &App{
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", req.Method, http.MethodPost)
+			}
+			if req.URL.String() != "http://example.test/api/v1/agent-tasks" {
+				t.Fatalf("url = %q, want %q", req.URL.String(), "http://example.test/api/v1/agent-tasks")
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("read request body: %v", err)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(body, &payload); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			for key, want := range map[string]string{
+				"agent_id":   "agent-qa",
+				"title":      "Run smoke tests",
+				"body":       "Check checkout flow.",
+				"created_by": "manager",
+			} {
+				if payload[key] != want {
+					t.Fatalf("%s = %v, want %q; payload=%v", key, payload[key], want, payload)
+				}
+			}
+			return jsonResponse(http.StatusCreated, `{"id":"task-1","assignment_type":"agent","assignment_id":"agent-qa","execution_channel":"csgclaw","room_id":"room-qa","title":"Run smoke tests","status":"assigned","created_by":"manager","assigned_to":"pt-qa","assigned_to_agent_name":"qa","created_at":"2026-05-30T00:00:00Z","updated_at":"2026-05-30T00:01:00Z"}`), nil
+		}),
+	}
+
+	if err := app.Execute(context.Background(), []string{"--endpoint", "http://example.test", "task", "create", "--agent-id", "agent-qa", "--title", "Run smoke tests", "--body", "Check checkout flow."}); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "task-1") || !strings.Contains(stdout.String(), "agent-qa") {
+		t.Fatalf("stdout = %q, want rendered task row", stdout.String())
+	}
+}
+
+func TestExecuteTaskClaimAndUpdateUseAgentTaskAPI(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantMethod string
+		wantURL    string
+		wantBody   map[string]string
+	}{
+		{
+			name:       "claim",
+			args:       []string{"--endpoint", "http://example.test", "task", "claim", "--task", "task-1", "--participant-id", "pt-qa"},
+			wantMethod: http.MethodPost,
+			wantURL:    "http://example.test/api/v1/agent-tasks/task-1/claim",
+			wantBody:   map[string]string{"participant_id": "pt-qa"},
+		},
+		{
+			name:       "update",
+			args:       []string{"--endpoint", "http://example.test", "task", "update", "--task", "task-1", "--actor-id", "pt-qa", "--status", "completed", "--result", "done"},
+			wantMethod: http.MethodPatch,
+			wantURL:    "http://example.test/api/v1/agent-tasks/task-1",
+			wantBody:   map[string]string{"actor_id": "pt-qa", "status": "completed", "result": "done"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			app := &App{
+				stdout: &bytes.Buffer{},
+				stderr: &bytes.Buffer{},
+				httpClient: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					if req.Method != tt.wantMethod {
+						t.Fatalf("method = %q, want %q", req.Method, tt.wantMethod)
+					}
+					if req.URL.String() != tt.wantURL {
+						t.Fatalf("url = %q, want %q", req.URL.String(), tt.wantURL)
+					}
+					body, err := io.ReadAll(req.Body)
+					if err != nil {
+						t.Fatalf("read request body: %v", err)
+					}
+					var payload map[string]any
+					if err := json.Unmarshal(body, &payload); err != nil {
+						t.Fatalf("decode request body: %v", err)
+					}
+					for key, want := range tt.wantBody {
+						if payload[key] != want {
+							t.Fatalf("%s = %v, want %q; payload=%v", key, payload[key], want, payload)
+						}
+					}
+					return jsonResponse(http.StatusOK, `{"id":"task-1","assignment_type":"agent","assignment_id":"agent-qa","execution_channel":"csgclaw","room_id":"room-qa","title":"Run smoke tests","status":"completed","created_by":"manager","assigned_to":"pt-qa","claimed_by":"pt-qa","created_at":"2026-05-30T00:00:00Z","updated_at":"2026-05-30T00:01:00Z"}`), nil
+				}),
+			}
+
+			if err := app.Execute(context.Background(), tt.args); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+		})
 	}
 }
 

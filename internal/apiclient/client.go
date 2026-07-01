@@ -321,6 +321,46 @@ func (c *Client) ListGlobalTasks(ctx context.Context) ([]apitypes.GlobalTask, er
 	return tasks, nil
 }
 
+func (c *Client) ListAgentTasks(ctx context.Context) ([]apitypes.TeamTask, error) {
+	var tasks []apitypes.TeamTask
+	if err := c.GetJSON(ctx, "/api/v1/agent-tasks", &tasks); err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
+func (c *Client) CreateAgentTask(ctx context.Context, req apitypes.CreateAgentTaskRequest) (apitypes.TeamTask, error) {
+	var created apitypes.TeamTask
+	if err := c.DoJSON(ctx, http.MethodPost, "/api/v1/agent-tasks", req, &created); err != nil {
+		return apitypes.TeamTask{}, err
+	}
+	return created, nil
+}
+
+func (c *Client) ClaimAgentTask(ctx context.Context, taskID, participantID string) (apitypes.TeamTask, error) {
+	var task apitypes.TeamTask
+	path, err := agentTaskClaimPath(taskID)
+	if err != nil {
+		return apitypes.TeamTask{}, err
+	}
+	if err := c.DoJSON(ctx, http.MethodPost, path, apitypes.ClaimAgentTaskRequest{ParticipantID: strings.TrimSpace(participantID)}, &task); err != nil {
+		return apitypes.TeamTask{}, err
+	}
+	return task, nil
+}
+
+func (c *Client) UpdateAgentTask(ctx context.Context, taskID string, req apitypes.PatchAgentTaskRequest) (apitypes.TeamTask, error) {
+	var updated apitypes.TeamTask
+	path, err := agentTaskPath(taskID)
+	if err != nil {
+		return apitypes.TeamTask{}, err
+	}
+	if err := c.DoJSON(ctx, http.MethodPatch, path, req, &updated); err != nil {
+		return apitypes.TeamTask{}, err
+	}
+	return updated, nil
+}
+
 func (c *Client) ListTeamTasks(ctx context.Context, teamID string) ([]apitypes.TeamTask, error) {
 	var tasks []apitypes.TeamTask
 	path, err := teamTasksPath(teamID)
@@ -775,6 +815,22 @@ func teamTaskStartPath(teamID, taskID string) (string, error) {
 		return "", err
 	}
 	return path + "/start", nil
+}
+
+func agentTaskPath(taskID string) (string, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return "", fmt.Errorf("task_id is required")
+	}
+	return "/api/v1/agent-tasks/" + url.PathEscape(taskID), nil
+}
+
+func agentTaskClaimPath(taskID string) (string, error) {
+	path, err := agentTaskPath(taskID)
+	if err != nil {
+		return "", err
+	}
+	return path + "/claim", nil
 }
 
 func teamApprovalsPath(teamID string) (string, error) {

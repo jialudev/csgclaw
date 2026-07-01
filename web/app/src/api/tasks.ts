@@ -22,12 +22,15 @@ export type UpdateTeamPayload = {
 };
 
 export type CreateWorkspaceTaskPayload = {
+  agent_id?: string;
   assign_to?: string;
+  assignment_id?: string;
+  assignment_type?: "team" | "agent";
   body?: string;
   created_by?: string;
   execution_channel?: string;
   priority?: number;
-  team_id: string;
+  team_id?: string;
   title: string;
 };
 
@@ -58,6 +61,7 @@ export type PlanWorkspaceTaskResponse = {
   task: WorkspaceTask;
   created_tasks: WorkspaceTask[];
   already_planned: boolean;
+  planning: boolean;
   started: boolean;
   scheduled_tasks: number;
 };
@@ -126,7 +130,31 @@ export async function deleteTeamRequest(teamID: string): Promise<void> {
 }
 
 export async function createWorkspaceTask(payload: CreateWorkspaceTaskPayload): Promise<WorkspaceTask> {
-  const response = await post<unknown>(`/api/v1/teams/${encodeURIComponent(payload.team_id)}/tasks/batch`, {
+  const assignmentType = payload.assignment_type || (payload.agent_id ? "agent" : "team");
+  if (assignmentType === "agent") {
+    const agentID = String(payload.agent_id || payload.assignment_id || "").trim();
+    if (!agentID) {
+      throw new Error("Agent ID is required");
+    }
+    const task = normalizeTask(
+      await post<unknown>("/api/v1/agent-tasks", {
+        agent_id: agentID,
+        body: payload.body || undefined,
+        created_by: payload.created_by || undefined,
+        title: payload.title,
+      }),
+    );
+    if (!task) {
+      throw new Error("Invalid task response");
+    }
+    return task;
+  }
+
+  const teamID = String(payload.team_id || payload.assignment_id || "").trim();
+  if (!teamID) {
+    throw new Error("Team ID is required");
+  }
+  const response = await post<unknown>(`/api/v1/teams/${encodeURIComponent(teamID)}/tasks/batch`, {
     created_by: payload.created_by || undefined,
     execution_channel: payload.execution_channel || "csgclaw",
     tasks: [
@@ -162,6 +190,7 @@ export async function planWorkspaceTask(payload: PlanWorkspaceTaskPayload): Prom
     task,
     created_tasks: normalizeTaskList(parsed.created_tasks),
     already_planned: typeof parsed.already_planned === "boolean" ? parsed.already_planned : false,
+    planning: typeof parsed.planning === "boolean" ? parsed.planning : false,
     started: typeof parsed.started === "boolean" ? parsed.started : false,
     scheduled_tasks: numberValue(parsed.scheduled_tasks),
   };

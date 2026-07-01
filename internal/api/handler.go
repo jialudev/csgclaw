@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/agenttask"
 	"csgclaw/internal/apitypes"
 	csgclawchannel "csgclaw/internal/channel/csgclaw"
 	"csgclaw/internal/channel/csgclaw/notification"
@@ -45,8 +46,10 @@ type Handler struct {
 	llm                        *llm.Service
 	hub                        *hub.Service
 	teamSvc                    *team.Service
-	teamAdapter                team.TeamChannelAdapter
+	agentTaskSvc               *agenttask.Service
 	teamAdapters               *team.AdapterRegistry
+	teamPlanJobsMu             sync.Mutex
+	teamPlanJobs               map[string]struct{}
 	configPath                 string
 	serverAccessToken          string
 	serverNoAuth               bool
@@ -83,14 +86,17 @@ type imBootstrapResponse struct {
 }
 
 type imEventResponse struct {
-	Type    string                  `json:"type"`
-	RoomID  string                  `json:"room_id,omitempty"`
-	Room    *im.Room                `json:"room,omitempty"`
-	User    *im.User                `json:"user,omitempty"`
-	Message *im.Message             `json:"message,omitempty"`
-	Thread  *im.ThreadView          `json:"thread,omitempty"`
-	Sender  *im.User                `json:"sender,omitempty"`
-	Upgrade *apitypes.UpgradeStatus `json:"upgrade,omitempty"`
+	Type        string                  `json:"type"`
+	RoomID      string                  `json:"room_id,omitempty"`
+	TeamID      string                  `json:"team_id,omitempty"`
+	Room        *im.Room                `json:"room,omitempty"`
+	User        *im.User                `json:"user,omitempty"`
+	Message     *im.Message             `json:"message,omitempty"`
+	Participant *apitypes.Participant   `json:"participant,omitempty"`
+	Team        *apitypes.Team          `json:"team,omitempty"`
+	Thread      *im.ThreadView          `json:"thread,omitempty"`
+	Sender      *im.User                `json:"sender,omitempty"`
+	Upgrade     *apitypes.UpgradeStatus `json:"upgrade,omitempty"`
 }
 
 type bootstrapConfigResponse struct {
@@ -608,10 +614,9 @@ func (h *Handler) SetTeamService(svc *team.Service) {
 	}
 }
 
-func (h *Handler) SetTeamAdapter(adapter team.TeamChannelAdapter) {
+func (h *Handler) SetAgentTaskService(svc *agenttask.Service) {
 	if h != nil {
-		h.teamAdapter = adapter
-		h.teamAdapters = team.NewAdapterRegistry(adapter)
+		h.agentTaskSvc = svc
 	}
 }
 
@@ -1565,6 +1570,11 @@ func (h *Handler) handleLocalRoomByID(w http.ResponseWriter, r *http.Request, id
 
 	switch r.Method {
 	case http.MethodDelete:
+		var deletedRoom im.Room
+		hasDeletedRoom := false
+		if h.im != nil {
+			deletedRoom, hasDeletedRoom = h.im.Room(id)
+		}
 		if err := channel.DeleteRoom(id); err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				http.Error(w, "room not found", http.StatusNotFound)
@@ -1572,6 +1582,11 @@ func (h *Handler) handleLocalRoomByID(w http.ResponseWriter, r *http.Request, id
 			}
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if hasDeletedRoom {
+			h.publishRoomEvent(im.EventTypeRoomDeleted, deletedRoom)
+		} else {
+			h.publishRoomDeleted(id)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
@@ -1671,7 +1686,6 @@ func (h *Handler) handleRoomMemberDeletePath(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.publishRoomEvent(im.EventTypeRoomMembersRemoved, room)
 	writeJSON(w, http.StatusOK, room)
 }
 
@@ -2056,7 +2070,6 @@ func (h *Handler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.publishRoomEvent(im.EventTypeRoomCreated, room)
 	writeJSON(w, http.StatusCreated, room)
 }
 
@@ -2117,7 +2130,6 @@ func (h *Handler) handleAddRoomMembers(w http.ResponseWriter, r *http.Request, p
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	h.publishRoomEvent(im.EventTypeRoomMembersAdded, room)
 	writeJSON(w, http.StatusOK, room)
 }
 
@@ -2647,14 +2659,17 @@ func profileDetectionResultsFromAgent(items []agent.ProfileDetectionResult) []ap
 
 func presentEvent(evt im.Event) imEventResponse {
 	return imEventResponse{
-		Type:    evt.Type,
-		RoomID:  evt.RoomID,
-		Room:    evt.Room,
-		User:    evt.User,
-		Message: evt.Message,
-		Thread:  evt.Thread,
-		Sender:  evt.Sender,
-		Upgrade: evt.Upgrade,
+		Type:        evt.Type,
+		RoomID:      evt.RoomID,
+		TeamID:      evt.TeamID,
+		Room:        evt.Room,
+		User:        evt.User,
+		Message:     evt.Message,
+		Participant: evt.Participant,
+		Team:        evt.Team,
+		Thread:      evt.Thread,
+		Sender:      evt.Sender,
+		Upgrade:     evt.Upgrade,
 	}
 }
 
@@ -2713,10 +2728,14 @@ func (h *Handler) publishMessageCreated(conversationID, senderID string, message
 }
 
 func (h *Handler) handleTeamRoomCommand(ctx context.Context, roomID string, senderID string, content string) {
-	if h == nil || h.teamSvc == nil || h.teamAdapter == nil {
+	if h == nil || h.teamSvc == nil {
 		return
 	}
-	parser := team.NewCommandParser(h.teamSvc, h.teamAdapter, func(id string) bool {
+	adapter, ok := h.teamAdapterForChannel(team.DefaultExecutionChannel)
+	if !ok {
+		return
+	}
+	parser := team.NewCommandParser(h.teamSvc, adapter, func(id string) bool {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			return false
@@ -2764,6 +2783,16 @@ func (h *Handler) publishRoomEvent(eventType string, room im.Room) {
 	})
 }
 
+func (h *Handler) publishRoomDeleted(roomID string) {
+	if h.imBus == nil {
+		return
+	}
+	h.imBus.Publish(im.Event{
+		Type:   im.EventTypeRoomDeleted,
+		RoomID: strings.TrimSpace(roomID),
+	})
+}
+
 func (h *Handler) publishUserEvent(eventType string, user im.User) {
 	if h.imBus == nil {
 		return
@@ -2772,5 +2801,28 @@ func (h *Handler) publishUserEvent(eventType string, user im.User) {
 	h.imBus.Publish(im.Event{
 		Type: eventType,
 		User: &userCopy,
+	})
+}
+
+func (h *Handler) publishParticipantEvent(eventType string, item apitypes.Participant) {
+	if h.imBus == nil {
+		return
+	}
+	participantCopy := item
+	h.imBus.Publish(im.Event{
+		Type:        eventType,
+		Participant: &participantCopy,
+	})
+}
+
+func (h *Handler) publishTeamEvent(eventType string, item apitypes.Team) {
+	if h.imBus == nil {
+		return
+	}
+	teamCopy := item
+	h.imBus.Publish(im.Event{
+		Type:   eventType,
+		TeamID: item.ID,
+		Team:   &teamCopy,
 	})
 }

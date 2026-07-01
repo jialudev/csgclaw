@@ -15,6 +15,8 @@ type Team struct {
 
 type TeamTask struct {
 	ID                  string     `json:"id"`
+	AssignmentType      string     `json:"assignment_type,omitempty"`
+	AssignmentID        string     `json:"assignment_id,omitempty"`
 	TeamID              string     `json:"team_id"`
 	ExecutionChannel    string     `json:"execution_channel"`
 	RoomID              string     `json:"room_id"`
@@ -155,6 +157,7 @@ type PlanTeamTaskResponse struct {
 	Task           TeamTask   `json:"task"`
 	CreatedTasks   []TeamTask `json:"created_tasks"`
 	AlreadyPlanned bool       `json:"already_planned"`
+	Planning       bool       `json:"planning,omitempty"`
 	Started        bool       `json:"started,omitempty"`
 	ScheduledTasks int        `json:"scheduled_tasks,omitempty"`
 }
@@ -186,6 +189,25 @@ type ClaimTeamTaskRequest struct {
 type ClaimNextTeamTaskRequest struct {
 	TeamID        string `json:"team_id,omitempty"`
 	ParticipantID string `json:"participant_id"`
+}
+
+type CreateAgentTaskRequest struct {
+	AgentID   string `json:"agent_id"`
+	Title     string `json:"title"`
+	Body      string `json:"body,omitempty"`
+	CreatedBy string `json:"created_by,omitempty"`
+}
+
+type ClaimAgentTaskRequest struct {
+	ParticipantID string `json:"participant_id"`
+}
+
+type PatchAgentTaskRequest struct {
+	ActorID string `json:"actor_id,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Result  string `json:"result,omitempty"`
+	Error   string `json:"error,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 type CreateTeamApprovalRequest struct {
