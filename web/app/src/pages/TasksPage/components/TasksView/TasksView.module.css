@@ -76,31 +76,6 @@
   min-width: 0;
 }
 
-.taskToolbarButton {
-  --btn-min-width: 44px;
-  --btn-padding-x: 11px;
-
-  width: auto;
-  min-width: 44px;
-  height: 32px;
-  min-height: 32px;
-  border-radius: var(--radius-md);
-  color: var(--text-subtle);
-  gap: 8px;
-  font-weight: 650;
-}
-
-.taskToolbarButtonSecondary:not(:disabled) {
-  border-color: color-mix(in srgb, var(--border-subtle) 90%, transparent);
-  background: var(--surface);
-}
-
-.taskToolbarButtonSecondary:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--gray-300) 80%, var(--border-subtle));
-  background: color-mix(in srgb, var(--gray-50) 70%, var(--surface));
-  color: var(--text);
-}
-
 .taskDialogCloseBtn {
   display: inline-flex;
   align-items: center;
