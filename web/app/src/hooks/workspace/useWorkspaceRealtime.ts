@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { FetchAgentsOptions } from "@/api/agents";
 import { agentMatchesUser, applyIMEvent, isAgentRosterEvent, resolveUserByLocalIdentity } from "@/models/conversations";
 import { isAgentRunning } from "@/models/agents";
@@ -6,6 +7,7 @@ import { subscribeIMEvents } from "@/shared/realtime/imEvents";
 import type { AgentLike } from "@/models/agents";
 import type { IMData, IMServerEvent, UsersById } from "@/models/conversations";
 import type { WorkspaceQuerySetter } from "./types";
+import { workspaceQueryKeys } from "./workspaceQueries";
 
 const WORKSPACE_REALTIME_REFRESH_DEBOUNCE_MS = 100;
 
@@ -23,7 +25,9 @@ type UseWorkspaceRealtimeArgs = {
   usersById: UsersById;
 };
 
-type WorkspaceRealtimeRefs = UseWorkspaceRealtimeArgs;
+type WorkspaceRealtimeRefs = UseWorkspaceRealtimeArgs & {
+  queryClient: QueryClient;
+};
 
 function isParticipantRosterEvent(event: IMServerEvent | null | undefined): boolean {
   return (
@@ -31,6 +35,10 @@ function isParticipantRosterEvent(event: IMServerEvent | null | undefined): bool
     event?.type === "participant.updated" ||
     event?.type === "participant.deleted"
   );
+}
+
+function isTeamRosterEvent(event: IMServerEvent | null | undefined): boolean {
+  return event?.type === "team.created" || event?.type === "team.updated" || event?.type === "team.deleted";
 }
 
 export function useWorkspaceRealtime({
@@ -44,12 +52,14 @@ export function useWorkspaceRealtime({
   setBootstrapData,
   usersById,
 }: UseWorkspaceRealtimeArgs): void {
+  const queryClient = useQueryClient();
   const refs = useRef<WorkspaceRealtimeRefs>({
     agents,
     onConversationEvent,
     onFloatingConversationEvent,
     onRefreshAgentState,
     onUpgradeStatusChange,
+    queryClient,
     refreshWorkspaceAgents,
     refreshWorkspaceBootstrap,
     setBootstrapData,
@@ -58,6 +68,7 @@ export function useWorkspaceRealtime({
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingBootstrapRefreshRef = useRef(false);
   const pendingAgentsRefreshRef = useRef(false);
+  const pendingTeamsRefreshRef = useRef(false);
 
   useEffect(() => {
     refs.current = {
@@ -66,6 +77,7 @@ export function useWorkspaceRealtime({
       onFloatingConversationEvent,
       onRefreshAgentState,
       onUpgradeStatusChange,
+      queryClient,
       refreshWorkspaceAgents,
       refreshWorkspaceBootstrap,
       setBootstrapData,
@@ -77,6 +89,7 @@ export function useWorkspaceRealtime({
     onFloatingConversationEvent,
     onRefreshAgentState,
     onUpgradeStatusChange,
+    queryClient,
     refreshWorkspaceAgents,
     refreshWorkspaceBootstrap,
     setBootstrapData,
@@ -84,9 +97,10 @@ export function useWorkspaceRealtime({
   ]);
 
   useEffect(() => {
-    function scheduleRefresh(options: { agents?: boolean; bootstrap?: boolean }) {
+    function scheduleRefresh(options: { agents?: boolean; bootstrap?: boolean; teams?: boolean }) {
       pendingAgentsRefreshRef.current = pendingAgentsRefreshRef.current || Boolean(options.agents);
       pendingBootstrapRefreshRef.current = pendingBootstrapRefreshRef.current || Boolean(options.bootstrap);
+      pendingTeamsRefreshRef.current = pendingTeamsRefreshRef.current || Boolean(options.teams);
       if (refreshTimerRef.current) {
         clearTimeout(refreshTimerRef.current);
       }
@@ -94,13 +108,18 @@ export function useWorkspaceRealtime({
         refreshTimerRef.current = null;
         const shouldRefreshAgents = pendingAgentsRefreshRef.current;
         const shouldRefreshBootstrap = pendingBootstrapRefreshRef.current;
+        const shouldRefreshTeams = pendingTeamsRefreshRef.current;
         pendingAgentsRefreshRef.current = false;
         pendingBootstrapRefreshRef.current = false;
+        pendingTeamsRefreshRef.current = false;
 
         const current = refs.current;
         void Promise.all([
           shouldRefreshBootstrap ? current.refreshWorkspaceBootstrap() : Promise.resolve(null),
           shouldRefreshAgents ? current.refreshWorkspaceAgents({ silent: true }) : Promise.resolve([]),
+          shouldRefreshTeams
+            ? current.queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.teams() })
+            : Promise.resolve(),
         ]);
       }, WORKSPACE_REALTIME_REFRESH_DEBOUNCE_MS);
     }
@@ -114,6 +133,9 @@ export function useWorkspaceRealtime({
       const participantRosterEvent = isParticipantRosterEvent(payload);
       if (participantRosterEvent || isAgentRosterEvent(payload)) {
         scheduleRefresh({ agents: true, bootstrap: participantRosterEvent });
+      }
+      if (isTeamRosterEvent(payload)) {
+        scheduleRefresh({ teams: true });
       }
 
       if (payload?.type === "message.created" && payload.message) {
@@ -142,6 +164,7 @@ export function useWorkspaceRealtime({
       }
       pendingAgentsRefreshRef.current = false;
       pendingBootstrapRefreshRef.current = false;
+      pendingTeamsRefreshRef.current = false;
     };
   }, []);
 }

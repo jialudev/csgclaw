@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"csgclaw/internal/agent"
+	"csgclaw/internal/taskcore"
 )
 
 func TestCreateTasksBatchIsAtomic(t *testing.T) {
@@ -92,6 +93,47 @@ func TestCreateTasksBatchResolvesParentRefs(t *testing.T) {
 	}
 	if result.Tasks[2].ParentID != parentID {
 		t.Fatalf("task[2].ParentID = %q, want %q", result.Tasks[2].ParentID, parentID)
+	}
+}
+
+func TestTaskIDAllocatorIsSharedWithTaskCoreStore(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.json")
+	taskRoot := defaultTaskStoreRoot(statePath)
+	taskStore, err := taskcore.NewStore(taskRoot)
+	if err != nil {
+		t.Fatalf("taskcore.NewStore() error = %v", err)
+	}
+	taskSvc := taskcore.NewService(taskcore.WithStore(taskStore))
+	rootTask, err := taskSvc.CreateRoot(taskcore.CreateRootInput{
+		AssignmentType: taskcore.AssignmentTypeAgent,
+		AssignmentID:   "agent-dev",
+		Title:          "Agent task",
+		CreatedBy:      "user-admin",
+	})
+	if err != nil {
+		t.Fatalf("taskcore.CreateRoot() error = %v", err)
+	}
+	if rootTask.ID != "task-1" {
+		t.Fatalf("taskcore.CreateRoot().ID = %q, want task-1", rootTask.ID)
+	}
+
+	teamStore, err := NewStore(statePath)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	teamSvc := NewService(WithStore(teamStore))
+	teamID := createTestTeam(t, teamSvc)
+	teamTask, err := teamSvc.CreateTask(CreateTaskInput{
+		TeamID:    teamID,
+		Title:     "Team task",
+		CreatedBy: "manager",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if teamTask.ID != "task-2" {
+		t.Fatalf("CreateTask().ID = %q, want task-2", teamTask.ID)
 	}
 }
 

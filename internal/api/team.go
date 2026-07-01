@@ -47,7 +47,9 @@ func (h *Handler) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, apiTeamWithPresenter(created, h.newTeamIdentityPresenter()))
+	resp := apiTeamWithPresenter(created, h.newTeamIdentityPresenter())
+	h.publishTeamEvent(im.EventTypeTeamCreated, resp)
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (h *Handler) resolveCreateTeamAgents(req apitypes.CreateTeamRequest) (string, []string, error) {
@@ -162,7 +164,9 @@ func (h *Handler) handleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 		writeTeamError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, apiTeamWithPresenter(updated, h.newTeamIdentityPresenter()))
+	resp := apiTeamWithPresenter(updated, h.newTeamIdentityPresenter())
+	h.publishTeamEvent(im.EventTypeTeamUpdated, resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
@@ -170,10 +174,13 @@ func (h *Handler) handleDeleteTeam(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := svc.DeleteTeam(pathValue(r, "team_id")); err != nil {
+	teamID := pathValue(r, "team_id")
+	deleted, _ := svc.GetTeam(teamID)
+	if err := svc.DeleteTeam(teamID); err != nil {
 		writeTeamError(w, err)
 		return
 	}
+	h.publishTeamEvent(im.EventTypeTeamDeleted, apiTeamWithPresenter(deleted, h.newTeamIdentityPresenter()))
 	w.WriteHeader(http.StatusNoContent)
 }
 

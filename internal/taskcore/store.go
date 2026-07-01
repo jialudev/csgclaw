@@ -23,7 +23,8 @@ const (
 )
 
 type Store struct {
-	root string
+	root    string
+	taskIDs *TaskIDAllocator
 }
 
 type IndexEntry struct {
@@ -34,12 +35,21 @@ type IndexEntry struct {
 	Status         string `json:"status"`
 }
 
+type taskIndexState struct {
+	Counters taskCounterState `json:"counters"`
+	Tasks    []IndexEntry     `json:"tasks"`
+}
+
 func NewStore(root string) (*Store, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil, fmt.Errorf("task store root is required")
 	}
-	return &Store{root: root}, nil
+	taskIDs, err := newPersistentTaskIDAllocator(root)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{root: root, taskIDs: taskIDs}, nil
 }
 
 func (s *Store) Root() string {
@@ -49,23 +59,29 @@ func (s *Store) Root() string {
 	return s.root
 }
 
+func (s *Store) TaskIDAllocator() *TaskIDAllocator {
+	if s == nil {
+		return nil
+	}
+	return s.taskIDs
+}
+
 func (s *Store) Load() ([]Snapshot, error) {
 	if s == nil {
 		return nil, fmt.Errorf("task store is required")
 	}
-	indexPath := filepath.Join(s.root, indexFileName)
-	if _, err := os.Stat(indexPath); errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	} else if err != nil {
+	index, ok, err := readTaskIndex(filepath.Join(s.root, indexFileName))
+	if err != nil {
 		return nil, err
 	}
-
-	var index []IndexEntry
-	if err := readJSONFile(indexPath, &index); err != nil {
-		return nil, err
+	if !ok {
+		index.Tasks, err = buildTaskIndex(s.root)
+		if err != nil {
+			return nil, err
+		}
 	}
-	out := make([]Snapshot, 0, len(index))
-	for _, entry := range index {
+	out := make([]Snapshot, 0, len(index.Tasks))
+	for _, entry := range index.Tasks {
 		snapshot, err := s.LoadRoot(entry.ID)
 		if err != nil {
 			return nil, err
@@ -285,11 +301,18 @@ func (s *Store) writeIndex() error {
 	if err != nil {
 		return err
 	}
-	return writeJSONAtomic(filepath.Join(s.root, indexFileName), index)
+	if s.taskIDs != nil {
+		return s.taskIDs.writeIndex(index)
+	}
+	return writeTaskIndex(filepath.Join(s.root, indexFileName), taskIndexState{Tasks: index})
 }
 
 func (s *Store) buildIndex() ([]IndexEntry, error) {
-	entries, err := os.ReadDir(s.root)
+	return buildTaskIndex(s.root)
+}
+
+func buildTaskIndex(root string) ([]IndexEntry, error) {
+	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -301,7 +324,7 @@ func (s *Store) buildIndex() ([]IndexEntry, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		rootPath := filepath.Join(s.root, entry.Name(), rootFileName)
+		rootPath := filepath.Join(root, entry.Name(), rootFileName)
 		if _, err := os.Stat(rootPath); errors.Is(err, os.ErrNotExist) {
 			continue
 		} else if err != nil {
@@ -321,6 +344,40 @@ func (s *Store) buildIndex() ([]IndexEntry, error) {
 	}
 	sort.Slice(index, func(i, j int) bool { return index[i].ID < index[j].ID })
 	return index, nil
+}
+
+func readTaskIndex(path string) (taskIndexState, bool, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return taskIndexState{}, false, nil
+	} else if err != nil {
+		return taskIndexState{}, false, err
+	}
+	var state taskIndexState
+	if err := readJSONFile(path, &state); err != nil {
+		return taskIndexState{}, false, err
+	}
+	if state.Counters.Task < 0 {
+		return taskIndexState{}, false, fmt.Errorf("task id counter is invalid: %d", state.Counters.Task)
+	}
+	state.Tasks = cloneIndexEntries(state.Tasks)
+	return state, true, nil
+}
+
+func writeTaskIndex(path string, state taskIndexState) error {
+	if state.Counters.Task < 0 {
+		return fmt.Errorf("task id counter is invalid: %d", state.Counters.Task)
+	}
+	state.Tasks = cloneIndexEntries(state.Tasks)
+	return writeJSONAtomic(path, state)
+}
+
+func cloneIndexEntries(in []IndexEntry) []IndexEntry {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]IndexEntry, len(in))
+	copy(out, in)
+	return out
 }
 
 func readOptionalJSONFile(path string, target any) error {

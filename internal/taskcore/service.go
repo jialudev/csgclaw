@@ -20,7 +20,7 @@ type Service struct {
 	mu             sync.Mutex
 	now            func() time.Time
 	store          *Store
-	nextTaskID     int64
+	taskIDs        *TaskIDAllocator
 	nextApprovalID int64
 	nextSeq        int64
 	roots          map[string]*Task
@@ -103,6 +103,9 @@ type ResolveApprovalInput struct {
 func WithStore(store *Store) Option {
 	return func(s *Service) {
 		s.store = store
+		if store != nil && store.TaskIDAllocator() != nil {
+			s.taskIDs = store.TaskIDAllocator()
+		}
 	}
 }
 
@@ -117,6 +120,7 @@ func WithNowFunc(now func() time.Time) Option {
 func NewService(opts ...Option) *Service {
 	s := &Service{
 		now:       time.Now,
+		taskIDs:   NewMemoryTaskIDAllocator(),
 		roots:     make(map[string]*Task),
 		children:  make(map[string]map[string]*Task),
 		events:    make(map[string][]TaskEvent),
@@ -149,10 +153,17 @@ func (s *Service) CreateRoot(input CreateRootInput) (Task, error) {
 	}
 	id := strings.TrimSpace(input.ID)
 	if id == "" {
-		id = s.nextTaskIdentifier()
+		var err error
+		id, err = s.nextTaskIdentifier()
+		if err != nil {
+			return Task{}, err
+		}
 	}
 	if _, exists := s.roots[id]; exists {
 		return Task{}, fmt.Errorf("task %q already exists", id)
+	}
+	if err := s.bumpTaskIdentifier(id); err != nil {
+		return Task{}, err
 	}
 	now := s.now()
 	status := StatusPending
@@ -208,6 +219,10 @@ func (s *Service) CreateChild(input CreateChildInput) (Task, error) {
 	if strings.TrimSpace(input.CreatedBy) == "" {
 		return Task{}, fmt.Errorf("created_by is required")
 	}
+	childID, err := s.nextTaskIdentifier()
+	if err != nil {
+		return Task{}, err
+	}
 	eventStart := len(s.events[rootID])
 	now := s.now()
 	status := StatusPending
@@ -215,7 +230,7 @@ func (s *Service) CreateChild(input CreateChildInput) (Task, error) {
 		status = StatusAssigned
 	}
 	child := &Task{
-		ID:               s.nextTaskIdentifier(),
+		ID:               childID,
 		ParentID:         parent.ID,
 		AssignmentType:   parent.AssignmentType,
 		AssignmentID:     parent.AssignmentID,
@@ -637,12 +652,16 @@ func (s *Service) loadStoreState() error {
 	for _, snapshot := range snapshots {
 		root := cloneTask(snapshot.Root)
 		s.roots[root.ID] = &root
-		s.bumpTaskIdentifier(root.ID)
+		if err := s.bumpTaskIdentifier(root.ID); err != nil {
+			return err
+		}
 		childMap := make(map[string]*Task, len(snapshot.Children))
 		for _, child := range snapshot.Children {
 			childCopy := cloneTask(child)
 			childMap[childCopy.ID] = &childCopy
-			s.bumpTaskIdentifier(childCopy.ID)
+			if err := s.bumpTaskIdentifier(childCopy.ID); err != nil {
+				return err
+			}
 		}
 		s.children[root.ID] = childMap
 		approvalMap := make(map[string]*TaskApproval, len(snapshot.Approvals))
@@ -695,9 +714,11 @@ func (s *Service) presenceForRootLocked(rootID string) map[string]*TaskPresence 
 	return m
 }
 
-func (s *Service) nextTaskIdentifier() string {
-	s.nextTaskID++
-	return fmt.Sprintf("task-%d", s.nextTaskID)
+func (s *Service) nextTaskIdentifier() (string, error) {
+	if s.taskIDs == nil {
+		s.taskIDs = NewMemoryTaskIDAllocator()
+	}
+	return s.taskIDs.Next()
 }
 
 func (s *Service) nextApprovalIdentifier() string {
@@ -705,8 +726,11 @@ func (s *Service) nextApprovalIdentifier() string {
 	return fmt.Sprintf("approval-%d", s.nextApprovalID)
 }
 
-func (s *Service) bumpTaskIdentifier(id string) {
-	s.nextTaskID = maxCounterFromIdentifier(id, "task-", s.nextTaskID)
+func (s *Service) bumpTaskIdentifier(id string) error {
+	if s.taskIDs == nil {
+		s.taskIDs = NewMemoryTaskIDAllocator()
+	}
+	return s.taskIDs.Bump(id)
 }
 
 func (s *Service) bumpApprovalIdentifier(id string) {

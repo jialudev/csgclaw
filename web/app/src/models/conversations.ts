@@ -1,6 +1,7 @@
 import { flattenMentionText } from "@/components/business/MessageContent/mentions";
 import { isToolActivityMessage } from "@/models/agentActivity";
 import { renderSlashCommandPreviewText } from "@/models/slashCommands";
+import type { WorkspaceTeam } from "@/models/tasks";
 
 export type LocaleCode = "zh" | "en" | string;
 export type TranslateFn = (key: string, params?: Record<string, string | number>) => string;
@@ -121,6 +122,8 @@ export type IMServerEvent = {
   participant?: IMParticipantLike | null;
   room?: Partial<IMConversation> | null;
   room_id?: string | null;
+  team?: WorkspaceTeam | null;
+  team_id?: string | null;
   thread?: ThreadView | null;
   type?: string | null;
   upgrade?: unknown;

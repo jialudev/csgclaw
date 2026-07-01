@@ -178,6 +178,77 @@ func TestStoreTrimsPartialEventLine(t *testing.T) {
 	}
 }
 
+func TestTaskIDCounterPersistsAcrossDeleteAndReload(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	svc := NewService(WithStore(store))
+	first, err := svc.CreateRoot(CreateRootInput{
+		AssignmentType: AssignmentTypeAgent,
+		AssignmentID:   "agent-dev",
+		Title:          "First",
+		CreatedBy:      "user-admin",
+	})
+	if err != nil {
+		t.Fatalf("CreateRoot(first) error = %v", err)
+	}
+	second, err := svc.CreateRoot(CreateRootInput{
+		AssignmentType: AssignmentTypeAgent,
+		AssignmentID:   "agent-dev",
+		Title:          "Second",
+		CreatedBy:      "user-admin",
+	})
+	if err != nil {
+		t.Fatalf("CreateRoot(second) error = %v", err)
+	}
+	if first.ID != "task-1" || second.ID != "task-2" {
+		t.Fatalf("created task ids = %q, %q; want task-1, task-2", first.ID, second.ID)
+	}
+	if err := store.DeleteRoot(second.ID); err != nil {
+		t.Fatalf("DeleteRoot(second) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "counters.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("counters.json exists after task writes: %v", err)
+	}
+
+	resetTaskIDAllocatorsForTest()
+	reloadedStore, err := NewStore(root)
+	if err != nil {
+		t.Fatalf("NewStore(reloaded) error = %v", err)
+	}
+	reloaded := NewService(WithStore(reloadedStore))
+	third, err := reloaded.CreateRoot(CreateRootInput{
+		AssignmentType: AssignmentTypeAgent,
+		AssignmentID:   "agent-dev",
+		Title:          "Third",
+		CreatedBy:      "user-admin",
+	})
+	if err != nil {
+		t.Fatalf("CreateRoot(third) error = %v", err)
+	}
+	if third.ID != "task-3" {
+		t.Fatalf("CreateRoot(third).ID = %q, want task-3", third.ID)
+	}
+	index, ok, err := readTaskIndex(filepath.Join(root, indexFileName))
+	if err != nil {
+		t.Fatalf("readTaskIndex() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("readTaskIndex() ok = false, want true")
+	}
+	if index.Counters.Task != 3 {
+		t.Fatalf("index counter = %d, want 3", index.Counters.Task)
+	}
+}
+
+func resetTaskIDAllocatorsForTest() {
+	taskIDAllocators.Lock()
+	defer taskIDAllocators.Unlock()
+	taskIDAllocators.byRoot = make(map[string]*TaskIDAllocator)
+}
+
 func TestServiceRejectsInvalidTransitions(t *testing.T) {
 	svc := NewService()
 	task, err := svc.CreateRoot(CreateRootInput{

@@ -23,16 +23,21 @@ const (
 	EventTypeUserCreated              = "user.created"
 	EventTypeUserUpdated              = "user.updated"
 	EventTypeUserDeleted              = "user.deleted"
+	EventTypeTeamCreated              = "team.created"
+	EventTypeTeamUpdated              = "team.updated"
+	EventTypeTeamDeleted              = "team.deleted"
 	EventTypeUpgradeStatusChanged     = "upgrade.status_changed"
 )
 
 type Event struct {
 	Type        string                  `json:"type"`
 	RoomID      string                  `json:"room_id,omitempty"`
+	TeamID      string                  `json:"team_id,omitempty"`
 	Room        *Room                   `json:"room,omitempty"`
 	User        *User                   `json:"user,omitempty"`
 	Message     *Message                `json:"message,omitempty"`
 	Participant *apitypes.Participant   `json:"participant,omitempty"`
+	Team        *apitypes.Team          `json:"team,omitempty"`
 	Thread      *ThreadView             `json:"thread,omitempty"`
 	Sender      *User                   `json:"sender,omitempty"`
 	Upgrade     *apitypes.UpgradeStatus `json:"upgrade,omitempty"`

@@ -54,7 +54,7 @@ export function useTaskController({
   });
   const { dataUpdatedAt: tasksDataUpdatedAt, isFetching: tasksFetching, refetch: refetchTasks } = tasksQuery;
   const teamsQuery = useQuery({
-    queryKey: ["workspace", "teams"],
+    queryKey: workspaceQueryKeys.teams(),
     queryFn: fetchTeams,
   });
 

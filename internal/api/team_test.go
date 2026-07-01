@@ -227,6 +227,51 @@ func TestTeamRoutesUpdateAndDeleteTeam(t *testing.T) {
 	}
 }
 
+func TestTeamRoutesPublishLifecycleEvents(t *testing.T) {
+	bus := im.NewBus()
+	teamSvc := team.NewService()
+	h := &Handler{teamSvc: teamSvc, imBus: bus}
+	events, cancel := bus.Subscribe()
+	defer cancel()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/teams", strings.NewReader(`{"title":"release","lead_agent_id":"u-manager","member_agent_ids":["u-worker"]}`))
+	createRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create team status = %d, want %d: %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	var created apitypes.Team
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create team response: %v", err)
+	}
+	createdEvent := mustReceiveIMEvent(t, events)
+	if createdEvent.Type != im.EventTypeTeamCreated || createdEvent.TeamID != created.ID || createdEvent.Team == nil || createdEvent.Team.ID != created.ID {
+		t.Fatalf("created event = %+v, want team.created for %s", createdEvent, created.ID)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/v1/teams/"+created.ID, strings.NewReader(`{"title":"release ops"}`))
+	updateRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("update team status = %d, want %d: %s", updateRec.Code, http.StatusOK, updateRec.Body.String())
+	}
+	updatedEvent := mustReceiveIMEvent(t, events)
+	if updatedEvent.Type != im.EventTypeTeamUpdated || updatedEvent.TeamID != created.ID || updatedEvent.Team == nil || updatedEvent.Team.Title != "release ops" {
+		t.Fatalf("updated event = %+v, want team.updated for release ops", updatedEvent)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/teams/"+created.ID, nil)
+	deleteRec := httptest.NewRecorder()
+	h.Routes().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete team status = %d, want %d: %s", deleteRec.Code, http.StatusNoContent, deleteRec.Body.String())
+	}
+	deletedEvent := mustReceiveIMEvent(t, events)
+	if deletedEvent.Type != im.EventTypeTeamDeleted || deletedEvent.TeamID != created.ID || deletedEvent.Team == nil || deletedEvent.Team.ID != created.ID {
+		t.Fatalf("deleted event = %+v, want team.deleted for %s", deletedEvent, created.ID)
+	}
+}
+
 func TestTeamTaskResponsesIncludeParticipantDisplayNames(t *testing.T) {
 	agentSvc := mustNewSeededService(t, []agent.Agent{
 		{

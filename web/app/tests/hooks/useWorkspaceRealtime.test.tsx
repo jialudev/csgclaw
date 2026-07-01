@@ -1,6 +1,9 @@
 import { act, renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { vi } from "vitest";
 import { useWorkspaceRealtime } from "@/hooks/workspace/useWorkspaceRealtime";
+import { workspaceQueryKeys } from "@/hooks/workspace/workspaceQueries";
 import { buildUsersById, type IMData, type IMServerEvent } from "@/models/conversations";
 import type { AgentLike } from "@/models/agents";
 
@@ -23,6 +26,7 @@ function renderWorkspaceRealtime(
   options: {
     agents?: AgentLike[];
     onRefreshAgentState?: (agentID: string) => Promise<AgentLike | null>;
+    queryClient?: QueryClient;
     refreshWorkspaceAgents?: (options?: { silent?: boolean }) => Promise<AgentLike[]>;
     refreshWorkspaceBootstrap?: () => Promise<IMData | null>;
     setBootstrapData?: (value: IMData | null | ((current: IMData | null) => IMData | null)) => void;
@@ -36,20 +40,39 @@ function renderWorkspaceRealtime(
         value(bootstrapData);
       }
     });
+  const queryClient = options.queryClient ?? createQueryClient();
 
-  return renderHook(() =>
-    useWorkspaceRealtime({
-      agents,
-      onConversationEvent: vi.fn(),
-      onFloatingConversationEvent: vi.fn(),
-      onRefreshAgentState: options.onRefreshAgentState ?? vi.fn(async () => null),
-      onUpgradeStatusChange: vi.fn(),
-      refreshWorkspaceAgents: options.refreshWorkspaceAgents ?? vi.fn(async () => []),
-      refreshWorkspaceBootstrap: options.refreshWorkspaceBootstrap ?? vi.fn(async () => null),
-      setBootstrapData,
-      usersById: buildUsersById(bootstrapData.users),
-    }),
+  return renderHook(
+    () =>
+      useWorkspaceRealtime({
+        agents,
+        onConversationEvent: vi.fn(),
+        onFloatingConversationEvent: vi.fn(),
+        onRefreshAgentState: options.onRefreshAgentState ?? vi.fn(async () => null),
+        onUpgradeStatusChange: vi.fn(),
+        refreshWorkspaceAgents: options.refreshWorkspaceAgents ?? vi.fn(async () => []),
+        refreshWorkspaceBootstrap: options.refreshWorkspaceBootstrap ?? vi.fn(async () => null),
+        setBootstrapData,
+        usersById: buildUsersById(bootstrapData.users),
+      }),
+    { wrapper: createWrapper(queryClient) },
   );
+}
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+}
+
+function createWrapper(queryClient: QueryClient) {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  };
 }
 
 describe("useWorkspaceRealtime", () => {
@@ -97,6 +120,42 @@ describe("useWorkspaceRealtime", () => {
 
     expect(refreshWorkspaceBootstrap).toHaveBeenCalledTimes(1);
     expect(refreshWorkspaceAgents).toHaveBeenCalledWith({ silent: true });
+  });
+
+  it("invalidates teams when a team lifecycle event arrives", () => {
+    let eventHandler: ((payload: IMServerEvent) => void) | null = null;
+    subscribeIMEventsMock.mockImplementation((handler: (payload: IMServerEvent) => void) => {
+      eventHandler = handler;
+      return () => {};
+    });
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    renderWorkspaceRealtime({ queryClient });
+
+    act(() => {
+      eventHandler?.({
+        team: {
+          id: "team-weather",
+          title: "Weather team",
+          lead_agent_id: "u-manager",
+          member_agent_ids: ["u-weather"],
+          status: "active",
+          created_at: "",
+          updated_at: "",
+        },
+        team_id: "team-weather",
+        type: "team.created",
+      });
+    });
+
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: workspaceQueryKeys.teams() });
   });
 
   it("refreshes non-running agent state when that agent sends a message", () => {

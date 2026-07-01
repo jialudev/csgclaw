@@ -70,11 +70,14 @@ func (s *Service) CreateAgentTask(ctx context.Context, input CreateInput) (taskc
 		return taskcore.Task{}, fmt.Errorf("title is required")
 	}
 
-	name := s.agentDisplayName(agentID)
+	name, description, err := s.agentIdentity(agentID)
+	if err != nil {
+		return taskcore.Task{}, err
+	}
 	user, room, err := s.im.EnsureAgentUser(im.EnsureAgentUserRequest{
 		ID:          agentID,
 		Name:        name,
-		Description: s.agentDescription(agentID),
+		Description: description,
 		Role:        agent.RoleWorker,
 	})
 	if err != nil {
@@ -187,24 +190,14 @@ func (s *Service) Update(input UpdateInput) (taskcore.Task, error) {
 	return task, nil
 }
 
-func (s *Service) agentDisplayName(agentID string) string {
+func (s *Service) agentIdentity(agentID string) (string, string, error) {
 	if s != nil && s.agents != nil {
 		if got, ok := s.agents.Agent(agentID); ok {
-			if name := strings.TrimSpace(got.Name); name != "" {
-				return name
-			}
+			return firstNonEmpty(strings.TrimSpace(got.Name), fallbackAgentName(agentID)), strings.TrimSpace(got.Description), nil
 		}
+		return "", "", fmt.Errorf("agent %q not found", agentID)
 	}
-	return fallbackAgentName(agentID)
-}
-
-func (s *Service) agentDescription(agentID string) string {
-	if s != nil && s.agents != nil {
-		if got, ok := s.agents.Agent(agentID); ok {
-			return strings.TrimSpace(got.Description)
-		}
-	}
-	return ""
+	return fallbackAgentName(agentID), "", nil
 }
 
 func (s *Service) participantIDForAgentID(agentID string) string {

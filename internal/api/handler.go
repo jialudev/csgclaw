@@ -88,10 +88,12 @@ type imBootstrapResponse struct {
 type imEventResponse struct {
 	Type        string                  `json:"type"`
 	RoomID      string                  `json:"room_id,omitempty"`
+	TeamID      string                  `json:"team_id,omitempty"`
 	Room        *im.Room                `json:"room,omitempty"`
 	User        *im.User                `json:"user,omitempty"`
 	Message     *im.Message             `json:"message,omitempty"`
 	Participant *apitypes.Participant   `json:"participant,omitempty"`
+	Team        *apitypes.Team          `json:"team,omitempty"`
 	Thread      *im.ThreadView          `json:"thread,omitempty"`
 	Sender      *im.User                `json:"sender,omitempty"`
 	Upgrade     *apitypes.UpgradeStatus `json:"upgrade,omitempty"`
@@ -2659,10 +2661,12 @@ func presentEvent(evt im.Event) imEventResponse {
 	return imEventResponse{
 		Type:        evt.Type,
 		RoomID:      evt.RoomID,
+		TeamID:      evt.TeamID,
 		Room:        evt.Room,
 		User:        evt.User,
 		Message:     evt.Message,
 		Participant: evt.Participant,
+		Team:        evt.Team,
 		Thread:      evt.Thread,
 		Sender:      evt.Sender,
 		Upgrade:     evt.Upgrade,
@@ -2808,5 +2812,17 @@ func (h *Handler) publishParticipantEvent(eventType string, item apitypes.Partic
 	h.imBus.Publish(im.Event{
 		Type:        eventType,
 		Participant: &participantCopy,
+	})
+}
+
+func (h *Handler) publishTeamEvent(eventType string, item apitypes.Team) {
+	if h.imBus == nil {
+		return
+	}
+	teamCopy := item
+	h.imBus.Publish(im.Event{
+		Type:   eventType,
+		TeamID: item.ID,
+		Team:   &teamCopy,
 	})
 }

@@ -2,9 +2,14 @@ package agenttask
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"csgclaw/internal/agent"
+	"csgclaw/internal/config"
 	"csgclaw/internal/im"
 	"csgclaw/internal/taskcore"
 )
@@ -12,7 +17,8 @@ import (
 func TestCreateAgentTaskBindsDirectRoomAndSendsInitialMessage(t *testing.T) {
 	core := taskcore.NewService()
 	imSvc := im.NewService()
-	svc := NewService(core, imSvc, nil, nil)
+	agentSvc := newTestAgentService(t, []agent.Agent{testWorkerAgent("agent-dev", "dev")})
+	svc := NewService(core, imSvc, agentSvc, nil)
 
 	task, err := svc.CreateAgentTask(context.Background(), CreateInput{
 		AgentID:   "agent-dev",
@@ -65,6 +71,31 @@ func TestCreateAgentTaskBindsDirectRoomAndSendsInitialMessage(t *testing.T) {
 	}
 }
 
+func TestCreateAgentTaskRejectsMissingAgentWhenAgentServiceConfigured(t *testing.T) {
+	core := taskcore.NewService()
+	imSvc := im.NewService()
+	agentSvc := newTestAgentService(t, nil)
+	svc := NewService(core, imSvc, agentSvc, nil)
+
+	_, err := svc.CreateAgentTask(context.Background(), CreateInput{
+		AgentID:   "agent-missing",
+		Title:     "Fix flaky test",
+		CreatedBy: im.AdminUserID,
+	})
+	if err == nil {
+		t.Fatal("CreateAgentTask() error = nil, want missing agent error")
+	}
+	if !strings.Contains(err.Error(), `agent "agent-missing" not found`) {
+		t.Fatalf("CreateAgentTask() error = %v, want missing agent context", err)
+	}
+	if _, ok := imSvc.User("user-missing"); ok {
+		t.Fatal("User(user-missing) exists, want no IM user for missing agent")
+	}
+	if rooms := imSvc.ListRooms(); len(rooms) != 0 {
+		t.Fatalf("ListRooms() len = %d, want no IM rooms for missing agent", len(rooms))
+	}
+}
+
 func TestClaimAndCompleteAgentTask(t *testing.T) {
 	core := taskcore.NewService()
 	imSvc := im.NewService()
@@ -95,5 +126,51 @@ func TestClaimAndCompleteAgentTask(t *testing.T) {
 	}
 	if completed.Status != taskcore.StatusCompleted || completed.Result != "done" {
 		t.Fatalf("Update(completed) = %+v, want completed", completed)
+	}
+}
+
+func newTestAgentService(t *testing.T, agents []agent.Agent) *agent.Service {
+	t.Helper()
+
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "agents.json")
+	data, err := json.Marshal(map[string]any{"agents": agents})
+	if err != nil {
+		t.Fatalf("marshal seeded agents: %v", err)
+	}
+	if err := os.WriteFile(statePath, append(data, '\n'), 0o600); err != nil {
+		t.Fatalf("write seeded agents: %v", err)
+	}
+	svc, err := agent.NewService(config.ModelConfig{
+		Provider: config.ProviderLLMAPI,
+		BaseURL:  "http://127.0.0.1:4000",
+		APIKey:   "sk-test",
+		ModelID:  "model-1",
+	}, config.ServerConfig{}, "manager-image:test", statePath)
+	if err != nil {
+		t.Fatalf("agent.NewService() error = %v", err)
+	}
+	return svc
+}
+
+func testWorkerAgent(id, name string) agent.Agent {
+	return agent.Agent{
+		ID:          id,
+		Name:        name,
+		Description: "Test worker",
+		Role:        agent.RoleWorker,
+		RuntimeKind: agent.RuntimeKindPicoClawSandbox,
+		RuntimeID:   "rt-" + id,
+		Image:       "agent-image:test",
+		Status:      "running",
+		AgentProfile: agent.AgentProfile{
+			Provider:        agent.ProviderAPI,
+			BaseURL:         "http://127.0.0.1:4000",
+			APIKey:          "sk-test",
+			ModelID:         "model-1",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
 	}
 }

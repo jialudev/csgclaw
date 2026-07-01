@@ -4705,6 +4705,41 @@ func TestHandleIMEventsExposeRoomIDOnly(t *testing.T) {
 	}
 }
 
+func TestHandleIMEventsExposeTeamPayload(t *testing.T) {
+	bus := im.NewBus()
+	srv := &Handler{imBus: bus}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		srv.Routes().ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	bus.Publish(im.Event{
+		Type:   im.EventTypeTeamCreated,
+		TeamID: "team-1",
+		Team: &apitypes.Team{
+			ID:    "team-1",
+			Title: "Weather team",
+		},
+	})
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	<-done
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"type":"team.created"`) || !strings.Contains(body, `"team_id":"team-1"`) || !strings.Contains(body, `"title":"Weather team"`) {
+		t.Fatalf("body = %q, want team.created payload", body)
+	}
+}
+
 func TestHandleRoomsPostCreatesRoom(t *testing.T) {
 	srv := &Handler{
 		im: im.NewServiceFromBootstrap(im.Bootstrap{
