@@ -1,5 +1,5 @@
-import { isToolActivityMessage, parseAgentActivity } from "@/models/agentActivity";
-import { AgentActivityMsgTypes, CSGCLAW_AGENT_ACTIVITY_TYPE } from "@/shared/constants/messages";
+import { isToolActivityMessage, parseAgentActivity, parsePlainAgentCommand } from "@/models/agentActivity";
+import { AgentActivityKinds, AgentActivityMsgTypes, CSGCLAW_AGENT_ACTIVITY_TYPE } from "@/shared/constants/messages";
 
 describe("agent activity model", () => {
   it("parses tool activity payloads", () => {
@@ -64,6 +64,52 @@ describe("agent activity model", () => {
     };
 
     expect(isToolActivityMessage(tool)).toBe(true);
+  });
+
+  it("parses OpenClaw plain text command messages with structured output", () => {
+    const command = parsePlainAgentCommand(
+      '🔎 Web Search: for "上海天气" (top 5) {"query":"上海天气","provider":"duckduckgo","count":5}',
+    );
+
+    expect(command).toMatchObject({
+      command: 'Web Search: for "上海天气" (top 5)',
+      kind: AgentActivityKinds.execCommand,
+      signature: 'web search: for "上海天气" (top 5)',
+      title: "Web Search",
+    });
+    expect(command?.output).toContain('"provider": "duckduckgo"');
+  });
+
+  it("classifies csgclaw-cli command messages as exec command activity", () => {
+    expect(parsePlainAgentCommand("🛠 csgclaw-cli task claim --task task-4 --participant-id pt-worker")).toMatchObject({
+      command: "csgclaw-cli task claim --task task-4 --participant-id pt-worker",
+      kind: AgentActivityKinds.execCommand,
+      title: "csgclaw-cli task",
+    });
+  });
+
+  it("classifies OpenClaw message receipts as other activity", () => {
+    expect(
+      parsePlainAgentCommand(`📩 Message
+{"channel":"csgclaw","to":"csgclaw:room:room-1","result":{"ok":true}}`),
+    ).toMatchObject({
+      command: "Message",
+      kind: AgentActivityKinds.other,
+      title: "Message",
+    });
+  });
+
+  it("parses legacy fenced command messages", () => {
+    const command = parsePlainAgentCommand(`🔧 \`exec\`
+\`\`\`json
+{"command":"ls web/app","output":"src\\ntests"}
+\`\`\``);
+
+    expect(command).toMatchObject({
+      command: "ls web/app",
+      kind: AgentActivityKinds.execCommand,
+      output: "src\ntests",
+    });
   });
 
   it("rejects invalid activity shapes", () => {

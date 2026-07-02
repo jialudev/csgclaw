@@ -269,6 +269,7 @@ export function useAgentController({
   managerProfile,
   modelProviders = null,
   modelProvidersLoaded = false,
+  profileDetailAgentID = "",
   refreshHubTemplates,
   refreshWorkspaceAgents,
   refreshWorkspaceBootstrap,
@@ -391,11 +392,13 @@ export function useAgentController({
     [agentItems, data?.users],
   );
   const selectedAgentForPage = useMemo(() => {
-    if (activePane.type !== WorkspacePaneTypes.agent) {
+    const selectedAgentID =
+      activePane.type === WorkspacePaneTypes.agent ? String(activePane.id || "").trim() : profileDetailAgentID.trim();
+    if (!selectedAgentID) {
       return null;
     }
-    return agentItems.find((item) => item.id === activePane.id) ?? null;
-  }, [agentItems, activePane]);
+    return agentItems.find((item) => item.id === selectedAgentID) ?? null;
+  }, [agentItems, activePane.id, activePane.type, profileDetailAgentID]);
   const selectedAgentForPageDraftSignature = useMemo(() => {
     if (!selectedAgentForPage) {
       return "";
@@ -488,7 +491,7 @@ export function useAgentController({
   const agentModelOptions = useMemo(() => modelProviderOptionsFromCatalog(modelProviders), [modelProviders]);
   const agentPageModelOptions = useMemo(() => modelProviderOptionsFromCatalog(modelProviders), [modelProviders]);
   const agentModelBusy = Boolean(showAgentModal && !modelProvidersLoaded);
-  const agentPageModelBusy = Boolean(activePane.type === WorkspacePaneTypes.agent && !modelProvidersLoaded);
+  const agentPageModelBusy = Boolean(selectedAgentForPage && !modelProvidersLoaded);
   const agentPageModelError = "";
   const resetAgentModels = useCallback(() => {
     void refreshWorkspaceModelProviders();
@@ -539,7 +542,7 @@ export function useAgentController({
   );
 
   function agentOperationUsesPageError(item: AgentLike | null | undefined): boolean {
-    return Boolean(item?.id && activePane.type === WorkspacePaneTypes.agent && activePane.id === item.id);
+    return Boolean(item?.id && selectedAgentForPage?.id === item.id);
   }
 
   function clearAgentOperationError(item: AgentLike | null | undefined): void {
@@ -804,7 +807,7 @@ export function useAgentController({
       return;
     }
     setAgentsData((current) => mergeAgentIntoList(current, agent));
-    if (activePane.type === WorkspacePaneTypes.agent && activePane.id === agentID) {
+    if (selectedAgentForPage?.id === agentID) {
       setAgentPageDraft((current) => agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent));
       setAgentPageSavedDraft((current) => agentDraftWithRuntimeFieldsFromAgent(current ?? agentToDraft(agent), agent));
     }
@@ -1868,6 +1871,7 @@ export function useAgentController({
       saveError: agentPageError,
       notice: agentPageNotice,
       noticeTone: agentPageNoticeTone,
+      rooms,
       feishuConnectBusy: agentActionBusy.includes(`:${FEISHU_CHANNEL_ACTION}:`) ? agentActionBusy : "",
       feishuPendingRegistration: selectedFeishuPendingRegistration,
       authStatuses: cliproxyAuthStatuses,

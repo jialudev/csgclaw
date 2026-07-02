@@ -5201,7 +5201,7 @@ func TestHandleParticipantSendMessageReplacementRefreshesThreadRootSummary(t *te
 	}
 }
 
-func TestHandleParticipantSendMessageThreadsTopLevelToolCallsUnderFinalResponse(t *testing.T) {
+func TestHandleParticipantSendMessageKeepsTopLevelToolCallsSeparateFromFinalResponse(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		isDirect bool
@@ -5255,42 +5255,39 @@ func TestHandleParticipantSendMessageThreadsTopLevelToolCallsUnderFinalResponse(
 			if err != nil {
 				t.Fatalf("ListMessages() error = %v", err)
 			}
-			var root im.Message
+			var firstTool, secondTool, final im.Message
 			for _, message := range timeline {
-				if message.ID == firstToolID || message.ID == secondToolID {
-					t.Fatalf("timeline = %+v, want tool replies hidden from top-level messages", timeline)
+				switch message.ID {
+				case firstToolID:
+					firstTool = message
+				case secondToolID:
+					secondTool = message
+				case finalID:
+					final = message
 				}
-				if message.ID == finalID {
-					root = message
+			}
+			if firstTool.ID == "" || secondTool.ID == "" {
+				t.Fatalf("timeline = %+v, want tool records kept as top-level activity messages", timeline)
+			}
+			if final.ID == "" {
+				t.Fatalf("timeline = %+v, want final response %q", timeline, finalID)
+			}
+			if final.Content != "Used two tools." {
+				t.Fatalf("final.Content = %q, want final response", final.Content)
+			}
+			if final.Thread != nil {
+				t.Fatalf("final.Thread = %+v, want no synthetic activity thread", final.Thread)
+			}
+			if firstTool.RelatesTo != nil || secondTool.RelatesTo != nil {
+				t.Fatalf("tool relates_to = %+v / %+v, want top-level activity messages", firstTool.RelatesTo, secondTool.RelatesTo)
+			}
+			for _, tool := range []im.Message{firstTool, secondTool} {
+				if !strings.HasPrefix(strings.TrimSpace(tool.Content), "🔧 ") {
+					t.Fatalf("tool.Content = %q, want legacy tool call", tool.Content)
 				}
 			}
-			if root.ID == "" {
-				t.Fatalf("timeline = %+v, want final root %q", timeline, finalID)
-			}
-			if root.Content != "Used two tools." {
-				t.Fatalf("root.Content = %q, want final response", root.Content)
-			}
-			if root.Thread == nil || root.Thread.ReplyCount != 2 || root.Thread.Context.RootExcerpt != "Used two tools." {
-				t.Fatalf("root.Thread = %+v, want refreshed summary with two replies", root.Thread)
-			}
-
-			thread, err := imSvc.GetThread("room-1", root.ID)
-			if err != nil {
-				t.Fatalf("GetThread() error = %v", err)
-			}
-			if len(thread.Replies) != 2 {
-				t.Fatalf("thread replies = %+v, want two tool replies", thread.Replies)
-			}
-			if thread.Replies[0].ID != firstToolID || thread.Replies[1].ID != secondToolID {
-				t.Fatalf("reply ids = %q / %q, want %q / %q", thread.Replies[0].ID, thread.Replies[1].ID, firstToolID, secondToolID)
-			}
-			for _, reply := range thread.Replies {
-				if reply.RelatesTo == nil || reply.RelatesTo.RelType != im.RelationTypeThread || reply.RelatesTo.EventID != root.ID {
-					t.Fatalf("reply.RelatesTo = %+v, want m.thread -> %s", reply.RelatesTo, root.ID)
-				}
-				if !strings.HasPrefix(strings.TrimSpace(reply.Content), "🔧 ") {
-					t.Fatalf("reply.Content = %q, want legacy tool call", reply.Content)
-				}
+			if _, err := imSvc.GetThread("room-1", final.ID); err == nil {
+				t.Fatalf("GetThread(%q) unexpectedly succeeded; want no synthetic thread", final.ID)
 			}
 		})
 	}

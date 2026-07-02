@@ -208,6 +208,23 @@ describe("conversation model helpers", () => {
     expect(userDisplayName("missing", usersById)).toBe("missing");
     expect(agentMatchesUser({ name: "Worker" }, { id: "u-2", name: "worker" })).toBe(true);
     expect(agentMatchesUser({ name: "Manager" }, { id: "u-3", name: "manager" })).toBe(true);
+    expect(
+      agentMatchesUser(
+        {
+          id: "agent-openclaw-weather",
+          name: "openclaw-weather",
+          participants: [
+            {
+              channel: "csgclaw",
+              channel_user_ref: "openclaw-weather",
+              id: "openclaw-weather",
+              user_id: "user-openclaw-weather",
+            },
+          ],
+        },
+        { id: "user-openclaw-weather", name: "openclaw-weather" },
+      ),
+    ).toBe(true);
     expect(agentMatchesUser(null, { id: "u-1" })).toBe(false);
   });
 
@@ -466,8 +483,10 @@ describe("conversation model helpers", () => {
     ).toEqual(["new", "old"]);
   });
 
-  it("classifies legacy and structured tool-call messages", () => {
+  it("classifies non-message agent activity messages", () => {
     expect(isToolCallMessage("🔧 Running tool")).toBe(true);
+    expect(isToolCallMessage('🔎 Web Search: for "上海天气" (top 5) {"query":"上海天气"}')).toBe(true);
+    expect(isToolCallMessage('📩 Message\n{"channel":"csgclaw","result":{"ok":true}}')).toBe(true);
     expect(
       isToolCallMessage({
         content: JSON.stringify({
@@ -491,6 +510,6 @@ describe("conversation model helpers", () => {
           },
         }),
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
