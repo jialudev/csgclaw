@@ -536,19 +536,13 @@ func (s *Service) saveLocked() error {
 		return localstore.WriteSection(s.state, "agents", s.rootAgentsStateLocked())
 	}
 
-	data, err := json.MarshalIndent(persistedState{
+	state := persistedState{
 		ProfileDefaults:  cloneProfile(s.profileDefaults),
 		DetectionResults: append([]ProfileDetectionResult(nil), s.detectionResults...),
 		Agents:           persistedAgentsFromMap(s.agents),
 		Runtimes:         sortedRuntimeRecordsFromMap(s.runtimeRecords),
-	}, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode agent state: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(s.state), 0o755); err != nil {
-		return fmt.Errorf("create state dir: %w", err)
-	}
-	if err := os.WriteFile(s.state, append(data, '\n'), 0o600); err != nil {
+	if err := localstore.WriteJSONFile(s.state, state); err != nil {
 		return fmt.Errorf("write agent state: %w", err)
 	}
 	return nil

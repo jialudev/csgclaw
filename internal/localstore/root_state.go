@@ -73,12 +73,8 @@ func WriteSection(path, section string, value any) error {
 	state["version"] = json.RawMessage("1")
 	state[section] = raw
 
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode root state: %w", err)
+	if err := WriteJSONFile(path, state); err != nil {
+		return fmt.Errorf("write root state: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create root state dir: %w", err)
-	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	return nil
 }

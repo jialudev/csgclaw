@@ -95,9 +95,6 @@ func SaveModels(path string, llm LLMConfig) error {
 		return localstore.WriteSection(path, "model_providers", state)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create models config dir: %w", err)
-	}
 	llm = llm.Normalized()
 	providers := providersForStorage(llm)
 	file := modelProvidersFile{
@@ -111,12 +108,7 @@ func SaveModels(path string, llm LLMConfig) error {
 	if file.Providers == nil {
 		file.Providers = make(map[string]ProviderConfig)
 	}
-	data, err := json.MarshalIndent(file, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode models config: %w", err)
-	}
-	data = append(data, '\n')
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := localstore.WriteJSONFile(path, file); err != nil {
 		return fmt.Errorf("write models config: %w", err)
 	}
 	return nil

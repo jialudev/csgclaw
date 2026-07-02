@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"csgclaw/internal/localstore"
 )
 
 const (
@@ -162,16 +164,16 @@ func (s *Store) SaveSnapshot(snapshot Snapshot, newEvents []TaskEvent) error {
 	if err := s.appendEvents(snapshot.Root.ID, newEvents); err != nil {
 		return err
 	}
-	if err := writeJSONAtomic(filepath.Join(dir, rootFileName), snapshot.Root); err != nil {
+	if err := localstore.WriteJSONFile(filepath.Join(dir, rootFileName), snapshot.Root); err != nil {
 		return err
 	}
-	if err := writeJSONAtomic(filepath.Join(dir, childrenFileName), snapshot.Children); err != nil {
+	if err := localstore.WriteJSONFile(filepath.Join(dir, childrenFileName), snapshot.Children); err != nil {
 		return err
 	}
-	if err := writeJSONAtomic(filepath.Join(dir, approvalsFileName), snapshot.Approvals); err != nil {
+	if err := localstore.WriteJSONFile(filepath.Join(dir, approvalsFileName), snapshot.Approvals); err != nil {
 		return err
 	}
-	if err := writeJSONAtomic(filepath.Join(dir, presenceFileName), snapshot.Presence); err != nil {
+	if err := localstore.WriteJSONFile(filepath.Join(dir, presenceFileName), snapshot.Presence); err != nil {
 		return err
 	}
 	return s.writeIndex()
@@ -368,7 +370,7 @@ func writeTaskIndex(path string, state taskIndexState) error {
 		return fmt.Errorf("task id counter is invalid: %d", state.Counters.Task)
 	}
 	state.Tasks = cloneIndexEntries(state.Tasks)
-	return writeJSONAtomic(path, state)
+	return localstore.WriteJSONFile(path, state)
 }
 
 func cloneIndexEntries(in []IndexEntry) []IndexEntry {
@@ -390,53 +392,5 @@ func readOptionalJSONFile(path string, target any) error {
 }
 
 func readJSONFile(path string, target any) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return nil
-	}
-	return json.Unmarshal(data, target)
-}
-
-func writeJSONAtomic(path string, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
-	temp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tempName := temp.Name()
-	defer os.Remove(tempName)
-
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tempName, path); err != nil {
-		return err
-	}
-
-	dirHandle, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer dirHandle.Close()
-	return dirHandle.Sync()
+	return localstore.ReadJSONFile(path, target)
 }

@@ -2424,14 +2424,7 @@ func readJSONLinesIfExists(path string) ([]map[string]any, error) {
 }
 
 func writeJSONFile(path string, value any) error {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	return WriteJSONFile(path, value)
 }
 
 func removeIfExists(path string) error {
