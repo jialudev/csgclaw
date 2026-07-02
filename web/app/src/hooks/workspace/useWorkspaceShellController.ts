@@ -64,7 +64,7 @@ export function useWorkspaceShellController({
           : activePane.type === WorkspacePaneTypes.computer
             ? t("computerOverview")
             : activePane.type === WorkspacePaneTypes.hub
-              ? t("hubOverview")
+              ? t("resourcesOverview")
               : activePane.type === WorkspacePaneTypes.task
                 ? t("tasksOverview")
                 : t("conversationOverview");

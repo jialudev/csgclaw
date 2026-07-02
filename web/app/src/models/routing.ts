@@ -50,6 +50,7 @@ export const WorkspaceRouteSegments = {
   team: "team",
   models: "models",
   model: "model",
+  resources: "resources",
   hub: "hub",
   templates: "templates",
   skills: "skills",
@@ -127,7 +128,7 @@ export function paneFromLocation(pathname = window.location.pathname): Workspace
       ? { type: WorkspacePaneTypes.modelProvider, id }
       : { type: WorkspacePaneTypes.computer, id: DefaultWorkspacePaneIds.computer };
   }
-  if (section === WorkspaceRouteSegments.hub) {
+  if (section === WorkspaceRouteSegments.resources || section === WorkspaceRouteSegments.hub) {
     return { type: WorkspacePaneTypes.hub, id: DefaultWorkspacePaneIds.hub };
   }
   if (section === WorkspaceRouteSegments.templates) {
@@ -175,7 +176,7 @@ export function pathForPane(
     if (pane.resourceType === "skill" && pane.id) {
       return `/${WorkspaceRouteSegments.skills}/${encodeURIComponent(pane.id)}`;
     }
-    return `/${WorkspaceRouteSegments.hub}`;
+    return `/${WorkspaceRouteSegments.resources}`;
   }
   if (pane.type === WorkspacePaneTypes.task) {
     if (pane.id) {

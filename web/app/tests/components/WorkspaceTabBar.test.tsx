@@ -5,7 +5,7 @@ import type { TranslateFn } from "@/models/conversations";
 
 const labels: Record<string, string> = {
   agentsTab: "Agents",
-  hubTab: "Hub",
+  resourcesTab: "Resources",
   messagesTab: "Messages",
   newBadge: "NEW",
   tasksTab: "Tasks",
@@ -34,7 +34,7 @@ describe("WorkspaceTabBar", () => {
     expect(within(tablist).getByRole("tab", { name: "Messages" })).toBeInTheDocument();
     expect(within(tablist).getByRole("tab", { name: "Agents" })).toBeInTheDocument();
     expect(within(tablist).getByRole("tab", { name: "Tasks" })).toBeInTheDocument();
-    expect(within(tablist).getByRole("tab", { name: "Hub" })).toBeInTheDocument();
+    expect(within(tablist).getByRole("tab", { name: "Resources" })).toBeInTheDocument();
   });
 
   it("hides the hub new badge after it is dismissed", () => {

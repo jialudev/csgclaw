@@ -45,28 +45,28 @@ export function useWorkspaceHubController({
   t,
 }: UseWorkspaceHubControllerArgs): WorkspaceHubController {
   const queryClient = useQueryClient();
-  const [hubManualError, setHubManualError] = useState("");
-  const [hubDeleteBusy, setHubDeleteBusy] = useState(false);
-  const [hubDeleteError, setHubDeleteError] = useState("");
+  const [resourcesManualError, setResourcesManualError] = useState("");
+  const [resourcesDeleteBusy, setResourcesDeleteBusy] = useState(false);
+  const [resourcesDeleteError, setResourcesDeleteError] = useState("");
   const [skillDeleteBusy, setSkillDeleteBusy] = useState(false);
   const [skillDeleteError, setSkillDeleteError] = useState("");
-  const [hubUploadBusy, setHubUploadBusy] = useState(false);
-  const [hubUploadError, setHubUploadError] = useState("");
-  const [hubRemoteInstallBusy, setHubRemoteInstallBusy] = useState("");
-  const [hubRemoteInstallError, setHubRemoteInstallError] = useState("");
+  const [resourcesUploadBusy, setResourcesUploadBusy] = useState(false);
+  const [resourcesUploadError, setResourcesUploadError] = useState("");
+  const [resourcesRemoteInstallBusy, setResourcesRemoteInstallBusy] = useState("");
+  const [resourcesRemoteInstallError, setResourcesRemoteInstallError] = useState("");
 
   const refreshHubTemplates = useCallback(async (): Promise<void> => {
     try {
       await refreshWorkspaceHubTemplates();
-      setHubManualError("");
+      setResourcesManualError("");
     } catch (_) {
-      setHubManualError(t("hubLoadFailed"));
+      setResourcesManualError(t("resourcesLoadFailed"));
     }
   }, [refreshWorkspaceHubTemplates, t]);
 
   useEffect(() => {
     if (hubTemplatesQuery.isSuccess) {
-      setHubManualError("");
+      setResourcesManualError("");
     }
   }, [hubTemplatesQuery.isSuccess, hubTemplatesQuery.dataUpdatedAt]);
 
@@ -79,7 +79,7 @@ export function useWorkspaceHubController({
     templates: visibleHubTemplates,
     templatesQuery: hubTemplatesQuery,
     loaded: hubLoaded,
-    manualError: hubManualError || hubDeleteError || skillDeleteError,
+    manualError: resourcesManualError || resourcesDeleteError || skillDeleteError,
     refreshTemplates: refreshHubTemplates,
     t,
   });
@@ -92,21 +92,21 @@ export function useWorkspaceHubController({
         return false;
       }
       const label = template.name || template.id;
-      if (!window.confirm(`${t("hubDeleteConfirm")} ${label}?`)) {
+      if (!window.confirm(`${t("resourcesDeleteConfirm")} ${label}?`)) {
         return false;
       }
-      setHubDeleteBusy(true);
-      setHubDeleteError("");
+      setResourcesDeleteBusy(true);
+      setResourcesDeleteError("");
       try {
         await deleteHubTemplateRequest(template.id);
         setSelectedHubTemplateId("");
         await refreshHubTemplates();
         return true;
       } catch (err) {
-        setHubDeleteError(errorMessage(err, t("hubDeleteFailed")));
+        setResourcesDeleteError(errorMessage(err, t("resourcesDeleteFailed")));
         return false;
       } finally {
-        setHubDeleteBusy(false);
+        setResourcesDeleteBusy(false);
       }
     },
     [refreshHubTemplates, setSelectedHubTemplateId, t],
@@ -131,7 +131,7 @@ export function useWorkspaceHubController({
         await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.skills() });
         return true;
       } catch (err) {
-        setSkillDeleteError(errorMessage(err, t("hubSkillDeleteFailed")));
+        setSkillDeleteError(errorMessage(err, t("resourcesSkillDeleteFailed")));
         return false;
       } finally {
         setSkillDeleteBusy(false);
@@ -142,8 +142,8 @@ export function useWorkspaceHubController({
 
   const uploadSkill = useCallback(
     async (file: File): Promise<SkillSummary | null> => {
-      setHubUploadBusy(true);
-      setHubUploadError("");
+      setResourcesUploadBusy(true);
+      setResourcesUploadError("");
       try {
         const uploaded = await uploadSkillArchive(file);
         queryClient.setQueryData<SkillSummary[]>(workspaceQueryKeys.skills(), (current) => {
@@ -155,10 +155,10 @@ export function useWorkspaceHubController({
         setSelectedHubSkillPath("");
         return uploaded;
       } catch (err) {
-        setHubUploadError(errorMessage(err, t("hubSkillUploadFailed")));
+        setResourcesUploadError(errorMessage(err, t("resourcesSkillUploadFailed")));
         return null;
       } finally {
-        setHubUploadBusy(false);
+        setResourcesUploadBusy(false);
       }
     },
     [queryClient, setSelectedHubResourceType, setSelectedHubSkillName, setSelectedHubSkillPath, t],
@@ -168,11 +168,11 @@ export function useWorkspaceHubController({
     async (skill: SkillSummary | null | undefined): Promise<SkillSummary | null> => {
       const remotePath = String(skill?.remotePath || "").trim();
       if (!remotePath) {
-        setHubRemoteInstallError(t("hubSkillRemoteInstallFailed"));
+        setResourcesRemoteInstallError(t("resourcesSkillRemoteInstallFailed"));
         return null;
       }
-      setHubRemoteInstallBusy(remotePath);
-      setHubRemoteInstallError("");
+      setResourcesRemoteInstallBusy(remotePath);
+      setResourcesRemoteInstallError("");
       try {
         const installed = await installRemoteSkillRequest(remotePath, skill?.remoteRef);
         queryClient.setQueryData<SkillSummary[]>(workspaceQueryKeys.skills(), (current) => {
@@ -184,10 +184,10 @@ export function useWorkspaceHubController({
         setSelectedHubSkillPath("");
         return installed;
       } catch (err) {
-        setHubRemoteInstallError(errorMessage(err, t("hubSkillRemoteInstallFailed")));
+        setResourcesRemoteInstallError(errorMessage(err, t("resourcesSkillRemoteInstallFailed")));
         return null;
       } finally {
-        setHubRemoteInstallBusy("");
+        setResourcesRemoteInstallBusy("");
       }
     },
     [queryClient, setSelectedHubResourceType, setSelectedHubSkillName, setSelectedHubSkillPath, t],
@@ -196,19 +196,19 @@ export function useWorkspaceHubController({
   return {
     hub: {
       ...hub,
-      deleteBusy: hubDeleteBusy,
+      deleteBusy: resourcesDeleteBusy,
       deleteHubTemplate,
       deleteSkill,
       installRemoteSkill,
-      remoteInstallBusy: hubRemoteInstallBusy,
-      remoteInstallError: hubRemoteInstallError,
+      remoteInstallBusy: resourcesRemoteInstallBusy,
+      remoteInstallError: resourcesRemoteInstallError,
       skillDeleteBusy,
-      uploadBusy: hubUploadBusy,
-      uploadError: hubUploadError,
+      uploadBusy: resourcesUploadBusy,
+      uploadError: resourcesUploadError,
       uploadSkill,
       detailPaneProps: {
         ...hub.detailPaneProps,
-        deleteBusy: hubDeleteBusy,
+        deleteBusy: resourcesDeleteBusy,
         onDeleteTemplate: deleteHubTemplate,
         onDeleteSkill: deleteSkill,
         skillDeleteBusy,

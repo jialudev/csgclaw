@@ -40,6 +40,7 @@ const routes: RouteObject[] = [
       { path: "human/:humanId", element: routeElement(HumanPage) },
       { path: "teams/:teamId", element: routeElement(TeamPage) },
       { path: "team/:teamId", element: routeElement(TeamPage) },
+      { path: "resources", element: routeElement(HubPage) },
       { path: "hub", element: routeElement(HubPage) },
       { path: "templates/:templateId", element: routeElement(HubPage) },
       { path: "skills/:skillName", element: routeElement(HubPage) },

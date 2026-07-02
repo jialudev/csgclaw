@@ -92,8 +92,8 @@ export function WorkspaceTabBar({
         active={workspaceTab === WorkspaceTabs.hub}
         role="tab"
         aria-selected={workspaceTab === WorkspaceTabs.hub}
-        aria-label={t("hubTab")}
-        title={t("hubTab")}
+        aria-label={t("resourcesTab")}
+        title={t("resourcesTab")}
         onClick={() => onSelectHub()}
       >
         <span className="workspace-tab-icon" aria-hidden="true">
@@ -103,7 +103,7 @@ export function WorkspaceTabBar({
           <span className="workspace-tab-rail-new" aria-hidden="true"></span>
         ) : !rail ? (
           <span className="workspace-tab-copy">
-            <strong>{t("hubTab")}</strong>
+            <strong>{t("resourcesTab")}</strong>
             {showHubNewBadge ? <span className="workspace-tab-badge">{t("newBadge")}</span> : null}
           </span>
         ) : null}

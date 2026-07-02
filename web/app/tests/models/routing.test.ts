@@ -48,6 +48,14 @@ describe("task routing", () => {
   });
 
   it("parses hub resource routes as hub panes", () => {
+    expect(paneFromLocation("/resources")).toEqual({
+      type: WorkspacePaneTypes.hub,
+      id: DefaultWorkspacePaneIds.hub,
+    });
+    expect(paneFromLocation("/hub")).toEqual({
+      type: WorkspacePaneTypes.hub,
+      id: DefaultWorkspacePaneIds.hub,
+    });
     expect(paneFromLocation("/templates/builtin%2Fdemo")).toEqual({
       type: WorkspacePaneTypes.hub,
       id: "builtin/demo",
@@ -61,6 +69,7 @@ describe("task routing", () => {
   });
 
   it("builds hub resource routes from hub panes", () => {
+    expect(pathForPane({ type: WorkspacePaneTypes.hub, id: DefaultWorkspacePaneIds.hub })).toBe("/resources");
     expect(pathForPane({ type: WorkspacePaneTypes.hub, id: "builtin/demo", resourceType: "template" })).toBe(
       "/templates/builtin%2Fdemo",
     );

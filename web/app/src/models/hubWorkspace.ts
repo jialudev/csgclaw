@@ -80,7 +80,7 @@ export function formatHubDateTime(value: string | number | Date | null | undefin
 
 export function formatHubTemplateCount(count: number, locale: LocaleCode, t: TranslateFn): string {
   if (locale === "zh") {
-    return `共 ${count} ${t("hubTemplateCountSuffix")}`;
+    return `共 ${count} ${t("resourcesTemplateCountSuffix")}`;
   }
-  return `${count} ${t("hubTemplateCountSuffix")}`;
+  return `${count} ${t("resourcesTemplateCountSuffix")}`;
 }

@@ -232,17 +232,17 @@ export function WorkspaceTabPanels({
   onCreateModelProvider,
 }: WorkspaceTabPanelsProps) {
   const [skillUploadOpen, setSkillUploadOpen] = useState(false);
-  const hubTemplates = hub?.templates ?? [];
-  const hubSkills = hub?.skills ?? [];
-  const hubError = hub?.listError ?? "";
-  const hubSkillsError = hub?.skillsError ?? "";
-  const hubUploadBusy = hub?.uploadBusy ?? false;
-  const hubUploadError = hub?.uploadError ?? "";
-  const hubLoaded = hub?.loaded ?? false;
+  const resourcesTemplates = hub?.templates ?? [];
+  const resourcesSkills = hub?.skills ?? [];
+  const resourcesError = hub?.listError ?? "";
+  const resourcesSkillsError = hub?.skillsError ?? "";
+  const resourcesUploadBusy = hub?.uploadBusy ?? false;
+  const resourcesUploadError = hub?.uploadError ?? "";
+  const resourcesLoaded = hub?.loaded ?? false;
   const selectedHubResourceType = hub?.selectedHubResourceType ?? "template";
   const selectedHubSkillName = hub?.selectedHubSkillName ?? "";
   const selectedHubTemplateId = hub?.selectedHubTemplateId ?? "";
-  const hubResourceActive = activePane.type === WorkspacePaneTypes.hub;
+  const resourcesPaneActive = activePane.type === WorkspacePaneTypes.hub;
   const threadCount = useMemo(
     () => threadGroups.reduce((count, group) => count + group.threads.length, 0),
     [threadGroups],
@@ -674,25 +674,27 @@ export function WorkspaceTabPanels({
           )}
         </div>
       ) : workspaceTab === WorkspaceTabs.hub ? (
-        <div className="workspace-tab-panel" role="tabpanel" aria-label={t("hubTab")}>
+        <div className="workspace-tab-panel" role="tabpanel" aria-label={t("resourcesTab")}>
           <WorkspaceGroup
             id="hub-templates"
-            title={t("hubTemplatesSection")}
-            count={hubTemplates.length}
+            title={t("resourcesTemplatesSection")}
+            count={resourcesTemplates.length}
             collapsed={Boolean(collapsedWorkspaceGroups["hub-templates"])}
             onToggle={() => onToggleWorkspaceGroup("hub-templates")}
           >
-            {hubError ? (
-              <div className="workspace-empty">{hubError}</div>
-            ) : hubLoaded && hubTemplates.length === 0 && hubSkills.length === 0 ? (
-              <div className="workspace-empty">{t("hubEmpty")}</div>
+            {resourcesError ? (
+              <div className="workspace-empty">{resourcesError}</div>
+            ) : resourcesLoaded && resourcesTemplates.length === 0 && resourcesSkills.length === 0 ? (
+              <div className="workspace-empty">{t("resourcesEmpty")}</div>
             ) : (
               <>
-                {hubTemplates.slice(0, 6).map((item) => (
+                {resourcesTemplates.slice(0, 6).map((item) => (
                   <button
                     key={item.id}
                     className={`workspace-row hub-template-row ${
-                      hubResourceActive && selectedHubTemplateId === item.id && selectedHubResourceType === "template"
+                      resourcesPaneActive &&
+                      selectedHubTemplateId === item.id &&
+                      selectedHubResourceType === "template"
                         ? "active"
                         : ""
                     }`}
@@ -718,22 +720,24 @@ export function WorkspaceTabPanels({
           </WorkspaceGroup>
           <WorkspaceGroup
             id="hub-skills"
-            title={t("hubSkillsLabel")}
-            count={hubSkills.length}
+            title={t("resourcesSkillsLabel")}
+            count={resourcesSkills.length}
             collapsed={Boolean(collapsedWorkspaceGroups["hub-skills"])}
             onToggle={() => onToggleWorkspaceGroup("hub-skills")}
             onAdd={() => setSkillUploadOpen(true)}
-            addLabel={t("hubSkillUpload")}
+            addLabel={t("resourcesSkillUpload")}
             addIcon={<Plus size={15} strokeWidth={2.2} aria-hidden="true" />}
           >
-            {hubSkills.length ? (
-              hubSkills.map((item) => {
+            {resourcesSkills.length ? (
+              resourcesSkills.map((item) => {
                 const sourceBadgeName = skillSourceBadgeName(item);
                 return (
                   <button
                     key={item.name}
                     className={`workspace-row hub-template-row hub-skill-row ${
-                      hubResourceActive && selectedHubSkillName === item.name && selectedHubResourceType === "skill"
+                      resourcesPaneActive &&
+                      selectedHubSkillName === item.name &&
+                      selectedHubResourceType === "skill"
                         ? "active"
                         : ""
                     }`}
@@ -755,10 +759,10 @@ export function WorkspaceTabPanels({
                   </button>
                 );
               })
-            ) : hubSkillsError ? (
-              <div className="workspace-empty">{hubSkillsError}</div>
-            ) : hubLoaded && hubTemplates.length === 0 ? (
-              <div className="workspace-empty">{t("hubSkillsEmpty")}</div>
+            ) : resourcesSkillsError ? (
+              <div className="workspace-empty">{resourcesSkillsError}</div>
+            ) : resourcesLoaded && resourcesTemplates.length === 0 ? (
+              <div className="workspace-empty">{t("resourcesSkillsEmpty")}</div>
             ) : null}
           </WorkspaceGroup>
           {renderModelProviderSection()}
@@ -766,8 +770,8 @@ export function WorkspaceTabPanels({
             open={skillUploadOpen}
             onOpenChange={setSkillUploadOpen}
             onSubmit={(file) => hub?.uploadSkill?.(file)}
-            busy={hubUploadBusy}
-            error={hubUploadError}
+            busy={resourcesUploadBusy}
+            error={resourcesUploadError}
             locale={locale}
             onInstallRemoteSkill={hub?.installRemoteSkill}
             onLoadMoreRemoteSkills={hub?.loadMoreRemoteSkills}

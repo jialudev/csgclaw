@@ -28,7 +28,7 @@ export function useWorkspaceHubSelection({
   t,
 }: UseWorkspaceHubSelectionArgs) {
   const queryClient = useQueryClient();
-  const hubTemplates = useMemo(() => templates ?? [], [templates]);
+  const resourcesTemplates = useMemo(() => templates ?? [], [templates]);
   const selectedHubTemplateId = useWorkspaceUiStore((state) => state.selectedHubTemplateId);
   const setSelectedHubTemplateId = useWorkspaceUiStore((state) => state.setSelectedHubTemplateId);
   const selectedHubWorkspacePath = useWorkspaceUiStore((state) => state.selectedHubWorkspacePath);
@@ -65,8 +65,8 @@ export function useWorkspaceHubSelection({
     );
   }, [officialSkillsQuery.data]);
   const selectedHubTemplate = useMemo(
-    () => hubTemplates.find((item) => item.id === selectedHubTemplateId) || hubTemplates[0] || null,
-    [hubTemplates, selectedHubTemplateId],
+    () => resourcesTemplates.find((item) => item.id === selectedHubTemplateId) || resourcesTemplates[0] || null,
+    [resourcesTemplates, selectedHubTemplateId],
   );
   const selectedHubSkill = useMemo(
     () => skills.find((item) => item.name === selectedHubSkillName) || skills[0] || null,
@@ -87,15 +87,15 @@ export function useWorkspaceHubSelection({
   }, [remoteSkillsSearch]);
 
   useEffect(() => {
-    if (!hubTemplates.length) {
+    if (!resourcesTemplates.length) {
       setSelectedHubTemplateId("");
       setSelectedHubWorkspacePath("");
       return;
     }
     setSelectedHubTemplateId((current) =>
-      hubTemplates.some((item) => item.id === current) ? current : (hubTemplates[0]?.id ?? ""),
+      resourcesTemplates.some((item) => item.id === current) ? current : (resourcesTemplates[0]?.id ?? ""),
     );
-  }, [hubTemplates, setSelectedHubTemplateId, setSelectedHubWorkspacePath]);
+  }, [resourcesTemplates, setSelectedHubTemplateId, setSelectedHubWorkspacePath]);
 
   useEffect(() => {
     setSelectedHubWorkspacePath("");
@@ -119,14 +119,14 @@ export function useWorkspaceHubSelection({
   }, [selectedHubSkillName, setSelectedHubSkillPath]);
 
   useEffect(() => {
-    if (selectedHubResourceType === "skill" && !skills.length && hubTemplates.length) {
+    if (selectedHubResourceType === "skill" && !skills.length && resourcesTemplates.length) {
       setSelectedHubResourceType("template");
       return;
     }
-    if (selectedHubResourceType === "template" && !hubTemplates.length && skills.length) {
+    if (selectedHubResourceType === "template" && !resourcesTemplates.length && skills.length) {
       setSelectedHubResourceType("skill");
     }
-  }, [hubTemplates.length, selectedHubResourceType, setSelectedHubResourceType, skills.length]);
+  }, [resourcesTemplates.length, selectedHubResourceType, setSelectedHubResourceType, skills.length]);
 
   const hubTemplateDetailQuery = useWorkspaceHubTemplateQuery(selectedHubTemplateId);
   const hubWorkspaceQuery = useWorkspaceHubWorkspaceQuery(selectedHubTemplateId);
@@ -194,7 +194,7 @@ export function useWorkspaceHubSelection({
           };
         });
       } catch (error) {
-        setWorkspaceDirectoryError(errorMessage(error, t("hubWorkspaceLoadFailed")));
+        setWorkspaceDirectoryError(errorMessage(error, t("resourcesWorkspaceLoadFailed")));
       } finally {
         setLoadingWorkspaceDirs((current) => {
           const next = new Set(current);
@@ -219,23 +219,23 @@ export function useWorkspaceHubSelection({
     [setSelectedHubSkillPath],
   );
 
-  const listError = manualError || (templatesQuery?.isError ? t("hubLoadFailed") : "");
+  const listError = manualError || (templatesQuery?.isError ? t("resourcesLoadFailed") : "");
   const detailError = hubTemplateDetailQuery.error
-    ? errorMessage(hubTemplateDetailQuery.error, t("hubWorkspaceLoadFailed"))
+    ? errorMessage(hubTemplateDetailQuery.error, t("resourcesWorkspaceLoadFailed"))
     : "";
   const workspaceTreeError = hubWorkspaceQuery.error
-    ? errorMessage(hubWorkspaceQuery.error, t("hubWorkspaceLoadFailed"))
+    ? errorMessage(hubWorkspaceQuery.error, t("resourcesWorkspaceLoadFailed"))
     : workspaceDirectoryError;
   const workspaceFileError = hubWorkspaceFileQuery.error
-    ? errorMessage(hubWorkspaceFileQuery.error, t("hubWorkspaceFileLoadFailed"))
+    ? errorMessage(hubWorkspaceFileQuery.error, t("resourcesWorkspaceFileLoadFailed"))
     : "";
-  const skillsError = skillsQuery.error ? errorMessage(skillsQuery.error, t("hubSkillsLoadFailed")) : "";
+  const skillsError = skillsQuery.error ? errorMessage(skillsQuery.error, t("resourcesSkillsLoadFailed")) : "";
   const remoteSkillsError =
     remoteSkillsEnabled && officialSkillsQuery.error
-      ? errorMessage(officialSkillsQuery.error, t("hubSkillRemoteSkillsLoadFailed"))
+      ? errorMessage(officialSkillsQuery.error, t("resourcesSkillRemoteSkillsLoadFailed"))
       : "";
-  const skillTreeError = skillTreeQuery.error ? errorMessage(skillTreeQuery.error, t("hubSkillFilesLoadFailed")) : "";
-  const skillFileError = skillFileQuery.error ? errorMessage(skillFileQuery.error, t("hubSkillFileLoadFailed")) : "";
+  const skillTreeError = skillTreeQuery.error ? errorMessage(skillTreeQuery.error, t("resourcesSkillFilesLoadFailed")) : "";
+  const skillFileError = skillFileQuery.error ? errorMessage(skillFileQuery.error, t("resourcesSkillFileLoadFailed")) : "";
 
   const retry = useCallback(async () => {
     if (refreshTemplates) {
@@ -260,7 +260,7 @@ export function useWorkspaceHubSelection({
   ]);
 
   return {
-    templates: hubTemplates,
+    templates: resourcesTemplates,
     skills,
     remoteSkills,
     remoteSkillsHasMore: Boolean(officialSkillsQuery.hasNextPage),
@@ -317,7 +317,7 @@ export function useWorkspaceHubSelection({
     selectSkillFile,
     retry,
     detailPaneProps: {
-      templates: hubTemplates,
+      templates: resourcesTemplates,
       skills,
       selectedTemplate: selectedHubTemplateView,
       selectedTemplateId: selectedHubTemplateId,

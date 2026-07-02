@@ -212,13 +212,13 @@ export function HubDetailPane({
     <section className="entity-pane hub-detail-pane">
       {error ? <div className="form-error">{error}</div> : null}
       {!loaded && !error ? (
-        <div className="workspace-empty">{t("hubLoading")}</div>
+        <div className="workspace-empty">{t("resourcesLoading")}</div>
       ) : templates.length === 0 && skills.length === 0 ? (
         <div className="empty-state shell-empty-state hub-empty-state">
           <span className="rich-empty-mark" aria-hidden="true">
             *
           </span>
-          <strong>{t("hubEmpty")}</strong>
+          <strong>{t("resourcesEmpty")}</strong>
         </div>
       ) : (
         <div
@@ -261,7 +261,7 @@ export function HubDetailPane({
                         disabled={deleteBusy}
                         onClick={() => onDeleteTemplate?.(selectedTemplate)}
                       >
-                        {t("hubDeleteTemplate")}
+                        {t("resourcesDeleteTemplate")}
                       </Button>
                     ) : null}
                   </div>
@@ -270,33 +270,33 @@ export function HubDetailPane({
 
               <div className="hub-inspector-grid">
                 <div className="hub-inspector-field">
-                  <span>{t("hubSourceLabel")}</span>
+                  <span>{t("resourcesSourceLabel")}</span>
                   <strong>{localizeTemplateSourceTag(selectedTemplate.source?.name, locale)}</strong>
                 </div>
                 <div className="hub-inspector-field">
-                  <span>{t("hubRuntimeLabel")}</span>
+                  <span>{t("resourcesRuntimeLabel")}</span>
                   <strong>{selectedTemplate.runtime_kind || "-"}</strong>
                 </div>
                 <div className="hub-inspector-field">
-                  <span>{t("hubImageLabel")}</span>
+                  <span>{t("resourcesImageLabel")}</span>
                   <strong className="hub-field-value-multiline">{selectedTemplate.image || "-"}</strong>
                 </div>
                 <div className="hub-inspector-field">
-                  <span>{t("hubUpdatedAtLabel")}</span>
+                  <span>{t("resourcesUpdatedAtLabel")}</span>
                   <strong>{formatHubDateTime(selectedTemplate.updated_at, locale)}</strong>
                 </div>
               </div>
 
               <div className="hub-workspace-block">
-                <span className="hub-section-label">{t("hubWorkspaceTemplateLabel")}</span>
+                <span className="hub-section-label">{t("resourcesWorkspaceTemplateLabel")}</span>
                 <div className="hub-workspace-panels">
                   <WorkspaceFileTree
                     key={selectedTemplateId}
                     className="hub-workspace-tree"
                     entries={workspaceEntries}
                     loading={workspaceTreeLoading}
-                    loadingText={t("hubWorkspaceLoading")}
-                    emptyText={t("hubWorkspacePreviewHint")}
+                    loadingText={t("resourcesWorkspaceLoading")}
+                    emptyText={t("resourcesWorkspacePreviewHint")}
                     selectedPath={selectedWorkspacePath}
                     loadingPaths={loadingWorkspaceDirs}
                     onSelectFile={onSelectWorkspaceFile}
@@ -307,12 +307,12 @@ export function HubDetailPane({
                     file={workspaceFile}
                     loading={workspaceFileLoading}
                     error={workspaceFileError}
-                    loadingText={t("hubWorkspaceFileLoading")}
-                    emptyTitle={t("hubWorkspacePreviewTitle")}
-                    emptyHint={t("hubWorkspacePreviewHint")}
+                    loadingText={t("resourcesWorkspaceFileLoading")}
+                    emptyTitle={t("resourcesWorkspacePreviewTitle")}
+                    emptyHint={t("resourcesWorkspacePreviewHint")}
                     emptyIcon={<HubPreviewEmptyIcon />}
-                    binaryText={t("hubWorkspaceBinary")}
-                    emptyFileText={t("hubWorkspaceEmptyFile")}
+                    binaryText={t("resourcesWorkspaceBinary")}
+                    emptyFileText={t("resourcesWorkspaceEmptyFile")}
                     previewText={t("workspacePreviewPreviewTab")}
                     codeText={t("workspacePreviewCodeTab")}
                     viewToggleLabel={t("workspacePreviewViewMode")}
@@ -354,7 +354,7 @@ export function HubDetailPane({
                         disabled={skillDeleteBusy}
                         onClick={() => setDeleteSkillDialogOpen(true)}
                       >
-                        {t("hubDeleteSkill")}
+                        {t("resourcesDeleteSkill")}
                       </Button>
                     </div>
                   ) : null}
@@ -367,8 +367,8 @@ export function HubDetailPane({
                     className="hub-workspace-tree"
                     entries={skillEntries}
                     loading={skillTreeLoading}
-                    loadingText={t("hubSkillFilesLoading")}
-                    emptyText={skillTreeError || t("hubSkillFilesEmpty")}
+                    loadingText={t("resourcesSkillFilesLoading")}
+                    emptyText={skillTreeError || t("resourcesSkillFilesEmpty")}
                     selectedPath={selectedSkillPath}
                     onSelectFile={onSelectSkillFile}
                   />
@@ -377,12 +377,12 @@ export function HubDetailPane({
                     file={skillFile}
                     loading={skillFileLoading}
                     error={skillFileError}
-                    loadingText={t("hubWorkspaceFileLoading")}
-                    emptyTitle={t("hubSkillPreviewTitle")}
-                    emptyHint={t("hubSkillPreviewHint")}
+                    loadingText={t("resourcesWorkspaceFileLoading")}
+                    emptyTitle={t("resourcesSkillPreviewTitle")}
+                    emptyHint={t("resourcesSkillPreviewHint")}
                     emptyIcon={<HubPreviewEmptyIcon />}
-                    binaryText={t("hubWorkspaceBinary")}
-                    emptyFileText={t("hubWorkspaceEmptyFile")}
+                    binaryText={t("resourcesWorkspaceBinary")}
+                    emptyFileText={t("resourcesWorkspaceEmptyFile")}
                     previewText={t("workspacePreviewPreviewTab")}
                     codeText={t("workspacePreviewCodeTab")}
                     viewToggleLabel={t("workspacePreviewViewMode")}
@@ -397,7 +397,7 @@ export function HubDetailPane({
               <span className="rich-empty-mark" aria-hidden="true">
                 *
               </span>
-              <strong>{templates.length || skills.length ? t("hubLoading") : t("hubEmpty")}</strong>
+              <strong>{templates.length || skills.length ? t("resourcesLoading") : t("resourcesEmpty")}</strong>
             </div>
           )}
         </div>
@@ -406,9 +406,9 @@ export function HubDetailPane({
         <DialogContent className="hub-skill-delete-dialog">
           <DialogHeader className="hub-skill-delete-dialog-header">
             <div className="hub-skill-delete-dialog-copy">
-              <DialogTitle>{t("hubDeleteSkill")}</DialogTitle>
+              <DialogTitle>{t("resourcesDeleteSkill")}</DialogTitle>
               <DialogDescription>
-                {t("hubDeleteSkillConfirmMessage", { name: selectedSkill?.name || "" })}
+                {t("resourcesDeleteSkillConfirmMessage", { name: selectedSkill?.name || "" })}
               </DialogDescription>
             </div>
             <DialogCloseButton label={t("close")} size="sm" variant="tertiaryGray" />
@@ -423,7 +423,7 @@ export function HubDetailPane({
               {t("cancel")}
             </Button>
             <Button variant="danger" size="sm" loading={skillDeleteBusy} onClick={handleDeleteSkillConfirm}>
-              {t("hubDeleteSkillConfirmAction")}
+              {t("resourcesDeleteSkillConfirmAction")}
             </Button>
           </DialogFooter>
         </DialogContent>

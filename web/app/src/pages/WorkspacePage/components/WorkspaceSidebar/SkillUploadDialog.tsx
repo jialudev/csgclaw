@@ -92,7 +92,7 @@ export function SkillUploadDialog({
           .endsWith(".zip")
       ) {
         setSelectedFile(null);
-        setLocalError(t("hubSkillUploadDropHint"));
+        setLocalError(t("resourcesSkillUploadDropHint"));
         return;
       }
       setSelectedFile(file);
@@ -120,7 +120,7 @@ export function SkillUploadDialog({
 
   const handleSubmit = useCallback(async () => {
     if (!selectedFile) {
-      setLocalError(t("hubSkillUploadDropHint"));
+      setLocalError(t("resourcesSkillUploadDropHint"));
       return;
     }
     const result = await onSubmit(selectedFile);
@@ -161,12 +161,12 @@ export function SkillUploadDialog({
       <DialogContent className="hub-skill-upload-dialog">
         <DialogHeader>
           <div>
-            <DialogTitle>{t("hubSkillUpload")}</DialogTitle>
-            <DialogDescription>{t("hubSkillUploadSubtitle")}</DialogDescription>
+            <DialogTitle>{t("resourcesSkillUpload")}</DialogTitle>
+            <DialogDescription>{t("resourcesSkillUploadSubtitle")}</DialogDescription>
           </div>
         </DialogHeader>
         <DialogBody className="hub-skill-upload-body">
-          <div className="hub-skill-upload-mode" role="tablist" aria-label={t("hubSkillUpload")}>
+          <div className="hub-skill-upload-mode" role="tablist" aria-label={t("resourcesSkillUpload")}>
             <Button
               active={mode === "zip"}
               aria-selected={mode === "zip"}
@@ -176,7 +176,7 @@ export function SkillUploadDialog({
               onClick={() => setMode("zip")}
             >
               <UploadCloud size={15} strokeWidth={2} aria-hidden="true" />
-              {t("hubSkillUploadZipTab")}
+              {t("resourcesSkillUploadZipTab")}
             </Button>
             <Button
               active={mode === "remote"}
@@ -187,7 +187,7 @@ export function SkillUploadDialog({
               onClick={() => setMode("remote")}
             >
               <CloudDownload size={15} strokeWidth={2} aria-hidden="true" />
-              {t("hubSkillRemoteInstallTab")}
+              {t("resourcesSkillRemoteInstallTab")}
             </Button>
           </div>
           {mode === "zip" ? (
@@ -216,8 +216,8 @@ export function SkillUploadDialog({
                   <UploadCloud size={20} strokeWidth={1.8} />
                 </span>
                 <span className="hub-skill-upload-copy">
-                  <strong>{t("hubSkillUploadDropTitle")}</strong>
-                  <small>{selectedFile ? selectedFile.name : t("hubSkillUploadDropHint")}</small>
+                  <strong>{t("resourcesSkillUploadDropTitle")}</strong>
+                  <small>{selectedFile ? selectedFile.name : t("resourcesSkillUploadDropHint")}</small>
                 </span>
               </button>
               <input
@@ -234,9 +234,9 @@ export function SkillUploadDialog({
               <label className="hub-skill-remote-search">
                 <TextInput
                   type="search"
-                  aria-label={t("hubSkillRemoteSearchPlaceholder")}
+                  aria-label={t("resourcesSkillRemoteSearchPlaceholder")}
                   value={remoteSkillsSearch}
-                  placeholder={t("hubSkillRemoteSearchPlaceholder")}
+                  placeholder={t("resourcesSkillRemoteSearchPlaceholder")}
                   onChange={(event) => onRemoteSkillsSearchChange?.(event.currentTarget.value)}
                 />
               </label>
@@ -246,12 +246,12 @@ export function SkillUploadDialog({
                   {onRefreshRemoteSkills ? (
                     <Button size="sm" variant="secondaryGray" onClick={() => void onRefreshRemoteSkills()}>
                       <RefreshCw size={14} strokeWidth={2} aria-hidden="true" />
-                      {t("hubSkillRemoteRefresh")}
+                      {t("resourcesSkillRemoteRefresh")}
                     </Button>
                   ) : null}
                 </div>
               ) : remoteSkillsLoading && !remoteSkills.length ? (
-                <div className="hub-skill-remote-state">{t("hubSkillRemoteSkillsLoading")}</div>
+                <div className="hub-skill-remote-state">{t("resourcesSkillRemoteSkillsLoading")}</div>
               ) : remoteSkills.length ? (
                 <>
                   <div className="hub-skill-remote-list" onScroll={handleRemoteListScroll}>
@@ -276,19 +276,19 @@ export function SkillUploadDialog({
                           onClick={() => void handleRemoteInstall(item)}
                         >
                           {remoteInstallBusy === (item.remotePath || item.name)
-                            ? t("hubSkillRemoteInstalling")
-                            : t("hubSkillRemoteInstallAction")}
+                            ? t("resourcesSkillRemoteInstalling")
+                            : t("resourcesSkillRemoteInstallAction")}
                         </Button>
                       </div>
                     ))}
                     {remoteSkillsLoadingMore ? (
-                      <div className="hub-skill-remote-list-state">{t("hubSkillRemoteSkillsLoading")}</div>
+                      <div className="hub-skill-remote-list-state">{t("resourcesSkillRemoteSkillsLoading")}</div>
                     ) : null}
                   </div>
                   {remoteInstallError ? <div className="form-error">{remoteInstallError}</div> : null}
                 </>
               ) : (
-                <div className="hub-skill-remote-state">{t("hubSkillRemoteSkillsEmpty")}</div>
+                <div className="hub-skill-remote-state">{t("resourcesSkillRemoteSkillsEmpty")}</div>
               )}
             </div>
           )}
@@ -298,7 +298,7 @@ export function SkillUploadDialog({
             </Button>
             {mode === "zip" ? (
               <Button variant="primary" size="md" onClick={() => void handleSubmit()} loading={busy} disabled={busy}>
-                {busy ? t("hubSkillUploadSubmitting") : t("hubSkillUploadSubmit")}
+                {busy ? t("resourcesSkillUploadSubmitting") : t("resourcesSkillUploadSubmit")}
               </Button>
             ) : null}
           </div>
