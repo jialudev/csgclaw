@@ -269,6 +269,7 @@ func (a persistedAgent) toAgent() Agent {
 			rx = utils.CloneAnyMap(rt.Options)
 		}
 	}
+	runtimeCfg := agentruntime.RuntimeConfigForKind(runtimeKind)
 	ag := Agent{
 		ID:               a.ID,
 		Name:             a.Name,
@@ -276,6 +277,8 @@ func (a persistedAgent) toAgent() Agent {
 		Instructions:     a.Instructions,
 		RuntimeID:        runtimeID,
 		RuntimeKind:      runtimeKind,
+		RuntimeName:      runtimeCfg.Name,
+		SandboxEnabled:   runtimeCfg.Sandboxed,
 		Image:            a.Image,
 		Avatar:           a.Avatar,
 		BoxID:            boxID,

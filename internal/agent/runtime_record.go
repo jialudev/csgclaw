@@ -13,6 +13,9 @@ const (
 	RuntimeKindPicoClawSandbox = agentruntime.KindPicoClawSandbox
 	RuntimeKindOpenClawSandbox = agentruntime.KindOpenClawSandbox
 	RuntimeKindCodex           = agentruntime.KindCodex
+	RuntimeNamePicoClaw        = agentruntime.NamePicoClaw
+	RuntimeNameOpenClaw        = agentruntime.NameOpenClaw
+	RuntimeNameCodex           = agentruntime.NameCodex
 )
 
 type RuntimeRecord struct {
@@ -114,6 +117,26 @@ func isGatewayRuntimeKind(kind string) bool {
 	}
 }
 
+func normalizeRuntimeName(name string) string {
+	return agentruntime.NormalizeRuntimeName(name)
+}
+
+func runtimeNameForKind(kind string) string {
+	return agentruntime.RuntimeConfigForKind(kind).Name
+}
+
+func sandboxEnabledForKind(kind string) bool {
+	return agentruntime.SandboxEnabledForKind(kind)
+}
+
+func resolveRuntimeSelection(kind, name string, sandboxEnabled bool) (string, string, bool, error) {
+	cfg, err := agentruntime.RuntimeConfigFromSelection(kind, name, sandboxEnabled)
+	if err != nil {
+		return "", "", false, err
+	}
+	return cfg.LegacyKind(), cfg.Name, cfg.Sandboxed, nil
+}
+
 func runtimeKindForGatewayRuntime(runtime string) string {
 	switch runtime {
 	case RuntimeKindPicoClawSandbox, RuntimeKindOpenClawSandbox:
@@ -160,7 +183,7 @@ func runtimeRecordForAgent(a Agent) RuntimeRecord {
 	}
 	return normalizeRuntimeRecord(RuntimeRecord{
 		ID:        normalizeRuntimeID(a.RuntimeID, a.ID),
-		Kind:      strings.TrimSpace(a.RuntimeKind),
+		Kind:      a.RuntimeConfig().LegacyKind(),
 		State:     agentruntime.State(strings.TrimSpace(a.Status)),
 		AgentIDs:  []string{strings.TrimSpace(a.ID)},
 		SandboxID: strings.TrimSpace(a.BoxID),
