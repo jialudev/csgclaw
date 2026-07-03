@@ -209,7 +209,7 @@ export const messages = {
     agentActivityTimelineLabel: "活动时间线",
     agentActivityTimelineSegment: "{label} #{index} {time}",
     agentActivityNoFilteredResults: "没有符合筛选的活动记录。",
-    agentProfileSkillsTab: "skills",
+    agentProfileSkillsTab: "技能",
     agentSkillAdd: "添加技能",
     agentSkillAddSubtitle: "候选来自全局 skills，选择后会复制到当前 Agent 的 runtime skills 目录。",
     agentSkillAddFailed: "添加技能失败，请稍后重试。",
@@ -1050,7 +1050,7 @@ export const messages = {
     agentActivityTimelineLabel: "Activity timeline",
     agentActivityTimelineSegment: "{label} #{index} {time}",
     agentActivityNoFilteredResults: "No activity matches the current filters.",
-    agentProfileSkillsTab: "skills",
+    agentProfileSkillsTab: "Skills",
     agentSkillAdd: "Add skill",
     agentSkillAddSubtitle:
       "Candidates come from global skills. Selected items will be copied into this agent's runtime skills directory.",

@@ -257,12 +257,14 @@ export function AgentDetailPane({
         ? [
             { id: "profile" as const, label: t("agentProfileTab") },
             { id: "activity" as const, label: t("agentActivityTab") },
-            ...(!isNotificationBotAgent(item) ? [{ id: "channels" as const, label: t("agentChannelsTitle") }] : []),
             ...(!isNotifierDraft ? [{ id: "instructions" as const, label: t("agentInstructions") }] : []),
-            ...(workspaceSupported ? [{ id: "skills" as const, label: t("agentProfileSkillsTab") }] : []),
+            ...(workspaceSupported
+              ? [{ id: "skills" as const, label: t("agentProfileSkillsTab"), count: skills.length }]
+              : []),
+            ...(!isNotificationBotAgent(item) ? [{ id: "channels" as const, label: t("agentChannelsTitle") }] : []),
           ]
         : [],
-    [draft, isNotifierDraft, item, t, workspaceSupported],
+    [draft, isNotifierDraft, item, skills.length, t, workspaceSupported],
   );
   const visibleActiveProfileTab = profileTabs.some((tab) => tab.id === activeProfileTab)
     ? activeProfileTab
@@ -517,7 +519,12 @@ export function AgentDetailPane({
                   aria-controls={`agent-profile-${section.id}`}
                   onClick={() => selectProfileTab(section.id)}
                 >
-                  {section.label}
+                  <span>{section.label}</span>
+                  {typeof section.count === "number" ? (
+                    <span className="agent-profile-section-tab-count" aria-label={String(section.count)}>
+                      {section.count}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -1014,7 +1021,7 @@ function AgentInstructionsPanel({ draft, t, updateDraft }: AgentInstructionsPane
     >
       <div className="profile-grid-compact">
         <label className="field span-2">
-          <span>{t("agentInstructions")}</span>
+          <span className="sr-only">{t("agentInstructions")}</span>
           <textarea
             className="compact-textarea"
             value={draft.instructions || ""}
@@ -1056,59 +1063,48 @@ function AgentSkillsPanel({
 }: AgentSkillsPanelProps) {
   return (
     <section id="agent-profile-skills" className="profile-section agent-skills-section agent-profile-scroll-target">
-      <div className="profile-section-heading">
-        <div className="profile-section-title">{t("agentSkillsTitle")}</div>
+      <div className="profile-section-heading agent-skills-section-heading">
         <p className="profile-section-description">{t("agentSkillsDescription")}</p>
+        <Button
+          className="agent-skill-add-button"
+          variant="secondaryGray"
+          size="sm"
+          aria-label={t("agentSkillAdd")}
+          title={t("agentSkillAdd")}
+          disabled={skillCandidatesLoading || skillAddBusy}
+          onClick={onOpenAddSkills}
+        >
+          <Plus aria-hidden="true" size={16} strokeWidth={2.2} />
+        </Button>
       </div>
-      <div className="agent-section-form">
-        <div className="agent-page-form-content agent-skills-form-content">
-          <div className="agent-skills-title">
-            <div className="agent-skills-title-copy">
-              <span>{t("agentSkillsTitle")}</span>
-              <small>{skills.length}</small>
-            </div>
-            <Button
-              className="agent-skill-add-button"
-              variant="secondaryGray"
-              size="sm"
-              aria-label={t("agentSkillAdd")}
-              title={t("agentSkillAdd")}
-              disabled={skillCandidatesLoading || skillAddBusy}
-              onClick={onOpenAddSkills}
-            >
-              <Plus aria-hidden="true" size={16} strokeWidth={2.2} />
-            </Button>
-          </div>
-          {skillsError ? <div className="form-error">{skillsError}</div> : null}
-          {skillAddError ? <div className="form-error">{skillAddError}</div> : null}
-          {skillDeleteError ? <div className="form-error">{skillDeleteError}</div> : null}
-          {skillsLoading ? <div className="agent-skills-empty">{t("agentSkillsLoading")}</div> : null}
-          {!skillsLoading && !skills.length ? <div className="agent-skills-empty">{t("agentSkillsEmpty")}</div> : null}
-          {!skillsLoading && skills.length ? (
-            <div className="agent-skills-list">
-              {skills.map((skill) => (
-                <article key={skill.name} className="agent-skill-card">
-                  <div className="agent-skill-card-header">
-                    <div className="agent-skill-name">{skill.name}</div>
-                    <Button
-                      className="agent-skill-icon-button"
-                      variant="outlineDanger"
-                      size="sm"
-                      aria-label={t("agentDeleteSkill")}
-                      title={t("agentDeleteSkill")}
-                      disabled={skillDeleteBusy}
-                      onClick={() => onRequestDeleteSkill(skill)}
-                    >
-                      <Trash2 aria-hidden="true" size={16} strokeWidth={1.9} />
-                    </Button>
-                  </div>
-                  <p className="agent-skill-description">{skill.description || "-"}</p>
-                </article>
-              ))}
-            </div>
-          ) : null}
+      {skillsError ? <div className="form-error">{skillsError}</div> : null}
+      {skillAddError ? <div className="form-error">{skillAddError}</div> : null}
+      {skillDeleteError ? <div className="form-error">{skillDeleteError}</div> : null}
+      {skillsLoading ? <div className="agent-skills-empty">{t("agentSkillsLoading")}</div> : null}
+      {!skillsLoading && !skills.length ? <div className="agent-skills-empty">{t("agentSkillsEmpty")}</div> : null}
+      {!skillsLoading && skills.length ? (
+        <div className="agent-skills-list">
+          {skills.map((skill) => (
+            <article key={skill.name} className="agent-skill-card">
+              <div className="agent-skill-card-header">
+                <div className="agent-skill-name">{skill.name}</div>
+                <Button
+                  className="agent-skill-icon-button"
+                  variant="outlineDanger"
+                  size="sm"
+                  aria-label={t("agentDeleteSkill")}
+                  title={t("agentDeleteSkill")}
+                  disabled={skillDeleteBusy}
+                  onClick={() => onRequestDeleteSkill(skill)}
+                >
+                  <Trash2 aria-hidden="true" size={16} strokeWidth={1.9} />
+                </Button>
+              </div>
+              <p className="agent-skill-description">{skill.description || "-"}</p>
+            </article>
+          ))}
         </div>
-      </div>
+      ) : null}
     </section>
   );
 }
@@ -1191,9 +1187,6 @@ function AgentChannelsSection({
       aria-labelledby="agent-channels-title"
     >
       <div className="profile-section-heading">
-        <h2 id="agent-channels-title" className="profile-section-title agent-channels-title">
-          {t("agentChannelsTitle")}
-        </h2>
         <p className="profile-section-description">{t("agentChannelsDescription")}</p>
       </div>
       <div className="agent-channel-row">
