@@ -29,6 +29,31 @@ make
 
 可以通过 `SANDBOX_TOOLS_DIR=/path make install-sandbox-cli` 覆盖沙盒 CLI 的安装目录。
 
+## Windows 无 make 时
+
+如果 Windows 环境没有 `make`，可以直接使用 PowerShell 构建脚本：
+
+```powershell
+.\scripts\build.cmd build
+.\scripts\build.cmd build-server-bin
+.\scripts\build.cmd install-sandbox-cli
+.\scripts\build.cmd test
+```
+
+`build.cmd` 包装器会以当前进程级别的 `-ExecutionPolicy Bypass` 调用
+`scripts/build.ps1`，不需要修改整机 PowerShell 执行策略。如果直接调用
+PowerShell 脚本，请使用：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 build
+```
+
+其中默认的 `build` 会对齐 `make build` 的行为：
+
+1. 构建 Web UI 到 `web/static-dist/`。
+2. 构建 `bin/csgclaw.exe` 和宿主平台的 `bin/csgclaw-cli.exe`。
+3. 构建 Linux 版 `csgclaw-cli` 到 `~/.csgclaw/sandbox-tools/csgclaw-cli`。
+
 ## 运行时镜像
 
 Manager 与 Worker 模板保留不同的内置 workspace，但同一种 runtime 共用一个镜像：
