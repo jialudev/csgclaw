@@ -69,6 +69,7 @@ func (s *Service) UpdateAgentProfile(id string, profile AgentProfile) (AgentProf
 	if strings.TrimSpace(profile.APIKey) == "" {
 		profile.APIKey = current.AgentProfile.APIKey
 	}
+	profile = s.inheritModelProviderReference(profile, current)
 	previous := current
 	normalized := normalizeProfileForAgentRuntime(profile, current.RuntimeOptions, current.Name, current.Description, current.RuntimeKind, nil)
 	runtimePrevious := s.hydrateProfileFromCatalogLocked(previous.AgentProfile)
@@ -343,6 +344,7 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateRequest) (Age
 			if strings.TrimSpace(profile.APIKey) == "" {
 				profile.APIKey = current.AgentProfile.APIKey
 			}
+			profile = s.inheritModelProviderReference(profile, current)
 		}
 		var patch map[string]any
 		if runtimeOptionsUpdated {
@@ -507,6 +509,34 @@ func (s *Service) hydrateProfileFromCatalogLocked(profile AgentProfile) AgentPro
 	}
 	out.ProfileComplete = profileIsComplete(out)
 	return out
+}
+
+func (s *Service) inheritModelProviderReference(profile AgentProfile, current Agent) AgentProfile {
+	if s == nil {
+		return profile
+	}
+	if strings.TrimSpace(profile.ModelProviderID) != "" || strings.TrimSpace(profile.ModelID) == "" {
+		return profile
+	}
+	if strings.TrimSpace(profile.BaseURL) != "" || strings.TrimSpace(profile.APIKey) != "" || len(profile.Headers) > 0 {
+		return profile
+	}
+	if id := NormalizeModelProviderID(current.AgentProfile.ModelProviderID); id != "" {
+		profile.ModelProviderID = id
+		return profile
+	}
+	if selector := strings.TrimSpace(current.Profile); selector != "" {
+		if providerID, _, ok := splitModelProviderSelector(selector); ok {
+			profile.ModelProviderID = providerID
+			return profile
+		}
+	}
+	if referenced, ok := CatalogReferenceProfile(s.llm, current.AgentProfile); ok {
+		if id := NormalizeModelProviderID(referenced.ModelProviderID); id != "" {
+			profile.ModelProviderID = id
+		}
+	}
+	return profile
 }
 
 func (s *Service) validateRuntimeConfig(ctx context.Context, runtimeKind string, current agentruntime.RuntimeConfigSnapshot) error {

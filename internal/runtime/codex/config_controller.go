@@ -4,14 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 
+	"csgclaw/internal/auth"
 	"csgclaw/internal/modelprovider"
 	agentruntime "csgclaw/internal/runtime"
 )
 
 var checkResponsesAPIForProvider = modelprovider.CheckResponsesAPI
+var openCSGCredentialsForResponsesProbe = func(ctx context.Context) (string, string, bool, error) {
+	store, err := auth.DefaultStore()
+	if err != nil {
+		return "", "", false, err
+	}
+	return store.EnsureAIGatewayCredentials(ctx, &http.Client{})
+}
 
 type responsesProbeCache struct {
 	mu      sync.Mutex
@@ -31,7 +40,7 @@ func TestOnlySetResponsesAPIProbe(probe func(context.Context, string, string, st
 }
 
 func (r *Runtime) ValidateConfig(ctx context.Context, current agentruntime.RuntimeConfigSnapshot) error {
-	target, ok, err := responsesProbeTarget(current.Profile)
+	target, ok, err := responsesProbeTarget(ctx, current.Profile)
 	if err != nil {
 		return fmt.Errorf("validate Codex provider Responses API: %w", err)
 	}
@@ -61,11 +70,27 @@ type responsesProbeTargetConfig struct {
 	headers  map[string]string
 }
 
-func responsesProbeTarget(profile agentruntime.RuntimeProfileConfig) (responsesProbeTargetConfig, bool, error) {
+func responsesProbeTarget(ctx context.Context, profile agentruntime.RuntimeProfileConfig) (responsesProbeTargetConfig, bool, error) {
 	provider := strings.ToLower(strings.TrimSpace(profile.Provider))
 	switch provider {
 	case "codex", "claude_code", "claude-code":
 		return responsesProbeTargetConfig{}, false, nil
+	}
+	if provider == "csghub" || provider == "opencsg" {
+		baseURL, apiKey, ok, err := openCSGCredentialsForResponsesProbe(ctx)
+		if err != nil {
+			return responsesProbeTargetConfig{}, false, fmt.Errorf("resolve OpenCSG credentials: %w", err)
+		}
+		if !ok {
+			return responsesProbeTargetConfig{}, false, fmt.Errorf("OpenCSG sign-in is required")
+		}
+		return responsesProbeTargetConfig{
+			provider: provider,
+			baseURL:  strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+			apiKey:   strings.TrimSpace(apiKey),
+			modelID:  strings.TrimSpace(profile.ModelID),
+			headers:  normalizeHeaders(profile.Headers),
+		}, true, nil
 	}
 	baseURL := strings.TrimRight(strings.TrimSpace(profile.BaseURL), "/")
 	if baseURL == "" {

@@ -1229,6 +1229,91 @@ func TestUpdateAgentProfileCodexRuntimeFallbackRestartsActiveBridge(t *testing.T
 	}
 }
 
+func TestUpdateAgentProfileCodexRuntimeInfersCatalogProviderIDFromStoredSelector(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	llm := config.LLMConfig{
+		Default: "opencsg-aigateway.MiniMax-M2.4",
+		Providers: map[string]config.ProviderConfig{
+			"opencsg-aigateway": {
+				BaseURL: "https://aigateway.opencsg.com/v1",
+				APIKey:  "gateway-key",
+				Models:  []string{"MiniMax-M2.4", "MiniMax-M2.5"},
+			},
+		},
+	}
+	svc, err := NewServiceWithLLM(
+		llm,
+		config.ServerConfig{
+			ListenAddr:       "0.0.0.0:18080",
+			AdvertiseBaseURL: "http://127.0.0.1:18080",
+			AccessToken:      "shared-token",
+		},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			validate: func(_ context.Context, current agentruntime.RuntimeConfigSnapshot) error {
+				if current.Profile.Provider != ProviderAPI {
+					t.Fatalf("responses probe provider = %q, want %q", current.Profile.Provider, ProviderAPI)
+				}
+				if current.Profile.BaseURL != "https://aigateway.opencsg.com/v1" {
+					t.Fatalf("responses probe baseURL = %q, want catalog base URL", current.Profile.BaseURL)
+				}
+				if current.Profile.APIKey != "gateway-key" {
+					t.Fatalf("responses probe apiKey = %q, want catalog api key", current.Profile.APIKey)
+				}
+				if current.Profile.ModelID != "MiniMax-M2.5" {
+					t.Fatalf("responses probe modelID = %q, want updated model", current.Profile.ModelID)
+				}
+				return nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	svc.agents["u-dev"] = Agent{
+		ID:          "u-dev",
+		Name:        "dev",
+		RuntimeID:   "rt-u-dev",
+		RuntimeKind: RuntimeKindCodex,
+		Role:        RoleWorker,
+		Status:      string(agentruntime.StateStopped),
+		Profile:     "opencsg-aigateway.MiniMax-M2.4",
+		AgentProfile: AgentProfile{
+			Name:            "dev",
+			Provider:        ProviderAPI,
+			ModelID:         "MiniMax-M2.4",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
+		CreatedAt:       time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC),
+	}
+
+	view, err := svc.UpdateAgentProfile("u-dev", AgentProfile{
+		ModelID: "MiniMax-M2.5",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgentProfile() error = %v", err)
+	}
+	if view.ModelProviderID != "opencsg-aigateway" {
+		t.Fatalf("UpdateAgentProfile().ModelProviderID = %q, want opencsg-aigateway", view.ModelProviderID)
+	}
+
+	got, ok := svc.Agent("u-dev")
+	if !ok {
+		t.Fatal("Agent(u-dev) = missing, want updated agent")
+	}
+	if got.AgentProfile.ModelProviderID != "opencsg-aigateway" {
+		t.Fatalf("stored model_provider_id = %q, want opencsg-aigateway", got.AgentProfile.ModelProviderID)
+	}
+	if got.Profile != "opencsg-aigateway.MiniMax-M2.5" {
+		t.Fatalf("stored profile selector = %q, want updated provider selector", got.Profile)
+	}
+}
+
 func TestUpdateInstructionsRefreshesCodexWorkspaceAgentsFile(t *testing.T) {
 	var reconcileCalls []struct {
 		handle agentruntime.Handle
