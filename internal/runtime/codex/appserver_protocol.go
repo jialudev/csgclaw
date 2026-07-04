@@ -43,4 +43,6 @@ type appServerWireMessage struct {
 	Params  json.RawMessage `json:"params,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   json.RawMessage `json:"error,omitempty"`
+	Type    string          `json:"type,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }

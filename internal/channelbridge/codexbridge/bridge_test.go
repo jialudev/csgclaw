@@ -155,6 +155,35 @@ func (c *fakeBotClient) sentRecords() []SendMessageRequest {
 	return out
 }
 
+func assertCodexFinalMetadata(t *testing.T, req SendMessageRequest, sourceMessageID string) {
+	t.Helper()
+	for _, key := range []string{"codex", "openclaw"} {
+		entry, ok := req.Metadata[key].(map[string]any)
+		if !ok {
+			t.Fatalf("%s metadata = %#v, want final delivery metadata", key, req.Metadata[key])
+		}
+		if entry["delivery_kind"] != "final" || entry["request_id"] != sourceMessageID || entry["source_message_id"] != sourceMessageID {
+			t.Fatalf("%s metadata = %#v, want final delivery for %s", key, entry, sourceMessageID)
+		}
+	}
+}
+
+func assertCodexToolMetadata(t *testing.T, req SendMessageRequest, sourceMessageID, toolCallID string) {
+	t.Helper()
+	for _, key := range []string{"codex", "openclaw"} {
+		entry, ok := req.Metadata[key].(map[string]any)
+		if !ok {
+			t.Fatalf("%s metadata = %#v, want tool delivery metadata", key, req.Metadata[key])
+		}
+		if entry["delivery_kind"] != "tool" || entry["request_id"] != sourceMessageID || entry["source_message_id"] != sourceMessageID {
+			t.Fatalf("%s metadata = %#v, want tool delivery for %s", key, entry, sourceMessageID)
+		}
+		if entry["tool_call_id"] != toolCallID {
+			t.Fatalf("%s metadata tool_call_id = %#v, want %s", key, entry["tool_call_id"], toolCallID)
+		}
+	}
+}
+
 func (c *fakeBotClient) updates() []updateRecord {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -442,7 +471,7 @@ func TestServiceEnsuresConversationSessionAndInjectsHiddenThreadContext(t *testi
 	}
 }
 
-func TestServiceUsesConversationScopedSessionsAndThreadReplies(t *testing.T) {
+func TestServiceUsesConversationScopedSessionAndTopLevelFinalReply(t *testing.T) {
 	t.Parallel()
 
 	stream := make(chan BotEvent, 1)
@@ -483,22 +512,26 @@ func TestServiceUsesConversationScopedSessionsAndThreadReplies(t *testing.T) {
 
 	waitFor(t, func() bool {
 		return slices.Equal(prompter.sessionIDs(), []string{"sess-1:room-1:msg-root"}) &&
-			len(client.sentRecords()) == 1 &&
-			client.sentRecords()[0].ThreadRootID == "msg-root"
+			len(client.sentRecords()) == 1
 	})
+	records := client.sentRecords()
+	if records[0].ThreadRootID != "" || records[0].Text != "thread reply" {
+		t.Fatalf("final record = %+v, want top-level final reply", records[0])
+	}
+	assertCodexFinalMetadata(t, records[0], "m-1")
 }
 
-func TestServiceThreadsTopLevelToolCallsBesideFinalResponse(t *testing.T) {
+func TestServiceDeliversToolActivityMetadataBesideFinalResponse(t *testing.T) {
 	for _, chatType := range []string{"direct", "group"} {
 		chatType := chatType
 		t.Run(chatType, func(t *testing.T) {
 			t.Parallel()
-			assertServiceThreadsTopLevelToolCallsBesideFinalResponse(t, chatType)
+			assertServiceDeliversToolActivityMetadataBesideFinalResponse(t, chatType)
 		})
 	}
 }
 
-func assertServiceThreadsTopLevelToolCallsBesideFinalResponse(t *testing.T, chatType string) {
+func assertServiceDeliversToolActivityMetadataBesideFinalResponse(t *testing.T, chatType string) {
 	t.Helper()
 	stream := make(chan BotEvent, 1)
 	errs := make(chan error)
@@ -555,22 +588,27 @@ func assertServiceThreadsTopLevelToolCallsBesideFinalResponse(t *testing.T, chat
 	defer svc.Close()
 
 	waitFor(t, func() bool {
-		records := client.sentRecords()
-		return len(records) == 4 &&
-			records[0].RoomID == "room-1" &&
-			records[0].ThreadRootID == "" &&
-			records[0].Text == turnPlaceholderText &&
-			records[1].RoomID == "room-1" &&
-			records[1].ThreadRootID == "sent-1" &&
-			strings.Contains(records[1].Text, runtimebridge.AgentToolMsgType) &&
-			records[2].RoomID == "room-1" &&
-			records[2].ThreadRootID == "sent-1" &&
-			strings.Contains(records[2].Text, runtimebridge.AgentToolMsgType) &&
-			strings.Contains(records[2].Text, "command output") &&
-			records[3].RoomID == "room-1" &&
-			records[3].ThreadRootID == "" &&
-			records[3].Text == "done"
+		return len(client.sentRecords()) == 3
 	})
+	records := client.sentRecords()
+	if records[0].RoomID != "room-1" || records[0].ThreadRootID != "" {
+		t.Fatalf("tool start record = %+v, want top-level activity message", records[0])
+	}
+	if !strings.Contains(records[0].Text, runtimebridge.AgentToolMsgType) || !strings.Contains(records[0].Text, `"status":"pending"`) {
+		t.Fatalf("tool start text = %s, want tool activity payload", records[0].Text)
+	}
+	assertCodexToolMetadata(t, records[0], "m-1", "tool-1")
+	if records[1].RoomID != "room-1" || records[1].ThreadRootID != "" {
+		t.Fatalf("tool update record = %+v, want top-level activity message", records[1])
+	}
+	if !strings.Contains(records[1].Text, runtimebridge.AgentToolMsgType) || !strings.Contains(records[1].Text, `"status":"completed"`) {
+		t.Fatalf("tool update text = %s, want completed tool activity payload", records[1].Text)
+	}
+	assertCodexToolMetadata(t, records[1], "m-1", "tool-1")
+	if records[2].RoomID != "room-1" || records[2].ThreadRootID != "" || records[2].Text != "done" {
+		t.Fatalf("final record = %+v, want top-level final reply", records[2])
+	}
+	assertCodexFinalMetadata(t, records[2], "m-1")
 }
 
 func TestServiceAddsAndRemovesFeishuProcessingPinAroundFinalReply(t *testing.T) {
@@ -811,7 +849,7 @@ func TestServiceIgnoresFeishuProcessingPinDeleteFailure(t *testing.T) {
 	})
 }
 
-func TestServiceUpdatesFeishuGeneratedToolRootWithFinalResponse(t *testing.T) {
+func TestServiceDeliversFeishuToolActivityMetadataAndSendsFinalResponse(t *testing.T) {
 	t.Parallel()
 
 	stream := make(chan BotEvent, 1)
@@ -867,25 +905,23 @@ func TestServiceUpdatesFeishuGeneratedToolRootWithFinalResponse(t *testing.T) {
 	defer svc.Close()
 
 	waitFor(t, func() bool {
-		return len(client.sentRecords()) == 2 && len(client.updates()) == 1
+		return len(client.sentRecords()) >= 2
 	})
 	records := client.sentRecords()
-	if records[0].RoomID != "oc-alpha" || records[0].ThreadRootID != "" || records[0].Text != turnPlaceholderText {
-		t.Fatalf("placeholder record = %+v, want top-level generated root", records[0])
+	if records[0].RoomID != "oc-alpha" || records[0].ThreadRootID != "" {
+		t.Fatalf("tool record = %+v, want top-level activity message", records[0])
 	}
-	if records[1].RoomID != "oc-alpha" || records[1].ThreadRootID != "sent-1" || !strings.Contains(records[1].Text, runtimebridge.AgentToolMsgType) {
-		t.Fatalf("tool record = %+v, want activity reply under generated root", records[1])
+	assertCodexToolMetadata(t, records[0], "om-user", "tool-1")
+	if records[1].RoomID != "oc-alpha" || records[1].ThreadRootID != "" || records[1].Text != "done" {
+		t.Fatalf("final record = %+v, want top-level final response", records[1])
 	}
-	updates := client.updates()
-	if updates[0].botID != "manager" ||
-		updates[0].req.RoomID != "oc-alpha" ||
-		updates[0].req.MessageID != "sent-1" ||
-		updates[0].req.Text != "done" {
-		t.Fatalf("update record = %+v, want final response replacing generated root", updates[0])
+	assertCodexFinalMetadata(t, records[1], "om-user")
+	if updates := client.updates(); len(updates) != 0 {
+		t.Fatalf("updates = %+v, want no generated-root update for tool activity", updates)
 	}
 }
 
-func TestServiceFallsBackWhenFeishuGeneratedRootUpdateFails(t *testing.T) {
+func TestServiceDoesNotCreateGeneratedRootForFeishuToolActivity(t *testing.T) {
 	t.Parallel()
 
 	stream := make(chan BotEvent, 1)
@@ -942,21 +978,23 @@ func TestServiceFallsBackWhenFeishuGeneratedRootUpdateFails(t *testing.T) {
 	defer svc.Close()
 
 	waitFor(t, func() bool {
-		return len(client.sentRecords()) == 3 && len(client.updates()) == 1
+		return len(client.sentRecords()) >= 2
 	})
 	records := client.sentRecords()
-	if records[0].Text != turnPlaceholderText || records[0].ThreadRootID != "" {
-		t.Fatalf("placeholder record = %+v, want top-level generated root", records[0])
+	if records[0].ThreadRootID != "" {
+		t.Fatalf("tool record = %+v, want top-level activity message", records[0])
 	}
-	if records[1].ThreadRootID != "sent-1" || !strings.Contains(records[1].Text, runtimebridge.AgentToolMsgType) {
-		t.Fatalf("tool record = %+v, want activity reply under generated root", records[1])
+	assertCodexToolMetadata(t, records[0], "om-user", "tool-1")
+	if records[1].Text != "done" || records[1].ThreadRootID != "" {
+		t.Fatalf("final record = %+v, want top-level final response", records[1])
 	}
-	if records[2].ThreadRootID != "sent-1" || records[2].Text != "done" {
-		t.Fatalf("fallback record = %+v, want final response inside generated root", records[2])
+	assertCodexFinalMetadata(t, records[1], "om-user")
+	if updates := client.updates(); len(updates) != 0 {
+		t.Fatalf("updates = %+v, want no generated-root update for tool activity", updates)
 	}
 }
 
-func TestServiceKeepsToolActivityInsideExistingThread(t *testing.T) {
+func TestServiceDeliversToolActivityMetadataOutsideExistingThread(t *testing.T) {
 	t.Parallel()
 
 	stream := make(chan BotEvent, 1)
@@ -1008,12 +1046,14 @@ func TestServiceKeepsToolActivityInsideExistingThread(t *testing.T) {
 		records := client.sentRecords()
 		return len(records) == 2 &&
 			records[0].RoomID == "room-1" &&
-			records[0].ThreadRootID == "msg-root" &&
-			strings.Contains(records[0].Text, runtimebridge.AgentToolMsgType) &&
+			records[0].ThreadRootID == "" &&
 			records[1].RoomID == "room-1" &&
-			records[1].ThreadRootID == "msg-root" &&
+			records[1].ThreadRootID == "" &&
 			records[1].Text == "thread done"
 	})
+	records := client.sentRecords()
+	assertCodexToolMetadata(t, records[0], "m-thread-reply", "tool-1")
+	assertCodexFinalMetadata(t, records[1], "m-thread-reply")
 }
 
 func TestServiceConversationResetClearsSingleThreadKey(t *testing.T) {
@@ -1312,7 +1352,7 @@ func TestServiceFlushesAfterPromptSettlesWithoutTerminalEvent(t *testing.T) {
 	})
 }
 
-func TestServiceProjectsToolEventsAsAgentActivity(t *testing.T) {
+func TestServiceDeliversToolActivityMetadataWithoutFinalMessage(t *testing.T) {
 	t.Parallel()
 
 	stream := make(chan BotEvent, 1)
@@ -1358,47 +1398,13 @@ func TestServiceProjectsToolEventsAsAgentActivity(t *testing.T) {
 	defer svc.Close()
 
 	waitFor(t, func() bool {
-		return len(client.sentRecords()) == 3
+		return len(client.sentRecords()) == 1
 	})
 	records := client.sentRecords()
-	if records[0].Text != turnPlaceholderText || records[0].ThreadRootID != "" {
-		t.Fatalf("placeholder record = %+v, want top-level blank root", records[0])
+	if records[0].ThreadRootID != "" {
+		t.Fatalf("tool record = %+v, want top-level activity message", records[0])
 	}
-	if records[1].ThreadRootID != "sent-1" {
-		t.Fatalf("tool activity ThreadRootID = %q, want sent-1", records[1].ThreadRootID)
-	}
-	if records[2].Text != turnCompleteText || records[2].ThreadRootID != "sent-1" {
-		t.Fatalf("completion record = %+v, want completion inside activity thread", records[2])
-	}
-	text := records[1].Text
-	if strings.Contains(text, "Running tool:") {
-		t.Fatalf("tool event rendered as plain text: %s", text)
-	}
-	var payload struct {
-		Type    string `json:"type"`
-		RoomID  string `json:"room_id"`
-		Content struct {
-			MsgType string `json:"msgtype"`
-			Tool    struct {
-				ID           string `json:"id"`
-				Kind         string `json:"kind"`
-				Status       string `json:"status"`
-				InputSummary string `json:"input_summary"`
-			} `json:"tool"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(text), &payload); err != nil {
-		t.Fatalf("tool activity json decode: %v; text=%s", err, text)
-	}
-	if payload.Type != runtimebridge.AgentActivityType || payload.RoomID != "room-1" || payload.Content.MsgType != runtimebridge.AgentToolMsgType {
-		t.Fatalf("payload = %+v, want tool activity", payload)
-	}
-	if payload.Content.Tool.ID == "" || payload.Content.Tool.ID == "tool-1" || payload.Content.Tool.Kind != "execute" || payload.Content.Tool.Status != "running" {
-		t.Fatalf("tool payload = %+v", payload.Content.Tool)
-	}
-	if strings.Contains(text, "rt-1") || strings.Contains(text, "sess-1") || strings.Contains(text, "tool-1") {
-		t.Fatalf("tool activity leaked execution identity: %s", text)
-	}
+	assertCodexToolMetadata(t, records[0], "m-1", "tool-1")
 }
 
 func TestServiceProjectsPermissionEventsAsAgentActivity(t *testing.T) {
@@ -1458,7 +1464,7 @@ func TestServiceProjectsPermissionEventsAsAgentActivity(t *testing.T) {
 	defer svc.Close()
 
 	waitFor(t, func() bool {
-		return len(client.sentRecords()) == 2
+		return len(client.sentRecords()) >= 2
 	})
 	records := client.sentRecords()
 	if records[0].Text != turnPlaceholderText || records[0].ThreadRootID != "" {
@@ -1573,17 +1579,23 @@ func TestServiceUsesStableMessageIDForPermissionDecisionActivity(t *testing.T) {
 	defer svc.Close()
 
 	waitFor(t, func() bool {
-		return len(client.sentRecords()) == 3
+		return len(client.sentRecords()) >= 3
 	})
 	sent := client.sentRecords()
 	if sent[0].Text != turnPlaceholderText || sent[0].ThreadRootID != "" {
 		t.Fatalf("placeholder record = %+v, want top-level blank root", sent[0])
 	}
-	if sent[1].ThreadRootID != "sent-1" || sent[2].ThreadRootID != "sent-1" {
-		t.Fatalf("permission thread roots = %q / %q, want sent-1", sent[1].ThreadRootID, sent[2].ThreadRootID)
+	var foundDecision bool
+	for _, record := range sent[1:] {
+		if record.ThreadRootID != "sent-1" {
+			t.Fatalf("permission record = %+v, want thread root sent-1", record)
+		}
+		if strings.Contains(record.Text, `"status":"allowed"`) {
+			foundDecision = true
+		}
 	}
-	if !strings.Contains(sent[2].Text, `"status":"allowed"`) {
-		t.Fatalf("decision activity = %s, want allowed status", sent[2].Text)
+	if !foundDecision {
+		t.Fatalf("records = %+v, want allowed decision activity", sent)
 	}
 }
 
@@ -1641,6 +1653,164 @@ func TestServiceIgnoresEventsFromOtherBindings(t *testing.T) {
 	waitFor(t, func() bool {
 		return slices.Equal(client.sentTexts(), []string{"matched"})
 	})
+}
+
+func TestServiceSuppressesCommentaryAndToolTextBeforeFinalMessage(t *testing.T) {
+	t.Parallel()
+
+	stream := make(chan BotEvent, 1)
+	errs := make(chan error)
+	close(errs)
+	stream <- BotEvent{MessageID: "msg-user", RoomID: "room-1", Text: "read it"}
+
+	sink := runtimecodex.NewEventSink()
+	client := &fakeBotClient{
+		streams: map[string][]streamResult{
+			"u-codex": {{events: stream, errs: errs}},
+		},
+	}
+	prompter := &fakePrompter{
+		prompt: func(_ context.Context, handle runtimecodex.SessionHandle, req runtimecodex.PromptRequest) error {
+			sink.Publish(runtimecodex.SessionEvent{
+				RuntimeID: handle.RuntimeID,
+				SessionID: req.SessionID,
+				Kind:      runtimecodex.SessionEventTextDelta,
+				Text:      "shell\ncommand: cat README.md",
+				Payload:   map[string]any{"phase": "commentary"},
+			})
+			sink.Publish(runtimecodex.SessionEvent{
+				RuntimeID:        handle.RuntimeID,
+				SessionID:        req.SessionID,
+				Kind:             runtimecodex.SessionEventToolCallStart,
+				ToolCallID:       "tool-1",
+				ToolKind:         "exec_command",
+				ToolTitle:        "Run shell command",
+				ToolStatus:       "running",
+				ToolInputSummary: `{"command":"Read: from README.md"}`,
+				Payload:          map[string]any{"command": "Read: from README.md"},
+			})
+			sink.Publish(runtimecodex.SessionEvent{
+				RuntimeID: handle.RuntimeID,
+				SessionID: req.SessionID,
+				Kind:      runtimecodex.SessionEventTextDelta,
+				Text:      "done",
+				Payload:   map[string]any{"phase": "final_answer"},
+			})
+			sink.Publish(runtimecodex.SessionEvent{
+				RuntimeID: handle.RuntimeID,
+				SessionID: req.SessionID,
+				Kind:      runtimecodex.SessionEventPromptCompleted,
+			})
+			return nil
+		},
+	}
+
+	svc := NewService(client, prompter, sink)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.StartBot(ctx, Binding{BotID: "u-codex", RuntimeID: "rt-1", SessionID: "sess-1"}); err != nil {
+		t.Fatalf("StartBot() error = %v", err)
+	}
+	defer svc.Close()
+
+	waitFor(t, func() bool {
+		return len(client.sentRecords()) == 2
+	})
+	records := client.sentRecords()
+	if records[0].ThreadRootID != "" {
+		t.Fatalf("tool ThreadRootID = %q, want top-level activity message", records[0].ThreadRootID)
+	}
+	assertCodexToolMetadata(t, records[0], "msg-user", "tool-1")
+	if got := records[1].Text; got != "done" || strings.Contains(got, "command: cat README.md") {
+		t.Fatalf("final reply leaked commentary text: %s", got)
+	}
+	if records[1].ThreadRootID != "" {
+		t.Fatalf("final ThreadRootID = %q, want top-level final reply", records[1].ThreadRootID)
+	}
+	assertCodexFinalMetadata(t, records[1], "msg-user")
+}
+
+func TestServiceWaitsForDelayedEventsAfterCommentarySettle(t *testing.T) {
+	t.Parallel()
+
+	stream := make(chan BotEvent, 1)
+	errs := make(chan error)
+	close(errs)
+	stream <- BotEvent{MessageID: "msg-user", RoomID: "room-1", Text: "write it"}
+
+	sink := runtimecodex.NewEventSink()
+	client := &fakeBotClient{
+		streams: map[string][]streamResult{
+			"u-codex": {{events: stream, errs: errs}},
+		},
+	}
+	prompter := &fakePrompter{
+		prompt: func(_ context.Context, handle runtimecodex.SessionHandle, req runtimecodex.PromptRequest) error {
+			go func() {
+				time.Sleep(30 * time.Millisecond)
+				sink.Publish(runtimecodex.SessionEvent{
+					RuntimeID: handle.RuntimeID,
+					SessionID: req.SessionID,
+					Kind:      runtimecodex.SessionEventTextDelta,
+					Text:      "需要写权限",
+					Payload:   map[string]any{"phase": "commentary"},
+				})
+				sink.Publish(runtimecodex.SessionEvent{
+					RuntimeID:        handle.RuntimeID,
+					SessionID:        req.SessionID,
+					Kind:             runtimecodex.SessionEventToolCallStart,
+					ToolCallID:       "tool-1",
+					ToolKind:         "exec_command",
+					ToolTitle:        "Run shell command",
+					ToolStatus:       "running",
+					ToolInputSummary: `{"command":"cat > hello.py"}`,
+				})
+				sink.Publish(runtimecodex.SessionEvent{
+					RuntimeID:         handle.RuntimeID,
+					SessionID:         req.SessionID,
+					Kind:              runtimecodex.SessionEventToolCallUpdate,
+					ToolCallID:        "tool-1",
+					ToolKind:          "exec_command",
+					ToolTitle:         "Run shell command",
+					ToolStatus:        "completed",
+					ToolOutputSummary: `{"output":""}`,
+				})
+				sink.Publish(runtimecodex.SessionEvent{
+					RuntimeID: handle.RuntimeID,
+					SessionID: req.SessionID,
+					Kind:      runtimecodex.SessionEventTextDelta,
+					Text:      "已写入文件：`hello.py`",
+					Payload:   map[string]any{"phase": "final_answer"},
+				})
+				sink.Publish(runtimecodex.SessionEvent{
+					RuntimeID: handle.RuntimeID,
+					SessionID: req.SessionID,
+					Kind:      runtimecodex.SessionEventPromptCompleted,
+				})
+			}()
+			return nil
+		},
+	}
+
+	svc := NewService(client, prompter, sink)
+	svc.promptSettle = 5 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.StartBot(ctx, Binding{BotID: "u-codex", RuntimeID: "rt-1", SessionID: "sess-1"}); err != nil {
+		t.Fatalf("StartBot() error = %v", err)
+	}
+	defer svc.Close()
+
+	waitFor(t, func() bool {
+		return len(client.sentRecords()) >= 3
+	})
+	records := client.sentRecords()
+	assertCodexToolMetadata(t, records[0], "msg-user", "tool-1")
+	assertCodexToolMetadata(t, records[1], "msg-user", "tool-1")
+	if records[2].Text != "已写入文件：`hello.py`" || records[2].ThreadRootID != "" {
+		t.Fatalf("final record = %+v, want delayed top-level final reply", records[2])
+	}
+	assertCodexFinalMetadata(t, records[2], "msg-user")
 }
 
 func TestHTTPClientDecodeSSE(t *testing.T) {

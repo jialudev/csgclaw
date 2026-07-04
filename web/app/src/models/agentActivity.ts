@@ -378,7 +378,7 @@ function recordValue(value: unknown): UnknownRecord | null {
 
 function openClawMetadata(message: IMMessage | null | undefined): UnknownRecord | null {
   const metadata = recordValue(message?.metadata);
-  return recordValue(metadata?.openclaw) ?? metadata;
+  return recordValue(metadata?.openclaw) ?? recordValue(metadata?.codex) ?? metadata;
 }
 
 function openClawDeliveryInfo(openclaw: UnknownRecord | null): UnknownRecord | null {

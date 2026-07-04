@@ -225,6 +225,53 @@ func TestAppServerManagerPromptCompletesOnAgentMessageWithoutTurnCompleted(t *te
 	}
 }
 
+func TestAppServerManagerPromptReplaysLegacyRolloutResponseItems(t *testing.T) {
+	withAppServerHelperCommand(t, "prompt-legacy-rollout-complete")
+	dir := t.TempDir()
+	spec := testAppServerSessionSpec(dir)
+	sink := &recordingSink{}
+	manager := newAppServerManager(testAppServerManagerDepsWithSink(sink))
+	session, err := manager.Start(context.Background(), spec)
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() { _ = manager.Stop(context.Background(), SessionHandle{RuntimeID: spec.RuntimeID}) })
+
+	resp, err := manager.Prompt(context.Background(), SessionHandle{RuntimeID: spec.RuntimeID}, PromptRequest{
+		SessionID: session.SessionID,
+		Prompt:    []PromptContentBlock{TextBlock("put it in a file")},
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if resp.StopReason != StopReasonEndTurn {
+		t.Fatalf("StopReason = %q, want %q", resp.StopReason, StopReasonEndTurn)
+	}
+
+	waitForRuntime(t, func() bool { return len(sink.snapshot()) >= 4 })
+	events := sink.snapshot()
+	kinds := make([]SessionEventKind, 0, len(events))
+	for _, event := range events {
+		kinds = append(kinds, event.Kind)
+	}
+	want := []SessionEventKind{
+		SessionEventTextDelta,
+		SessionEventToolCallStart,
+		SessionEventToolCallUpdate,
+		SessionEventTextDelta,
+		SessionEventPromptCompleted,
+	}
+	if fmt.Sprint(kinds) != fmt.Sprint(want) {
+		t.Fatalf("event kinds = %#v, want %#v; events=%#v", kinds, want, events)
+	}
+	if events[0].Text != "checking workspace" || events[3].Text != "已经放到文件里了" {
+		t.Fatalf("events = %#v, want commentary then final text", events)
+	}
+	if events[0].Payload.(map[string]any)["phase"] != "commentary" || events[3].Payload.(map[string]any)["phase"] != "final_answer" {
+		t.Fatalf("payload phases = %#v / %#v, want commentary/final_answer", events[0].Payload, events[3].Payload)
+	}
+}
+
 func TestAppServerManagerPromptHandlesLargeCommandOutput(t *testing.T) {
 	withAppServerHelperCommand(t, "prompt-large-command-output")
 	dir := t.TempDir()
@@ -567,6 +614,183 @@ func TestAppServerEventAdapterLegacyEvents(t *testing.T) {
 	}
 }
 
+func TestAppServerEventAdapterLegacyResponseItemExecCommandFallback(t *testing.T) {
+	manager, live, sink := testAppServerEventAdapter(t)
+
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/response_item",
+		Params: mustJSONRaw(t, map[string]any{
+			"type":      "function_call",
+			"name":      "exec_command",
+			"call_id":   "call-legacy",
+			"arguments": `{"cmd":"cat > hello.py <<'EOF'\nprint(\"Hello, World!\")\nEOF","workdir":"/tmp/work"}`,
+		}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/response_item",
+		Params: mustJSONRaw(t, map[string]any{
+			"type":    "function_call_output",
+			"call_id": "call-legacy",
+			"output":  "Process exited with code 1\nOutput:\nzsh:1: operation not permitted: hello.py",
+		}),
+	})
+
+	events := sink.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("events len = %d, want 2: %#v", len(events), events)
+	}
+	if events[0].Kind != SessionEventToolCallStart ||
+		events[0].ToolCallID != "call-legacy" ||
+		events[0].ToolKind != "exec_command" ||
+		events[0].ToolStatus != "started" ||
+		!strings.Contains(events[0].ToolInputSummary, "hello.py") {
+		t.Fatalf("fallback start = %#v, want exec command start", events[0])
+	}
+	if events[1].Kind != SessionEventToolCallUpdate ||
+		events[1].ToolCallID != "call-legacy" ||
+		events[1].ToolStatus != "failed" ||
+		!strings.Contains(events[1].ToolOutputSummary, "operation not permitted") {
+		t.Fatalf("fallback output = %#v, want failed exec command output", events[1])
+	}
+}
+
+func TestAppServerEventAdapterCanonicalExecCommandSuppressesResponseItemFallback(t *testing.T) {
+	manager, live, sink := testAppServerEventAdapter(t)
+
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/event",
+		Params: mustJSONRaw(t, map[string]any{"type": "exec_command_begin", "call_id": "call-1", "command": "go test"}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/event",
+		Params: mustJSONRaw(t, map[string]any{"type": "exec_command_end", "call_id": "call-1", "output": "ok"}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/response_item",
+		Params: mustJSONRaw(t, map[string]any{
+			"type":      "function_call",
+			"name":      "exec_command",
+			"call_id":   "call-1",
+			"arguments": `{"cmd":"duplicate"}`,
+		}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/response_item",
+		Params: mustJSONRaw(t, map[string]any{"type": "function_call_output", "call_id": "call-1", "output": "duplicate"}),
+	})
+
+	events := sink.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("events len = %d, want only canonical begin/end: %#v", len(events), events)
+	}
+	if events[0].ToolInputSummary == "" || strings.Contains(events[0].ToolInputSummary, "duplicate") {
+		t.Fatalf("canonical start = %#v, want no fallback duplicate", events[0])
+	}
+	if events[1].ToolOutputSummary == "" || strings.Contains(events[1].ToolOutputSummary, "duplicate") {
+		t.Fatalf("canonical output = %#v, want no fallback duplicate", events[1])
+	}
+}
+
+func TestAppServerEventAdapterResponseItemFallbackDoesNotLockOutRawEvents(t *testing.T) {
+	manager, live, sink := testAppServerEventAdapter(t)
+
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/response_item",
+		Params: mustJSONRaw(t, map[string]any{
+			"type":      "function_call",
+			"name":      "exec_command",
+			"call_id":   "call-legacy",
+			"arguments": `{"cmd":"ls"}`,
+		}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "item/completed",
+		Params: mustJSONRaw(t, map[string]any{
+			"threadId": "main-thread",
+			"item": map[string]any{
+				"id":   "msg-final",
+				"type": "agentMessage",
+				"text": "done",
+			},
+		}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "turn/completed",
+		Params: mustJSONRaw(t, map[string]any{
+			"threadId": "main-thread",
+			"turn": map[string]any{
+				"id":     "turn-1",
+				"status": "completed",
+			},
+		}),
+	})
+
+	events := sink.snapshot()
+	if len(events) != 3 {
+		t.Fatalf("events len = %d, want fallback tool, raw final, raw completed: %#v", len(events), events)
+	}
+	if events[0].Kind != SessionEventToolCallStart || events[0].ToolCallID != "call-legacy" {
+		t.Fatalf("first event = %#v, want response_item fallback tool", events[0])
+	}
+	if events[1].Kind != SessionEventTextDelta || events[1].Text != "done" {
+		t.Fatalf("second event = %#v, want raw final text", events[1])
+	}
+	if events[2].Kind != SessionEventPromptCompleted {
+		t.Fatalf("third event = %#v, want raw prompt completed", events[2])
+	}
+	if live.appProtocol != appServerProtocolRaw {
+		t.Fatalf("protocol = %q, want raw", live.appProtocol)
+	}
+}
+
+func TestAppServerEventAdapterResponseItemMessageFallbackDedupesEventMsg(t *testing.T) {
+	manager, live, sink := testAppServerEventAdapter(t)
+
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/event",
+		Params: mustJSONRaw(t, map[string]any{
+			"type":    "agent_message",
+			"message": "same final",
+			"phase":   "final_answer",
+		}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/response_item",
+		Params: mustJSONRaw(t, map[string]any{
+			"type":  "message",
+			"id":    "msg-duplicate",
+			"role":  "assistant",
+			"phase": "final_answer",
+			"content": []map[string]any{
+				{"type": "output_text", "text": "same final"},
+			},
+		}),
+	})
+	manager.handleAppServerNotification("runtime-1", live, appServerNotification{
+		Method: "codex/response_item",
+		Params: mustJSONRaw(t, map[string]any{
+			"type":  "message",
+			"id":    "msg-fallback",
+			"role":  "assistant",
+			"phase": "final_answer",
+			"content": []map[string]any{
+				{"type": "output_text", "text": "response item only final"},
+			},
+		}),
+	})
+
+	events := sink.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("events len = %d, want canonical final plus response_item-only final: %#v", len(events), events)
+	}
+	if events[0].Text != "same final" || events[1].Text != "response item only final" {
+		t.Fatalf("events = %#v, want deduped response_item message fallback", events)
+	}
+	if events[1].MessageID != "msg-fallback" {
+		t.Fatalf("fallback MessageID = %q, want msg-fallback", events[1].MessageID)
+	}
+}
+
 func TestAppServerEventAdapterProtocolDetectionAndSubagentFilter(t *testing.T) {
 	manager, live, sink := testAppServerEventAdapter(t)
 
@@ -799,6 +1023,40 @@ func TestAppServerManagerHelperProcess(t *testing.T) {
 				return nil, false
 			}
 		})
+	case "prompt-legacy-rollout-complete":
+		runAppServerHelper(t, func(index int, msg map[string]any) (map[string]any, bool) {
+			switch msg["method"] {
+			case "thread/start":
+				return rpcResult(msg["id"], map[string]any{"threadId": "main-thread"}), true
+			case "turn/start":
+				assertTurnStartParams(t, msg, "main-thread", "medium", "put it in a file")
+				writeRolloutRecord(t, "event_msg", map[string]any{"type": "agent_message", "message": "checking workspace", "phase": "commentary"})
+				writeRolloutRecord(t, "response_item", map[string]any{
+					"type":      "function_call",
+					"name":      "exec_command",
+					"call_id":   "call-write",
+					"arguments": `{"cmd":"printf 'print(\"Hello, World!\")\n' > hello.py","workdir":"/tmp/work"}`,
+				})
+				writeRolloutRecord(t, "response_item", map[string]any{
+					"type":    "function_call_output",
+					"call_id": "call-write",
+					"output":  "Process exited with code 0\nOutput:\n-rw-r--r-- hello.py",
+				})
+				writeRolloutRecord(t, "response_item", map[string]any{
+					"type":  "message",
+					"id":    "msg-final",
+					"role":  "assistant",
+					"phase": "final_answer",
+					"content": []map[string]any{
+						{"type": "output_text", "text": "已经放到文件里了"},
+					},
+				})
+				writeRolloutRecord(t, "event_msg", map[string]any{"type": "task_complete", "turn_id": "turn-legacy"})
+				return rpcResult(msg["id"], map[string]any{"turnId": "turn-legacy"}), true
+			default:
+				return nil, false
+			}
+		})
 	case "prompt-large-command-output":
 		runAppServerHelper(t, func(index int, msg map[string]any) (map[string]any, bool) {
 			switch msg["method"] {
@@ -1017,6 +1275,19 @@ func writeRPCNotification(t *testing.T, method string, params any) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		t.Fatalf("marshal notification: %v", err)
+	}
+	_, _ = fmt.Fprintln(os.Stdout, string(data))
+}
+
+func writeRolloutRecord(t *testing.T, recordType string, payload any) {
+	t.Helper()
+	msg := map[string]any{
+		"type":    recordType,
+		"payload": payload,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal rollout record: %v", err)
 	}
 	_, _ = fmt.Fprintln(os.Stdout, string(data))
 }

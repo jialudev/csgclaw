@@ -526,5 +526,11 @@ describe("conversation model helpers", () => {
         metadata: { openclaw: { delivery_kind: "final", request_id: "msg-user" } },
       }),
     ).toBe(false);
+    expect(
+      isToolCallMessage({
+        content: "Inspect workspace state",
+        metadata: { codex: { delivery_kind: "tool", request_id: "msg-user" } },
+      }),
+    ).toBe(true);
   });
 });

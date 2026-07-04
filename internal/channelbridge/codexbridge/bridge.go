@@ -259,7 +259,7 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 		renderer := runtimebridge.NewTurnRenderer()
 		renderer.SetPromptError(err.Error())
 		cleanupProcessingReaction(ctx)
-		_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
+		_, err := w.flushTurn(ctx, evt.RoomID, "", renderer, codexFinalDeliveryMetadata(evt.MessageID))
 		return err
 	}
 	sessionID, err := w.sessionID(ctx, evt)
@@ -267,7 +267,7 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 		renderer := runtimebridge.NewTurnRenderer()
 		renderer.SetPromptError(err.Error())
 		cleanupProcessingReaction(ctx)
-		_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
+		_, err := w.flushTurn(ctx, evt.RoomID, "", renderer, codexFinalDeliveryMetadata(evt.MessageID))
 		return err
 	}
 	req := runtimecodex.PromptRequest{
@@ -311,16 +311,10 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 	}
 	flushTurn := func() (string, error) {
 		cleanupProcessingReaction(ctx)
-		if generatedRootID == "" {
-			return w.flushTurn(ctx, evt.RoomID, turnRootID, renderer)
+		if generatedRootID != "" && len(renderer.FinalMessages()) == 0 {
+			return w.flushTurnWithEmptyCompletion(ctx, evt.RoomID, generatedRootID, renderer, nil)
 		}
-		if w.canUpdateGeneratedTurnRoot(evt) {
-			return w.flushTurnByUpdatingRoot(ctx, evt.RoomID, generatedRootID, renderer)
-		}
-		if len(renderer.FinalMessages()) == 0 {
-			return w.flushTurnWithEmptyCompletion(ctx, evt.RoomID, generatedRootID, renderer)
-		}
-		return w.flushTurn(ctx, evt.RoomID, turnRootID, renderer)
+		return w.flushTurn(ctx, evt.RoomID, "", renderer, codexFinalDeliveryMetadata(evt.MessageID))
 	}
 
 	type promptResult struct {
@@ -351,6 +345,39 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 		}
 	}
 
+	handleRuntimeEvent := func(event runtimecodex.SessionEvent) (bool, error) {
+		if !matchesSession(event, w.binding.RuntimeID, sessionID) {
+			return false, nil
+		}
+		if commentaryText, ok := codexCommentaryText(event); ok {
+			slog.Debug("codex bridge captured commentary payload",
+				"bot_id", w.binding.BotID,
+				"runtime_id", w.binding.RuntimeID,
+				"session_id", sessionID,
+				"text_bytes", len(commentaryText),
+			)
+			return false, nil
+		}
+		if isCodexFinalTextEvent(event) {
+			renderer.ApplyText(event)
+		}
+		if renderedActivity, ok := renderer.RenderActivity(event, localChannel, evt.RoomID, w.binding.BotID); ok {
+			threadRootID := ""
+			metadata := codexActivityDeliveryMetadata(event, evt.MessageID)
+			if !isCodexToolDeliveryEvent(event) {
+				var err error
+				threadRootID, err = ensureActivityThreadRoot()
+				if err != nil {
+					return false, err
+				}
+			}
+			if err := w.sendActivity(ctx, evt.RoomID, threadRootID, renderedActivity, metadata); err != nil {
+				return false, err
+			}
+		}
+		return isTerminalEvent(event.Kind), nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -359,20 +386,11 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 			if !ok {
 				return fmt.Errorf("runtime event sink closed")
 			}
-			if !matchesSession(event, w.binding.RuntimeID, sessionID) {
-				continue
+			terminal, err := handleRuntimeEvent(event)
+			if err != nil {
+				return err
 			}
-			if renderedActivity, ok := renderer.RenderActivity(event, localChannel, evt.RoomID, w.binding.BotID); ok {
-				threadRootID, err := ensureActivityThreadRoot()
-				if err != nil {
-					return err
-				}
-				if err := w.sendActivity(ctx, evt.RoomID, threadRootID, renderedActivity); err != nil {
-					return err
-				}
-			}
-			renderer.ApplyText(event)
-			if isTerminalEvent(event.Kind) && promptReturned {
+			if terminal && promptReturned {
 				slog.Debug("codex bridge terminal event flush",
 					"bot_id", w.binding.BotID,
 					"runtime_id", w.binding.RuntimeID,
@@ -394,6 +412,37 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 			settleTimer.Reset(w.service.promptSettle)
 		case <-settleTimer.C:
 			if promptReturned {
+				for {
+					select {
+					case event, ok := <-runtimeEvents:
+						if !ok {
+							return fmt.Errorf("runtime event sink closed")
+						}
+						terminal, err := handleRuntimeEvent(event)
+						if err != nil {
+							return err
+						}
+						if terminal {
+							slog.Debug("codex bridge drained terminal event before settle flush",
+								"bot_id", w.binding.BotID,
+								"runtime_id", w.binding.RuntimeID,
+								"session_id", sessionID,
+								"message_id", strings.TrimSpace(evt.MessageID),
+								"kind", string(event.Kind),
+								"elapsed", time.Since(eventStartedAt),
+							)
+							_, err := flushTurn()
+							return err
+						}
+						continue
+					default:
+					}
+					break
+				}
+				if generatedRootID == "" && len(renderer.FinalMessages()) == 0 {
+					settleTimer.Reset(w.service.promptSettle)
+					continue
+				}
 				slog.Debug("codex bridge settle flush",
 					"bot_id", w.binding.BotID,
 					"runtime_id", w.binding.RuntimeID,
@@ -432,7 +481,7 @@ func (w *worker) handleConversationReset(ctx context.Context, evt BotEvent) erro
 func (w *worker) flushConversationResetError(ctx context.Context, evt BotEvent, message string) error {
 	renderer := runtimebridge.NewTurnRenderer()
 	renderer.SetPromptError(strings.TrimSpace(message))
-	_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer)
+	_, err := w.flushTurn(ctx, evt.RoomID, evt.ThreadRootID, renderer, nil)
 	if err != nil {
 		return err
 	}
@@ -449,55 +498,30 @@ func (w *worker) clearContextCache(conversationKey string) {
 	delete(w.contextSent, conversationKey)
 }
 
-func (w *worker) flushTurn(ctx context.Context, roomID, threadRootID string, renderer *runtimebridge.TurnRenderer) (string, error) {
-	return w.flushTurnMessages(ctx, roomID, threadRootID, false, renderer)
+func (w *worker) flushTurn(ctx context.Context, roomID, threadRootID string, renderer *runtimebridge.TurnRenderer, metadata map[string]any) (string, error) {
+	return w.flushTurnMessages(ctx, roomID, threadRootID, false, renderer, metadata)
 }
 
-func (w *worker) flushTurnWithEmptyCompletion(ctx context.Context, roomID, threadRootID string, renderer *runtimebridge.TurnRenderer) (string, error) {
-	return w.flushTurnMessages(ctx, roomID, threadRootID, true, renderer)
+func (w *worker) flushTurnWithEmptyCompletion(ctx context.Context, roomID, threadRootID string, renderer *runtimebridge.TurnRenderer, metadata map[string]any) (string, error) {
+	return w.flushTurnMessages(ctx, roomID, threadRootID, true, renderer, metadata)
 }
 
-func (w *worker) flushTurnByUpdatingRoot(ctx context.Context, roomID, rootMessageID string, renderer *runtimebridge.TurnRenderer) (string, error) {
-	messages := renderer.FinalMessages()
-	if len(messages) == 0 {
-		messages = []string{turnCompleteText}
-	}
-	if len(messages) == 0 {
-		return strings.TrimSpace(rootMessageID), nil
-	}
-	if err := w.updateMessage(ctx, roomID, rootMessageID, messages[0]); err != nil {
-		slog.Warn("codex bridge update generated turn root failed; sending completion inside activity thread",
-			"bot_id", w.binding.BotID,
-			"room_id", strings.TrimSpace(roomID),
-			"message_id", strings.TrimSpace(rootMessageID),
-			"text_bytes", len(strings.TrimSpace(messages[0])),
-			"error", err,
-		)
-		return w.flushMessages(ctx, roomID, rootMessageID, messages)
-	}
-	if len(messages) > 1 {
-		if _, err := w.flushMessages(ctx, roomID, rootMessageID, messages[1:]); err != nil {
-			return "", err
-		}
-	}
-	return strings.TrimSpace(rootMessageID), nil
-}
-
-func (w *worker) flushTurnMessages(ctx context.Context, roomID, threadRootID string, includeEmptyCompletion bool, renderer *runtimebridge.TurnRenderer) (string, error) {
+func (w *worker) flushTurnMessages(ctx context.Context, roomID, threadRootID string, includeEmptyCompletion bool, renderer *runtimebridge.TurnRenderer, metadata map[string]any) (string, error) {
 	messages := renderer.FinalMessages()
 	if len(messages) == 0 && includeEmptyCompletion {
 		messages = []string{turnCompleteText}
 	}
-	return w.flushMessages(ctx, roomID, threadRootID, messages)
+	return w.flushMessages(ctx, roomID, threadRootID, messages, metadata)
 }
 
-func (w *worker) flushMessages(ctx context.Context, roomID, threadRootID string, messages []string) (string, error) {
+func (w *worker) flushMessages(ctx context.Context, roomID, threadRootID string, messages []string, metadata map[string]any) (string, error) {
 	var firstSentMessageID string
 	for _, text := range messages {
 		req := SendMessageRequest{
 			RoomID:       roomID,
 			Text:         text,
 			ThreadRootID: strings.TrimSpace(threadRootID),
+			Metadata:     metadata,
 		}
 		messageID, err := w.sendMessageRequest(ctx, req)
 		if err != nil {
@@ -508,14 +532,6 @@ func (w *worker) flushMessages(ctx context.Context, roomID, threadRootID string,
 		}
 	}
 	return firstSentMessageID, nil
-}
-
-func (w *worker) canUpdateGeneratedTurnRoot(evt BotEvent) bool {
-	if !strings.EqualFold(strings.TrimSpace(evt.Channel), "feishu") {
-		return false
-	}
-	_, ok := w.service.client.(MessageUpdater)
-	return ok
 }
 
 func (w *worker) startProcessingReaction(ctx context.Context, evt BotEvent) func(context.Context) {
@@ -622,51 +638,14 @@ func (w *worker) sendMessage(ctx context.Context, roomID, threadRootID, text str
 	})
 }
 
-func (w *worker) sendActivity(ctx context.Context, roomID, threadRootID string, activity runtimebridge.RenderedActivity) error {
+func (w *worker) sendActivity(ctx context.Context, roomID, threadRootID string, activity runtimebridge.RenderedActivity, metadata map[string]any) error {
 	_, err := w.sendMessageRequest(ctx, SendMessageRequest{
 		RoomID:       roomID,
 		Text:         activity.Text,
 		ThreadRootID: strings.TrimSpace(threadRootID),
+		Metadata:     metadata,
 	})
 	return err
-}
-
-func (w *worker) updateMessage(ctx context.Context, roomID, messageID, text string) error {
-	text = strings.TrimSpace(text)
-	messageID = strings.TrimSpace(messageID)
-	if text == "" || messageID == "" {
-		return nil
-	}
-	updater, ok := w.service.client.(MessageUpdater)
-	if !ok {
-		return fmt.Errorf("message update is not supported")
-	}
-	updateStartedAt := time.Now()
-	resp, err := updater.UpdateMessage(ctx, w.binding.BotID, UpdateMessageRequest{
-		RoomID:    strings.TrimSpace(roomID),
-		MessageID: messageID,
-		Text:      text,
-	})
-	if err != nil {
-		slog.Debug("codex bridge update message failed",
-			"bot_id", w.binding.BotID,
-			"room_id", strings.TrimSpace(roomID),
-			"message_id", messageID,
-			"text_bytes", len(text),
-			"duration", time.Since(updateStartedAt),
-			"error", err,
-		)
-		return err
-	}
-	slog.Debug("codex bridge update message completed",
-		"bot_id", w.binding.BotID,
-		"room_id", strings.TrimSpace(roomID),
-		"message_id", messageID,
-		"updated_message_id", strings.TrimSpace(resp.MessageID),
-		"text_bytes", len(text),
-		"duration", time.Since(updateStartedAt),
-	)
-	return nil
 }
 
 func (w *worker) sendMessageRequest(ctx context.Context, req SendMessageRequest) (string, error) {
@@ -703,6 +682,78 @@ func (w *worker) sendMessageRequest(ctx context.Context, req SendMessageRequest)
 		"duration", time.Since(sendStartedAt),
 	)
 	return strings.TrimSpace(resp.MessageID), nil
+}
+
+func isCodexFinalTextEvent(event runtimecodex.SessionEvent) bool {
+	if event.Kind != runtimecodex.SessionEventTextDelta {
+		return false
+	}
+	phase := codexEventPhase(event)
+	return phase == "" || phase == "final_answer"
+}
+
+func isCodexToolDeliveryEvent(event runtimecodex.SessionEvent) bool {
+	return event.Kind == runtimecodex.SessionEventToolCallStart || event.Kind == runtimecodex.SessionEventToolCallUpdate
+}
+
+func codexCommentaryText(event runtimecodex.SessionEvent) (string, bool) {
+	if event.Kind != runtimecodex.SessionEventTextDelta {
+		return "", false
+	}
+	if codexEventPhase(event) != "commentary" {
+		return "", false
+	}
+	text := strings.TrimSpace(event.Text)
+	return text, text != ""
+}
+
+func codexEventPhase(event runtimecodex.SessionEvent) string {
+	payload, ok := event.Payload.(map[string]any)
+	if !ok {
+		return ""
+	}
+	phase, _ := payload["phase"].(string)
+	return strings.TrimSpace(strings.ToLower(phase))
+}
+
+func codexFinalDeliveryMetadata(sourceMessageID string) map[string]any {
+	sourceMessageID = strings.TrimSpace(sourceMessageID)
+	entry := map[string]any{
+		"delivery_kind":     "final",
+		"request_id":        sourceMessageID,
+		"source_message_id": sourceMessageID,
+	}
+	return map[string]any{
+		"codex":    cloneStringAnyMap(entry),
+		"openclaw": cloneStringAnyMap(entry),
+	}
+}
+
+func codexActivityDeliveryMetadata(event runtimecodex.SessionEvent, sourceMessageID string) map[string]any {
+	if !isCodexToolDeliveryEvent(event) {
+		return nil
+	}
+	sourceMessageID = strings.TrimSpace(sourceMessageID)
+	entry := map[string]any{
+		"delivery_kind":     "tool",
+		"request_id":        sourceMessageID,
+		"source_message_id": sourceMessageID,
+		"tool_call_id":      strings.TrimSpace(event.ToolCallID),
+		"tool_kind":         strings.TrimSpace(event.ToolKind),
+		"tool_status":       strings.TrimSpace(event.ToolStatus),
+	}
+	return map[string]any{
+		"codex":    cloneStringAnyMap(entry),
+		"openclaw": cloneStringAnyMap(entry),
+	}
+}
+
+func cloneStringAnyMap(value map[string]any) map[string]any {
+	out := make(map[string]any, len(value))
+	for key, item := range value {
+		out[key] = item
+	}
+	return out
 }
 
 func (w *worker) sessionID(ctx context.Context, evt BotEvent) (string, error) {

@@ -121,6 +121,9 @@ func (c *appServerClient) handleLine(line string) {
 }
 
 func (c *appServerClient) handleMessage(msg appServerWireMessage) {
+	if c.handleLegacyRolloutMessage(msg) {
+		return
+	}
 	hasID := len(msg.ID) > 0
 	hasResult := len(msg.Result) > 0
 	hasError := len(msg.Error) > 0
@@ -134,6 +137,33 @@ func (c *appServerClient) handleMessage(msg appServerWireMessage) {
 		c.handleNotification(msg)
 	default:
 		c.logDebug("ignore unrecognized codex app-server json-rpc message")
+	}
+}
+
+func (c *appServerClient) handleLegacyRolloutMessage(msg appServerWireMessage) bool {
+	msgType := strings.TrimSpace(msg.Type)
+	if msgType == "" || len(msg.Payload) == 0 {
+		return false
+	}
+	handler := c.onNotification
+	if handler == nil {
+		return true
+	}
+	switch msgType {
+	case "event_msg":
+		handler(appServerNotification{
+			Method: "codex/event",
+			Params: cloneRawMessage(msg.Payload),
+		})
+		return true
+	case "response_item":
+		handler(appServerNotification{
+			Method: "codex/response_item",
+			Params: cloneRawMessage(msg.Payload),
+		})
+		return true
+	default:
+		return false
 	}
 }
 

@@ -35,9 +35,10 @@ type BotThreadContextSummary struct {
 }
 
 type SendMessageRequest struct {
-	RoomID       string `json:"room_id"`
-	Text         string `json:"text"`
-	ThreadRootID string `json:"thread_root_id,omitempty"`
+	RoomID       string         `json:"room_id"`
+	Text         string         `json:"text"`
+	ThreadRootID string         `json:"thread_root_id,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
 type SendMessageResponse struct {

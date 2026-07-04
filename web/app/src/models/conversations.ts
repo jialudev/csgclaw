@@ -4,6 +4,7 @@ import {
   openClawDeliveryKind,
   parseAgentActivity,
   parseLegacyToolActivityCommand,
+  parsePlainAgentCommand,
 } from "@/models/agentActivity";
 import { renderSlashCommandPreviewText } from "@/models/slashCommands";
 import type { WorkspaceTeam } from "@/models/tasks";
@@ -306,7 +307,7 @@ function isNonMessageActivityContent(content: unknown): boolean {
 }
 
 function isLegacyToolCallContent(content: unknown): boolean {
-  return Boolean(parseLegacyToolActivityCommand(content));
+  return Boolean(parseLegacyToolActivityCommand(content) || parsePlainAgentCommand(content));
 }
 
 function isMessageLike(value: unknown): value is IMMessage {

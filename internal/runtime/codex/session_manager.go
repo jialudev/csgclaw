@@ -9,18 +9,20 @@ import (
 )
 
 type liveSession struct {
-	mu                   sync.Mutex
-	session              *Session
-	appClient            *appServerClient
-	cmd                  *exec.Cmd
-	stdin                io.Closer
-	stderr               *os.File
-	done                 chan struct{}
-	spec                 SessionSpec
-	conversationSessions map[string]string
-	turnWaiters          map[string]*appServerTurnWaiter
-	fallbackCompleted    map[string]struct{}
-	appProtocol          string
+	mu                    sync.Mutex
+	session               *Session
+	appClient             *appServerClient
+	cmd                   *exec.Cmd
+	stdin                 io.Closer
+	stderr                *os.File
+	done                  chan struct{}
+	spec                  SessionSpec
+	conversationSessions  map[string]string
+	turnWaiters           map[string]*appServerTurnWaiter
+	fallbackCompleted     map[string]struct{}
+	replayedExecCommands  map[string]struct{}
+	replayedAgentMessages map[string]struct{}
+	appProtocol           string
 }
 
 func (s *liveSession) sessionIDs() []string {

@@ -5142,6 +5142,12 @@ func TestHandleParticipantSendMessagePreservesMetadata(t *testing.T) {
 		"room_id": "room-1",
 		"text": "Read: from README.md",
 		"metadata": {
+			"codex": {
+				"delivery_kind": "tool",
+				"request_id": "msg-user",
+				"source_message_id": "msg-user",
+				"payload_flags": {"reasoning": true}
+			},
 			"openclaw": {
 				"delivery_kind": "tool",
 				"request_id": "msg-user",
@@ -5182,6 +5188,10 @@ func TestHandleParticipantSendMessagePreservesMetadata(t *testing.T) {
 	}
 	if openclaw["delivery_kind"] != "tool" || openclaw["request_id"] != "msg-user" {
 		t.Fatalf("openclaw metadata = %#v, want tool delivery for msg-user", openclaw)
+	}
+	codex, ok := reply.Metadata["codex"].(map[string]any)
+	if !ok || codex["delivery_kind"] != "tool" || codex["request_id"] != "msg-user" {
+		t.Fatalf("codex metadata = %#v, want tool delivery for msg-user", reply.Metadata["codex"])
 	}
 	flags, ok := openclaw["payload_flags"].(map[string]any)
 	if !ok || flags["reasoning"] != true {

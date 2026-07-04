@@ -156,6 +156,32 @@ func TestAppServerClientDispatchesNotification(t *testing.T) {
 	}
 }
 
+func TestAppServerClientDispatchesLegacyRolloutRecords(t *testing.T) {
+	writer := &lockedStringWriter{}
+	client := newAppServerClient(writer, nil)
+	gotCh := make(chan appServerNotification, 2)
+	client.onNotification = func(notification appServerNotification) {
+		gotCh <- notification
+	}
+
+	client.handleLine(`{"type":"event_msg","payload":{"type":"exec_command_begin","call_id":"call-1","command":"go test"}}`)
+	client.handleLine(`{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call-2","arguments":"{\"cmd\":\"ls\"}"}}`)
+
+	for _, want := range []string{"codex/event", "codex/response_item"} {
+		select {
+		case got := <-gotCh:
+			if got.Method != want {
+				t.Fatalf("notification method = %q, want %q", got.Method, want)
+			}
+			if len(got.Params) == 0 {
+				t.Fatalf("notification params empty for %s", want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %s notification", want)
+		}
+	}
+}
+
 func TestAppServerClientIgnoresMalformedLine(t *testing.T) {
 	writer := &lockedStringWriter{}
 	client := newAppServerClient(writer, nil)

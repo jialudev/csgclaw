@@ -243,6 +243,15 @@ describe("agent activity model", () => {
       command: "Tool progress without marker",
       signature: "openclaw-tool:flat-tool-1",
     });
+    expect(
+      parseOpenClawDeliveryCommand({
+        content: "Inspect workspace state",
+        metadata: { codex: { delivery_kind: "tool", tool_call_id: "codex-tool-1" } },
+      }),
+    ).toMatchObject({
+      command: "Inspect workspace state",
+      signature: "openclaw-tool:codex-tool-1",
+    });
   });
 
   it("parses legacy fenced command messages", () => {

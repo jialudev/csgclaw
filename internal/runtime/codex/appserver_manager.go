@@ -85,15 +85,17 @@ func (m *appServerManager) Start(ctx context.Context, spec SessionSpec) (*Sessio
 	logger := slog.New(slog.NewTextHandler(stderrFile, &slog.HandlerOptions{}))
 	appClient := newAppServerClient(stdin, logger)
 	live := &liveSession{
-		cmd:                  cmd,
-		stdin:                stdin,
-		stderr:               stderrFile,
-		done:                 make(chan struct{}),
-		spec:                 spec,
-		appClient:            appClient,
-		conversationSessions: make(map[string]string),
-		turnWaiters:          make(map[string]*appServerTurnWaiter),
-		fallbackCompleted:    make(map[string]struct{}),
+		cmd:                   cmd,
+		stdin:                 stdin,
+		stderr:                stderrFile,
+		done:                  make(chan struct{}),
+		spec:                  spec,
+		appClient:             appClient,
+		conversationSessions:  make(map[string]string),
+		turnWaiters:           make(map[string]*appServerTurnWaiter),
+		fallbackCompleted:     make(map[string]struct{}),
+		replayedExecCommands:  make(map[string]struct{}),
+		replayedAgentMessages: make(map[string]struct{}),
 	}
 	appClient.onNotification = func(note appServerNotification) {
 		m.handleAppServerNotification(spec.RuntimeID, live, note)
