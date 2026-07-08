@@ -397,6 +397,7 @@ export function useConversationController({
   locale,
   managerProfile,
   managerProfileIncomplete,
+  managerRuntimeUnavailable = false,
   navigatePane,
   onMessageAction,
   onConnectConnector,
@@ -984,6 +985,10 @@ export function useConversationController({
   }, [activeConversationId, showCreateRoom, showInvite]);
 
   async function sendMessage(): Promise<void> {
+    if (managerRuntimeUnavailable) {
+      setComposerError(t("managerCodexMissingWarning"));
+      return;
+    }
     if (managerProfileIncomplete) {
       setComposerError(t("profileIncomplete"));
       return;
@@ -1063,6 +1068,10 @@ export function useConversationController({
   }
 
   async function sendThreadReply(): Promise<void> {
+    if (managerRuntimeUnavailable) {
+      setThreadError(t("managerCodexMissingWarning"));
+      return;
+    }
     if (managerProfileIncomplete) {
       setThreadError(t("profileIncomplete"));
       return;
@@ -1511,6 +1520,7 @@ export function useConversationController({
       onApplySlashCandidate: applySlashCandidate,
       managerProfile,
       managerProfileIncomplete,
+      managerRuntimeUnavailable,
       authStatuses,
       authBusyProvider,
       connectorStatus,
