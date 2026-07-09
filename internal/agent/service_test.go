@@ -8505,6 +8505,7 @@ func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, provider feishu.AgentC
 	return func(s *Service) error {
 		return WithRuntime(newRuntime(sandboxgateway.Dependencies{
 			FeishuProvider: provider,
+			AgentHome:      host.AgentHome,
 			EnsureRuntime:  host.EnsureRuntime,
 			RuntimeHome:    host.RuntimeHome,
 			CloseRuntime:   host.CloseRuntime,
@@ -8529,10 +8530,11 @@ func withTestSandboxRuntimeHost(host PicoClawRuntimeHost, provider feishu.AgentC
 					return sandboxgateway.AgentRef{}, err
 				}
 				return sandboxgateway.AgentRef{
-					ID:        got.ID,
-					Name:      got.Name,
-					RuntimeID: got.RuntimeID,
-					BoxID:     got.BoxID,
+					ID:           got.ID,
+					Name:         got.Name,
+					RuntimeID:    got.RuntimeID,
+					BoxID:        got.BoxID,
+					Instructions: got.Instructions,
 				}, nil
 			},
 			SyncHandle: host.SyncHandle,
