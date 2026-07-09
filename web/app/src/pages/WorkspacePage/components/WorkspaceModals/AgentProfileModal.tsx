@@ -1,7 +1,4 @@
-import {
-  BOT_TYPE_NORMAL,
-  DEFAULT_RUNTIME_KIND,
-} from "@/shared/constants/agents";
+import { BOT_TYPE_NORMAL, DEFAULT_RUNTIME_KIND } from "@/shared/constants/agents";
 import { useEffect, useRef, useState, type SetStateAction } from "react";
 import {
   AgentCreateProgress,
@@ -147,7 +144,9 @@ export function AgentProfileModal({
   const selectedProvider = providerOptions.find((option) => option.id === selectedProviderID) ?? null;
   const selectedProviderModels = selectedProvider?.models ?? [];
   const selectedModelValue = agentDraft.model_id || "";
-  const workerTemplates = workerSelectableTemplates(hubTemplates);
+  const workerTemplates = workerSelectableTemplates(hubTemplates).filter(
+    (item) => normalizeRuntimeKind(item.runtime_kind) !== "picoclaw_sandbox",
+  );
   const selectedWorkerTemplate = workerTemplates.find((item) => item.id === agentDraft.from_template) ?? null;
   const sandboxEnabled = Boolean(agentDraft.sandbox_enabled);
   const runtimeChoices = Array.isArray(bootstrapConfig?.worker_runtime_choices)
@@ -156,13 +155,29 @@ export function AgentProfileModal({
   const codexChoice = runtimeChoices.find(
     (item) => !item?.sandbox_enabled && normalizeRuntimeName(item?.name) === "codex",
   );
-  const sandboxRuntimeChoices = runtimeChoices.filter((item) => item?.sandbox_enabled);
+  const sandboxRuntimeChoices = runtimeChoices.filter(
+    (item) => item?.sandbox_enabled && normalizeRuntimeName(item?.name) !== "picoclaw",
+  );
   const defaultSandboxRuntimeName =
-    normalizeRuntimeName(sandboxRuntimeChoices.find((item) => normalizeRuntimeName(item?.name) === "picoclaw")?.name) ||
-    normalizeRuntimeName(sandboxRuntimeChoices[0]?.name || "picoclaw");
+    normalizeRuntimeName(sandboxRuntimeChoices.find((item) => normalizeRuntimeName(item?.name) === "openclaw")?.name) ||
+    normalizeRuntimeName(sandboxRuntimeChoices[0]?.name || "openclaw");
+  const defaultSandboxRuntimeKind = composeLegacyRuntimeKind(defaultSandboxRuntimeName, true) || "openclaw_sandbox";
   const selectedRuntimeName = normalizeRuntimeName(
     agentDraft.runtime_name || (sandboxEnabled ? defaultSandboxRuntimeName : "codex"),
   );
+  const selectedRuntimeChoice = runtimeChoices.find((item) => {
+    const choiceSandboxEnabled = Boolean(item?.sandbox_enabled);
+    const choiceRuntimeName = normalizeRuntimeName(item?.name);
+    return choiceSandboxEnabled === sandboxEnabled && choiceRuntimeName === selectedRuntimeName;
+  });
+  const selectedRuntimeUnavailable = isWorkerCreate && selectedRuntimeChoice?.installed === false;
+  const selectedRuntimeUnavailableMessage = selectedRuntimeUnavailable
+    ? sandboxEnabled
+      ? t("runtimeSandboxUnavailable", {
+          reason: selectedRuntimeChoice?.message || t("runtimeSandboxUnavailableReason"),
+        })
+      : selectedRuntimeChoice?.message || t("runtimeCodexNotInstalled")
+    : "";
 
   function defaultCustomWorkerDraft(baseDraft: AgentDraft): AgentDraft {
     const codexAvailable = codexChoice?.installed !== false;
@@ -265,9 +280,9 @@ export function AgentProfileModal({
     onAgentCreateModeChange(nextMode);
     if (nextMode === "template") {
       const nextTemplate = normalizeTemplateSelection(
-        hubTemplates.find((item) => item.id === lastTemplateIDRef.current) ||
-          hubTemplates.find((item) => item.id === agentDraft.from_template) ||
-          pickDefaultAgentTemplate(hubTemplates, agentDraft.runtime_kind, bootstrapConfig) ||
+        workerTemplates.find((item) => item.id === lastTemplateIDRef.current) ||
+          workerTemplates.find((item) => item.id === agentDraft.from_template) ||
+          pickDefaultAgentTemplate(workerTemplates, defaultSandboxRuntimeKind, bootstrapConfig) ||
           null,
       );
       onAgentDraftChange((current) =>
@@ -277,6 +292,32 @@ export function AgentProfileModal({
     }
     onAgentDraftChange((current) => (current ? defaultCustomWorkerDraft(current) : current));
   }
+
+  useEffect(() => {
+    if (!isTemplateCreate || agentDraft.from_template || !workerTemplates.length) {
+      return;
+    }
+    const nextTemplate = normalizeTemplateSelection(
+      pickDefaultAgentTemplate(workerTemplates, defaultSandboxRuntimeKind, bootstrapConfig),
+    );
+    if (!nextTemplate) {
+      return;
+    }
+    onAgentDraftChange((current) =>
+      current && !current.from_template
+        ? applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || "")
+        : current,
+    );
+  }, [
+    agentDraft.from_template,
+    bootstrapConfig,
+    defaultSandboxRuntimeKind,
+    hubTemplates,
+    isTemplateCreate,
+    managerAgent?.image,
+    onAgentDraftChange,
+    workerTemplates.length,
+  ]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -303,12 +344,8 @@ export function AgentProfileModal({
           <section className="profile-section agent-identity-section">
             {!isNotificationContext ? (
               <div className="profile-section-heading">
-                <div className="profile-section-title">
-                  {t("profileBasics")}
-                </div>
-                <p className="profile-section-description">
-                  {t("profileBasicsDescription")}
-                </p>
+                <div className="profile-section-title">{t("profileBasics")}</div>
+                <p className="profile-section-description">{t("profileBasicsDescription")}</p>
               </div>
             ) : null}
             <div className="agent-section-form">
@@ -371,7 +408,9 @@ export function AgentProfileModal({
                       <textarea
                         className="compact-textarea"
                         value={agentDraft.description}
-                        onInput={(event) => onAgentDraftChange({ ...agentDraft, description: event.currentTarget.value })}
+                        onInput={(event) =>
+                          onAgentDraftChange({ ...agentDraft, description: event.currentTarget.value })
+                        }
                       />
                     </label>
                   </div>
@@ -393,7 +432,7 @@ export function AgentProfileModal({
                       value={agentDraft.from_template || ""}
                       onValueChange={(value) => {
                         const nextTemplate = normalizeTemplateSelection(
-                          hubTemplates.find((item) => item.id === value) || null,
+                          workerTemplates.find((item) => item.id === value) || null,
                         );
                         onAgentDraftChange((current) =>
                           current
@@ -402,13 +441,18 @@ export function AgentProfileModal({
                         );
                       }}
                       triggerProps={{ "aria-label": t("templateLabel") }}
-                      options={workerTemplates.filter((item) => item.id).map((item) => ({
-                        value: item.id || "",
-                        label: item.name || item.id || "",
-                        description: String(item.description || "").trim() || undefined,
-                      }))}
+                      options={workerTemplates
+                        .filter((item) => item.id)
+                        .map((item) => ({
+                          value: item.id || "",
+                          label: item.name || item.id || "",
+                          description: String(item.description || "").trim() || undefined,
+                        }))}
                     />
                     <small className="field-hint">{t("templateHelp")}</small>
+                    {selectedRuntimeUnavailableMessage ? (
+                      <small className="field-warning">{selectedRuntimeUnavailableMessage}</small>
+                    ) : null}
                   </label>
                   {selectedWorkerTemplate?.image_env?.length ? (
                     <div className="field span-2">
@@ -449,6 +493,9 @@ export function AgentProfileModal({
                           <strong>{sandboxEnabled ? t("statusEnabled") : t("statusDisabled")}</strong>
                         </span>
                       </label>
+                      {selectedRuntimeUnavailableMessage ? (
+                        <small className="field-warning">{selectedRuntimeUnavailableMessage}</small>
+                      ) : null}
                     </div>
                   ) : null}
                   {isWorkerCreate ? (
@@ -492,17 +539,17 @@ export function AgentProfileModal({
                         ) : (
                           <Select
                             value={
-                              selectedRuntimeName || normalizeRuntimeName(sandboxRuntimeChoices[0]?.name || "picoclaw")
+                              selectedRuntimeName || normalizeRuntimeName(sandboxRuntimeChoices[0]?.name || "openclaw")
                             }
                             onValueChange={(value) => {
                               const runtimeName = normalizeRuntimeName(value);
                               const runtimeKind = composeLegacyRuntimeKind(runtimeName, true) || DEFAULT_RUNTIME_KIND;
                               const currentTemplate = normalizeTemplateSelection(
-                                hubTemplates.find((item) => item.id === agentDraft.from_template) || null,
+                                workerTemplates.find((item) => item.id === agentDraft.from_template) || null,
                               );
                               const nextTemplate = templateMatchesRuntime(currentTemplate, runtimeKind)
                                 ? currentTemplate
-                                : pickDefaultAgentTemplate(hubTemplates, runtimeKind, bootstrapConfig);
+                                : pickDefaultAgentTemplate(workerTemplates, runtimeKind, bootstrapConfig);
                               let nextDraft: AgentDraft = {
                                 ...agentDraft,
                                 bot_type: BOT_TYPE_NORMAL,
@@ -530,6 +577,8 @@ export function AgentProfileModal({
                             options={sandboxRuntimeChoices.map((option) => ({
                               value: normalizeRuntimeName(option.name) || "",
                               label: option.label || normalizeRuntimeName(option.name) || "",
+                              disabled: option.installed === false,
+                              description: option.message || undefined,
                             }))}
                           />
                         )}
@@ -724,8 +773,12 @@ export function AgentProfileModal({
               (isNotificationContext
                 ? !notifierFormIsComplete(agentDraft, editingAgent)
                 : isTemplateCreate
-                  ? !agentDraft.from_template || !agentDraft.model_provider_id || !agentDraft.model_id || missingRequiredEnv
-                  : !agentDraft.model_provider_id || !agentDraft.model_id)
+                  ? !agentDraft.from_template ||
+                    !agentDraft.model_provider_id ||
+                    !agentDraft.model_id ||
+                    missingRequiredEnv ||
+                    selectedRuntimeUnavailable
+                  : !agentDraft.model_provider_id || !agentDraft.model_id || selectedRuntimeUnavailable)
             }
             loading={agentBusy}
             onClick={onSave}

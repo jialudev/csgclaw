@@ -86,6 +86,7 @@ import {
   resolveAgentChannelUserID,
   shouldWaitForManagerRuntimeAfterProfileSave,
   startAgentCreateProgress,
+  workerSelectableTemplates,
 } from "@/models/agents";
 import type {
   AgentCreateProgressState,
@@ -1138,20 +1139,21 @@ export function useAgentController({
     const codexAvailable = runtimeChoices.some(
       (item) => !item?.sandbox_enabled && normalizeRuntimeName(item?.name) === "codex" && item?.installed !== false,
     );
+    const createWorkerTemplates = workerSelectableTemplates(hubTemplates).filter(
+      (item) => normalizeRuntimeKind(item.runtime_kind) !== "picoclaw_sandbox",
+    );
+    const preferredSandboxRuntimeName =
+      normalizeRuntimeName(
+        runtimeChoices.find((item) => item?.sandbox_enabled && normalizeRuntimeName(item?.name) === "openclaw")?.name,
+      ) || normalizeRuntimeName(runtimeChoices.find((item) => item?.sandbox_enabled)?.name || "openclaw");
     let preferredRuntimeKind =
-      normalizeRuntimeKind(bootstrapConfig?.runtime_kind || managerAgent?.runtime_kind || "") || DEFAULT_RUNTIME_KIND;
-    if (preferredRuntimeKind === "codex" && !codexAvailable) {
-      preferredRuntimeKind =
-        normalizeRuntimeKind(
-          composeLegacyRuntimeKind(
-            normalizeRuntimeName(runtimeChoices.find((item) => item?.sandbox_enabled)?.name || "picoclaw"),
-            true,
-          ),
-        ) || DEFAULT_RUNTIME_KIND;
+      normalizeRuntimeKind(composeLegacyRuntimeKind(preferredSandboxRuntimeName, true)) || "openclaw_sandbox";
+    if (!runtimeChoices.length && !codexAvailable) {
+      preferredRuntimeKind = "openclaw_sandbox";
     }
     const selectedTemplate =
       template === undefined
-        ? pickDefaultAgentTemplate(hubTemplates, preferredRuntimeKind, bootstrapConfig)
+        ? pickDefaultAgentTemplate(createWorkerTemplates, preferredRuntimeKind, bootstrapConfig)
         : normalizeTemplateSelection(template);
     try {
       const defaults = await fetchAgentProfileDefaults();
