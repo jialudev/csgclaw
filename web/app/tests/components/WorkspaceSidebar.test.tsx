@@ -92,6 +92,7 @@ function renderSidebar(overrides: Partial<WorkspaceSidebarProps> = {}) {
           id: "openai",
           kind: "openai",
           models: ["gpt-4.1"],
+          preset: "openai",
           status: "connected",
         },
       ],

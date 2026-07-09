@@ -175,6 +175,24 @@
   height: 15px;
 }
 
+.addTooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  max-width: 180px;
+  padding: 5px 8px;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  background: var(--white);
+  color: var(--gray-700);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .groupItems {
   padding: 4px 8px 8px;
   display: grid;
@@ -462,6 +480,12 @@
 :global(:root[data-theme="dark"]) .addButton:focus-visible {
   background: rgba(208, 213, 221, 0.1);
   color: var(--gray-200);
+}
+
+:global(:root[data-theme="dark"]) .addTooltip {
+  border-color: color-mix(in srgb, var(--white) 12%, transparent);
+  background: var(--gray-900);
+  color: var(--white);
 }
 
 @media (max-width: 720px) {

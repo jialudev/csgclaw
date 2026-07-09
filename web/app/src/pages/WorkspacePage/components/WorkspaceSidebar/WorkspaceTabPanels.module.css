@@ -58,6 +58,17 @@
   text-decoration: none;
 }
 
+.modelProviderIconShell {
+  background: var(--white);
+}
+
+.modelProviderIconImage {
+  width: 16px;
+  height: 16px;
+  border-radius: 0;
+  object-fit: contain;
+}
+
 .hubTemplateRow {
   grid-template-columns: 32px minmax(0, 1fr) max-content;
 }
@@ -83,4 +94,8 @@
   border-color: var(--gray-700);
   background: var(--panel-strong);
   color: var(--gray-300);
+}
+
+:global(:root[data-theme="dark"]) .modelProviderIconShell {
+  background: var(--white);
 }
