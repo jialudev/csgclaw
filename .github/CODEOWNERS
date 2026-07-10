@@ -1,0 +1,114 @@
+# CSGClaw module ownership.
+#
+# GitHub CODEOWNERS entries must use GitHub users, teams, or email addresses.
+
+# Global default.
+* @RussellLuo
+
+# Command entrypoints.
+# /cmd/ @TODO-owner
+# /cmd/csgclaw/ @TODO-owner
+# /cmd/csgclaw-cli/ @TODO-owner
+
+# CLI modules.
+# /cli/ @TODO-owner
+# /cli/agent/ @TODO-owner
+# /cli/command/ @TODO-owner
+# /cli/completion/ @TODO-owner
+# /cli/csgclawcli/ @TODO-owner
+# /cli/member/ @TODO-owner
+# /cli/message/ @TODO-owner
+# /cli/model/ @TODO-owner
+# /cli/participant/ @TODO-owner
+# /cli/room/ @TODO-owner
+# /cli/serve/ @TODO-owner
+# /cli/skill/ @TODO-owner
+# /cli/task/ @TODO-owner
+# /cli/team/ @TODO-owner
+# /cli/template/ @TODO-owner
+# /cli/upgrade/ @TODO-owner
+# /cli/user/ @TODO-owner
+
+# Internal domain modules.
+# /internal/activity/ @TODO-owner
+# /internal/agent/ @TODO-owner
+/internal/agentmanager/ @xxx7xxxx
+/internal/agenttask/ @jialudev
+# /internal/agentworkspace/ @TODO-owner
+# /internal/api/ @TODO-owner
+# /internal/apiclient/ @TODO-owner
+# /internal/apitypes/ @TODO-owner
+# /internal/app/ @TODO-owner
+# /internal/app/channelwiring/ @TODO-owner
+# /internal/app/runtimewiring/ @TODO-owner
+# /internal/auth/ @TODO-owner
+/internal/channel/ @GatewayJ
+# /internal/channel/csgclaw/ @TODO-owner
+# /internal/channel/feishu/ @TODO-owner
+/internal/channelbridge/ @GatewayJ
+# /internal/channelbridge/codexbridge/ @TODO-owner
+# /internal/channelbridge/codexmanager/ @TODO-owner
+# /internal/channelbridge/runtimebridge/ @TODO-owner
+/internal/cliproxy/ @xxx7xxxx
+# /internal/codexcli/ @TODO-owner
+# /internal/codexmodel/ @TODO-owner
+# /internal/config/ @TODO-owner
+/internal/connectors/ @xxx7xxxx
+# /internal/identity/ @TODO-owner
+# /internal/im/ @TODO-owner
+/internal/llm/ @xxx7xxxx
+# /internal/localstore/ @TODO-owner
+/internal/modelcap/ @xxx7xxxx
+/internal/modelprovider/ @xxx7xxxx
+# /internal/onboard/ @TODO-owner
+/internal/participant/ @xxx7xxxx
+/internal/participant/feishubind/ @GatewayJ
+# /internal/runtimeassets/ @TODO-owner
+/internal/scheduledtask/ @wanghaojie124
+# /internal/server/ @TODO-owner
+/internal/skill/ @GatewayJ
+# /internal/skill/local/ @TODO-owner
+# /internal/skill/remote/ @TODO-owner
+# /internal/skill/system/ @TODO-owner
+/internal/slashcommand/ @GatewayJ
+/internal/taskcore/ @jialudev
+/internal/team/ @jialudev
+/internal/template/ @wanghaojie124
+# /internal/template/embed/ @TODO-owner
+# /internal/upgrade/ @TODO-owner
+# /internal/utils/ @TODO-owner
+# /internal/utils/filebrowse/ @TODO-owner
+# /internal/version/ @TODO-owner
+
+# Runtime modules and implementations.
+# /internal/runtime/ @TODO-owner
+# /internal/runtime/codex/ @TODO-owner
+/internal/runtime/openclawsandbox/ @jialudev
+# /internal/runtime/picoclawsandbox/ @TODO-owner
+# /internal/runtime/sandboxgateway/ @TODO-owner
+
+# Sandbox modules and implementations.
+# /internal/sandbox/ @TODO-owner
+# /internal/sandbox/boxlitecli/ @TODO-owner
+/internal/sandbox/csghub/ @GatewayJ
+/internal/sandbox/dockercli/ @wanghaojie124
+# /internal/sandbox/hostuser/ @TODO-owner
+# /internal/sandbox/sandboxtest/ @TODO-owner
+# /internal/sandboxproviders/ @TODO-owner
+
+# Web UI modules.
+/web/app/ @jialudev @youngbeom-shin
+# /web/static-dist/ @TODO-owner
+# /web/ui.go @TODO-owner
+# /web/ui_test.go @TODO-owner
+
+# Documentation.
+# /docs/ @TODO-owner
+# /docs/channel/ @TODO-owner
+# /docs/im/ @TODO-owner
+# /docs/sandbox/ @TODO-owner
+# /docs/web/ @TODO-owner
+# /docs/weekly-releases/ @TODO-owner
+
+# Scripts and release tooling.
+/scripts/ @wanghaojie124
