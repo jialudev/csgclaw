@@ -323,17 +323,9 @@
 }
 
 .primaryNavIcon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.primaryNavIconMask {
-  width: 20px;
-  height: 20px;
-  background: currentColor;
   display: block;
-  -webkit-mask: var(--workspace-nav-icon-url) center / contain no-repeat;
-  mask: var(--workspace-nav-icon-url) center / contain no-repeat;
+  width: 20px;
+  height: 20px;
 }
 
 .primaryNavLabel {
