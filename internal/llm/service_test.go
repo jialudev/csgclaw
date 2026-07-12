@@ -324,7 +324,7 @@ func TestChatCompletionsCodexRoutesThroughEmbeddedCLIProxy(t *testing.T) {
 	var payload map[string]any
 	var gotAuth string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/provider/codex/v1/chat/completions" {
+		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("path = %q, want embedded codex provider route", r.URL.Path)
 		}
 		gotAuth = r.Header.Get("Authorization")
@@ -338,7 +338,7 @@ func TestChatCompletionsCodexRoutesThroughEmbeddedCLIProxy(t *testing.T) {
 		if provider != agent.ProviderCodex {
 			t.Fatalf("provider = %q, want codex", provider)
 		}
-		return upstream.URL + "/api/provider/codex/v1", nil
+		return upstream.URL + "/v1", nil
 	}
 	embeddedCLIProxyAuthStatus = func(_ context.Context, provider string) (cliproxy.AuthStatus, error) {
 		if provider != agent.ProviderCodex {
@@ -518,7 +518,7 @@ func TestResponsesLLMAPICodexOmitsUnsupportedReasoningInput(t *testing.T) {
 
 	var gotInput []any
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/provider/codex/v1/responses" {
+		if r.URL.Path != "/v1/responses" {
 			t.Fatalf("path = %q, want embedded codex responses route", r.URL.Path)
 		}
 		var payload map[string]any
@@ -544,7 +544,7 @@ func TestResponsesLLMAPICodexOmitsUnsupportedReasoningInput(t *testing.T) {
 		if provider != agent.ProviderCodex {
 			t.Fatalf("provider = %q, want codex", provider)
 		}
-		return upstream.URL + "/api/provider/codex/v1", nil
+		return upstream.URL + "/v1", nil
 	}
 	embeddedCLIProxyAuthStatus = func(_ context.Context, provider string) (cliproxy.AuthStatus, error) {
 		if provider != agent.ProviderCodex {
@@ -775,12 +775,12 @@ func TestResponsesLLMAPICodexReturnsCompactResponsesErrorOnTransientFailure(t *t
 	var chatCalls int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/provider/codex/v1/responses":
+		case "/v1/responses":
 			responsesCalls++
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte(`{"error":{"message":"Post \"https://chatgpt.com/backend-api/codex/responses\": EOF","type":"server_error","code":"internal_server_error"}}`))
-		case "/api/provider/codex/v1/chat/completions":
+		case "/v1/chat/completions":
 			chatCalls++
 			http.Error(w, "codex chat fallback should not be called", http.StatusTeapot)
 		default:
@@ -793,7 +793,7 @@ func TestResponsesLLMAPICodexReturnsCompactResponsesErrorOnTransientFailure(t *t
 		if provider != agent.ProviderCodex {
 			t.Fatalf("provider = %q, want codex", provider)
 		}
-		return upstream.URL + "/api/provider/codex/v1", nil
+		return upstream.URL + "/v1", nil
 	}
 	embeddedCLIProxyAuthStatus = func(_ context.Context, provider string) (cliproxy.AuthStatus, error) {
 		if provider != agent.ProviderCodex {

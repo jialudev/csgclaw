@@ -16,21 +16,7 @@ import (
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 )
 
-func TestProviderPath(t *testing.T) {
-	tests := map[string]string{
-		"codex":       "codex",
-		"claude_code": "anthropic",
-		"claude-code": "anthropic",
-		"anthropic":   "anthropic",
-	}
-	for input, want := range tests {
-		if got := providerPath(input); got != want {
-			t.Fatalf("providerPath(%q) = %q, want %q", input, got, want)
-		}
-	}
-	if got := providerPath("api"); got != "" {
-		t.Fatalf("providerPath(api) = %q, want empty", got)
-	}
+func TestRegistryProvider(t *testing.T) {
 	if got := registryProvider("claude_code"); got != "claude" {
 		t.Fatalf("registryProvider(claude_code) = %q, want claude", got)
 	}
@@ -117,6 +103,26 @@ func TestEmbeddedCLIProxyRegistersImportedCodexAuthModels(t *testing.T) {
 	}
 	if !containsString(models, "gpt-5.5") {
 		t.Fatalf("models = %v, want gpt-5.5 registered for imported codex auth", models)
+	}
+	providerBaseURL, err := svc.ProviderBaseURL(ctx, ProviderCodex)
+	if err != nil {
+		t.Fatalf("ProviderBaseURL() error = %v", err)
+	}
+	if !strings.HasSuffix(providerBaseURL, "/v1") {
+		t.Fatalf("ProviderBaseURL() = %q, want unified /v1 route", providerBaseURL)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, providerBaseURL+"/models", nil)
+	if err != nil {
+		t.Fatalf("build models request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer local")
+	resp, err := svc.client.Do(req)
+	if err != nil {
+		t.Fatalf("GET unified models route: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET unified models route status = %d, want 200", resp.StatusCode)
 	}
 }
 

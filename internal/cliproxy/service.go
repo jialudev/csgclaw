@@ -127,7 +127,6 @@ func (s *Service) BaseURL(ctx context.Context) (string, error) {
 }
 
 func (s *Service) ProviderBaseURL(ctx context.Context, provider string) (string, error) {
-	rawProvider := provider
 	baseURL, err := s.BaseURL(ctx)
 	if err != nil {
 		return "", err
@@ -135,11 +134,7 @@ func (s *Service) ProviderBaseURL(ctx context.Context, provider string) (string,
 	if err := waitForProviderModels(ctx, provider); err != nil {
 		return "", err
 	}
-	provider = providerPath(provider)
-	if provider == "" {
-		return "", fmt.Errorf("unsupported cliproxy provider %q", rawProvider)
-	}
-	return strings.TrimRight(baseURL, "/") + "/api/provider/" + provider + "/v1", nil
+	return strings.TrimRight(baseURL, "/") + "/v1", nil
 }
 
 func (s *Service) ListModels(ctx context.Context, provider string) ([]string, error) {
@@ -483,17 +478,6 @@ func freePort() (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("allocate embedded cliproxy port: refused reserved legacy CLIProxy port repeatedly")
-}
-
-func providerPath(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case ProviderCodex:
-		return ProviderCodex
-	case "claude_code", "claude-code", "claude", ProviderAnthropic:
-		return ProviderAnthropic
-	default:
-		return ""
-	}
 }
 
 func registryProvider(provider string) string {
