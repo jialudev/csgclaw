@@ -25,6 +25,18 @@ export type BotType = typeof BOT_TYPE_NORMAL | typeof BOT_TYPE_NOTIFICATION | st
 export type ProviderName = "csghub_lite" | "csghub" | "codex" | "claude_code" | "api" | string;
 export type JSONRecord = Record<string, unknown>;
 
+export const MCP_SERVERS_EXAMPLE: JSONRecord = {
+  context7: {
+    command: "npx",
+    args: ["-y", "context7-mcp"],
+    startup_timeout_sec: 60,
+  },
+};
+
+export type MCPServersParseResult =
+  | { ok: true; value: JSONRecord | null }
+  | { ok: false; error: "invalid_json" | "object_required" };
+
 export type RuntimeOptionSchema = {
   key?: string | null;
   path?: string | null;
@@ -75,6 +87,7 @@ export type AgentProfileLike = {
   reasoning_effort?: string | null;
   request_options?: JSONRecord | null;
   runtime_options?: JSONRecord | null;
+  mcpServers?: JSONRecord | null;
   runtime_kind?: string | null;
   runtime_name?: RuntimeName | null;
   sandbox_enabled?: boolean | null;
@@ -300,6 +313,17 @@ export function agentRuntimeOptions(item: AgentLike | AgentProfileLike | null | 
   return {};
 }
 
+export function agentMCPServers(item: AgentLike | AgentProfileLike | null | undefined): JSONRecord | null | undefined {
+  const agent = item as AgentLike | null | undefined;
+  if (agent?.mcpServers == null) {
+    return agent?.mcpServers ?? undefined;
+  }
+  if (typeof agent.mcpServers === "object" && !Array.isArray(agent.mcpServers)) {
+    return { ...(agent.mcpServers as JSONRecord) };
+  }
+  return undefined;
+}
+
 export function agentProfileConfig(item: AgentLike | null | undefined): AgentProfileLike | null {
   if (item?.model_config && typeof item.model_config === "object" && !Array.isArray(item.model_config)) {
     return item.model_config;
@@ -349,6 +373,7 @@ export type AgentDraft = {
   role?: string;
   bot_type?: BotType;
   runtime_options?: JSONRecord;
+  mcpServers?: JSONRecord | null;
   runtime_name?: RuntimeName;
   sandbox_enabled?: boolean;
   runtime_kind: RuntimeKind;
@@ -527,6 +552,46 @@ function normalizeRuntimeOptionsRecord(value: unknown): JSONRecord {
     return {};
   }
   return { ...(value as JSONRecord) };
+}
+
+function isJSONRecord(value: unknown): value is JSONRecord {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function supportsMCPServers(runtimeKind: unknown): boolean {
+  const normalized = normalizeRuntimeKind(runtimeKind);
+  return normalized === "openclaw_sandbox" || normalized === "picoclaw_sandbox" || normalized === "codex";
+}
+
+export function mcpServersText(mcpServers: JSONRecord | null | undefined): string {
+  if (mcpServers == null) {
+    return "";
+  }
+  return JSON.stringify(normalizeRuntimeOptionsRecord(mcpServers), null, 2);
+}
+
+export function parseMCPServersText(text: string): MCPServersParseResult {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { ok: true, value: null };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed) as unknown;
+  } catch {
+    return { ok: false, error: "invalid_json" };
+  }
+  if (!isJSONRecord(parsed)) {
+    return { ok: false, error: "object_required" };
+  }
+  return { ok: true, value: parsed };
+}
+
+export function setMCPServers(value: JSONRecord | null): JSONRecord | null {
+  if (value === null) {
+    return null;
+  }
+  return normalizeRuntimeOptionsRecord(value);
 }
 
 export function isManagerAgent(item: AgentLike | null | undefined): boolean {
@@ -1221,6 +1286,7 @@ export function agentToDraft(agent: AgentDraftSource | null | undefined): AgentD
     from_template: agent?.from_template || "",
     template_name: agent?.template_name || "",
     runtime_options: normalizeRuntimeOptionsRecord(agentRuntimeOptions(agent as AgentLike | null | undefined)),
+    mcpServers: agentMCPServers(agent as AgentLike | null | undefined),
     ...base,
     notifier_delivery_mode: normalizeNotifierDeliveryMode(agent?.notifier_delivery_mode || base.notifier_delivery_mode),
     runtime_name: agentRuntimeName(agent as AgentLike | null | undefined),
@@ -1490,6 +1556,16 @@ export function draftRuntimeOptionsForSave(
     return null;
   }
   return { ...(base || {}), ...(notifier || {}) };
+}
+
+export function draftMCPServersForSave(draft: Partial<AgentDraft> | null | undefined): JSONRecord | null | undefined {
+  if (!draft || draft.mcpServers === undefined) {
+    return undefined;
+  }
+  if (draft.mcpServers === null) {
+    return null;
+  }
+  return normalizeRuntimeOptionsRecord(draft.mcpServers);
 }
 
 export function notifierRemoteTokenPlaceholderText(

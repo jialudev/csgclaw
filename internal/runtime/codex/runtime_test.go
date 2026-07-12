@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1488,6 +1489,54 @@ func TestRuntimeProvisionSeedsCodexWorkerTemplateSkills(t *testing.T) {
 	}
 }
 
+func TestRuntimeCreateWritesManagerMCPServers(t *testing.T) {
+	root := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", hostHome)
+
+	rt := newTestCodexRuntime(root, func(h agentruntime.Handle) (AgentRef, error) {
+		return AgentRef{
+			ID:        agent.ManagerUserID,
+			Name:      agent.ManagerName,
+			RuntimeID: h.RuntimeID,
+			Profile: agentruntime.Profile{
+				ModelID: "gpt-5.5",
+			},
+			MCPServers: map[string]any{
+				"context7": map[string]any{
+					"command": "npx",
+					"args":    []any{"-y", "@upstash/context7-mcp"},
+				},
+			},
+		}, nil
+	})
+
+	if _, err := rt.New(context.Background(), agentruntime.Spec{
+		RuntimeID: "rt-" + agent.ManagerUserID,
+		AgentID:   agent.ManagerUserID,
+		AgentName: agent.ManagerName,
+		Profile:   agentruntime.Profile{ModelID: "gpt-5.5"},
+	}); err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	configPath := filepath.Join(root, agent.ManagerUserID, ".codex", "home", "config.toml")
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read manager codex config: %v", err)
+	}
+	config := string(raw)
+	for _, want := range []string{
+		`[mcp_servers."context7"]`,
+		`command = "npx"`,
+		`args = ["-y", "@upstash/context7-mcp"]`,
+	} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("manager codex config missing %q:\n%s", want, config)
+		}
+	}
+}
+
 func TestRuntimeProvisionSyncsCodexOverlaySkills(t *testing.T) {
 	root := t.TempDir()
 	hostHome := t.TempDir()
@@ -1705,8 +1754,8 @@ func TestConfigureCodexHomeConfigReplacesManagedBlocksIdempotently(t *testing.T)
 		BaseURL: "https://runtime.example/v1",
 		APIKey:  "runtime-key",
 	}
-	first := configureCodexHomeConfig(initial, profile)
-	second := configureCodexHomeConfig(first, profile)
+	first := configureCodexHomeConfig(initial, profile, nil)
+	second := configureCodexHomeConfig(first, profile, nil)
 	if first != second {
 		t.Fatalf("configureCodexHomeConfig should be idempotent\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
@@ -1744,7 +1793,7 @@ func TestConfigureCodexHomeConfigReplacesManagedBlocksIdempotently(t *testing.T)
 func TestConfigureCodexHomeConfigIncompleteProfileSkipsProvider(t *testing.T) {
 	config := configureCodexHomeConfig("approval_policy = \"manual\"\n", agentruntime.Profile{
 		BaseURL: "https://runtime.example/v1",
-	})
+	}, nil)
 	if strings.Contains(config, csgclawProviderBeginMarker) {
 		t.Fatalf("config should skip provider block for incomplete profile:\n%s", config)
 	}
@@ -1758,6 +1807,225 @@ func TestConfigureCodexHomeConfigIncompleteProfileSkipsProvider(t *testing.T) {
 		if !strings.Contains(config, want) {
 			t.Fatalf("config missing %q:\n%s", want, config)
 		}
+	}
+}
+
+func TestConfigureCodexHomeConfigRendersMCPServers(t *testing.T) {
+	config := configureCodexHomeConfig("approval_policy = \"manual\"\n", agentruntime.Profile{}, map[string]any{
+		"context7": map[string]any{
+			"command":             "uvx",
+			"args":                []any{"context7-mcp"},
+			"startup_timeout_sec": float64(90),
+			"tool_timeout_sec":    120,
+			"enabled":             true,
+			"required":            false,
+			"enabled_tools":       []any{"search"},
+			"disabled_tools":      []any{"delete"},
+			"env": map[string]any{
+				"CONTEXT7_API_KEY": "secret",
+			},
+		},
+		"remote": map[string]any{
+			"url":                  "https://mcp.example.com/mcp",
+			"bearer_token_env_var": "MCP_TOKEN",
+			"headers": map[string]any{
+				"X-MCP-Trace": "trace-id",
+			},
+			"transport": "streamable-http",
+		},
+	})
+
+	for _, want := range []string{
+		csgclawMCPBeginMarker,
+		`[mcp_servers."context7"]`,
+		`command = "uvx"`,
+		`args = ["context7-mcp"]`,
+		`env = { "CONTEXT7_API_KEY" = "secret" }`,
+		`startup_timeout_sec = 90`,
+		`tool_timeout_sec = 120`,
+		`enabled = true`,
+		`required = false`,
+		`enabled_tools = ["search"]`,
+		`disabled_tools = ["delete"]`,
+		`[mcp_servers."remote"]`,
+		`url = "https://mcp.example.com/mcp"`,
+		`bearer_token_env_var = "MCP_TOKEN"`,
+		`http_headers = { "X-MCP-Trace" = "trace-id" }`,
+		csgclawMCPEndMarker,
+		`approval_policy = "manual"`,
+	} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("config missing %q:\n%s", want, config)
+		}
+	}
+
+	parsed, err := parseCodexMCPServers(config)
+	if err != nil {
+		t.Fatalf("parseCodexMCPServers() error = %v", err)
+	}
+	context7 := parsed["context7"].(map[string]any)
+	if got, want := context7["startup_timeout_sec"], int64(90); got != want {
+		t.Fatalf("context7 startup_timeout_sec = %#v, want %#v", got, want)
+	}
+	remote := parsed["remote"].(map[string]any)
+	headers := remote["headers"].(map[string]any)
+	if got, want := headers["X-MCP-Trace"], "trace-id"; got != want {
+		t.Fatalf("remote headers X-MCP-Trace = %#v, want %q", got, want)
+	}
+	if _, ok := remote["http_headers"]; ok {
+		t.Fatalf("remote retained codex-specific http_headers = %#v, want generic headers", remote)
+	}
+	if got, want := remote["transport"], "streamable-http"; got != want {
+		t.Fatalf("remote transport = %#v, want %q", got, want)
+	}
+	if _, ok := remote["approval_policy"]; ok {
+		t.Fatalf("remote captured root config fields = %#v", remote)
+	}
+}
+
+func TestConfigureCodexHomeConfigResolvesWorkspaceMCPArgs(t *testing.T) {
+	workspace := filepath.Join(t.TempDir(), "project")
+	config := configureCodexHomeConfigWithWorkspace("approval_policy = \"manual\"\n", agentruntime.Profile{}, map[string]any{
+		"filesystem": map[string]any{
+			"command": "npx",
+			"args": []any{
+				"-y",
+				"@modelcontextprotocol/server-filesystem",
+				"/home/user/workspace",
+				"/home/user/workspace/nested",
+				"${workspace}",
+				"${workspace}/from-placeholder",
+				"--root=/home/user/workspace",
+			},
+		},
+	}, workspace)
+
+	parsed, err := parseCodexMCPServers(config)
+	if err != nil {
+		t.Fatalf("parseCodexMCPServers() error = %v", err)
+	}
+	filesystem := parsed["filesystem"].(map[string]any)
+	got := filesystem["args"]
+	want := []any{
+		"-y",
+		"@modelcontextprotocol/server-filesystem",
+		"/home/user/workspace",
+		"/home/user/workspace/nested",
+		workspace,
+		filepath.Join(workspace, "from-placeholder"),
+		"--root=/home/user/workspace",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("filesystem.args = %#v, want %#v\nconfig:\n%s", got, want, config)
+	}
+}
+
+func TestConfigureCodexHomeConfigReplacesExistingMCPServerTablesWhenManaged(t *testing.T) {
+	existing := strings.Join([]string{
+		`approval_policy = "manual"`,
+		``,
+		`[mcp_servers."manual"]`,
+		`command = "uvx"`,
+		`args = ["manual-mcp"]`,
+		``,
+		`[tools]`,
+		`enabled = true`,
+		``,
+	}, "\n")
+
+	config := configureCodexHomeConfig(existing, agentruntime.Profile{}, map[string]any{
+		"context7": map[string]any{
+			"command": "npx",
+			"args":    []any{"context7-mcp"},
+		},
+	})
+
+	for _, unwanted := range []string{
+		`[mcp_servers."manual"]`,
+		`manual-mcp`,
+	} {
+		if strings.Contains(config, unwanted) {
+			t.Fatalf("config should remove stale MCP server %q:\n%s", unwanted, config)
+		}
+	}
+	for _, want := range []string{
+		`[mcp_servers."context7"]`,
+		`command = "npx"`,
+		`args = ["context7-mcp"]`,
+		`[tools]`,
+		`enabled = true`,
+	} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("config missing %q:\n%s", want, config)
+		}
+	}
+}
+
+func TestConfigureCodexHomeConfigClearsExistingMCPServerTablesWhenManagedEmpty(t *testing.T) {
+	existing := strings.Join([]string{
+		`approval_policy = "manual"`,
+		``,
+		`[mcp_servers."manual"]`,
+		`command = "uvx"`,
+		`args = ["manual-mcp"]`,
+		``,
+		`[tools]`,
+		`enabled = true`,
+		``,
+	}, "\n")
+
+	config := configureCodexHomeConfig(existing, agentruntime.Profile{}, map[string]any{})
+
+	for _, unwanted := range []string{
+		`[mcp_servers."manual"]`,
+		`manual-mcp`,
+	} {
+		if strings.Contains(config, unwanted) {
+			t.Fatalf("config should remove stale MCP server %q:\n%s", unwanted, config)
+		}
+	}
+	for _, want := range []string{
+		csgclawMCPBeginMarker,
+		csgclawMCPEndMarker,
+		`[tools]`,
+		`enabled = true`,
+	} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("config missing %q:\n%s", want, config)
+		}
+	}
+	if strings.Contains(config, `[mcp_servers.`) {
+		t.Fatalf("empty managed MCP config should not render MCP server tables:\n%s", config)
+	}
+}
+
+func TestConfigureCodexHomeConfigKeepsUserMCPServerTablesWhenUnmanaged(t *testing.T) {
+	existing := strings.Join([]string{
+		`approval_policy = "manual"`,
+		``,
+		`[mcp_servers."manual"]`,
+		`command = "uvx"`,
+		`args = ["manual-mcp"]`,
+		``,
+		`[tools]`,
+		`enabled = true`,
+		``,
+	}, "\n")
+
+	config := configureCodexHomeConfig(existing, agentruntime.Profile{}, nil)
+
+	for _, want := range []string{
+		`[mcp_servers."manual"]`,
+		`manual-mcp`,
+		`[tools]`,
+		`enabled = true`,
+	} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("config missing %q:\n%s", want, config)
+		}
+	}
+	if strings.Contains(config, csgclawMCPBeginMarker) {
+		t.Fatalf("unmanaged MCP config should not add a managed MCP block:\n%s", config)
 	}
 }
 

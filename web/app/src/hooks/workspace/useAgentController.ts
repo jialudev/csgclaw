@@ -4,6 +4,7 @@ import { useBlocker } from "react-router-dom";
 import { errorMessage } from "@/api/client";
 import { loginCLIProxyProviderRequest } from "@/api/cliproxy";
 import {
+  batchAddAgentMCPServersRequest,
   batchAddAgentSkillsRequest,
   createBotRequest,
   createManagerAgentRequest,
@@ -15,12 +16,14 @@ import {
   fetchAgent,
   fetchAgentProfile,
   fetchAgentProfileDefaults,
+  fetchAgentMCPServers,
   fetchAgentSkills,
   fetchAgentSkillsFile,
   finalizeFeishuRegistrationRequest,
   patchNotificationBotRequest,
   runAgentActionRequest,
   startFeishuRegistrationRequest,
+  updateAgentMCPServersRequest,
   updateAgentRequest,
 } from "@/api/agents";
 import type { AgentUpdatePayload, FeishuRegistration, FetchAgentsOptions } from "@/api/agents";
@@ -59,6 +62,7 @@ import {
   composeLegacyRuntimeKind,
   defaultManagerRebuildImageForRuntime,
   defaultWorkerImageForRuntime,
+  draftMCPServersForSave,
   draftRuntimeOptionsForSave,
   draftToProfileComparePayload,
   draftToProfile,
@@ -98,6 +102,7 @@ import type {
   RuntimeKind,
 } from "@/models/agents";
 import { isDirectConversation, localIdentitiesMatch, upsertUserInData } from "@/models/conversations";
+import { mcpServersFromMap, mcpServersMap } from "@/models/mcp";
 import { displayTeam } from "@/models/tasks";
 import type { WorkspaceTeam } from "@/models/tasks";
 import {
@@ -143,6 +148,10 @@ type FeishuActionKind = "connect" | "disconnect" | "finalize";
 
 const AGENT_RUNTIME_SYNC_INTERVAL_MS = 2_000;
 const AGENT_RUNTIME_SYNC_TIMEOUT_MS = 120_000;
+
+function cloneMCPServersForDraft(servers: AgentDraft["mcpServers"]): AgentDraft["mcpServers"] {
+  return servers && typeof servers === "object" ? { ...servers } : servers;
+}
 const FEISHU_CHANNEL_ACTION = "feishu";
 const FEISHU_REGISTRATION_DEFAULT_POLL_SECONDS = 3;
 const FEISHU_REGISTRATION_MIN_POLL_SECONDS = 1;
@@ -406,12 +415,16 @@ export function useAgentController({
   agentsQuery,
   bootstrapConfig,
   data,
+  catalogMCPServers = [],
+  catalogMCPServersError = "",
+  catalogMCPServersLoading = false,
   hubTemplates,
   locale,
   managerProfile,
   modelProviders = null,
   modelProvidersLoaded = false,
   profileDetailAgentID = "",
+  refreshMCPServers = async () => null,
   refreshHubTemplates,
   refreshWorkspaceAgents,
   refreshWorkspaceBootstrap,
@@ -457,6 +470,10 @@ export function useAgentController({
   const [agentSkillAddError, setAgentSkillAddError] = useState("");
   const [agentSkillDeleteBusy, setAgentSkillDeleteBusy] = useState(false);
   const [agentSkillDeleteError, setAgentSkillDeleteError] = useState("");
+  const [agentMCPAddBusy, setAgentMCPAddBusy] = useState(false);
+  const [agentMCPAddError, setAgentMCPAddError] = useState("");
+  const [agentMCPDeleteBusy, setAgentMCPDeleteBusy] = useState(false);
+  const [agentMCPDeleteError, setAgentMCPDeleteError] = useState("");
   const [agentPageNotice, setAgentPageNotice] = useState("");
   const [agentPageNoticeTone, setAgentPageNoticeTone] = useState<AgentPageNoticeTone>("warning");
   const agentPageNoticeTimerRef = useRef<number | null>(null);
@@ -585,7 +602,7 @@ export function useAgentController({
     }
     return normalizeFeishuPendingRegistration(feishuPendingRegistrations[agentID], agentID);
   }, [feishuPendingRegistrations, selectedAgentForPage?.id]);
-  const skillsAgentID = selectedAgentForPage?.id || "";
+  const agentDetailAgentID = selectedAgentForPage?.id || "";
   const globalSkillsQuery = useQuery({
     queryKey: workspaceQueryKeys.skills(),
     queryFn: async () => {
@@ -594,14 +611,14 @@ export function useAgentController({
     },
   });
   const agentSkillsQuery = useQuery({
-    queryKey: workspaceQueryKeys.agentSkills(skillsAgentID),
+    queryKey: workspaceQueryKeys.agentSkills(agentDetailAgentID),
     queryFn: async () => {
-      const skillsListing = await fetchAgentSkills(skillsAgentID);
+      const skillsListing = await fetchAgentSkills(agentDetailAgentID);
       const skills = skillOptionsFromWorkspace(skillsListing.entries || []);
       return Promise.all(
         skills.map(async (skill) => {
           try {
-            const file = await fetchAgentSkillsFile(skillsAgentID, `${skill.name}/SKILL.md`);
+            const file = await fetchAgentSkillsFile(agentDetailAgentID, `${skill.name}/SKILL.md`);
             return {
               ...skill,
               description: skillDescriptionFromMarkdown(file.content || "") || skill.description,
@@ -612,7 +629,12 @@ export function useAgentController({
         }),
       );
     },
-    enabled: Boolean(skillsAgentID),
+    enabled: Boolean(agentDetailAgentID),
+  });
+  const agentMCPServersQuery = useQuery({
+    queryKey: workspaceQueryKeys.agentMCPServers(agentDetailAgentID),
+    queryFn: () => fetchAgentMCPServers(agentDetailAgentID),
+    enabled: Boolean(agentDetailAgentID),
   });
   const agentSkillsError = agentSkillsQuery.error
     ? errorMessage(agentSkillsQuery.error, t("agentSkillsLoadFailed"))
@@ -627,6 +649,16 @@ export function useAgentController({
   const agentSkillCandidatesError = globalSkillsQuery.error
     ? errorMessage(globalSkillsQuery.error, t("agentSkillsLoadFailed"))
     : "";
+  const agentMCPServers = useMemo(() => {
+    return mcpServersFromMap(agentMCPServersQuery.data?.actual ?? agentMCPServersQuery.data?.desired ?? {});
+  }, [agentMCPServersQuery.data]);
+  const agentDesiredMCPServers = useMemo(() => {
+    return mcpServersFromMap(agentMCPServersQuery.data?.desired ?? {});
+  }, [agentMCPServersQuery.data]);
+  const agentMCPCandidates = useMemo(() => {
+    const currentNames = new Set(agentDesiredMCPServers.map((server) => server.name));
+    return catalogMCPServers.filter((server) => server.name && !currentNames.has(server.name));
+  }, [agentDesiredMCPServers, catalogMCPServers]);
   const activeConversation = useMemo(
     () => data?.rooms.find((item) => item.id === activeConversationId) ?? null,
     [data, activeConversationId],
@@ -688,11 +720,15 @@ export function useAgentController({
       if (isNotificationBotAgent(item)) {
         return ensureNotifierPullSubscriptionDraft(agentToDraft(item));
       }
-      const { agent, profile } = await fetchAgentWithProfile(item);
+      const [{ agent, profile }, mcpServersView] = await Promise.all([
+        fetchAgentWithProfile(item),
+        fetchAgentMCPServers(String(item.id || "").trim()),
+      ]);
       const base = agentToDraft({ ...agent, agent_profile: profile });
       const runtimeKind = normalizeRuntimeKind(agent?.runtime_kind || item?.runtime_kind || base.runtime_kind);
       return ensureNotifierPullSubscriptionDraft({
         ...base,
+        mcpServers: cloneMCPServersForDraft(mcpServersView.desired),
         runtime_kind: runtimeKind || base.runtime_kind,
         bot_type: BOT_TYPE_NORMAL,
       });
@@ -855,7 +891,7 @@ export function useAgentController({
   useEffect(() => {
     setAgentSkillAddError("");
     setAgentSkillDeleteError("");
-  }, [skillsAgentID]);
+  }, [agentDetailAgentID]);
 
   useEffect(() => {
     const selectedAgent = selectedAgentForPageRef.current;
@@ -1268,12 +1304,13 @@ export function useAgentController({
     setAgentModalMode("edit");
     setAgentCreateBotKind(isNotificationBotAgent(item) ? BOT_CREATE_KIND_NOTIFICATION : BOT_CREATE_KIND_WORKER);
     setAgentCreateMode("custom");
-    setEditingAgent(item);
+    setEditingAgent(null);
     setAgentError("");
     setAgentProgress(null);
     resetAgentModels();
     try {
       const draft = await agentDraftFromItem(item);
+      setEditingAgent({ ...item, mcpServers: draft.mcpServers });
       setAgentDraft(draft);
       setShowAgentModal(true);
     } catch (err) {
@@ -1312,6 +1349,14 @@ export function useAgentController({
     return JSON.stringify(runtimeOptions || {});
   }
 
+  function mcpServersPayloadForCompare(draft: AgentDraft | null | undefined): string {
+    const normalized = normalizeDraftForCompare(draft);
+    if (!normalized) {
+      return "";
+    }
+    return JSON.stringify({ mcpServers: draftMCPServersForSave(normalized) });
+  }
+
   function hasObjectValues(value: unknown): value is Record<string, unknown> {
     return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0);
   }
@@ -1347,8 +1392,11 @@ export function useAgentController({
     saved: AgentLike | null | undefined,
     profileChanged: boolean,
     runtimeOptionsChanged: boolean,
+    mcpServersChanged: boolean,
   ): boolean {
-    return Boolean(saved?.id && saved.id !== MANAGER_AGENT_ID && profileChanged && !runtimeOptionsChanged);
+    return Boolean(
+      saved?.id && saved.id !== MANAGER_AGENT_ID && profileChanged && !runtimeOptionsChanged && !mcpServersChanged,
+    );
   }
 
   async function saveAgentPage(): Promise<void> {
@@ -1391,10 +1439,14 @@ export function useAgentController({
       const runtimeOptions = draftRuntimeOptionsForSave(draft, {
         mergeNotifier: false,
       });
+      const mcpServers = draftMCPServersForSave(draft);
       const profileChanged = profilePayloadForCompare(draftToSave) !== profilePayloadForCompare(agentPageSavedDraft);
       const runtimeOptionsChanged =
         runtimeOptionsPayloadForCompare(draftToSave) !== runtimeOptionsPayloadForCompare(agentPageSavedDraft);
-      const hasProfileOrRuntimeChange = profileChanged || (runtimeOptionsChanged && hasObjectValues(runtimeOptions));
+      const mcpServersChanged =
+        mcpServersPayloadForCompare(draftToSave) !== mcpServersPayloadForCompare(agentPageSavedDraft);
+      const hasProfileOrRuntimeChange =
+        profileChanged || (runtimeOptionsChanged && hasObjectValues(runtimeOptions)) || mcpServersChanged;
 
       const payload = agentPageBaseUpdatePayload(draftToSave);
       if (profileChanged) {
@@ -1403,6 +1455,9 @@ export function useAgentController({
       }
       if (runtimeOptionsChanged) {
         payload.runtime_options = runtimeOptions || {};
+      }
+      if (mcpServersChanged && mcpServers !== undefined) {
+        payload.mcpServers = mcpServers;
       }
       if (!hasProfileOrRuntimeChange) {
         debugAgentPageSavePayload("meta-only", payload);
@@ -1429,7 +1484,10 @@ export function useAgentController({
       const profileIncompleteBeforeSave = !isAgentProfileMarkedComplete(agentPageSavedDraft);
       const saved = await updateAgentRequest(selectedAgentForPage.id, payload);
       await saveLinkedAgentUserAvatar(selectedAgentForPage, draft.avatar);
-      if (canApplyAgentPageProfileSaveImmediately(saved, profileChanged, runtimeOptionsChanged)) {
+      if (mcpServersChanged) {
+        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentMCPServers(selectedAgentForPage.id) });
+      }
+      if (canApplyAgentPageProfileSaveImmediately(saved, profileChanged, runtimeOptionsChanged, mcpServersChanged)) {
         const savedWithAvatar = { ...saved, avatar: draft.avatar };
         applyAgentListUpdate(savedWithAvatar);
         const savedDraft = agentToDraft(savedWithAvatar);
@@ -1557,6 +1615,7 @@ export function useAgentController({
       const runtimeOptions = draftRuntimeOptionsForSave(draft, {
         mergeNotifier: false,
       });
+      const mcpServers = draftMCPServersForSave(draft);
       const payload: AgentUpdatePayload = {
         name: agentDraft.name,
         role: WORKER_AGENT_ROLE,
@@ -1574,12 +1633,21 @@ export function useAgentController({
       const runtimeOptionsChanged = !isCreate
         ? runtimeOptionsPayloadForCompare(agentDraft) !== runtimeOptionsPayloadForCompare(editingDraftBaseline)
         : Boolean(runtimeOptions);
+      const mcpServersChanged = !isCreate
+        ? mcpServersPayloadForCompare(agentDraft) !== mcpServersPayloadForCompare(editingDraftBaseline)
+        : Boolean(mcpServers);
       if (isCreate) {
         if (runtimeOptions) {
           payload.runtime_options = runtimeOptions;
         }
+        if (mcpServers !== undefined && mcpServers !== null) {
+          payload.mcpServers = mcpServers;
+        }
       } else if (runtimeOptionsChanged) {
         payload.runtime_options = runtimeOptions || {};
+      }
+      if (!isCreate && mcpServersChanged && mcpServers !== undefined) {
+        payload.mcpServers = mcpServers;
       }
       const saved = isCreate
         ? await (async () => {
@@ -1609,8 +1677,12 @@ export function useAgentController({
             agent_profile: payload.agent_profile,
             profile: payload.profile,
             ...(payload.runtime_options !== undefined ? { runtime_options: payload.runtime_options } : {}),
+            ...(payload.mcpServers !== undefined ? { mcpServers: payload.mcpServers } : {}),
           });
       await saveLinkedAgentUserAvatar(saved?.participants?.length ? saved : editingAgent || saved, agentDraft.avatar);
+      if (!isCreate && mcpServersChanged) {
+        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentMCPServers(editingAgentID) });
+      }
       if (isCreate) {
         saveLastCreatedAgentModelPreference(agentDraft);
       }
@@ -1972,7 +2044,7 @@ export function useAgentController({
 
   const batchAddAgentSkills = useCallback(
     async (skillNames: string[]) => {
-      if (!skillsAgentID || agentSkillAddBusy) {
+      if (!agentDetailAgentID || agentSkillAddBusy) {
         return false;
       }
       const names = skillNames.map((name) => String(name || "").trim()).filter(Boolean);
@@ -1982,8 +2054,8 @@ export function useAgentController({
       setAgentSkillAddBusy(true);
       setAgentSkillAddError("");
       try {
-        await batchAddAgentSkillsRequest(skillsAgentID, names);
-        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentSkills(skillsAgentID) });
+        await batchAddAgentSkillsRequest(agentDetailAgentID, names);
+        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentSkills(agentDetailAgentID) });
         return true;
       } catch (err) {
         setAgentSkillAddError(errorMessage(err, t("agentSkillAddFailed")));
@@ -1992,12 +2064,12 @@ export function useAgentController({
         setAgentSkillAddBusy(false);
       }
     },
-    [agentSkillAddBusy, queryClient, skillsAgentID, t],
+    [agentSkillAddBusy, queryClient, agentDetailAgentID, t],
   );
 
   const deleteAgentSkill = useCallback(
     async (skill: { name?: string | null } | string | null | undefined) => {
-      if (!skillsAgentID || agentSkillDeleteBusy) {
+      if (!agentDetailAgentID || agentSkillDeleteBusy) {
         return false;
       }
       const rawName = typeof skill === "string" ? skill : String(skill?.name || "");
@@ -2008,8 +2080,8 @@ export function useAgentController({
       setAgentSkillDeleteBusy(true);
       setAgentSkillDeleteError("");
       try {
-        await deleteAgentSkillRequest(skillsAgentID, name);
-        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentSkills(skillsAgentID) });
+        await deleteAgentSkillRequest(agentDetailAgentID, name);
+        await queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentSkills(agentDetailAgentID) });
         return true;
       } catch (err) {
         setAgentSkillDeleteError(errorMessage(err, t("agentSkillDeleteFailed")));
@@ -2018,7 +2090,76 @@ export function useAgentController({
         setAgentSkillDeleteBusy(false);
       }
     },
-    [agentSkillDeleteBusy, queryClient, skillsAgentID, t],
+    [agentSkillDeleteBusy, queryClient, agentDetailAgentID, t],
+  );
+
+  const installAgentMCPServers = useCallback(
+    async (serverNames: string[]) => {
+      if (!agentDetailAgentID || agentMCPAddBusy) {
+        return false;
+      }
+      const names = serverNames.map((name) => String(name || "").trim()).filter(Boolean);
+      if (!names.length) {
+        return false;
+      }
+      setAgentMCPAddBusy(true);
+      setAgentMCPAddError("");
+      setAgentMCPDeleteError("");
+      try {
+        const view = await batchAddAgentMCPServersRequest(agentDetailAgentID, names);
+        const mcpServers = cloneMCPServersForDraft(view.desired);
+        setAgentPageDraft((current) => (current ? { ...current, mcpServers } : current));
+        setAgentPageSavedDraft((current) => (current ? { ...current, mcpServers } : current));
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentMCPServers(agentDetailAgentID) }),
+          queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agents() }),
+        ]);
+        return true;
+      } catch (err) {
+        setAgentMCPAddError(errorMessage(err, t("agentActionFailed")));
+        return false;
+      } finally {
+        setAgentMCPAddBusy(false);
+      }
+    },
+    [agentMCPAddBusy, queryClient, agentDetailAgentID, t],
+  );
+
+  const deleteAgentMCPServer = useCallback(
+    async (server: { name?: string | null } | string | null | undefined) => {
+      if (!agentDetailAgentID || agentMCPDeleteBusy) {
+        return false;
+      }
+      const rawName = typeof server === "string" ? server : String(server?.name || "");
+      const name = rawName.trim();
+      if (!name) {
+        return false;
+      }
+      const servers = mcpServersMap(agentMCPServersQuery.data?.desired);
+      if (!Object.hasOwn(servers, name)) {
+        return false;
+      }
+      delete servers[name];
+      setAgentMCPDeleteBusy(true);
+      setAgentMCPAddError("");
+      setAgentMCPDeleteError("");
+      try {
+        await updateAgentMCPServersRequest(agentDetailAgentID, servers);
+        setAgentPageDraft((current) => (current ? { ...current, mcpServers: { ...servers } } : current));
+        setAgentPageSavedDraft((current) => (current ? { ...current, mcpServers: { ...servers } } : current));
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agentMCPServers(agentDetailAgentID) }),
+          queryClient.invalidateQueries({ queryKey: workspaceQueryKeys.agents() }),
+        ]);
+        return true;
+      } catch (err) {
+        setAgentMCPDeleteError(errorMessage(err, t("agentActionFailed")));
+        return false;
+      } finally {
+        setAgentMCPDeleteBusy(false);
+      }
+    },
+    [agentMCPServersQuery.data?.desired, agentMCPDeleteBusy, queryClient, agentDetailAgentID, t],
   );
 
   function directConversationForUser(
@@ -2137,6 +2278,14 @@ export function useAgentController({
       skillAddError: agentSkillAddError,
       skillDeleteBusy: agentSkillDeleteBusy,
       skillDeleteError: agentSkillDeleteError,
+      mcpCandidates: agentMCPCandidates,
+      mcpCandidatesLoading: catalogMCPServersLoading,
+      mcpCandidatesError: catalogMCPServersError,
+      mcpServers: agentMCPServers,
+      mcpAddBusy: agentMCPAddBusy,
+      mcpAddError: agentMCPAddError,
+      mcpDeleteBusy: agentMCPDeleteBusy,
+      mcpDeleteError: agentMCPDeleteError,
       skills: agentSkillsQuery.data ?? [],
       skillsLoading: agentSkillsQuery.isFetching,
       skillsError: agentSkillsError,
@@ -2157,6 +2306,9 @@ export function useAgentController({
       onDisconnectFeishu: disconnectFeishu,
       onAddSkills: batchAddAgentSkills,
       onDeleteSkill: deleteAgentSkill,
+      onInstallMCPServers: installAgentMCPServers,
+      onDeleteMCPServer: deleteAgentMCPServer,
+      onRetryMCPServers: refreshMCPServers,
       teamActionBusy,
       teamActionError,
       onCreateTeam: createAgentTeam,

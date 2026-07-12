@@ -6,6 +6,7 @@ import {
   EnvKeyValueEditor,
   FieldHelpTooltip,
   isBlank,
+  MCPServersPanel,
   ModelOptionLabel,
   NotifierControls,
   requiredFieldLabel,
@@ -28,6 +29,7 @@ import {
   pickDefaultAgentTemplate,
   defaultWorkerImageForRuntime,
   runtimeOptionSchemasForAgent,
+  supportsMCPServers,
   templateMatchesRuntime,
   workerSelectableTemplates,
 } from "@/models/agents";
@@ -106,6 +108,7 @@ export function AgentProfileModal({
   onSave,
 }: AgentProfileModalProps) {
   const [isEditorScrolling, setIsEditorScrolling] = useState(false);
+  const [mcpServersInvalid, setMCPServersInvalid] = useState(false);
   const editorScrollTimerRef = useRef<number | null>(null);
   const lastTemplateIDRef = useRef("");
   const createBotKind = agentModalMode === "create" ? agentCreateBotKind : undefined;
@@ -115,6 +118,7 @@ export function AgentProfileModal({
   const missingRequiredEnv = isTemplateCreate && agentDraftMissingRequiredEnv(agentDraft);
   const isCustomCreate = isWorkerCreate && agentCreateMode === "custom";
   const templateLocked = agentCreateTemplateLocked(agentDraft, agentModalMode);
+  const showMCPServers = !isNotificationContext && supportsMCPServers(agentDraft.runtime_kind);
   const runtimeOptionSchemas = isNotificationContext
     ? []
     : runtimeOptionSchemasForAgent(
@@ -266,6 +270,12 @@ export function AgentProfileModal({
     [],
   );
 
+  useEffect(() => {
+    if (!showMCPServers) {
+      setMCPServersInvalid(false);
+    }
+  }, [showMCPServers]);
+
   function onEditorShellScroll() {
     setIsEditorScrolling(true);
     if (editorScrollTimerRef.current) {
@@ -289,9 +299,12 @@ export function AgentProfileModal({
           pickDefaultAgentTemplate(workerTemplates, defaultSandboxRuntimeKind, bootstrapConfig) ||
           null,
       );
-      onAgentDraftChange((current) =>
-        current ? applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || "") : current,
-      );
+      onAgentDraftChange((current) => {
+        const next = current
+          ? applyTemplateToDraft(current, nextTemplate, bootstrapConfig, managerAgent?.image || "")
+          : current;
+        return next;
+      });
       return;
     }
     onAgentDraftChange((current) => (current ? defaultCustomWorkerDraft(current) : current));
@@ -602,6 +615,14 @@ export function AgentProfileModal({
                       embedded
                     />
                   ) : null}
+                  {showMCPServers ? (
+                    <MCPServersPanel
+                      draft={agentDraft}
+                      t={t}
+                      onDraftChange={onAgentDraftChange}
+                      onInvalidChange={setMCPServersInvalid}
+                    />
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -772,6 +793,7 @@ export function AgentProfileModal({
             size="md"
             disabled={
               agentBusy ||
+              mcpServersInvalid ||
               isBlank(agentDraft.name) ||
               (isNotificationContext
                 ? !notifierFormIsComplete(agentDraft, editingAgent)
