@@ -546,7 +546,7 @@ func (s *Service) AddMCPServersFromHub(ctx context.Context, id string, names []s
 	if !ok {
 		return Agent{}, fmt.Errorf("agent %q not found", id)
 	}
-	currentServers, err := agentruntime.NormalizeMCPServers(current.MCPServers)
+	currentServers, err := s.currentMCPServersForManagement(ctx, current)
 	if err != nil {
 		return Agent{}, err
 	}
@@ -562,6 +562,80 @@ func (s *Service) AddMCPServersFromHub(ctx context.Context, id string, names []s
 		MCPServersSet: true,
 		FieldMask:     []string{"mcpServers"},
 	})
+}
+
+func (s *Service) DeleteMCPServers(ctx context.Context, id string, names []string) (Agent, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Agent{}, fmt.Errorf("agent id is required")
+	}
+	if s == nil {
+		return Agent{}, fmt.Errorf("agent service is required")
+	}
+	names = normalizeMCPServerNames(names)
+	if len(names) == 0 {
+		return Agent{}, fmt.Errorf("mcp server names are required")
+	}
+
+	s.mcpServersMu.Lock()
+	defer s.mcpServersMu.Unlock()
+
+	s.mu.RLock()
+	current, _, ok := s.agentByIDLocked(id)
+	s.mu.RUnlock()
+	if !ok {
+		return Agent{}, fmt.Errorf("agent %q not found", id)
+	}
+	servers, err := s.currentMCPServersForManagement(ctx, current)
+	if err != nil {
+		return Agent{}, err
+	}
+	for _, name := range names {
+		if _, ok := servers[name]; !ok {
+			return Agent{}, fmt.Errorf("mcp server %q not found", name)
+		}
+	}
+	for _, name := range names {
+		delete(servers, name)
+	}
+	return s.update(ctx, id, UpdateRequest{
+		MCPServers:    &servers,
+		MCPServersSet: true,
+		FieldMask:     []string{"mcpServers"},
+	})
+}
+
+// currentMCPServersForManagement uses persisted MCPServers once an agent has
+// entered CSGClaw management. For an unmanaged agent, it reads the runtime
+// configuration once so the first management action can adopt every server.
+func (s *Service) currentMCPServersForManagement(ctx context.Context, current Agent) (map[string]any, error) {
+	servers, err := agentruntime.NormalizeMCPServers(current.MCPServers)
+	if err != nil || servers != nil {
+		return servers, err
+	}
+
+	runtimeKind := strings.TrimSpace(current.RuntimeKind)
+	if runtimeKind == "" {
+		return nil, nil
+	}
+	rt, err := s.runtimeForKind(runtimeKind)
+	if err != nil {
+		return nil, err
+	}
+	lister, ok := rt.(agentruntime.MCPServersListController)
+	if !ok {
+		return nil, nil
+	}
+
+	listed, err := lister.ListMCPServers(ctx, runtimeHandleForAgent(current), agentruntime.MCPServersSnapshot{})
+	if err != nil {
+		return nil, fmt.Errorf("read runtime mcpServers for agent %q: %w", current.ID, err)
+	}
+	servers, err = agentruntime.NormalizeMCPServers(listed.Servers)
+	if err != nil {
+		return nil, fmt.Errorf("normalize runtime mcpServers for agent %q: %w", current.ID, err)
+	}
+	return servers, nil
 }
 
 func normalizeMCPServerNames(values []string) []string {

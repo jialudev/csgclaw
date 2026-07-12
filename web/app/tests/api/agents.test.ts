@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import {
   batchAddAgentMCPServersRequest,
+  batchDeleteAgentMCPServersRequest,
   batchAddAgentSkillsRequest,
   deleteAgentSkillRequest,
   fetchAgentMCPServers,
   startFeishuRegistrationRequest,
-  updateAgentMCPServersRequest,
 } from "@/api/agents";
 
 function mockFetch(): Mock<typeof fetch> {
@@ -34,10 +34,10 @@ describe("agents API", () => {
     );
   });
 
-  it("uses the agent MCP servers paths and direct server map payloads", async () => {
+  it("uses the agent MCP servers paths", async () => {
     const fetchMock = vi.fn<typeof fetch>(
       async () =>
-        new Response(JSON.stringify({ actual: {}, desired: {} }), {
+        new Response(JSON.stringify({ servers: {} }), {
           headers: { "content-type": "application/json" },
           status: 200,
         }),
@@ -45,21 +45,21 @@ describe("agents API", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await fetchAgentMCPServers("u-manager");
-    await updateAgentMCPServersRequest("u-manager", { context7: { command: "npx" } });
     await batchAddAgentMCPServersRequest("u-manager", ["context7"]);
+    await batchDeleteAgentMCPServersRequest("u-manager", ["context7"]);
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "api/v1/agents/u-manager/mcp-servers", expect.anything());
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "api/v1/agents/u-manager/mcp-servers",
+      "api/v1/agents/u-manager/mcp-servers:batchAdd",
       expect.objectContaining({
-        body: JSON.stringify({ mcpServers: { context7: { command: "npx" } } }),
-        method: "PUT",
+        body: JSON.stringify({ names: ["context7"] }),
+        method: "POST",
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "api/v1/agents/u-manager/mcp-servers:batchAdd",
+      "api/v1/agents/u-manager/mcp-servers:batchDelete",
       expect.objectContaining({
         body: JSON.stringify({ names: ["context7"] }),
         method: "POST",

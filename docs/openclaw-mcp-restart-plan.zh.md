@@ -97,8 +97,8 @@ MCP servers 通道。
 配置页面使用下面的专用接口：
 
 - `GET /api/v1/agents/{id}/mcp-servers`
-- `PUT /api/v1/agents/{id}/mcp-servers`
 - `POST /api/v1/agents/{id}/mcp-servers:batchAdd`
+- `POST /api/v1/agents/{id}/mcp-servers:batchDelete`
 
 `GET` 返回：
 
@@ -106,14 +106,7 @@ MCP servers 通道。
 {
   "agent_id": "u-alice",
   "runtime_kind": "openclaw_sandbox",
-  "desired": {
-    "context7": {
-      "command": "uvx",
-      "args": ["context7-mcp"],
-      "env": { "CONTEXT7_API_KEY": "secret" }
-    }
-  },
-  "actual": {
+  "servers": {
     "context7": {
       "command": "uvx",
       "args": ["context7-mcp"],
@@ -123,16 +116,10 @@ MCP servers 通道。
 }
 ```
 
-非空的 `desired` 和 `actual` 都是直接 server 映射，且专用接口不脱敏，供有权限的
-配置页面回显和编辑 token。`desired` 是持久化的声明，保留 `null`（未托管）与
-`{}`（显式托管空集合）的区别；`actual` 是从 runtime 原生配置读回的结果。若 runtime
-展开了 workspace 占位符，二者在路径值上可以不同，删除和保存应以 `desired` 为准。
-如果原生配置暂时无法读取，接口仍会返回 `desired`，并将 `actual` 设为 `null`，同时
-在可选的 `actual_error` 中说明读取失败原因，避免配置页无法修复期望配置。
-
-`PUT` 接收 Agent 的顶层 `mcpServers` 字段并整体替换集合；响应与 `GET`
-相同。`batchAdd` 接收 `{ "names": ["..."] }`，把 MCP catalog 中同名的
-server 定义合并到该 Agent 的集合后返回同一视图。
+`servers` 是直接 server 映射，且专用接口不脱敏，供有权限的配置页面回显和编辑 token。
+`batchAdd` 接收 `{ "names": ["..."] }`，把 MCP catalog 中同名的 server
+定义合并到该 Agent 的集合；`batchDelete` 用相同请求形态移除指定 server。两者都返回
+同一视图。
 
 ### MCP catalog
 
@@ -191,7 +178,7 @@ env = { "CONTEXT7_API_KEY" = "secret" }
 
 远程 server 的 `headers` 会转写为 Codex 的 `http_headers`。各 adapter 在
 写入原生配置前解析 `${workspace}`、`${workspaceDir}`、`{workspace}` 与
-`{workspaceDir}` 占位符；因此 `actual` 中可能显示已解析的运行时路径。
+`{workspaceDir}` 占位符；这个运行时渲染过程不会修改持久化的 `mcpServers`。
 
 ## 5. 保存、同步与失败处理
 
@@ -203,18 +190,18 @@ env = { "CONTEXT7_API_KEY" = "secret" }
 4. 通过 `MCPServersRestartRequired` 判断是否需要重建 runtime。
 5. 无需重建时调用 `ReconcileMCPServers`；需要重建时由既有 lifecycle
    流程 provision 新 runtime 配置。
-6. 若同步或重建失败，保留已保存的期望状态并暴露既有 restart-required
+6. 若同步或重建失败，保留已保存的 MCP server 配置并暴露既有 restart-required
    状态，用户可以通过现有重建动作重试。
 
-`MCPServersListController` 在读取实际原生文件时生成 `actual`，用于让配置页
-识别“期望状态已保存但 runtime 尚未同步”的情况。
+`MCPServersListController` 只在 Agent 尚未进入 CSGClaw 管理时读取 runtime
+原生配置，用它建立首次管理所需的 `servers` 集合；进入管理后，`servers` 直接
+来自持久化的 `Agent.MCPServers`，不会再额外返回一套 runtime 读取视图。
 
 ## 6. 前端行为与验证
 
 前端创建和编辑 Agent 都以 `mcpServers` 作为草稿字段。通用 Agent 查询仅用于
-展示脱敏摘要；打开 MCP 编辑器时，前端获取专用原始视图并将 `desired` 合并进
-草稿。保存时只提交直接映射，避免 token 被脱敏占位值或 runtime 已解析的路径
-覆盖。
+展示脱敏摘要；打开 MCP 编辑器时，前端获取专用原始视图的 `servers` 作为草稿。
+保存时只提交直接映射，避免 token 被脱敏占位值覆盖。
 
 验证覆盖应至少包括：
 
@@ -223,5 +210,5 @@ env = { "CONTEXT7_API_KEY" = "secret" }
 - 通用 Agent 响应的 `env`/`headers` 脱敏，以及专用视图的原始回显。
 - 精确的 Agent 和 catalog 路由，包括 batchAdd 后缀。
 - OpenClaw、PicoClaw、Codex 的原生渲染和实际配置读取。
-- workspace 占位符的解析不会污染 `desired`。
+- workspace 占位符的解析不会污染持久化的 `mcpServers`。
 - MCP 编辑不会覆盖无关的 `runtime_options` 或 profile 字段。

@@ -150,6 +150,18 @@ type fakeAgentRuntime struct {
 	streamLogs   func(context.Context, agentruntime.Handle, agentruntime.LogOptions) error
 }
 
+type fakeMCPServersListRuntime struct {
+	fakeAgentRuntime
+	list func(context.Context, agentruntime.Handle, agentruntime.MCPServersSnapshot) (agentruntime.MCPServersSnapshot, error)
+}
+
+func (f fakeMCPServersListRuntime) ListMCPServers(ctx context.Context, h agentruntime.Handle, current agentruntime.MCPServersSnapshot) (agentruntime.MCPServersSnapshot, error) {
+	if f.list == nil {
+		return agentruntime.MCPServersSnapshot{}, nil
+	}
+	return f.list(ctx, h, current)
+}
+
 type fakeBareAgentRuntime struct {
 	kind string
 }
@@ -1645,6 +1657,151 @@ func TestUpdateCodexLocalWorkspaceDirMarksRunningRuntimeForRestart(t *testing.T)
 	}
 	if len(observer.stopCalls) != 1 || observer.stopCalls[0] != "u-dev" {
 		t.Fatalf("StopAgent() calls = %+v, want [u-dev]", observer.stopCalls)
+	}
+}
+
+func TestAddMCPServersFromHubImportsRuntimeServersOnce(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	listCalls := 0
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeMCPServersListRuntime{
+			fakeAgentRuntime: fakeAgentRuntime{kind: RuntimeKindCodex},
+			list: func(context.Context, agentruntime.Handle, agentruntime.MCPServersSnapshot) (agentruntime.MCPServersSnapshot, error) {
+				listCalls++
+				return agentruntime.MCPServersSnapshot{Servers: map[string]any{
+					"manual": map[string]any{"command": "manual-mcp"},
+				}}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:          "u-dev",
+		Name:        "dev",
+		RuntimeID:   "rt-u-dev",
+		RuntimeKind: RuntimeKindCodex,
+		Role:        RoleWorker,
+		Status:      string(agentruntime.StateStopped),
+		CreatedAt:   time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+	catalogServers := map[string]any{
+		"context7": map[string]any{"command": "uvx", "args": []any{"context7-mcp"}},
+		"remote":   map[string]any{"url": "https://mcp.example.com/mcp"},
+	}
+
+	updated, err := svc.AddMCPServersFromHub(context.Background(), "u-dev", []string{"context7"}, catalogServers)
+	if err != nil {
+		t.Fatalf("first AddMCPServersFromHub() error = %v", err)
+	}
+	for _, name := range []string{"manual", "context7"} {
+		assertMCPServersHasServer(t, updated.MCPServers, name)
+	}
+	if listCalls != 1 {
+		t.Fatalf("ListMCPServers() calls = %d, want 1 for initial runtime import", listCalls)
+	}
+
+	updated, err = svc.AddMCPServersFromHub(context.Background(), "u-dev", []string{"remote"}, catalogServers)
+	if err != nil {
+		t.Fatalf("second AddMCPServersFromHub() error = %v", err)
+	}
+	for _, name := range []string{"manual", "context7", "remote"} {
+		assertMCPServersHasServer(t, updated.MCPServers, name)
+	}
+	if listCalls != 1 {
+		t.Fatalf("ListMCPServers() calls = %d, want no second runtime import", listCalls)
+	}
+}
+
+func TestDeleteMCPServersImportsRuntimeServersBeforeDeleting(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	listCalls := 0
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeMCPServersListRuntime{
+			fakeAgentRuntime: fakeAgentRuntime{kind: RuntimeKindCodex},
+			list: func(context.Context, agentruntime.Handle, agentruntime.MCPServersSnapshot) (agentruntime.MCPServersSnapshot, error) {
+				listCalls++
+				return agentruntime.MCPServersSnapshot{Servers: map[string]any{
+					"manual": map[string]any{"command": "manual-mcp"},
+					"native": map[string]any{"command": "native-mcp"},
+				}}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:          "u-dev",
+		Name:        "dev",
+		RuntimeID:   "rt-u-dev",
+		RuntimeKind: RuntimeKindCodex,
+		Role:        RoleWorker,
+		Status:      string(agentruntime.StateStopped),
+		CreatedAt:   time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+
+	updated, err := svc.DeleteMCPServers(context.Background(), "u-dev", []string{"manual"})
+	if err != nil {
+		t.Fatalf("DeleteMCPServers() error = %v", err)
+	}
+	if _, exists := updated.MCPServers["manual"]; exists {
+		t.Fatalf("DeleteMCPServers() retained deleted server: %#v", updated.MCPServers)
+	}
+	assertMCPServersHasServer(t, updated.MCPServers, "native")
+	if listCalls != 1 {
+		t.Fatalf("ListMCPServers() calls = %d, want 1 for initial runtime import", listCalls)
+	}
+}
+
+func TestAddMCPServersFromHubFailsWhenRuntimeMCPReadFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	readErr := errors.New("runtime config is unreadable")
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(fakeMCPServersListRuntime{
+			fakeAgentRuntime: fakeAgentRuntime{kind: RuntimeKindCodex},
+			list: func(context.Context, agentruntime.Handle, agentruntime.MCPServersSnapshot) (agentruntime.MCPServersSnapshot, error) {
+				return agentruntime.MCPServersSnapshot{}, readErr
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-dev"] = Agent{
+		ID:          "u-dev",
+		Name:        "dev",
+		RuntimeID:   "rt-u-dev",
+		RuntimeKind: RuntimeKindCodex,
+		Role:        RoleWorker,
+		Status:      string(agentruntime.StateStopped),
+		CreatedAt:   time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+	}
+
+	_, err = svc.AddMCPServersFromHub(context.Background(), "u-dev", []string{"context7"}, map[string]any{
+		"context7": map[string]any{"command": "uvx"},
+	})
+	if !errors.Is(err, readErr) {
+		t.Fatalf("AddMCPServersFromHub() error = %v, want runtime read failure", err)
+	}
+	if got, ok := svc.Agent("u-dev"); !ok || got.MCPServers != nil {
+		t.Fatalf("Agent().MCPServers = %#v, want no persisted MCP server changes", got.MCPServers)
 	}
 }
 
