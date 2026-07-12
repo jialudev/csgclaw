@@ -22,6 +22,7 @@ function t(key: string, params: Record<string, string | number> = {}) {
       "MCP server definition must be an mcpServers JSON object with exactly one server.",
     resourcesMCPDelete: "Delete",
     resourcesMCPDeleteConfirmMessage: 'Delete MCP server "{name}"?',
+    resourcesMCPEmpty: "No MCP servers available yet.",
     resourcesMCPLoading: "Loading MCP servers",
     resourcesMCPSave: "Save",
     resourcesMCPSaving: "Saving...",
@@ -65,7 +66,7 @@ const template = {
   },
 };
 
-function renderHubDetailPane() {
+function renderHubDetailPane(selectedResourceType: "mcp" | "skill" | "template" = "template") {
   return render(
     <HubDetailPane
       locale="en"
@@ -81,7 +82,10 @@ function renderHubDetailPane() {
           onSelectSkillFile: vi.fn(),
           onSelectTemplate: vi.fn(),
           onSelectWorkspaceFile: vi.fn(),
-          selectedResourceType: "template",
+          mcpServers: [],
+          selectedMCPServer: null,
+          selectedMCPServerName: "",
+          selectedResourceType,
           selectedSkill: null,
           selectedSkillPath: "",
           selectedTemplate: template,
@@ -230,6 +234,13 @@ function renderMCPDetailPane() {
 }
 
 describe("HubDetailPane", () => {
+  it("keeps the MCP empty state visible when templates are available", () => {
+    renderHubDetailPane("mcp");
+
+    expect(screen.getByText("No MCP servers available yet.")).toBeInTheDocument();
+    expect(screen.queryByText("demo-template")).not.toBeInTheDocument();
+  });
+
   it("opens markdown files in a dialog with preview and code modes", async () => {
     const user = userEvent.setup();
     renderHubDetailPane();

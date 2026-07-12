@@ -18,6 +18,7 @@ import { localizeTemplateSourceTag } from "@/shared/i18n";
 import { ModelsIcon } from "@/components/ui/Icons";
 import {
   Button,
+  DialogBody,
   DialogCloseButton,
   DialogContent,
   DialogDescription,
@@ -268,12 +269,14 @@ function parseMCPServerDocument(value: string, t: TranslateFn): MCPServerDocumen
 }
 
 function JSONConfigEditor({
+  hideLabel = false,
   invalid = false,
   label,
   minRows = 12,
   onChange,
   value,
 }: {
+  hideLabel?: boolean;
   invalid?: boolean;
   label: string;
   minRows?: number;
@@ -343,7 +346,7 @@ function JSONConfigEditor({
       className={`hub-json-editor${invalid ? " is-invalid" : ""}`}
       style={{ "--hub-json-editor-min-height": minHeight } as CSSProperties}
     >
-      <label className="hub-json-editor-label" htmlFor={editorId}>
+      <label className={`hub-json-editor-label${hideLabel ? " sr-only" : ""}`} htmlFor={editorId}>
         {label}
       </label>
       <div className="hub-json-editor-shell" ref={editorParentRef} aria-invalid={invalid || undefined} />
@@ -437,10 +440,10 @@ export function HubDetailPane({
   const canDeleteSkill = Boolean(selectedSkill && !isReadonlySkill(selectedSkill));
   const skillEntries = skillTree?.entries ?? EMPTY_WORKSPACE_ENTRIES;
   const activeResourceType = useMemo(() => {
-    if (selectedResourceType === "mcp" && mcpServers.length) {
+    if (selectedResourceType === "mcp") {
       return "mcp";
     }
-    if (selectedResourceType === "skill" && skills.length) {
+    if (selectedResourceType === "skill") {
       return "skill";
     }
     if (templates.length) {
@@ -796,7 +799,13 @@ export function HubDetailPane({
                 *
               </span>
               <strong>
-                {templates.length || skills.length || mcpServers.length ? t("resourcesLoading") : t("resourcesEmpty")}
+                {activeResourceType === "mcp"
+                  ? t("resourcesMCPEmpty")
+                  : activeResourceType === "skill"
+                    ? t("resourcesSkillsEmpty")
+                    : templates.length || skills.length || mcpServers.length
+                      ? t("resourcesLoading")
+                      : t("resourcesEmpty")}
               </strong>
             </div>
           )}
@@ -848,8 +857,9 @@ export function HubDetailPane({
             </div>
             <DialogCloseButton label={t("close")} size="sm" variant="tertiaryGray" />
           </DialogHeader>
-          <div className="mcp-form">
+          <DialogBody className="mcp-form">
             <JSONConfigEditor
+              hideLabel
               label={t("resourcesMCPServerDocumentJSONLabel")}
               value={mcpDraftDocument}
               onChange={handleMCPDraftDocumentChange}
@@ -859,7 +869,7 @@ export function HubDetailPane({
             {mcpFormError || mcpMutationError ? (
               <div className="form-error hub-json-editor-error">{mcpFormError || mcpMutationError}</div>
             ) : null}
-          </div>
+          </DialogBody>
           <DialogFooter className="hub-skill-delete-dialog-actions">
             <Button variant="secondaryGray" size="sm" disabled={mcpMutationBusy} onClick={closeMCPFormDialog}>
               {t("cancel")}

@@ -286,21 +286,6 @@ export function WorkspaceSidebar({
             },
           },
           {
-            active: activeContextSectionId === WorkspaceContextSectionIds.mcpServers,
-            badge: badgeCount(hub?.mcpServers?.length),
-            groupId: WorkspaceContextSectionIds.mcpServers,
-            icon: navigationIcon(Server),
-            id: "mcp-servers",
-            label: t("resourcesMCPLabel"),
-            onSelect: () => {
-              if (firstMCPServer && onSelectMCPServer) {
-                onSelectMCPServer(firstMCPServer);
-                return;
-              }
-              onSelectHub();
-            },
-          },
-          {
             active: activeContextSectionId === WorkspaceContextSectionIds.hubSkills,
             badge: badgeCount(hub?.skills.length),
             groupId: WorkspaceContextSectionIds.hubSkills,
@@ -310,6 +295,21 @@ export function WorkspaceSidebar({
             onSelect: () => {
               if (firstHubSkill) {
                 onSelectHubSkill(firstHubSkill);
+                return;
+              }
+              onSelectHub();
+            },
+          },
+          {
+            active: activeContextSectionId === WorkspaceContextSectionIds.mcpServers,
+            badge: badgeCount(hub?.mcpServers?.length),
+            groupId: WorkspaceContextSectionIds.mcpServers,
+            icon: navigationIcon(Server),
+            id: "mcp-servers",
+            label: t("resourcesMCPLabel"),
+            onSelect: () => {
+              if (onSelectMCPServer) {
+                onSelectMCPServer(firstMCPServer);
                 return;
               }
               onSelectHub();

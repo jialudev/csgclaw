@@ -52,10 +52,6 @@ export function useWorkspaceMCPSelection({
   }, [mcpServers, setSelectedMCPServerName]);
 
   useEffect(() => {
-    if (selectedHubResourceType === "mcp" && !mcpServers.length) {
-      setSelectedHubResourceType(skillCount ? "skill" : "template");
-      return;
-    }
     if (selectedHubResourceType === "skill" && !skillCount) {
       setSelectedHubResourceType(mcpServers.length ? "mcp" : "template");
       return;

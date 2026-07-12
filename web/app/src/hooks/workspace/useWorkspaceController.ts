@@ -630,6 +630,8 @@ export function useWorkspaceController() {
   const selectMCPServer = useCallback(
     (item: MCPServer | null | undefined) => {
       if (!item?.name) {
+        setSelectedHubResourceType("mcp");
+        setSelectedMCPServerName("");
         selectHub();
         return;
       }

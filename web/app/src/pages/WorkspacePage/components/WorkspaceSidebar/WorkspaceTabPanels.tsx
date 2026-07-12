@@ -1129,8 +1129,8 @@ export function WorkspaceTabPanels({
       ) : workspaceTab === WorkspaceTabs.hub ? (
         <div className={styles.panel} role="tabpanel" aria-label={t("resourcesTab")}>
           {renderHubTemplateSection()}
-          {renderMCPSection()}
           {renderHubSkillSection()}
+          {renderMCPSection()}
           {renderModelProviderSection()}
           {renderSkillUploadDialog()}
         </div>
