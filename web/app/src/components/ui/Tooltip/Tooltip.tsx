@@ -1,6 +1,7 @@
 import { Tooltip as RadixTooltip } from "radix-ui";
 import type { ComponentPropsWithoutRef, ComponentRef, ReactNode } from "react";
 import { forwardRef } from "react";
+import { useOverlayPortalContainer } from "@/components/ui/OverlayPortal";
 import { classNames } from "@/shared/lib/classNames";
 
 export type TooltipRootProps = ComponentPropsWithoutRef<typeof RadixTooltip.Root>;
@@ -39,8 +40,10 @@ export const TooltipContent = forwardRef<ComponentRef<typeof RadixTooltip.Conten
     },
     ref,
   ) {
+    const resolvedPortalContainer = useOverlayPortalContainer(portalContainer);
+
     return (
-      <RadixTooltip.Portal container={portalContainer}>
+      <RadixTooltip.Portal container={resolvedPortalContainer}>
         <RadixTooltip.Content
           ref={ref}
           align={align}

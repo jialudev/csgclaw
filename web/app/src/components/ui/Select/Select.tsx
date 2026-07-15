@@ -2,6 +2,7 @@ import { Select as RadixSelect } from "radix-ui";
 import { Check, ChevronDown, ChevronUp, Search } from "lucide-react";
 import { forwardRef, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, ComponentRef, ReactNode } from "react";
+import { useOverlayPortalContainer } from "@/components/ui/OverlayPortal";
 import { classNames } from "@/shared/lib/classNames";
 
 export type SelectSize = "sm" | "md";
@@ -85,8 +86,10 @@ export type SelectContentProps = ComponentPropsWithoutRef<typeof RadixSelect.Con
 
 export const SelectContent = forwardRef<ComponentRef<typeof RadixSelect.Content>, SelectContentProps>(
   function SelectContent({ children, className, portalContainer, position = "popper", sideOffset = 6, ...props }, ref) {
+    const resolvedPortalContainer = useOverlayPortalContainer(portalContainer);
+
     return (
-      <RadixSelect.Portal container={portalContainer}>
+      <RadixSelect.Portal container={resolvedPortalContainer}>
         <RadixSelect.Content
           ref={ref}
           className={classNames("csg-select-content overflow-hidden", className)}

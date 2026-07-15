@@ -52,6 +52,8 @@ Layer values are shared design tokens. Local component stacking such as `z-index
 
 When adding a Radix component with a portal, expose a container escape hatch when practical. If a floating child belongs to a specific modal or panel, prefer rendering it into that layer's container instead of raising its z-index. Use high portal tokens only for UI primitives that must work from any page or modal context.
 
+The app installs `OverlayPortalProvider` at its provider root. Shared Radix overlays resolve their default portal container from that provider so embedded or transformed app roots keep triggers and floating content in the same document and containing block. An explicit `portalContainer` prop always takes precedence. Do not query `#root` or `document.body` directly from shared overlay primitives.
+
 ## Radix Primitives
 
 - Radix Primitives documentation: <https://www.radix-ui.com/primitives/docs/overview/introduction>.

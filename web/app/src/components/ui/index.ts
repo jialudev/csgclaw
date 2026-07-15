@@ -4,6 +4,7 @@ export * from "./Dialog";
 export * from "./DropdownMenu";
 export * from "./FormControls";
 export * from "./Icons";
+export * from "./OverlayPortal";
 export * from "./Popover";
 export * from "./Select";
 export * from "./Tooltip";

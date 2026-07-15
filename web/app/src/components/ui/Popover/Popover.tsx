@@ -1,6 +1,7 @@
 import { Popover as RadixPopover } from "radix-ui";
 import { forwardRef } from "react";
 import type { ComponentPropsWithoutRef, ComponentRef } from "react";
+import { useOverlayPortalContainer } from "@/components/ui/OverlayPortal";
 import { classNames } from "@/shared/lib/classNames";
 
 export type PopoverRootProps = ComponentPropsWithoutRef<typeof RadixPopover.Root>;
@@ -34,8 +35,10 @@ export const PopoverContent = forwardRef<ComponentRef<typeof RadixPopover.Conten
     { align = "start", children, className, collisionPadding = 12, portalContainer, sideOffset = 8, ...props },
     ref,
   ) {
+    const resolvedPortalContainer = useOverlayPortalContainer(portalContainer);
+
     return (
-      <RadixPopover.Portal container={portalContainer}>
+      <RadixPopover.Portal container={resolvedPortalContainer}>
         <RadixPopover.Content
           ref={ref}
           align={align}

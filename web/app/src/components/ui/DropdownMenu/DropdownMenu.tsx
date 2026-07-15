@@ -1,6 +1,7 @@
 import { DropdownMenu as RadixDropdownMenu } from "radix-ui";
 import { forwardRef } from "react";
 import type { ComponentPropsWithoutRef, ComponentRef } from "react";
+import { useOverlayPortalContainer } from "@/components/ui/OverlayPortal";
 import { classNames } from "@/shared/lib/classNames";
 
 export type DropdownMenuRootProps = ComponentPropsWithoutRef<typeof RadixDropdownMenu.Root>;
@@ -23,8 +24,10 @@ export type DropdownMenuContentProps = ComponentPropsWithoutRef<typeof RadixDrop
 
 export const DropdownMenuContent = forwardRef<ComponentRef<typeof RadixDropdownMenu.Content>, DropdownMenuContentProps>(
   function DropdownMenuContent({ align = "end", children, className, portalContainer, sideOffset = 8, ...props }, ref) {
+    const resolvedPortalContainer = useOverlayPortalContainer(portalContainer);
+
     return (
-      <RadixDropdownMenu.Portal container={portalContainer}>
+      <RadixDropdownMenu.Portal container={resolvedPortalContainer}>
         <RadixDropdownMenu.Content
           ref={ref}
           align={align}

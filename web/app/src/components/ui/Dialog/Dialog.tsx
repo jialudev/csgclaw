@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { forwardRef } from "react";
 import type { ComponentPropsWithoutRef, ComponentRef, HTMLAttributes } from "react";
 import { Button } from "@/components/ui/Button";
+import { useOverlayPortalContainer } from "@/components/ui/OverlayPortal";
 import { classNames } from "@/shared/lib/classNames";
 
 export type DialogRootProps = ComponentPropsWithoutRef<typeof RadixDialog.Root>;
@@ -21,8 +22,9 @@ export const DialogTrigger = forwardRef<ComponentRef<typeof RadixDialog.Trigger>
 
 export type DialogPortalProps = ComponentPropsWithoutRef<typeof RadixDialog.Portal>;
 
-export function DialogPortal(props: DialogPortalProps) {
-  return <RadixDialog.Portal {...props} />;
+export function DialogPortal({ container, ...props }: DialogPortalProps) {
+  const resolvedPortalContainer = useOverlayPortalContainer(container);
+  return <RadixDialog.Portal container={resolvedPortalContainer} {...props} />;
 }
 
 export type DialogOverlayProps = ComponentPropsWithoutRef<typeof RadixDialog.Overlay>;
