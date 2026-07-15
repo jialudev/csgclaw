@@ -106,6 +106,7 @@ function useConversationControllerHarness(fixture: SkillHarnessFixture = default
     locale: "en",
     managerProfile: null,
     managerProfileIncomplete: false,
+    hasObservedWorkLease: () => false,
     messageActionBusy: "",
     messageActionFeedback: { key: "", message: "" },
     navigatePane: vi.fn(),
@@ -120,6 +121,7 @@ function useConversationControllerHarness(fixture: SkillHarnessFixture = default
     showToolCalls: false,
     t,
     theme: "light",
+    workingParticipantsForRoom: () => [],
   });
 }
 

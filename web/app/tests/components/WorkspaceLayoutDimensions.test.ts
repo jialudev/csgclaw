@@ -42,8 +42,8 @@ describe("workspace sidebar dimensions", () => {
   });
 
   it("keeps user-resizable primary sidebar widths inside the allowed range", () => {
-    expect(workspacePrimarySidebarWidthBounds()).toEqual({ default: 240, max: 300, min: 220 });
-    expect(clampPrimarySidebarWidth(180)).toBe(220);
+    expect(workspacePrimarySidebarWidthBounds()).toEqual({ default: 240, max: 300, min: 200 });
+    expect(clampPrimarySidebarWidth(180)).toBe(200);
     expect(clampPrimarySidebarWidth(256)).toBe(256);
     expect(clampPrimarySidebarWidth(340)).toBe(300);
   });
@@ -51,7 +51,8 @@ describe("workspace sidebar dimensions", () => {
   it("normalizes persisted primary sidebar widths from localStorage", () => {
     expect(normalizeStoredPrimarySidebarWidth(null)).toBeNull();
     expect(normalizeStoredPrimarySidebarWidth("not-a-number")).toBeNull();
-    expect(normalizeStoredPrimarySidebarWidth("218")).toBe(220);
+    expect(normalizeStoredPrimarySidebarWidth("180")).toBe(200);
+    expect(normalizeStoredPrimarySidebarWidth("218")).toBe(218);
     expect(normalizeStoredPrimarySidebarWidth("268")).toBe(268);
     expect(normalizeStoredPrimarySidebarWidth("320")).toBe(300);
   });

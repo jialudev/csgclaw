@@ -8,6 +8,11 @@ import {
   type AgentActivityPayload,
   type AgentActivityTool,
 } from "@/models/agentActivity";
+import {
+  ConversationWorkingActions,
+  type ConversationWorkingAction,
+  type ConversationWorkingParticipant,
+} from "@/components/business/ConversationPane";
 import { resolveAgentChannelUserID, type AgentLike } from "@/models/agents";
 import {
   localIdentitiesMatch,
@@ -57,6 +62,7 @@ export type ConversationActivityDensitySegment = {
 type MutableConversationActivityEntry = Omit<ConversationActivityEntry, "eventType" | "index" | "tone">;
 
 const MAX_POINT_EVENT_WEIGHT_MS = 1_000;
+const MAX_WORKING_SUMMARY_LENGTH = 72;
 
 export function conversationActivityAgents(
   conversation: IMConversation,
@@ -209,6 +215,64 @@ export function conversationActivityEntrySummary(entry: ConversationActivityEntr
     return activity.content.body;
   }
   return truncateText(plainText(entry.message.content), 220);
+}
+
+export function conversationWorkingParticipantsWithActivity(
+  participants: readonly ConversationWorkingParticipant[],
+  agents: readonly ConversationActivityAgent[],
+  entries: readonly ConversationActivityEntry[],
+): ConversationWorkingParticipant[] {
+  return participants
+    .map((participant, originalIndex) => {
+      const agent = agents.find(
+        (candidate) =>
+          identityMatches(participant.id, candidate.identities) ||
+          candidate.name.trim().toLocaleLowerCase() === participant.name.trim().toLocaleLowerCase(),
+      );
+      const agentEntries = agent
+        ? entries.filter((candidate) => candidate.source === "agent" && candidate.agentID === agent.id)
+        : [];
+      const activityAfter = activityTime(participant.activityAfter || "");
+      const currentRequestEntries =
+        participant.requestID || activityAfter > 0
+          ? agentEntries.filter(
+              (candidate) =>
+                (participant.requestID && activityRequestScope(candidate.message) === participant.requestID) ||
+                (activityAfter > 0 && activityTime(candidate.updatedAt || candidate.createdAt) >= activityAfter),
+            )
+          : [];
+      const entry = currentRequestEntries[currentRequestEntries.length - 1];
+      if (!entry) {
+        return {
+          originalIndex,
+          participant: {
+            ...participant,
+            activity: {
+              action: ConversationWorkingActions.thinking,
+            },
+          },
+        };
+      }
+      return {
+        originalIndex,
+        participant: {
+          ...participant,
+          activity: {
+            action: conversationWorkingActionForEntry(entry),
+            entryID: entry.id,
+            summary: compactWorkingSummary(conversationActivityEntrySummary(entry)),
+            updatedAt: entry.updatedAt || entry.createdAt,
+          },
+        },
+      };
+    })
+    .sort((left, right) => {
+      const timeDelta =
+        activityTime(left.participant.activity?.updatedAt || "") -
+        activityTime(right.participant.activity?.updatedAt || "");
+      return timeDelta || left.originalIndex - right.originalIndex;
+    })
+    .map(({ participant }) => participant);
 }
 
 export function conversationActivityEntryDetails(entry: ConversationActivityEntry): ConversationActivityDetail[] {
@@ -448,6 +512,41 @@ function activityTone(entry: MutableConversationActivityEntry, eventType: string
   return "other";
 }
 
+function conversationWorkingActionForEntry(entry: ConversationActivityEntry): ConversationWorkingAction {
+  if (entry.eventType === AgentActivityKinds.message) {
+    return ConversationWorkingActions.replying;
+  }
+  const tool = entry.activity?.content.tool;
+  const signal = [entry.eventType, tool?.kind, tool?.title, entry.command?.title]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .toLowerCase();
+  if (matchesWorkingSignal(signal, ["request_user_input", "ask_user", "question", "approval"])) {
+    return ConversationWorkingActions.waiting;
+  }
+  if (matchesWorkingSignal(signal, ["web_search", "memory_search", "search", "grep", "find"])) {
+    return ConversationWorkingActions.searching;
+  }
+  if (matchesWorkingSignal(signal, ["patch_apply", "apply_patch", "write", "edit", "create_file"])) {
+    return ConversationWorkingActions.editing;
+  }
+  if (matchesWorkingSignal(signal, ["read_file", "read", "list", "glob", "screenshot", "inspect"])) {
+    return ConversationWorkingActions.reading;
+  }
+  if (matchesWorkingSignal(signal, ["exec_command", "command", "bash", "shell", "terminal"])) {
+    return ConversationWorkingActions.running;
+  }
+  if (entry.command || entry.activity?.content.msgtype === AgentActivityMsgTypes.tool || signal.includes("tool_call")) {
+    return ConversationWorkingActions.usingTool;
+  }
+  return ConversationWorkingActions.thinking;
+}
+
+function matchesWorkingSignal(signal: string, candidates: readonly string[]): boolean {
+  return candidates.some((candidate) => signal.includes(candidate));
+}
+
 function isFailedTool(tool: AgentActivityTool): boolean {
   const status = String(tool.status || "")
     .trim()
@@ -587,6 +686,12 @@ function plainText(content: unknown): string {
 
 function truncateText(value: string, maxLength: number): string {
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function compactWorkingSummary(value: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  const shellCommand = compact.match(/^\/(?:usr\/)?bin\/(?:ba|z|)sh\s+-lc\s+(['"])(.*)\1$/)?.[2] || compact;
+  return truncateText(shellCommand, MAX_WORKING_SUMMARY_LENGTH);
 }
 
 function normalizeEventType(value: string): string {

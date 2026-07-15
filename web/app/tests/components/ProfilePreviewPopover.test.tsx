@@ -82,9 +82,9 @@ describe("ProfilePreviewPopover", () => {
       />,
     );
 
-    const fields = screen.getByText("STATUS").closest(".preview-fields");
+    expect(screen.getByText("Online").closest(".preview-presence")).toBeInTheDocument();
+    const fields = screen.getByText("RUNTIME").closest(".preview-fields");
     expect(fields).toBeInTheDocument();
-    expect(within(fields as HTMLElement).getByText("STATUS")).toBeInTheDocument();
     expect(within(fields as HTMLElement).getByText("RUNTIME")).toBeInTheDocument();
     expect(within(fields as HTMLElement).getByText("PROVIDER")).toBeInTheDocument();
     expect(within(fields as HTMLElement).getByText("MODEL")).toBeInTheDocument();
@@ -147,9 +147,9 @@ describe("ProfilePreviewPopover", () => {
     expect(screen.getByText("Profile preview")).toBeInTheDocument();
     expect(screen.queryByText("Person profile")).not.toBeInTheDocument();
 
-    const fields = screen.getByText("STATUS").closest(".preview-fields");
+    expect(screen.getByText("Online").closest(".preview-presence")).toBeInTheDocument();
+    const fields = screen.getByText("RUNTIME").closest(".preview-fields");
     expect(fields).toBeInTheDocument();
-    expect(within(fields as HTMLElement).getByText("STATUS")).toBeInTheDocument();
     expect(within(fields as HTMLElement).getByText("RUNTIME")).toBeInTheDocument();
     expect(within(fields as HTMLElement).getByText("PROVIDER")).toBeInTheDocument();
     expect(within(fields as HTMLElement).getByText("MODEL")).toBeInTheDocument();

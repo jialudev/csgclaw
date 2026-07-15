@@ -23,7 +23,13 @@ import { MentionPicker } from "./MentionPicker";
 import { SlashPicker } from "./SlashPicker";
 import { AttachmentDraftStrip } from "./ConversationAttachments";
 import { filesFromDataTransfer } from "./attachmentFiles";
-import type { ConversationWorkingParticipant, MentionPickerUser, VoidOrPromise } from "./types";
+import {
+  ConversationWorkingActions,
+  type ConversationWorkingAction,
+  type ConversationWorkingParticipant,
+  type MentionPickerUser,
+  type VoidOrPromise,
+} from "./types";
 
 export type ConversationComposerProps = {
   authBusyProvider: string;
@@ -58,14 +64,12 @@ export type ConversationComposerProps = {
   onSendMessage: () => VoidOrPromise;
   onRemoveAttachment?: (id: string) => void;
   onSyncComposer: () => void;
-  onWorkingAction?: () => void;
+  onWorkingAction?: (participant?: ConversationWorkingParticipant) => void;
   slashCandidates: SlashPickerCandidate[];
   slashIndex: number;
   slashPickerLoading: boolean;
   slashPickerOpen: boolean;
   t: TranslateFn;
-  workingActionAttention?: boolean;
-  workingActionLabel?: string;
   workingParticipants?: ConversationWorkingParticipant[];
 };
 
@@ -93,8 +97,6 @@ export const ConversationComposer = memo(function ConversationComposer({
   slashPickerLoading,
   slashPickerOpen,
   t,
-  workingActionAttention = false,
-  workingActionLabel = "",
   workingParticipants = [],
   onApplyMention,
   onApplySlashCandidate,
@@ -124,7 +126,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   }
 
   return (
-    <footer className="composer">
+    <footer className={`composer${workingParticipants.length > 0 ? " has-working-status" : ""}`}>
       {slashPickerOpen ? (
         <SlashPicker
           candidates={slashCandidates}
@@ -149,13 +151,7 @@ export const ConversationComposer = memo(function ConversationComposer({
         />
       ) : null}
       {workingParticipants.length > 0 ? (
-        <ComposerWorkingIndicator
-          actionAttention={workingActionAttention}
-          actionLabel={workingActionLabel}
-          participants={workingParticipants}
-          t={t}
-          onAction={onWorkingAction}
-        />
+        <ComposerWorkingIndicator participants={workingParticipants} t={t} onAction={onWorkingAction} />
       ) : null}
       <div
         className="composer-box"
@@ -262,44 +258,82 @@ export const ConversationComposer = memo(function ConversationComposer({
 });
 
 function ComposerWorkingIndicator({
-  actionAttention,
-  actionLabel,
   participants,
   t,
   onAction,
 }: {
-  actionAttention: boolean;
-  actionLabel: string;
   participants: readonly ConversationWorkingParticipant[];
   t: TranslateFn;
-  onAction?: () => void;
+  onAction?: (participant?: ConversationWorkingParticipant) => void;
 }) {
   return (
     <div className="composer-working">
       <div className="composer-working-status" role="status" aria-live="polite">
-        {participants.map((participant) => (
-          <span key={participant.id || participant.name} className="composer-working-item">
-            <span className="composer-working-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-            <span>{t("agentWorking", { name: participant.name })}</span>
-          </span>
-        ))}
+        {participants.map((participant) => {
+          const action = participant.activity?.action || ConversationWorkingActions.thinking;
+          const actionLabel = workingActionLabel(action, t);
+          const summary = participant.activity?.summary?.trim() || "";
+          const content = (
+            <>
+              <span className="composer-working-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <strong className="composer-working-name">{participant.name}</strong>
+              <span className="composer-working-verb">{actionLabel}</span>
+              {summary ? <span className="composer-working-summary">{summary}</span> : null}
+            </>
+          );
+          return onAction ? (
+            <button
+              key={participant.id || participant.name}
+              type="button"
+              className="composer-working-item"
+              data-working-action={action}
+              aria-label={t("conversationWorkingOpenActivity", {
+                detail: summary || actionLabel,
+                name: participant.name,
+              })}
+              title={summary || actionLabel}
+              onClick={() => onAction(participant)}
+            >
+              {content}
+            </button>
+          ) : (
+            <div
+              key={participant.id || participant.name}
+              className="composer-working-item"
+              data-working-action={action}
+            >
+              {content}
+            </div>
+          );
+        })}
       </div>
-      {actionLabel && onAction ? (
-        <Button
-          className={`composer-working-action${actionAttention ? " needs-attention" : ""}`}
-          size="sm"
-          variant="tertiaryGray"
-          onClick={onAction}
-        >
-          {actionLabel}
-        </Button>
-      ) : null}
     </div>
   );
+}
+
+function workingActionLabel(action: ConversationWorkingAction, t: TranslateFn): string {
+  switch (action) {
+    case ConversationWorkingActions.editing:
+      return t("conversationWorkingEditing");
+    case ConversationWorkingActions.reading:
+      return t("conversationWorkingReading");
+    case ConversationWorkingActions.replying:
+      return t("conversationWorkingReplying");
+    case ConversationWorkingActions.running:
+      return t("conversationWorkingRunning");
+    case ConversationWorkingActions.searching:
+      return t("conversationWorkingSearching");
+    case ConversationWorkingActions.usingTool:
+      return t("conversationWorkingUsingTool");
+    case ConversationWorkingActions.waiting:
+      return t("conversationWorkingWaiting");
+    default:
+      return t("conversationWorkingThinking");
+  }
 }
 
 type ComposerAddMenuProps = {

@@ -68,7 +68,10 @@ export function WorkspaceLayout() {
   );
   const primarySidebarWidthBounds = useMemo(() => workspacePrimarySidebarWidthBounds(), []);
   const primarySidebarExpandedWidth = primarySidebarWidthOverride ?? autoPrimarySidebarWidth;
-  const sidebarWidthBounds = useMemo(() => workspaceSidebarWidthBounds(), []);
+  const sidebarWidthBounds = useMemo(
+    () => workspaceSidebarWidthBounds(primarySidebarExpandedWidth),
+    [primarySidebarExpandedWidth],
+  );
   const expandedSidebarWidth = clampSidebarWidth(sidebarWidth, sidebarWidthBounds);
   const contextSidebarWidth = showSidebarContext ? Math.max(0, expandedSidebarWidth - primarySidebarExpandedWidth) : 0;
   const primarySidebarVisibleWidth = isSidebarCollapsed ? SidebarWidth.collapsedPrimary : primarySidebarExpandedWidth;

@@ -1,12 +1,9 @@
 import { createRef, useRef, useState } from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConversationPane } from "@/pages/ConversationPage/components/ConversationPane";
 import { AgentActivityMsgTypes, CSGCLAW_AGENT_ACTIVITY_TYPE } from "@/shared/constants/messages";
-import {
-  CONVERSATION_ACTIVITY_ACTION_SEEN_STORAGE_KEY,
-  CONVERSATION_ACTIVITY_PANEL_WIDTH_STORAGE_KEY,
-} from "@/shared/storage/keys";
+import { CONVERSATION_ACTIVITY_PANEL_WIDTH_STORAGE_KEY } from "@/shared/storage/keys";
 import type { ConversationPaneProps } from "@/components/business/ConversationPane";
 import { agentToDraft } from "@/models/agents";
 import type { IMConversation, IMUser, ThreadView, TranslateFn } from "@/models/conversations";
@@ -136,7 +133,15 @@ const t: TranslateFn = (key, params = {}) => {
     directMessagesSection: "Direct Messages",
     inputPlaceholder: "Message",
     localIdentityFallback: "Local user",
-    agentWorking: "{name} is working",
+    conversationWorkingEditing: "Editing",
+    conversationWorkingOpenActivity: "View {name}'s activity: {detail}",
+    conversationWorkingReading: "Reading",
+    conversationWorkingReplying: "Replying",
+    conversationWorkingRunning: "Running",
+    conversationWorkingSearching: "Searching",
+    conversationWorkingThinking: "Thinking",
+    conversationWorkingUsingTool: "Using tool",
+    conversationWorkingWaiting: "Waiting",
     agentActivityEmpty: "No activity yet",
     agentActivityChronological: "Chronological",
     agentActivityEventsCount: "{count} events",
@@ -150,7 +155,6 @@ const t: TranslateFn = (key, params = {}) => {
     agentActivityToolCallsCount: "{count} tool calls",
     agentActivityNewestFirst: "Newest first",
     conversationActivityOpen: "Activity records",
-    conversationActivityView: "View activity",
     conversationActivityActorFilter: "Filter activity by participant",
     conversationActivityAllActors: "All",
     conversationActivityRoomTimeline: "Current conversation · {name} · Room activity",
@@ -388,6 +392,60 @@ describe("ConversationPane", () => {
 
     expect(within(panel).getByText("check Chengdu weather")).toBeInTheDocument();
     expect(within(panel).queryByText("checking now")).not.toBeInTheDocument();
+
+    await user.click(within(panel).getByRole("button", { name: "本地用户" }));
+
+    expect(within(panel).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(panel).getByText("checking now")).toBeInTheDocument();
+  });
+
+  it("drags the participant filters horizontally without selecting a filter", async () => {
+    const user = userEvent.setup();
+    renderThreadPane({
+      agents: [
+        { id: "u-dev", name: "dev", role: "worker" },
+        { id: "u-manager", name: "manager", role: "worker" },
+      ],
+      conversationMembers: roomUsers,
+      isDirect: false,
+      messages: [
+        { id: "dev-message", sender_id: "u-dev", created_at: "2026-07-16T10:00:00Z", content: "dev update" },
+        {
+          id: "manager-message",
+          sender_id: "u-manager",
+          created_at: "2026-07-16T10:01:00Z",
+          content: "manager update",
+        },
+      ],
+      usersByIdOverride: new Map(roomUsers.map((roomUser) => [roomUser.id, roomUser])),
+    });
+
+    await user.click(screen.getByRole("button", { name: "Activity records" }));
+
+    const filters = screen.getByRole("group", { name: "Filter activity by participant" });
+    const allFilter = within(filters).getByRole("button", { name: "All" });
+    const devFilter = within(filters).getByRole("button", { name: "dev" });
+    Object.defineProperties(filters, {
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      releasePointerCapture: { configurable: true, value: vi.fn() },
+      scrollLeft: { configurable: true, value: 120, writable: true },
+      setPointerCapture: { configurable: true, value: vi.fn() },
+    });
+
+    fireEvent.pointerDown(devFilter, { button: 0, clientX: 200, pointerId: 7 });
+    fireEvent.pointerMove(devFilter, { clientX: 140, pointerId: 7 });
+    fireEvent.pointerUp(devFilter, { clientX: 140, pointerId: 7 });
+    fireEvent.click(devFilter);
+
+    expect(filters.scrollLeft).toBe(180);
+    expect(allFilter).toHaveAttribute("aria-pressed", "true");
+    expect(devFilter).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.pointerDown(devFilter, { button: 0, clientX: 140, pointerId: 8 });
+    fireEvent.pointerUp(devFilter, { clientX: 140, pointerId: 8 });
+    fireEvent.click(devFilter);
+
+    expect(devFilter).toHaveAttribute("aria-pressed", "true");
   });
 
   it("restores and persists the activity panel width", async () => {
@@ -648,7 +706,7 @@ describe("ConversationPane", () => {
 
     onClose.mockClear();
     await user.click(within(dialog).getByRole("button", { name: "openDM" }));
-    expect(onClose).toHaveBeenCalledWith(false);
+    expect(onClose).toHaveBeenCalledWith(false, { skipUnsavedCheck: true });
     expect(onOpenDM).toHaveBeenCalledWith(expect.objectContaining({ id: "u-manager" }));
   });
 
@@ -718,7 +776,7 @@ describe("ConversationPane", () => {
       within(screen.getByRole("dialog", { name: "agentDetailPanel" })).getByRole("button", { name: "openDM" }),
     );
 
-    expect(onClose).toHaveBeenCalledWith(false);
+    expect(onClose).toHaveBeenCalledWith(false, { skipUnsavedCheck: true });
     expect(onOpenDM).not.toHaveBeenCalled();
   });
 
@@ -948,23 +1006,17 @@ describe("ConversationPane", () => {
 
     const view = render(<Harness />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Atlas is working");
-    expect(screen.getByRole("status")).toHaveTextContent("Bram is working");
-    const activityAction = screen.getByRole("button", { name: "View activity" });
-    expect(activityAction).toHaveClass("needs-attention");
-    expect(activityAction).toHaveClass("btn-tertiary-gray");
-    expect(window.localStorage.getItem(CONVERSATION_ACTIVITY_ACTION_SEEN_STORAGE_KEY)).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("AtlasThinking");
+    expect(screen.getByRole("status")).toHaveTextContent("BramThinking");
+    expect(screen.queryByRole("button", { name: "View activity" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "View Atlas's activity: Thinking" }));
 
-    await user.click(activityAction);
-
-    expect(activityAction).not.toHaveClass("needs-attention");
-    expect(window.localStorage.getItem(CONVERSATION_ACTIVITY_ACTION_SEEN_STORAGE_KEY)).toBe("seen");
     expect(screen.getByRole("heading", { name: "Activity" })).toBeInTheDocument();
     expect(document.querySelector(".conversation-activity-panel")).toBeInTheDocument();
 
     view.unmount();
     render(<Harness />);
-    expect(screen.getByRole("button", { name: "View activity" })).not.toHaveClass("needs-attention");
+    expect(screen.queryByRole("button", { name: "View activity" })).not.toBeInTheDocument();
   });
 
   it("shows one date divider per day without times", () => {

@@ -62,6 +62,7 @@ function useConversationControllerTestHarness() {
     locale: "en" as LocaleCode,
     managerProfile: null,
     managerProfileIncomplete: false,
+    hasObservedWorkLease: () => false,
     messageActionBusy: "",
     messageActionFeedback: {},
     navigatePane: () => {},
@@ -78,6 +79,7 @@ function useConversationControllerTestHarness() {
     showToolCalls: false,
     t,
     theme: "light",
+    workingParticipantsForRoom: () => [],
   });
 }
 
@@ -116,6 +118,7 @@ describe("useConversationController slash skill helpers", () => {
         locale: "en" as LocaleCode,
         managerProfile: null,
         managerProfileIncomplete: false,
+        hasObservedWorkLease: () => false,
         messageActionBusy: "",
         messageActionFeedback: {},
         navigatePane,
@@ -131,6 +134,7 @@ describe("useConversationController slash skill helpers", () => {
         showToolCalls: false,
         t,
         theme: "light",
+        workingParticipantsForRoom: () => [],
       }),
     );
 

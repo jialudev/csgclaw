@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UpgradeStatus } from "@/models/upgradeStatus";
-import { shouldShowUpgradeAlertDot } from "./SidebarUserButton";
+import { shouldShowUpgradeAlertDot } from "./sidebarUpgradeAlert";
 
 function upgradeStatus(overrides: Partial<UpgradeStatus> = {}): UpgradeStatus {
   return {

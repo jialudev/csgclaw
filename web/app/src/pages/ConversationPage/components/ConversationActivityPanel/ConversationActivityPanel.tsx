@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
   ArrowDownNarrowWide,
@@ -62,6 +63,7 @@ import styles from "./ConversationActivityPanel.module.css";
 type ConversationActivityPanelProps = {
   agents: readonly AgentLike[];
   conversation: IMConversation;
+  initialEntryID?: string | null;
   locale: LocaleCode;
   onClose: () => void;
   t: TranslateFn;
@@ -84,8 +86,9 @@ type ActivityActorOption = {
 };
 
 const DEFAULT_PANEL_WIDTH = 640;
-const MIN_PANEL_WIDTH = 420;
+const MIN_PANEL_WIDTH = 180;
 const MIN_CONVERSATION_WIDTH = 360;
+const ACTOR_FILTER_DRAG_THRESHOLD = 4;
 
 function readPanelWidth() {
   if (typeof window === "undefined") {
@@ -113,6 +116,7 @@ function persistPanelWidth(width: number) {
 export function ConversationActivityPanel({
   agents,
   conversation,
+  initialEntryID = null,
   locale,
   onClose,
   t,
@@ -124,14 +128,16 @@ export function ConversationActivityPanel({
   const [sortMode, setSortMode] = useState<SortMode>("newest_first");
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(() => new Set());
   const [selectedActorID, setSelectedActorID] = useState("all");
-  const [selectedEntryID, setSelectedEntryID] = useState<string | null>(null);
+  const [selectedEntryID, setSelectedEntryID] = useState<string | null>(initialEntryID);
   const [panelWidth, setPanelWidth] = useState(readPanelWidth);
   const [resizing, setResizing] = useState(false);
+  const [draggingActorFilters, setDraggingActorFilters] = useState(false);
   const mountedRef = useRef(true);
   const requestIDRef = useRef(0);
   const panelRef = useRef<HTMLElement | null>(null);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
   const resizeRef = useRef({ pointerID: -1, startWidth: DEFAULT_PANEL_WIDTH, startX: 0 });
+  const actorFilterDragRef = useRef({ dragged: false, pointerID: -1, startScrollLeft: 0, startX: 0 });
   const direct = isDirectConversation(conversation);
 
   const activityAgents = useMemo(() => conversationActivityAgents(conversation, agents), [agents, conversation]);
@@ -209,6 +215,17 @@ export function ConversationActivityPanel({
     rowRefs.current.get(entryID)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
+  useEffect(() => {
+    if (!initialEntryID) {
+      return;
+    }
+    setSelectedEntryID(initialEntryID);
+    const frame = window.requestAnimationFrame(() => {
+      rowRefs.current.get(initialEntryID)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialEntryID]);
+
   const toggleType = useCallback((eventType: string) => {
     setSelectedTypes((current) => {
       const next = new Set(current);
@@ -225,7 +242,7 @@ export function ConversationActivityPanel({
     const containerWidth = panelRef.current?.parentElement?.getBoundingClientRect().width || window.innerWidth;
     return {
       max: Math.max(MIN_PANEL_WIDTH, containerWidth - MIN_CONVERSATION_WIDTH),
-      min: Math.min(MIN_PANEL_WIDTH, Math.max(280, containerWidth - 120)),
+      min: MIN_PANEL_WIDTH,
     };
   }, []);
 
@@ -275,6 +292,60 @@ export function ConversationActivityPanel({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     setResizing(false);
+  }, []);
+
+  const handleActorFilterWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (element.scrollWidth <= element.clientWidth || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+      return;
+    }
+    event.preventDefault();
+    element.scrollLeft += event.deltaY;
+  }, []);
+
+  const handleActorFilterDragStart = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    actorFilterDragRef.current = {
+      dragged: false,
+      pointerID: event.pointerId,
+      startScrollLeft: event.currentTarget.scrollLeft,
+      startX: event.clientX,
+    };
+  }, []);
+
+  const handleActorFilterDragMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = actorFilterDragRef.current;
+    if (drag.pointerID !== event.pointerId) {
+      return;
+    }
+    const offset = event.clientX - drag.startX;
+    if (!drag.dragged && Math.abs(offset) < ACTOR_FILTER_DRAG_THRESHOLD) {
+      return;
+    }
+    if (!drag.dragged) {
+      drag.dragged = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setDraggingActorFilters(true);
+    }
+    event.preventDefault();
+    event.currentTarget.scrollLeft = drag.startScrollLeft - offset;
+  }, []);
+
+  const finishActorFilterDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
+    const drag = actorFilterDragRef.current;
+    if (drag.pointerID !== event.pointerId) {
+      return;
+    }
+    drag.pointerID = -1;
+    if (cancelled) {
+      drag.dragged = false;
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDraggingActorFilters(false);
   }, []);
 
   const panelStyle = {
@@ -334,10 +405,12 @@ export function ConversationActivityPanel({
         <div className={styles.toolbarTop}>
           <div className={styles.summary} aria-label={t("agentActivitySummaryLabel")}>
             {summary.duration ? (
-              <MetaChip icon={<Clock aria-hidden="true" size={14} />}>{summary.duration}</MetaChip>
+              <MetaChip className={styles.durationMeta} icon={<Clock aria-hidden="true" size={14} />}>
+                {summary.duration}
+              </MetaChip>
             ) : null}
             <MetaChip>{t("agentActivityToolCallsCount", { count: summary.toolCount })}</MetaChip>
-            <MetaChip>
+            <MetaChip className={styles.eventCountMeta}>
               {selectedTypes.size || selectedActorID !== "all"
                 ? t("agentActivityFilteredEventsCount", { shown: summary.filteredCount, total: summary.eventCount })
                 : t("agentActivityEventsCount", { count: summary.eventCount })}
@@ -398,7 +471,24 @@ export function ConversationActivityPanel({
         ) : null}
 
         {!direct && activityActors.length ? (
-          <div className={styles.actorFilters} role="group" aria-label={t("conversationActivityActorFilter")}>
+          <div
+            className={classNames(styles.actorFilters, draggingActorFilters && styles.draggingActorFilters)}
+            role="group"
+            aria-label={t("conversationActivityActorFilter")}
+            onClickCapture={(event) => {
+              if (!actorFilterDragRef.current.dragged) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              actorFilterDragRef.current.dragged = false;
+            }}
+            onPointerCancel={(event) => finishActorFilterDrag(event, true)}
+            onPointerDown={handleActorFilterDragStart}
+            onPointerMove={handleActorFilterDragMove}
+            onPointerUp={finishActorFilterDrag}
+            onWheel={handleActorFilterWheel}
+          >
             <button
               type="button"
               className={classNames(styles.actorChip, selectedActorID === "all" && styles.selectedActor)}
@@ -414,7 +504,7 @@ export function ConversationActivityPanel({
                 type="button"
                 className={classNames(styles.actorChip, selectedActorID === actor.filterID && styles.selectedActor)}
                 aria-pressed={selectedActorID === actor.filterID}
-                onClick={() => setSelectedActorID(actor.filterID)}
+                onClick={() => setSelectedActorID((current) => (current === actor.filterID ? "all" : actor.filterID))}
               >
                 {actor.kind === "human" ? (
                   <UserRound className={styles.humanActorIcon} aria-hidden="true" size={13} strokeWidth={2} />
@@ -684,9 +774,9 @@ function activityActorName(entry: ConversationActivityEntry, usersById: UsersByI
   return userDisplayName(entry.message.sender_id, usersById) || t("localIdentityFallback");
 }
 
-function MetaChip({ children, icon }: { children: ReactNode; icon?: ReactNode }) {
+function MetaChip({ children, className, icon }: { children: ReactNode; className?: string; icon?: ReactNode }) {
   return (
-    <span className={styles.metaChip}>
+    <span className={classNames(styles.metaChip, className)}>
       {icon}
       <span>{children}</span>
     </span>

@@ -26,7 +26,7 @@ function clamp(value: number, min: number, max: number): number {
 function profilePreviewStyle(anchorRect: ProfilePreviewAnchorRect | null | undefined, cardHeight?: number | null) {
   const offset = 12;
   const viewportPadding = 16;
-  const width = Math.min(360, window.innerWidth - viewportPadding * 2);
+  const width = Math.min(320, window.innerWidth - viewportPadding * 2);
   const maxLeft = Math.max(viewportPadding, window.innerWidth - viewportPadding - width);
   const visibleHeight = Math.min(cardHeight ?? 420, window.innerHeight - viewportPadding * 2);
   const maxTop = Math.max(viewportPadding, window.innerHeight - viewportPadding - visibleHeight);

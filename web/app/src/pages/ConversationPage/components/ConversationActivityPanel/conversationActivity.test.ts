@@ -8,6 +8,7 @@ import {
   conversationActivityEntries,
   conversationActivityEntryDetails,
   conversationActivityEntrySummary,
+  conversationWorkingParticipantsWithActivity,
   mergeConversationActivityMessages,
 } from "./conversationActivity";
 
@@ -25,11 +26,11 @@ const room: IMConversation = {
   title: "release-war-room",
 };
 
-function toolMessage(id: string, createdAt: string, tool: Record<string, unknown>): IMMessage {
+function toolMessage(id: string, createdAt: string, tool: Record<string, unknown>, senderID = "pt-qa"): IMMessage {
   return {
     id,
     created_at: createdAt,
-    sender_id: "pt-qa",
+    sender_id: senderID,
     metadata: { codex: { request_id: "turn-7" } },
     content: JSON.stringify({
       type: CSGCLAW_AGENT_ACTIVITY_TYPE,
@@ -150,5 +151,136 @@ describe("conversation activity model", () => {
     expect(segments[0]?.startPercent).toBe(0);
     expect(segments[1]?.startPercent).toBeCloseTo(100 / 3);
     expect(segments[2]?.startPercent).toBeCloseTo(200 / 3);
+  });
+
+  it("shows each working agent's latest activity and keeps the newest agent at the bottom", () => {
+    const roomAgents = conversationActivityAgents(room, agents);
+    const entries = conversationActivityEntries(
+      [
+        { id: "dev-reply", created_at: "2026-07-16T10:00:01Z", sender_id: "u-dev", content: "Starting e2e" },
+        toolMessage(
+          "qa-edit",
+          "2026-07-16T10:00:02Z",
+          {
+            input: { path: "playwright.config.ts" },
+            kind: "patch_apply",
+            status: "running",
+            title: "Apply patch",
+            tool_call_id: "call-edit",
+          },
+          "pt-qa",
+        ),
+        toolMessage(
+          "dev-search",
+          "2026-07-16T10:00:03Z",
+          {
+            input: { query: "release checklist" },
+            kind: "web_search",
+            status: "running",
+            title: "Search the web",
+            tool_call_id: "call-search",
+          },
+          "u-dev",
+        ),
+      ],
+      roomAgents,
+      room.members,
+    );
+
+    const working = conversationWorkingParticipantsWithActivity(
+      [
+        { activityAfter: "2026-07-16T10:00:00Z", id: "u-dev", name: "dev" },
+        { activityAfter: "2026-07-16T10:00:00Z", id: "u-qa", name: "qa" },
+      ],
+      roomAgents,
+      entries,
+    );
+
+    expect(working.map((participant) => participant.name)).toEqual(["qa", "dev"]);
+    expect(working[0]?.activity).toMatchObject({
+      action: "editing",
+      summary: "playwright.config.ts",
+    });
+    expect(working[1]?.activity).toMatchObject({
+      action: "searching",
+      summary: "release checklist",
+    });
+  });
+
+  it("does not reuse an older turn's content before the current request emits activity", () => {
+    const roomAgents = conversationActivityAgents(room, agents);
+    const entries = conversationActivityEntries(
+      [{ id: "old-reply", created_at: "2026-07-16T09:00:00Z", sender_id: "u-dev", content: "Previous answer" }],
+      roomAgents,
+      room.members,
+    );
+
+    const [working] = conversationWorkingParticipantsWithActivity(
+      [{ id: "u-dev", name: "dev", requestID: "new-turn" }],
+      roomAgents,
+      entries,
+    );
+
+    expect(working?.activity).toEqual({ action: "thinking" });
+  });
+
+  it("ignores previous replies for legacy work inferred from a newer prompt", () => {
+    const roomAgents = conversationActivityAgents(room, agents);
+    const entries = conversationActivityEntries(
+      [
+        { id: "old-reply", created_at: "2026-07-16T09:00:00Z", sender_id: "u-dev", content: "Previous answer" },
+        { id: "new-reply", created_at: "2026-07-16T10:00:01Z", sender_id: "u-dev", content: "Current answer" },
+      ],
+      roomAgents,
+      room.members,
+    );
+
+    const [beforeReply] = conversationWorkingParticipantsWithActivity(
+      [{ activityAfter: "2026-07-16T10:00:00Z", id: "u-dev", name: "dev" }],
+      roomAgents,
+      entries.slice(0, 1),
+    );
+    const [afterReply] = conversationWorkingParticipantsWithActivity(
+      [{ activityAfter: "2026-07-16T10:00:00Z", id: "u-dev", name: "dev" }],
+      roomAgents,
+      entries,
+    );
+
+    expect(beforeReply?.activity).toEqual({ action: "thinking" });
+    expect(afterReply?.activity).toMatchObject({ action: "replying", summary: "Current answer" });
+  });
+
+  it("unwraps shell launchers and truncates long working summaries", () => {
+    const roomAgents = conversationActivityAgents(room, agents);
+    const command =
+      "printf 'a deliberately long command that should be shortened before it reaches the compact working status row'";
+    const entries = conversationActivityEntries(
+      [
+        toolMessage(
+          "dev-command",
+          "2026-07-16T10:00:00Z",
+          {
+            input: { command: `/bin/zsh -lc "${command}"` },
+            kind: "exec_command",
+            status: "running",
+            title: "Run shell command",
+            tool_call_id: "call-long-command",
+          },
+          "u-dev",
+        ),
+      ],
+      roomAgents,
+      room.members,
+    );
+
+    const [working] = conversationWorkingParticipantsWithActivity(
+      [{ activityAfter: "2026-07-16T09:59:59Z", id: "u-dev", name: "dev" }],
+      roomAgents,
+      entries,
+    );
+
+    expect(working?.activity?.summary).not.toContain("/bin/zsh -lc");
+    expect(working?.activity?.summary?.length).toBeLessThanOrEqual(72);
+    expect(working?.activity?.summary).toMatch(/…$/);
   });
 });

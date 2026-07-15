@@ -4,6 +4,7 @@ import { useConversationController } from "@/hooks/workspace/useConversationCont
 import { WorkspacePaneTypes } from "@/models/routing";
 import type { IMConversation, IMData, IMMessage, IMUser, TranslateFn } from "@/models/conversations";
 import type { AgentLike } from "@/models/agents";
+import type { ConversationWorkingParticipant } from "@/components/business/ConversationPane";
 
 const subscribeIMEventsMock = vi.fn();
 const apiMocks = vi.hoisted(() => ({
@@ -94,6 +95,7 @@ function renderConversationController(
     agents?: AgentLike[];
     data?: IMData;
     messageListActive?: boolean;
+    workingParticipantsForRoom?: (roomID: string | null | undefined) => ConversationWorkingParticipant[];
   } = {},
 ) {
   const agents: AgentLike[] = options.agents ?? [
@@ -120,6 +122,7 @@ function renderConversationController(
         locale: "en",
         managerProfile: null,
         managerProfileIncomplete: false,
+        hasObservedWorkLease: () => false,
         messageActionBusy: "",
         messageActionFeedback: { key: "", message: "" },
         messageListActive,
@@ -135,6 +138,7 @@ function renderConversationController(
         showToolCalls: false,
         t,
         theme: "light",
+        workingParticipantsForRoom: options.workingParticipantsForRoom ?? (() => []),
       }),
     { initialProps: { data: options.data, messageListActive: options.messageListActive } },
   );
@@ -282,7 +286,7 @@ describe("useConversationController", () => {
     expect(result.current.inviteMembersModalProps).toBeNull();
   });
 
-  it("shows a working participant after sending a direct message until the agent replies", async () => {
+  it("does not mark a participant working from message send or activity", async () => {
     apiMocks.sendMessageRequest.mockResolvedValue({
       id: "msg-user",
       content: "hi",
@@ -302,7 +306,7 @@ describe("useConversationController", () => {
       await result.current.conversationViewProps.onSendMessage();
     });
 
-    expect(result.current.conversationViewProps.workingParticipants).toEqual([{ id: "u-demo", name: "demo" }]);
+    expect(result.current.conversationViewProps.workingParticipants).toEqual([]);
 
     act(() => {
       result.current.handleRealtimeEvent({
@@ -318,7 +322,7 @@ describe("useConversationController", () => {
       });
     });
 
-    expect(result.current.conversationViewProps.workingParticipants).toEqual([{ id: "u-demo", name: "demo" }]);
+    expect(result.current.conversationViewProps.workingParticipants).toEqual([]);
 
     act(() => {
       result.current.handleRealtimeEvent({
@@ -336,80 +340,7 @@ describe("useConversationController", () => {
     expect(result.current.conversationViewProps.workingParticipants).toEqual([]);
   });
 
-  it("clears the working participant after sending /new", async () => {
-    apiMocks.sendMessageRequest
-      .mockResolvedValueOnce({
-        id: "msg-user",
-        content: "hi",
-        created_at: "2026-06-16T10:00:00Z",
-        sender_id: "u-admin",
-      })
-      .mockResolvedValueOnce({
-        id: "msg-new",
-        content: '<slash-command name="new" arg="conversation"></slash-command>',
-        created_at: "2026-06-16T10:00:10Z",
-        sender_id: "u-admin",
-      });
-    const { result } = renderConversationController();
-    const editor = document.createElement("div");
-    editor.textContent = "hi";
-
-    act(() => {
-      result.current.conversationViewProps.editorRef.current = editor;
-      result.current.conversationViewProps.onSyncComposer();
-    });
-    await act(async () => {
-      await result.current.conversationViewProps.onSendMessage();
-    });
-    expect(result.current.conversationViewProps.workingParticipants).toEqual([{ id: "u-demo", name: "demo" }]);
-
-    act(() => {
-      editor.textContent = "/new";
-      result.current.conversationViewProps.onSyncComposer();
-    });
-    await act(async () => {
-      await result.current.conversationViewProps.onSendMessage();
-    });
-
-    expect(apiMocks.sendMessageRequest).toHaveBeenLastCalledWith(
-      expect.objectContaining({ content: '<slash-command name="new" arg="conversation"></slash-command>' }),
-    );
-    expect(result.current.conversationViewProps.workingParticipants).toEqual([]);
-  });
-
-  it("keeps a sent direct message working participant past the local timeout until the agent replies", async () => {
-    vi.useFakeTimers();
-    try {
-      apiMocks.sendMessageRequest.mockResolvedValue({
-        id: "msg-user",
-        content: "hi",
-        created_at: "2026-06-16T10:00:00Z",
-        sender_id: "u-admin",
-      });
-      const { result } = renderConversationController();
-      const editor = document.createElement("div");
-      editor.textContent = "hi";
-
-      act(() => {
-        result.current.conversationViewProps.editorRef.current = editor;
-        result.current.conversationViewProps.onSyncComposer();
-      });
-
-      await act(async () => {
-        await result.current.conversationViewProps.onSendMessage();
-      });
-
-      act(() => {
-        vi.advanceTimersByTime(121_000);
-      });
-
-      expect(result.current.conversationViewProps.workingParticipants).toEqual([{ id: "u-demo", name: "demo" }]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("derives working participants from recent pending direct-message history after refresh", () => {
+  it("does not derive working participants from recent message history", () => {
     const { result } = renderConversationController({
       data: dataWithMessages([
         {
@@ -428,11 +359,20 @@ describe("useConversationController", () => {
       ]),
     });
 
-    expect(result.current.conversationViewProps.workingParticipants).toEqual([{ id: "u-demo", name: "demo" }]);
+    expect(result.current.conversationViewProps.workingParticipants).toEqual([]);
   });
 
-  it("does not derive working participants after the agent has replied", () => {
+  it("temporarily derives working participants for historical OpenClaw images", async () => {
     const { result } = renderConversationController({
+      agents: [
+        {
+          id: "u-demo",
+          name: "demo",
+          role: "worker",
+          runtime_kind: "openclaw_sandbox",
+          status: "running",
+        },
+      ],
       data: dataWithMessages([
         {
           id: "msg-user",
@@ -440,16 +380,26 @@ describe("useConversationController", () => {
           created_at: new Date().toISOString(),
           sender_id: "u-admin",
         },
-        {
-          id: "msg-agent",
-          content: "hello",
-          created_at: new Date().toISOString(),
-          sender_id: "u-demo",
-        },
       ]),
     });
 
-    expect(result.current.conversationViewProps.workingParticipants).toEqual([]);
+    await waitFor(() => {
+      expect(result.current.conversationViewProps.workingParticipants).toEqual([
+        expect.objectContaining({
+          id: "u-demo",
+          name: "demo",
+          requestID: "msg-user",
+        }),
+      ]);
+    });
+  });
+
+  it("uses the participant work lease selector as the authoritative working source", () => {
+    const workingParticipantsForRoom = vi.fn(() => [{ id: "u-demo", name: "demo" }]);
+    const { result } = renderConversationController({ workingParticipantsForRoom });
+
+    expect(result.current.conversationViewProps.workingParticipants).toEqual([{ id: "u-demo", name: "demo" }]);
+    expect(workingParticipantsForRoom).toHaveBeenCalledWith("room-1");
   });
 
   it("scrolls the message list to the bottom when it becomes active", () => {

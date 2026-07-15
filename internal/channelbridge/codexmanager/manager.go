@@ -12,6 +12,7 @@ import (
 	"csgclaw/internal/channelbridge/codexbridge"
 	agentruntime "csgclaw/internal/runtime"
 	runtimecodex "csgclaw/internal/runtime/codex"
+	"csgclaw/internal/worklease"
 )
 
 type Manager interface {
@@ -35,6 +36,7 @@ type Options struct {
 	CSGClawClient  codexbridge.BotClient
 	FeishuClient   codexbridge.BotClient
 	FeishuProvider feishu.AgentCredentialProvider
+	WorkReporter   worklease.ParticipantWorkReporter
 }
 
 func New(opts Options) (Manager, error) {
@@ -54,10 +56,11 @@ func New(opts Options) (Manager, error) {
 	managers := make([]Manager, 0, 2)
 	if hasCSGClawManager {
 		managers = append(managers, newCSGClawManager(managerDeps{
-			agents:  opts.Agents,
-			runtime: codexRuntime,
-			events:  events,
-			client:  opts.CSGClawClient,
+			agents:   opts.Agents,
+			runtime:  codexRuntime,
+			events:   events,
+			client:   opts.CSGClawClient,
+			reporter: opts.WorkReporter,
 		}))
 	}
 	if hasFeishuManager {
@@ -104,6 +107,7 @@ type managerDeps struct {
 	events   *runtimecodex.EventSink
 	client   codexbridge.BotClient
 	provider feishu.AgentCredentialProvider
+	reporter worklease.ParticipantWorkReporter
 }
 
 type multiManager struct {
@@ -206,9 +210,15 @@ type csgclawManager struct {
 
 func newCSGClawManager(deps managerDeps) *csgclawManager {
 	return &csgclawManager{
-		agents:   deps.agents,
-		runtime:  deps.runtime,
-		bridge:   codexbridge.NewService(deps.client, deps.runtime.SessionManager(), deps.events, deps.runtime.UserInputBroker()),
+		agents:  deps.agents,
+		runtime: deps.runtime,
+		bridge: codexbridge.NewService(
+			deps.client,
+			deps.runtime.SessionManager(),
+			deps.events,
+			codexbridge.WithUserInputBroker(deps.runtime.UserInputBroker()),
+			codexbridge.WithParticipantWorkReporter(deps.reporter),
+		),
 		ensuring: newEnsureGate(),
 	}
 }
@@ -305,9 +315,14 @@ type feishuManager struct {
 
 func newFeishuManager(deps managerDeps) *feishuManager {
 	return &feishuManager{
-		agents:             deps.agents,
-		runtime:            deps.runtime,
-		bridge:             codexbridge.NewService(deps.client, deps.runtime.SessionManager(), deps.events, deps.runtime.UserInputBroker()),
+		agents:  deps.agents,
+		runtime: deps.runtime,
+		bridge: codexbridge.NewService(
+			deps.client,
+			deps.runtime.SessionManager(),
+			deps.events,
+			codexbridge.WithUserInputBroker(deps.runtime.UserInputBroker()),
+		),
 		provider:           deps.provider,
 		ensuring:           newEnsureGate(),
 		activeParticipants: make(map[string]string),

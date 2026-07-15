@@ -17,6 +17,7 @@ type UseWorkspaceRealtimeArgs = {
   agents: readonly AgentLike[];
   onConversationEvent?: WorkspaceRealtimeHandler;
   onFloatingConversationEvent?: WorkspaceRealtimeHandler;
+  onParticipantWorkEvent?: WorkspaceRealtimeHandler;
   onRefreshAgentState: (agentID: string) => Promise<AgentLike | null>;
   onUpgradeStatusChange: (payload: unknown) => void;
   refreshWorkspaceAgents: (options?: FetchAgentsOptions) => Promise<AgentLike[]>;
@@ -45,6 +46,7 @@ export function useWorkspaceRealtime({
   agents,
   onConversationEvent,
   onFloatingConversationEvent,
+  onParticipantWorkEvent,
   onRefreshAgentState,
   onUpgradeStatusChange,
   refreshWorkspaceAgents,
@@ -57,6 +59,7 @@ export function useWorkspaceRealtime({
     agents,
     onConversationEvent,
     onFloatingConversationEvent,
+    onParticipantWorkEvent,
     onRefreshAgentState,
     onUpgradeStatusChange,
     queryClient,
@@ -75,6 +78,7 @@ export function useWorkspaceRealtime({
       agents,
       onConversationEvent,
       onFloatingConversationEvent,
+      onParticipantWorkEvent,
       onRefreshAgentState,
       onUpgradeStatusChange,
       queryClient,
@@ -87,6 +91,7 @@ export function useWorkspaceRealtime({
     agents,
     onConversationEvent,
     onFloatingConversationEvent,
+    onParticipantWorkEvent,
     onRefreshAgentState,
     onUpgradeStatusChange,
     queryClient,
@@ -129,6 +134,7 @@ export function useWorkspaceRealtime({
       current.setBootstrapData((data) => applyIMEvent(data, payload));
       current.onConversationEvent?.(payload);
       current.onFloatingConversationEvent?.(payload);
+      current.onParticipantWorkEvent?.(payload);
 
       const participantRosterEvent = isParticipantRosterEvent(payload);
       if (participantRosterEvent || isAgentRosterEvent(payload)) {

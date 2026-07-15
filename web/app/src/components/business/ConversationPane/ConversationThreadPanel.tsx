@@ -580,9 +580,10 @@ function ThreadMessage({
           onClick={(event) => {
             if (messageAgent && onOpenAgentDetail) {
               onOpenAgentDetail(messageAgent, event.currentTarget);
+              return;
             }
+            onPreviewUser(user, event.currentTarget);
           }}
-          onFocus={(event) => onPreviewUser(user, event.currentTarget)}
           onPointerEnter={(event) => {
             onCancelProfilePreviewClose?.();
             onPreviewUser(user, event.currentTarget);

@@ -72,3 +72,8 @@ type DeleteOptions struct {
 }
 
 const DeleteAgentIfUnreferenced = "if_unreferenced"
+
+// CanonicalID normalizes a local participant identity for protocol boundaries.
+func CanonicalID(id string) string {
+	return canonicalParticipantID(slugify(id))
+}

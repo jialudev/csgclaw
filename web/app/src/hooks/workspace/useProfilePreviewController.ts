@@ -223,14 +223,14 @@ export function useProfilePreviewController({
             onMouseEnter: cancelProfilePreviewClose,
             onMouseLeave: scheduleProfilePreviewClose,
             onOpenAgent: (item) => {
+              closeProfilePreview();
               startTransition(() => {
                 selectAgent(item);
-                closeProfilePreview();
               });
             },
             onOpenDM: async (item) => {
-              await openAgentDirectMessage(item);
               closeProfilePreview();
+              await openAgentDirectMessage(item);
             },
           }
         : null,
