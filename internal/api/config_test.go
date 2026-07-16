@@ -103,8 +103,11 @@ func TestHandleServerConfigGetPut(t *testing.T) {
 	if got.AdvertiseBaseURLEffective == "" {
 		t.Fatalf("AdvertiseBaseURLEffective = empty, want resolved manager base URL")
 	}
-	if got.HubLocalPath == "" || got.HubOfficialURL != config.DefaultOfficialHubRegistryURL {
-		t.Fatalf("GET hub settings local=%q official=%q, want populated defaults", got.HubLocalPath, got.HubOfficialURL)
+	if got.HubLocalPath == "" {
+		t.Fatalf("GET hub local path = empty, want populated default")
+	}
+	if got.HubOfficialURLEffective != config.DefaultOfficialHubRegistryURL {
+		t.Fatalf("HubOfficialURLEffective = %q, want %q", got.HubOfficialURLEffective, config.DefaultOfficialHubRegistryURL)
 	}
 
 	body, err := json.Marshal(apitypes.UpdateConfigSettingsRequest{
@@ -113,7 +116,6 @@ func TestHandleServerConfigGetPut(t *testing.T) {
 		ShowUpgrade:            false,
 		SandboxProvider:        "docker",
 		HubLocalPath:           "/tmp/team-hub",
-		HubOfficialURL:         "https://hub.example.com/",
 		DefaultManagerTemplate: "builtin.manager-codex",
 		DefaultWorkerTemplate:  "builtin.picoclaw-worker",
 	})
@@ -143,8 +145,11 @@ func TestHandleServerConfigGetPut(t *testing.T) {
 	if saved.AdvertiseBaseURLEffective != "http://192.168.1.10:19080" {
 		t.Fatalf("AdvertiseBaseURLEffective = %q, want configured manager base URL", saved.AdvertiseBaseURLEffective)
 	}
-	if saved.HubLocalPath != "/tmp/team-hub" || saved.HubOfficialURL != "https://hub.example.com" {
-		t.Fatalf("saved hub settings local=%q official=%q, want updated values", saved.HubLocalPath, saved.HubOfficialURL)
+	if saved.HubLocalPath != "/tmp/team-hub" {
+		t.Fatalf("saved hub local path=%q, want updated value", saved.HubLocalPath)
+	}
+	if saved.HubOfficialURLEffective != config.DefaultOfficialHubRegistryURL {
+		t.Fatalf("saved HubOfficialURLEffective = %q, want %q", saved.HubOfficialURLEffective, config.DefaultOfficialHubRegistryURL)
 	}
 
 	data, err := os.ReadFile(configPath)
@@ -158,9 +163,11 @@ func TestHandleServerConfigGetPut(t *testing.T) {
 	if !strings.Contains(content, `advertise_base_url = "http://192.168.1.10:19080"`) {
 		t.Fatalf("config content = %q, want updated advertise_base_url", content)
 	}
-	if !strings.Contains(content, `path = "/tmp/team-hub"`) ||
-		!strings.Contains(content, `url = "https://hub.example.com"`) {
-		t.Fatalf("config content = %q, want updated hub local path and official URL", content)
+	if !strings.Contains(content, `path = "/tmp/team-hub"`) {
+		t.Fatalf("config content = %q, want updated hub local path", content)
+	}
+	if strings.Contains(content, `url = "https://hub.example.com"`) {
+		t.Fatalf("config content = %q, did not expect user settings to write official hub URL", content)
 	}
 }
 

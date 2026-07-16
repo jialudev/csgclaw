@@ -1,5 +1,7 @@
 import { del, get, request } from "@/api/client";
+import { fetchAuthStatus } from "@/api/auth";
 import { fetchServerConfig } from "@/api/config";
+import { normalizeAuthStatus } from "@/models/auth";
 import { normalizeConfigSettings } from "@/models/configSettings";
 import { SKILL_SOURCE_OFFICIAL } from "@/models/skillhub";
 import type { SkillFile, SkillSummary, SkillTree } from "@/models/skillhub";
@@ -108,12 +110,39 @@ function agenticHubOfficialSkillsPath(baseURL: string, page: number, search: str
 }
 
 async function officialHubBaseURL(): Promise<string> {
-  const settings = normalizeConfigSettings(await fetchServerConfig());
-  const baseURL = normalizeOfficialHubBaseURL(settings?.hub_official_url || "");
-  if (!baseURL) {
-    throw new Error("Official Hub URL is not configured");
+  const configBaseURL = await officialHubBaseURLFromServerConfig();
+  if (configBaseURL) {
+    return configBaseURL;
   }
-  return baseURL;
+  const authBaseURL = await officialHubBaseURLFromAuthStatus();
+  if (authBaseURL) {
+    return authBaseURL;
+  }
+  return "https://hub.opencsg.com";
+}
+
+async function officialHubBaseURLFromServerConfig(): Promise<string> {
+  try {
+    const settings = normalizeConfigSettings(await fetchServerConfig());
+    return normalizeOfficialHubBaseURL(settings?.hub_official_url_effective || "");
+  } catch (_) {
+    return "";
+  }
+}
+
+async function officialHubBaseURLFromAuthStatus(): Promise<string> {
+  try {
+    const status = normalizeAuthStatus(await fetchAuthStatus());
+    if (!status.authenticated) {
+      return "";
+    }
+    if (status.opencsg_base_url === "https://opencsg-stg.com") {
+      return status.opencsg_base_url;
+    }
+    return normalizeOfficialHubBaseURL(status.base_url || status.opencsg_base_url);
+  } catch (_) {
+    return "";
+  }
 }
 
 function normalizeOfficialHubBaseURL(value: string): string {
@@ -141,8 +170,15 @@ function normalizeAgenticHubSkill(record: unknown, source: string, baseURL = "")
     return null;
   }
   const values = record as Record<string, unknown>;
-  const name = stringFromUnknown(values.name) || stringFromUnknown(values.nickname) || skillNameFromPath(values.path);
   const remotePath = stringFromUnknown(values.path);
+  const name =
+    usefulSkillTitle(
+      stringFromUnknown(values.name),
+      stringFromUnknown(values.nickname),
+      stringFromUnknown(values.displayName),
+      stringFromUnknown(values.display_name),
+      stringFromUnknown(values.title),
+    ) || skillNameFromPath(remotePath);
   if (!name) {
     return null;
   }
@@ -150,7 +186,7 @@ function normalizeAgenticHubSkill(record: unknown, source: string, baseURL = "")
     return null;
   }
   return {
-    description: stringFromUnknown(values.description),
+    description: stringFromUnknown(values.description) || stringFromUnknown(values.summary),
     name,
     readonly: true,
     remoteRef: stringFromUnknown(values.default_branch) || stringFromUnknown(values.defaultBranch) || undefined,
@@ -158,6 +194,18 @@ function normalizeAgenticHubSkill(record: unknown, source: string, baseURL = "")
     remoteURL: remotePath ? agenticHubSkillWebURL(baseURL, remotePath) || undefined : undefined,
     source,
   };
+}
+
+function stringFromUnknown(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function usefulSkillTitle(...values: string[]): string {
+  return values.find((value) => value && !isGenericSkillTitle(value)) || "";
+}
+
+function isGenericSkillTitle(value: string): boolean {
+  return value.trim().toLowerCase() === "skill";
 }
 
 function agenticHubSkillWebURL(baseURL: string, remotePath: string): string {
@@ -188,15 +236,13 @@ function skillNameFromPath(value: unknown): string {
   if (!path) {
     return "";
   }
-  const parts = path
-    .split("/")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  return parts.at(-1) || "";
-}
-
-function stringFromUnknown(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
+  return (
+    path
+      .split("/")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .at(-1) || ""
+  );
 }
 
 function nullableNumberFromUnknown(value: unknown): number | null {

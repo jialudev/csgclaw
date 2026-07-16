@@ -132,16 +132,12 @@ func normalizeHubRegistry(registry HubRegistryConfig) HubRegistryConfig {
 	registry.Kind = strings.TrimSpace(registry.Kind)
 	registry.Path = strings.TrimSpace(registry.Path)
 	registry.URL = strings.TrimSpace(strings.TrimRight(registry.URL, "/"))
-	if registry.Kind == HubRegistryKindRemote && registry.URL == LegacyOfficialHubRegistryURL {
-		registry.URL = DefaultOfficialHubRegistryURL
-	}
 	registry.Token = strings.TrimSpace(registry.Token)
 	return registry
 }
 
 func needsRemoteHubRegistryURLRewrite(registry HubRegistryConfig) bool {
-	return strings.TrimSpace(registry.Kind) == HubRegistryKindRemote &&
-		strings.TrimSpace(strings.TrimRight(registry.URL, "/")) == LegacyOfficialHubRegistryURL
+	return false
 }
 
 func mergeHubRegistries(defaults, configured []HubRegistryConfig) []HubRegistryConfig {
@@ -217,6 +213,30 @@ func hasHubRegistry(registries []HubRegistryConfig, name string) bool {
 func hasRemoteHubRegistryURLRewrite(registries []rawHubRegistryConfig) bool {
 	for _, registry := range registries {
 		if registry.RewriteURL {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldWriteHubRegistry(registry HubRegistryConfig, rawRegistry, loadedRegistry rawHubRegistryConfig) bool {
+	if strings.TrimSpace(registry.Name) != DefaultOfficialHubRegistryName ||
+		strings.TrimSpace(registry.Kind) != HubRegistryKindRemote {
+		return true
+	}
+	if rawRegistry.Name != "" || loadedRegistry.Name != "" {
+		return true
+	}
+	defaultRegistry := defaultOfficialRemoteHubRegistry()
+	return strings.TrimRight(strings.TrimSpace(registry.URL), "/") != defaultRegistry.URL ||
+		strings.TrimSpace(registry.Token) != "" ||
+		registry.Enabled != defaultRegistry.Enabled
+}
+
+func (c Config) HasExplicitOfficialHubRegistry() bool {
+	for _, registry := range c.raw.hub.Registries {
+		if parseRawStringValue(registry.Name) == DefaultOfficialHubRegistryName &&
+			parseRawStringValue(registry.Kind) == HubRegistryKindRemote {
 			return true
 		}
 	}
@@ -313,7 +333,6 @@ const (
 	DefaultHubRegistry              = "builtin"
 	DefaultHubPublishRegistry       = "local"
 	DefaultOfficialHubRegistryName  = "official"
-	LegacyOfficialHubRegistryURL    = "https://csgclaw.opencsg.com"
 	DefaultOfficialHubRegistryURL   = "https://hub.opencsg.com"
 	DefaultBootstrapManagerTemplate = "builtin.manager-codex"
 	DefaultBootstrapWorkerTemplate  = "builtin.picoclaw-worker"
@@ -791,6 +810,9 @@ default_publish_registry = %q
 	for _, registry := range resolvedHub.Registries {
 		rawRegistry := findRawHubRegistry(cfg.raw.hub.Registries, registry.Name)
 		loadedRegistry := findRawHubRegistry(loadedRaw.hub.Registries, registry.Name)
+		if !shouldWriteHubRegistry(registry, rawRegistry, loadedRegistry) {
+			continue
+		}
 		fmt.Fprintf(&b, `
 [[hub.registries]]
 name = %q

@@ -222,7 +222,7 @@ Current platform expectations:
 
 CSGClaw can read agent templates from one or more hub registries. Registry configuration is additive: built-in, local, and remote registries can coexist in the same `config.toml`.
 
-When `[hub]` is omitted, CSGClaw enables three registries by default: `builtin` (read-only), `local` (writable publish target at `~/.csgclaw/hub`), and `official` (official remote at `https://hub.opencsg.com`). If your `config.toml` lists only some registries, missing defaults are merged in automatically so removing `builtin` does not break startup.
+When `[hub]` is omitted, CSGClaw enables three registries by default: `builtin` (read-only), `local` (writable publish target at `~/.csgclaw/hub`), and `official` (official remote at `https://hub.opencsg.com`). If your `config.toml` lists only some registries, missing defaults are merged in automatically so removing `builtin` does not break startup. In the Web UI, the official remote is resolved from the current OpenCSG login environment at request time: production uses `https://hub.opencsg.com`, and staging uses `https://opencsg-stg.com`.
 
 ```toml
 [hub]
@@ -240,12 +240,6 @@ enabled = true
 name = "local"
 kind = "local"
 path = "~/.csgclaw/hub"
-enabled = true
-
-[[hub.registries]]
-name = "official"
-kind = "remote"
-url = "https://hub.opencsg.com"
 enabled = true
 
 [[hub.registries]]
@@ -270,6 +264,8 @@ Field behavior:
 
 The built-in registry is read-only. Use a writable `local` or `remote` registry as the publish target.
 
+The old template Hub URL `https://csgclaw.opencsg.com` is no longer rewritten automatically; configure the desired remote explicitly or rely on the login-environment-derived official registry.
+
 ## Skill registry configuration
 
 `csgclaw skill` uses two skill registries by default:
@@ -280,6 +276,8 @@ The built-in registry is read-only. Use a writable `local` or `remote` registry 
 `skill search` queries opencsg first and returns immediately when there are hits; it only queries clawhub.ai when opencsg returns no results.
 
 Use `--registry opencsg` or `--registry clawhub` on `get` / `install` to target one registry. Omit it to try opencsg first, then clawhub.
+
+The Web UI remote Skill list uses the OpenCSG public Skill catalog from the active login environment: production uses `https://hub.opencsg.com`, and staging uses `https://opencsg-stg.com`. The CLI `csgclaw skill` registry remains separate and uses `https://claw.opencsg.com` for both production and staging logins.
 
 Supported registry APIs:
 
