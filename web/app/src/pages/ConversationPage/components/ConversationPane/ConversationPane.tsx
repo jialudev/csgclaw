@@ -114,7 +114,7 @@ export function ConversationPane({
   onRemoveAttachment,
   composerError,
   messageActionBusy,
-  messageActionError,
+  messageActionFeedback,
   onMessageAction,
   onCancelProfilePreviewClose,
   onCloseProfilePreview,
@@ -256,7 +256,7 @@ export function ConversationPane({
         emptyStateSlot={<></>}
         locale={locale}
         messageActionBusy={messageActionBusy}
-        messageActionError={messageActionError}
+        messageActionFeedback={messageActionFeedback}
         messageListRef={messageListRef}
         t={t}
         theme={theme}
