@@ -32,6 +32,7 @@ var (
 	stopDaemonFromExecutable  = upgrade.StopDaemonFromExecutable
 	startDaemonFromExecutable = upgrade.StartDaemonFromExecutable
 	startInstalledDaemon      = upgrade.StartInstalledDaemon
+	restartCSGHubServer       = upgrade.RestartCSGHubServerIfConfigured
 )
 
 func NewCmd() command.Command {
@@ -130,6 +131,15 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 		})
 		if err != nil {
 			return fail(err)
+		}
+		if !restarted.DaemonWasRunning {
+			csghubRestart, configured, restartErr := restartCSGHubServer()
+			if restartErr != nil {
+				return fail(restartErr)
+			}
+			if configured {
+				restarted = csghubRestart
+			}
 		}
 	}
 	if !*noRestart && !restarted.DaemonWasRunning {
