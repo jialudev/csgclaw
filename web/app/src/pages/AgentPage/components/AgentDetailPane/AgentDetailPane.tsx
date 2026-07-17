@@ -84,6 +84,7 @@ import { AgentActivityPanel } from "./AgentActivityPanel";
 
 type VoidOrPromise = void | Promise<void>;
 type AgentActionHandler = (item: AgentLike) => VoidOrPromise;
+type AgentMetadataSavePatch = Pick<Partial<AgentDraft>, "description" | "name">;
 type AgentNoticeTone = "info" | "warning" | "success";
 const AGENT_PROFILE_TAB_IDS = ["profile", "activity", "channels", "instructions", "skills", "mcp"] as const;
 type AgentProfileTabID = (typeof AGENT_PROFILE_TAB_IDS)[number];
@@ -128,6 +129,7 @@ export type AgentDetailPaneProps = {
   onPublish?: () => VoidOrPromise;
   onRecreate: AgentActionHandler;
   onSave?: () => VoidOrPromise;
+  onMetadataSave?: (patch: AgentMetadataSavePatch) => VoidOrPromise;
   onStart: AgentActionHandler;
   onStartFeishuConnect?: AgentActionHandler;
   onStop: AgentActionHandler;
@@ -216,6 +218,7 @@ export function AgentDetailPane({
   onStart,
   onStop,
   onRecreate,
+  onMetadataSave,
   onStartFeishuConnect,
   onDisconnectFeishu,
   onUpgrade,
@@ -242,6 +245,7 @@ export function AgentDetailPane({
   const [isProfileScrolling, setIsProfileScrolling] = useState(false);
   const descriptionInputRef = useRef<HTMLTextAreaElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const skipMetadataAutosaveRef = useRef(false);
   const profileScrollTimerRef = useRef<number | null>(null);
   const isManager = isManagerAgent(item);
   const canEditAgentName = Boolean(draft && !isManager);
@@ -259,6 +263,26 @@ export function AgentDetailPane({
     hasUnsavedChangesProp ?? Boolean(draft && savedDraft && JSON.stringify(draft) !== JSON.stringify(savedDraft));
   const saveDisabled = agentProfilePageSaveDisabled(draft, item, { saving, savedDraft });
   const updateDraft = (patch: Partial<AgentDraft>) => onDraftChange?.({ ...(draft || agentToDraft(item)), ...patch });
+  const saveMetadataPatch = (patch: AgentMetadataSavePatch) => {
+    if (skipMetadataAutosaveRef.current) {
+      skipMetadataAutosaveRef.current = false;
+      return;
+    }
+    if (!onMetadataSave || saving) {
+      return;
+    }
+    void onMetadataSave(patch);
+  };
+  const cancelNameEdit = () => {
+    skipMetadataAutosaveRef.current = true;
+    updateDraft({ name: savedDraft?.name ?? item.name ?? "" });
+    setIsEditingName(false);
+  };
+  const cancelDescriptionEdit = () => {
+    skipMetadataAutosaveRef.current = true;
+    updateDraft({ description: savedDraft?.description ?? item.description ?? "" });
+    setIsEditingDescription(false);
+  };
   const runtimeOptionSchemas = runtimeOptionSchemasForAgent(draft?.runtime_kind || runtimeKind, item);
   const fallbackProviderID = String(draft?.model_provider_id || "").trim();
   const fallbackModelOptions =
@@ -451,10 +475,17 @@ export function AgentDetailPane({
                       value={draft.name}
                       required
                       aria-required="true"
-                      onBlur={() => setIsEditingName(false)}
+                      onBlur={(event) => {
+                        setIsEditingName(false);
+                        saveMetadataPatch({ name: event.currentTarget.value });
+                      }}
                       onInput={(event) => updateDraft({ name: event.currentTarget.value })}
                       onKeyDown={(event) => {
-                        if (event.key === "Escape" || event.key === "Enter") {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          cancelNameEdit();
+                          event.currentTarget.blur();
+                        } else if (event.key === "Enter") {
                           event.preventDefault();
                           event.currentTarget.blur();
                         }
@@ -502,11 +533,15 @@ export function AgentDetailPane({
                     ref={descriptionInputRef}
                     className="compact-textarea"
                     value={draft.description}
-                    onBlur={() => setIsEditingDescription(false)}
+                    onBlur={(event) => {
+                      setIsEditingDescription(false);
+                      saveMetadataPatch({ description: event.currentTarget.value });
+                    }}
                     onInput={(event) => updateDraft({ description: event.currentTarget.value })}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
                         event.preventDefault();
+                        cancelDescriptionEdit();
                         event.currentTarget.blur();
                       }
                     }}
