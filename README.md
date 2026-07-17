@@ -12,6 +12,8 @@
 
 CSGClaw is a multi-agent collaboration platform built by OpenCSG — designed around one practical question: **once work becomes non-trivial, how do you get a group of AI agents to operate like a team, without the system becoming heavy or painful to set up?**
 
+![CSGClaw WebUI](assets/webui.png)
+
 ## Install
 
 **macOS / Linux:**
