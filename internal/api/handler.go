@@ -70,6 +70,7 @@ type Handler struct {
 	localRuntimeImages         func(context.Context, config.Config) ([]string, error)
 	notificationDeliver        notification.Fanouter
 	activityDecider            ActivityDecider
+	userInputResponder         UserInputResponder
 	localDirectoryPicker       func(context.Context) (string, error)
 	feishuRegistrationStateDir string
 
@@ -737,6 +738,12 @@ func (h *Handler) SetParticipantService(svc *participant.Service) {
 func (h *Handler) SetActivityDecider(decider ActivityDecider) {
 	if h != nil {
 		h.activityDecider = decider
+	}
+}
+
+func (h *Handler) SetUserInputResponder(responder UserInputResponder) {
+	if h != nil {
+		h.userInputResponder = responder
 	}
 }
 
