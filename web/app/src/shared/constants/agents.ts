@@ -41,3 +41,4 @@ export const CLIPROXY_AUTH_PROVIDERS = new Set(["codex", "claude_code"]);
 export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
 
 export const SHOW_AGENT_LIFECYCLE_ACTIONS = false;
+export const SHOW_MANAGER_RECREATE_ACTION = false;

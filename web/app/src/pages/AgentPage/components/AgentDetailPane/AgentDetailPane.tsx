@@ -14,7 +14,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage } from "@/api/client";
-import { REASONING_EFFORTS, SHOW_AGENT_LIFECYCLE_ACTIONS } from "@/shared/constants/agents";
+import {
+  REASONING_EFFORTS,
+  SHOW_AGENT_LIFECYCLE_ACTIONS,
+  SHOW_MANAGER_RECREATE_ACTION,
+} from "@/shared/constants/agents";
 import { AGENT_PROFILE_ACTIVE_TAB_STORAGE_KEY } from "@/shared/storage/keys";
 import {
   EnvKeyValueEditor,
@@ -587,24 +591,26 @@ export function AgentDetailPane({
                 {t("agentUpgrade")}
               </Button>
             ) : null}
-            <AgentActionsMenu
-              item={item}
-              t={t}
-              activeRoom={activeRoom}
-              busy={busyKey.startsWith(busyPrefix)}
-              incomplete={incomplete}
-              isManager={isManager}
-              running={running}
-              upgradeNeeded={upgradeNeeded}
-              canPublish={canPublish}
-              publishBusy={publishBusy}
-              onStart={onStart}
-              onStop={onStop}
-              onRecreate={onRecreate}
-              onInvite={onInvite}
-              onDelete={onDelete}
-              onPublish={onPublish}
-            />
+            {!isManager || SHOW_MANAGER_RECREATE_ACTION ? (
+              <AgentActionsMenu
+                item={item}
+                t={t}
+                activeRoom={activeRoom}
+                busy={busyKey.startsWith(busyPrefix)}
+                incomplete={incomplete}
+                isManager={isManager}
+                running={running}
+                upgradeNeeded={upgradeNeeded}
+                canPublish={canPublish}
+                publishBusy={publishBusy}
+                onStart={onStart}
+                onStop={onStop}
+                onRecreate={onRecreate}
+                onInvite={onInvite}
+                onDelete={onDelete}
+                onPublish={onPublish}
+              />
+            ) : null}
             {draft && (hasUnsavedChanges || saving) ? (
               <Button
                 variant="primary"
