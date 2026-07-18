@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -3065,6 +3066,94 @@ func TestRecreateTriggersLifecycleObserver(t *testing.T) {
 	}
 }
 
+func TestRecreateWaitsForConcurrentStartOfSameAgent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	startEntered := make(chan struct{})
+	releaseStart := make(chan struct{})
+	deleteEntered := make(chan struct{})
+	var startOnce sync.Once
+	var deleteOnce sync.Once
+	rt := fakeAgentRuntime{
+		kind: RuntimeKindCodex,
+		start: func(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+			startOnce.Do(func() { close(startEntered) })
+			<-releaseStart
+			return agentruntime.StateRunning, nil
+		},
+		del: func(context.Context, agentruntime.Handle) error {
+			deleteOnce.Do(func() { close(deleteEntered) })
+			return nil
+		},
+		new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+			return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: "sess-new"}, nil
+		},
+		info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+			return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+		},
+	}
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(rt),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["agent-alice"] = Agent{
+		ID:          "agent-alice",
+		Name:        "alice",
+		Role:        RoleWorker,
+		RuntimeID:   "rt-agent-alice",
+		RuntimeKind: RuntimeKindCodex,
+		BoxID:       "sess-old",
+		Status:      string(agentruntime.StateRunning),
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderCodex,
+			ModelID:         "gpt-5.5",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
+	}
+
+	startResult := make(chan error, 1)
+	go func() {
+		_, err := svc.Start(context.Background(), "agent-alice")
+		startResult <- err
+	}()
+	select {
+	case <-startEntered:
+	case <-time.After(time.Second):
+		t.Fatal("Start() did not enter runtime")
+	}
+
+	recreateResult := make(chan error, 1)
+	go func() {
+		_, err := svc.Recreate(context.Background(), "agent-alice")
+		recreateResult <- err
+	}()
+	select {
+	case <-deleteEntered:
+		t.Fatal("Recreate() deleted the runtime while Start() still owned the agent lifecycle")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseStart)
+	if err := <-startResult; err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if err := <-recreateResult; err != nil {
+		t.Fatalf("Recreate() error = %v", err)
+	}
+	select {
+	case <-deleteEntered:
+	case <-time.After(time.Second):
+		t.Fatal("Recreate() did not delete the runtime after Start() completed")
+	}
+}
+
 func TestRecreateProvisionsRuntimeBeforeNew(t *testing.T) {
 	var callOrder []string
 	svc, err := NewService(
@@ -3414,6 +3503,64 @@ func TestEnsureBootstrapManagerUsesCodexRuntimeWithoutConnectorTokenEnv(t *testi
 	}
 	if _, ok := manager.RuntimeOptions["GITHUB_TOKEN"]; ok {
 		t.Fatal("manager runtime options contain GITHUB_TOKEN")
+	}
+}
+
+func TestEnsureBootstrapManagerStopsLifecycleBeforeRecreate(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	var observer *fakeLifecycleObserver
+	deleteCalls := 0
+	newCalls := 0
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{ListenAddr: ":18080", AccessToken: "server-token"},
+		"",
+		filepath.Join(homeDir, "agents.json"),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			del: func(context.Context, agentruntime.Handle) error {
+				deleteCalls++
+				var stopCalls []string
+				if observer != nil {
+					stopCalls = observer.stopCalls
+				}
+				if !slices.Equal(stopCalls, []string{ManagerUserID}) {
+					t.Fatalf("manager lifecycle stop calls before runtime delete = %v, want [%s]", stopCalls, ManagerUserID)
+				}
+				return nil
+			},
+			new: func(_ context.Context, spec agentruntime.Spec) (agentruntime.Handle, error) {
+				newCalls++
+				return agentruntime.Handle{RuntimeID: spec.RuntimeID, HandleID: fmt.Sprintf("codex-manager-session-%d", newCalls)}, nil
+			},
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateRunning}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	if err := svc.EnsureBootstrapManager(context.Background(), false); err != nil {
+		t.Fatalf("EnsureBootstrapManager(initial) error = %v", err)
+	}
+	observer = &fakeLifecycleObserver{}
+	svc.SetLifecycleObserver(observer)
+
+	if err := svc.EnsureBootstrapManager(context.Background(), true); err != nil {
+		t.Fatalf("EnsureBootstrapManager(recreate) error = %v", err)
+	}
+	if deleteCalls != 1 {
+		t.Fatalf("runtime Delete() calls = %d, want 1", deleteCalls)
+	}
+	if !slices.Equal(observer.stopCalls, []string{ManagerUserID}) {
+		t.Fatalf("StopAgent() calls = %v, want [%s]", observer.stopCalls, ManagerUserID)
+	}
+	if len(observer.ensureCalls) != 1 || observer.ensureCalls[0].ID != ManagerUserID {
+		t.Fatalf("EnsureAgent() calls = %+v, want recreated manager", observer.ensureCalls)
 	}
 }
 
@@ -8218,6 +8365,108 @@ func TestStartConfiguredAgentsStartsStoppedCompleteWorkersAndLeavesRunningWorker
 	}
 	if carol.Status != string(sandbox.StateRunning) {
 		t.Fatalf("Agent(u-carol).Status = %q, want running", carol.Status)
+	}
+}
+
+func TestStartConfiguredAgentsRestoresRunningCodexWorker(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	startCalls := 0
+	rt := fakeAgentRuntime{
+		kind: RuntimeKindCodex,
+		start: func(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+			startCalls++
+			return agentruntime.StateRunning, nil
+		},
+		info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+			return agentruntime.Info{
+				HandleID: h.HandleID,
+				State:    agentruntime.StateRunning,
+			}, nil
+		},
+	}
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(rt),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:          "u-alice",
+		Name:        "alice",
+		Role:        RoleWorker,
+		RuntimeKind: RuntimeKindCodex,
+		RuntimeID:   "rt-u-alice",
+		BoxID:       "sess-alice",
+		Status:      string(agentruntime.StateRunning),
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderCodex,
+			ModelID:         "gpt-5.5",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
+	}
+
+	if err := svc.StartConfiguredAgents(context.Background()); err != nil {
+		t.Fatalf("StartConfiguredAgents() error = %v", err)
+	}
+	if startCalls != 1 {
+		t.Fatalf("Codex runtime Start() calls = %d, want 1 to restore the in-memory session", startCalls)
+	}
+}
+
+func TestStartConfiguredAgentsLeavesStoppedCodexWorkerStopped(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	startCalls := 0
+	rt := fakeAgentRuntime{
+		kind: RuntimeKindCodex,
+		start: func(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+			startCalls++
+			return agentruntime.StateRunning, nil
+		},
+		info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+			return agentruntime.Info{
+				HandleID: h.HandleID,
+				State:    agentruntime.StateStopped,
+			}, nil
+		},
+	}
+	svc, err := NewService(
+		testModelConfig(),
+		config.ServerConfig{},
+		"manager-image:test",
+		"",
+		WithRuntime(rt),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID:          "u-alice",
+		Name:        "alice",
+		Role:        RoleWorker,
+		RuntimeKind: RuntimeKindCodex,
+		RuntimeID:   "rt-u-alice",
+		BoxID:       "sess-alice",
+		Status:      string(agentruntime.StateStopped),
+		AgentProfile: AgentProfile{
+			Name:            "alice",
+			Provider:        ProviderCodex,
+			ModelID:         "gpt-5.5",
+			ProfileComplete: true,
+		},
+		ProfileComplete: true,
+	}
+
+	if err := svc.StartConfiguredAgents(context.Background()); err != nil {
+		t.Fatalf("StartConfiguredAgents() error = %v", err)
+	}
+	if startCalls != 0 {
+		t.Fatalf("Codex runtime Start() calls = %d, want 0 for explicitly stopped worker", startCalls)
 	}
 }
 
