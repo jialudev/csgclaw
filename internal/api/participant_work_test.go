@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +146,117 @@ func TestParticipantWorkLeaseAPIValidationAndAuth(t *testing.T) {
 	}
 }
 
+func TestParticipantWorkStatusAndStopAPI(t *testing.T) {
+	handler, registry := newParticipantWorkTestHandler(t, true)
+	leaseID := worklease.NewID()
+	leasePath := "/api/v1/channels/csgclaw/participants/worker/work-leases/" + leaseID
+	started := performParticipantWorkRequest(t, handler, http.MethodPut, leasePath, map[string]any{
+		"room_id":    "room-1",
+		"request_id": "message-1",
+		"kind":       "agent_turn",
+	})
+	if started.Code != http.StatusOK {
+		t.Fatalf("start status = %d, body=%s", started.Code, started.Body.String())
+	}
+
+	patchBody := map[string]any{
+		"capabilities": []string{"thinking_status_v1", "turn_stop_v1", "work_stage_v1"},
+		"sequence":     1,
+		"phase":        "thinking",
+		"stage":        "thinking",
+		"thinking": map[string]any{
+			"format":    "plain_text",
+			"text":      "checking configuration",
+			"truncated": false,
+		},
+	}
+	patched := performParticipantWorkRequest(t, handler, http.MethodPatch, leasePath, patchBody)
+	if patched.Code != http.StatusOK {
+		t.Fatalf("patch status = %d, body=%s", patched.Code, patched.Body.String())
+	}
+	if !bytes.Contains(patched.Body.Bytes(), []byte(`"thinking":{"format":"plain_text","text":"checking configuration"`)) {
+		t.Fatalf("patch body = %s", patched.Body.String())
+	}
+	if !bytes.Contains(patched.Body.Bytes(), []byte(`"stage":"thinking"`)) {
+		t.Fatalf("patch stage body = %s", patched.Body.String())
+	}
+	stale := performParticipantWorkRequest(t, handler, http.MethodPatch, leasePath, patchBody)
+	if stale.Code != http.StatusNoContent {
+		t.Fatalf("stale patch status = %d, body=%s", stale.Code, stale.Body.String())
+	}
+
+	stopPath := "/api/v1/channels/csgclaw/participants/worker/work:stop"
+	stopped := performParticipantWorkRequest(t, handler, http.MethodPost, stopPath, map[string]any{
+		"room_id":    "room-1",
+		"lease_id":   leaseID,
+		"request_id": "message-1",
+	})
+	if stopped.Code != http.StatusAccepted {
+		t.Fatalf("stop status = %d, body=%s", stopped.Code, stopped.Body.String())
+	}
+	var stopResponse apitypes.ParticipantWorkStopResponse
+	if err := json.Unmarshal(stopped.Body.Bytes(), &stopResponse); err != nil {
+		t.Fatal(err)
+	}
+	if !stopResponse.Accepted || stopResponse.LeaseID != leaseID || stopResponse.State != "stop_requested" {
+		t.Fatalf("stop response = %#v", stopResponse)
+	}
+
+	renewed := performParticipantWorkRequest(t, handler, http.MethodPut, leasePath, map[string]any{
+		"room_id":    "room-1",
+		"request_id": "message-1",
+		"kind":       "agent_turn",
+	})
+	if renewed.Code != http.StatusOK || !bytes.Contains(renewed.Body.Bytes(), []byte(`"stop_requested_at"`)) {
+		t.Fatalf("renew after stop status=%d body=%s", renewed.Code, renewed.Body.String())
+	}
+	released := performParticipantWorkRequest(t, handler, http.MethodDelete, leasePath, nil)
+	if released.Code != http.StatusNoContent || registry.ActiveCount("room-1", "worker") != 0 {
+		t.Fatalf("release status=%d active=%d", released.Code, registry.ActiveCount("room-1", "worker"))
+	}
+	late := performParticipantWorkRequest(t, handler, http.MethodPatch, leasePath, map[string]any{
+		"capabilities": []string{"thinking_status_v1", "turn_stop_v1", "work_stage_v1"},
+		"sequence":     2,
+		"phase":        "working",
+	})
+	if late.Code != http.StatusGone {
+		t.Fatalf("late patch status = %d, body=%s", late.Code, late.Body.String())
+	}
+}
+
+func TestParticipantWorkStatusValidation(t *testing.T) {
+	handler, _ := newParticipantWorkTestHandler(t, true)
+	leaseID := worklease.NewID()
+	path := "/api/v1/channels/csgclaw/participants/worker/work-leases/" + leaseID
+	performParticipantWorkRequest(t, handler, http.MethodPut, path, map[string]any{
+		"room_id": "room-1", "request_id": "message-1", "kind": "agent_turn",
+	})
+	unknown := httptest.NewRequest(
+		http.MethodPatch,
+		path,
+		bytes.NewBufferString(`{"capabilities":["thinking_status_v1"],"sequence":1,"phase":"working","extra":true}`),
+	)
+	recorder := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(recorder, unknown)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unknown field status = %d", recorder.Code)
+	}
+	emptyThinking := performParticipantWorkRequest(t, handler, http.MethodPatch, path, map[string]any{
+		"capabilities": []string{"thinking_status_v1", "turn_stop_v1", "work_stage_v1"},
+		"sequence":     1,
+		"phase":        "thinking",
+		"stage":        "thinking",
+		"thinking": map[string]any{
+			"format":    "plain_text",
+			"text":      "  ",
+			"truncated": false,
+		},
+	})
+	if emptyThinking.Code != http.StatusBadRequest {
+		t.Fatalf("empty thinking status = %d, body=%s", emptyThinking.Code, emptyThinking.Body.String())
+	}
+}
+
 func TestParticipantWorkEventsMergeWithIMEvents(t *testing.T) {
 	imBus := im.NewBus()
 	workBus := worklease.NewBus()
@@ -198,6 +310,57 @@ func TestParticipantWorkEventsMergeWithIMEvents(t *testing.T) {
 	}
 }
 
+func TestParticipantWorkStopControlMergesWithParticipantEvents(t *testing.T) {
+	handler, _ := newParticipantWorkTestHandler(t, true)
+	leaseID := worklease.NewID()
+	leasePath := "/api/v1/channels/csgclaw/participants/worker/work-leases/" + leaseID
+	performParticipantWorkRequest(t, handler, http.MethodPut, leasePath, map[string]any{
+		"room_id": "room-1", "request_id": "message-1", "kind": "agent_turn",
+	})
+	performParticipantWorkRequest(t, handler, http.MethodPatch, leasePath, map[string]any{
+		"capabilities": []string{"thinking_status_v1", "turn_stop_v1"},
+		"sequence":     1,
+		"phase":        "working",
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/channels/csgclaw/participants/worker/events",
+		nil,
+	).WithContext(ctx)
+	writer := &participantWorkSSEWriter{header: make(http.Header), flushed: make(chan struct{}, 4)}
+	done := make(chan struct{})
+	go func() {
+		handler.Routes().ServeHTTP(writer, request)
+		close(done)
+	}()
+	waitForParticipantWorkFlush(t, writer.flushed)
+
+	stop := performParticipantWorkRequest(
+		t,
+		handler,
+		http.MethodPost,
+		"/api/v1/channels/csgclaw/participants/worker/work:stop",
+		map[string]any{"room_id": "room-1", "lease_id": leaseID, "request_id": "message-1"},
+	)
+	if stop.Code != http.StatusAccepted {
+		t.Fatalf("stop status = %d, body=%s", stop.Code, stop.Body.String())
+	}
+	waitForParticipantWorkFlush(t, writer.flushed)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("participant SSE handler did not stop")
+	}
+	body := writer.body.String()
+	if !strings.Contains(body, "event: participant.work.stop_requested") ||
+		!strings.Contains(body, `"lease_id":"`+leaseID+`"`) {
+		t.Fatalf("participant control SSE body = %s", body)
+	}
+}
+
 func newParticipantWorkTestHandler(t *testing.T, noAuth bool) (*Handler, *worklease.Registry) {
 	t.Helper()
 	imService := im.NewServiceFromBootstrap(im.Bootstrap{
@@ -216,10 +379,26 @@ func newParticipantWorkTestHandler(t *testing.T, noAuth bool) (*Handler, *workle
 		LifecycleStatus: participant.LifecycleStatusActive,
 	}}))
 	bus := worklease.NewBus()
-	registry := worklease.NewRegistry(participantService, imService, bus, worklease.WithEpoch("epoch-api-test"))
-	handler := NewHandlerWithAuth(nil, imService, im.NewBus(), nil, nil, nil, "secret", noAuth)
+	controlBus := worklease.NewControlBus()
+	registry := worklease.NewRegistry(
+		participantService,
+		imService,
+		bus,
+		worklease.WithEpoch("epoch-api-test"),
+		worklease.WithControlBus(controlBus),
+	)
+	handler := NewHandlerWithAuth(
+		nil,
+		imService,
+		im.NewBus(),
+		im.NewParticipantBridge("secret"),
+		nil,
+		nil,
+		"secret",
+		noAuth,
+	)
 	handler.SetParticipantService(participantService)
-	handler.SetParticipantWorkService(registry, bus)
+	handler.SetParticipantWorkService(registry, bus, controlBus)
 	return handler, registry
 }
 

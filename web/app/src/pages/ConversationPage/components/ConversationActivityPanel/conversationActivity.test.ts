@@ -221,7 +221,31 @@ describe("conversation activity model", () => {
       entries,
     );
 
-    expect(working?.activity).toEqual({ action: "thinking" });
+    expect(working?.activity).toEqual({ action: "preparing_reply" });
+  });
+
+  it("uses explicit work stages for model waits and final generation", () => {
+    const working = conversationWorkingParticipantsWithActivity(
+      [
+        { id: "u-dev", name: "prepare", workStage: "preparing_reply" },
+        { id: "u-dev", name: "reason", thinkingText: "checking", workStage: "thinking" },
+        { id: "u-dev", name: "empty-reason", thinkingText: "", workStage: "thinking" },
+        { id: "u-dev", name: "tool-result", workStage: "processing_tool_result" },
+        { id: "u-dev", name: "final", workStage: "generating_reply" },
+        { id: "u-dev", name: "tool", workStage: "running_tool" },
+      ],
+      [],
+      [],
+    );
+
+    expect(working.map((participant) => participant.activity?.action)).toEqual([
+      "preparing_reply",
+      "thinking",
+      "preparing_reply",
+      "processing_tool_result",
+      "generating_reply",
+      "using_tool",
+    ]);
   });
 
   it("ignores previous replies for legacy work inferred from a newer prompt", () => {
@@ -246,7 +270,7 @@ describe("conversation activity model", () => {
       entries,
     );
 
-    expect(beforeReply?.activity).toEqual({ action: "thinking" });
+    expect(beforeReply?.activity).toEqual({ action: "preparing_reply" });
     expect(afterReply?.activity).toMatchObject({ action: "replying", summary: "Current answer" });
   });
 

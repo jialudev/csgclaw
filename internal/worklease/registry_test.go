@@ -3,6 +3,7 @@ package worklease
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -170,6 +171,156 @@ func TestRegistryConstructionUsesNewEpoch(t *testing.T) {
 	}
 }
 
+func TestRegistryStatusAndTurnStopLifecycle(t *testing.T) {
+	now := time.Date(2026, 7, 20, 3, 0, 0, 0, time.UTC)
+	registry, events := newTestRegistry(t, &now)
+	controls, cancelControls := registry.controlBus.Subscribe("pt-worker")
+	t.Cleanup(cancelControls)
+	lease := testLease(NewID())
+
+	started, err := registry.StartOrRenew(context.Background(), lease)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStarted, 1)
+	statusRequest := apitypes.ParticipantWorkStatusPatchRequest{
+		Capabilities: []string{
+			apitypes.ParticipantWorkCapabilityThinkingStatusV1,
+			apitypes.ParticipantWorkCapabilityTurnStopV1,
+			apitypes.ParticipantWorkCapabilityStageV1,
+		},
+		Sequence: 1,
+		Phase:    apitypes.ParticipantWorkPhaseThinking,
+		Stage:    apitypes.ParticipantWorkStageThinking,
+		Thinking: &apitypes.ParticipantThinkingStatus{
+			Format: apitypes.ParticipantThinkingFormatPlainText,
+			Text:   "checking configuration",
+		},
+	}
+	status, accepted, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, statusRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !accepted || status.Revision != 2 || !status.ExpiresAt.Equal(started.ExpiresAt) {
+		t.Fatalf("status update = %#v, accepted=%v", status, accepted)
+	}
+	if status.Status == nil || status.Status.Stage != apitypes.ParticipantWorkStageThinking ||
+		status.Status.Thinking == nil || status.Status.Thinking.Text != "checking configuration" {
+		t.Fatalf("thinking status = %#v", status.Status)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStatusUpdated, 2)
+
+	if _, accepted, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, statusRequest); err != nil || accepted {
+		t.Fatalf("stale status accepted=%v err=%v", accepted, err)
+	}
+	assertNoWorkEvent(t, events)
+
+	now = now.Add(time.Second)
+	stop, err := registry.RequestStop(context.Background(), "worker", apitypes.ParticipantWorkStopRequest{
+		RoomID:    lease.RoomID,
+		LeaseID:   lease.LeaseID,
+		RequestID: lease.RequestID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stop.Accepted || stop.State != "stop_requested" || !stop.RequestedAt.Equal(now) {
+		t.Fatalf("stop response = %#v", stop)
+	}
+	stopping := assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopRequested, 3)
+	if stopping.StopRequestedAt == nil || !stopping.StopRequestedAt.Equal(now) {
+		t.Fatalf("stop update = %#v", stopping)
+	}
+	select {
+	case control := <-controls:
+		if control.LeaseID != lease.LeaseID || control.RequestID != lease.RequestID {
+			t.Fatalf("control = %#v", control)
+		}
+	default:
+		t.Fatal("missing stop control")
+	}
+
+	repeated, err := registry.RequestStop(context.Background(), "worker", apitypes.ParticipantWorkStopRequest{
+		RoomID:    lease.RoomID,
+		LeaseID:   lease.LeaseID,
+		RequestID: lease.RequestID,
+	})
+	if err != nil || !repeated.RequestedAt.Equal(stop.RequestedAt) {
+		t.Fatalf("repeated stop = %#v, err=%v", repeated, err)
+	}
+	assertNoWorkEvent(t, events)
+
+	statusRequest.Sequence = 2
+	statusRequest.Thinking.Text = "must remain frozen"
+	frozen, accepted, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, statusRequest)
+	if err != nil || !accepted {
+		t.Fatalf("status after stop accepted=%v err=%v", accepted, err)
+	}
+	if frozen.Status == nil || frozen.Status.Thinking == nil || frozen.Status.Thinking.Text != "checking configuration" {
+		t.Fatalf("frozen status = %#v", frozen.Status)
+	}
+	assertNoWorkEvent(t, events)
+
+	if err := registry.Stop(context.Background(), "worker", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopped, 4)
+	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, statusRequest); !errors.Is(err, ErrClosed) {
+		t.Fatalf("late status error = %v, want closed", err)
+	}
+	if _, err := registry.RequestStop(context.Background(), "worker", apitypes.ParticipantWorkStopRequest{
+		RoomID: lease.RoomID, LeaseID: lease.LeaseID, RequestID: lease.RequestID,
+	}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("late stop error = %v, want closed", err)
+	}
+}
+
+func TestRegistryRejectsInvalidStatusAndStopMetadata(t *testing.T) {
+	now := time.Date(2026, 7, 20, 3, 0, 0, 0, time.UTC)
+	registry, events := newTestRegistry(t, &now)
+	lease := testLease(NewID())
+	if _, err := registry.StartOrRenew(context.Background(), lease); err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStarted, 1)
+
+	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkStatusPatchRequest{
+		Capabilities: []string{apitypes.ParticipantWorkCapabilityThinkingStatusV1},
+		Sequence:     1,
+		Phase:        apitypes.ParticipantWorkPhaseThinking,
+		Thinking: &apitypes.ParticipantThinkingStatus{
+			Format: apitypes.ParticipantThinkingFormatPlainText,
+			Text:   strings.Repeat("x", MaxThinkingBytes+1),
+		},
+	}); !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("oversized status error = %v", err)
+	}
+	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkStatusPatchRequest{
+		Capabilities: []string{apitypes.ParticipantWorkCapabilityThinkingStatusV1},
+		Sequence:     1,
+		Phase:        apitypes.ParticipantWorkPhaseThinking,
+		Stage:        apitypes.ParticipantWorkStagePreparingReply,
+	}); !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("stage without capability error = %v", err)
+	}
+	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkStatusPatchRequest{
+		Capabilities: []string{
+			apitypes.ParticipantWorkCapabilityThinkingStatusV1,
+			apitypes.ParticipantWorkCapabilityStageV1,
+		},
+		Sequence: 1,
+		Phase:    apitypes.ParticipantWorkPhaseWorking,
+		Stage:    apitypes.ParticipantWorkStageProcessingToolResult,
+	}); !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("stage with incompatible phase error = %v", err)
+	}
+	if _, err := registry.RequestStop(context.Background(), "worker", apitypes.ParticipantWorkStopRequest{
+		RoomID: lease.RoomID, LeaseID: lease.LeaseID, RequestID: lease.RequestID,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stop without capability error = %v", err)
+	}
+}
+
 func newTestRegistry(t *testing.T, now *time.Time) (*Registry, <-chan Event) {
 	t.Helper()
 	imService := im.NewServiceFromBootstrap(im.Bootstrap{
@@ -188,9 +339,17 @@ func newTestRegistry(t *testing.T, now *time.Time) (*Registry, <-chan Event) {
 		LifecycleStatus: participant.LifecycleStatusActive,
 	}}))
 	bus := NewBus()
+	controlBus := NewControlBus()
 	events, cancel := bus.Subscribe()
 	t.Cleanup(cancel)
-	return NewRegistry(participantService, imService, bus, WithClock(func() time.Time { return *now }), WithEpoch("epoch-test")), events
+	return NewRegistry(
+		participantService,
+		imService,
+		bus,
+		WithClock(func() time.Time { return *now }),
+		WithEpoch("epoch-test"),
+		WithControlBus(controlBus),
+	), events
 }
 
 func testLease(id string) ParticipantWorkLease {

@@ -63,7 +63,7 @@ Sandbox runtimes use these fixed default images:
 
 | Runtime | Fixed image |
 |---|---|
-| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260717.27-csgclaw` |
+| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260722.1-csgclaw` |
 | PicoClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.6.10` |
 
 The OpenClaw ref is stored in its builtin `agent.toml`. PicoClaw no longer has a builtin template, so its ref is maintained as a runtime default. CSGClaw does not generate these image tags or build the runtime images in CI.

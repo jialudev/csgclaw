@@ -1587,6 +1587,33 @@ func testProfile() agentruntime.Profile {
 	}
 }
 
+func TestAppServerParamsMapOffToCodexNone(t *testing.T) {
+	spec := testAppServerSessionSpec(t.TempDir())
+	spec.Profile.ReasoningEffort = "off"
+
+	threadConfig := appServerThreadStartParams(spec)["config"].(map[string]any)
+	if got, want := threadConfig["model_reasoning_effort"], "none"; got != want {
+		t.Fatalf("model_reasoning_effort = %v, want %v", got, want)
+	}
+	turn := appServerTurnStartParams(spec, "thread-1", "hello")
+	if got, want := turn["effort"], "none"; got != want {
+		t.Fatalf("turn effort = %v, want %v", got, want)
+	}
+}
+
+func TestAppServerParamsOmitReasoningForModelDefault(t *testing.T) {
+	spec := testAppServerSessionSpec(t.TempDir())
+	spec.Profile.ReasoningEffort = "auto"
+
+	if config, ok := appServerThreadStartParams(spec)["config"]; ok {
+		t.Fatalf("thread config = %v, want omitted", config)
+	}
+	turn := appServerTurnStartParams(spec, "thread-1", "hello")
+	if effort, ok := turn["effort"]; ok {
+		t.Fatalf("turn effort = %v, want omitted", effort)
+	}
+}
+
 func waitForAppServerPending(t *testing.T, client *appServerClient, want int) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)

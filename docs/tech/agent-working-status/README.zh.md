@@ -64,6 +64,7 @@ OpenClaw 的上报逻辑位于 `openclaw-csgclaw-extension`。入站消息通过
 - 正常回复、可见的失败回复和 abort 清理全部结束后，再释放租约。
 - 首次上报和续租不会阻塞回复；最终释放会等待清理请求结束。
 - 上报失败只记录日志，不会让 Agent 回复失败。
+- Runtime 通过工作状态阶段区分模型等待、真实 reasoning、工具执行、工具结果处理和正文生成；旧服务端不支持阶段字段时会自动降级到原有状态格式。
 
 当前内置 worker 模板使用 `20260717.27-csgclaw`，已经包含基于 reply dispatch 的实现。
 
@@ -73,6 +74,7 @@ OpenClaw 的上报逻辑位于 `openclaw-csgclaw-extension`。入站消息通过
 
 ```http
 PUT    /api/v1/channels/csgclaw/participants/{participant_id}/work-leases/{lease_id}
+PATCH  /api/v1/channels/csgclaw/participants/{participant_id}/work-leases/{lease_id}
 DELETE /api/v1/channels/csgclaw/participants/{participant_id}/work-leases/{lease_id}
 ```
 
@@ -89,6 +91,18 @@ DELETE /api/v1/channels/csgclaw/participants/{participant_id}/work-leases/{lease
 ```
 
 `ttl_seconds` 可省略，默认是 15 秒；服务端会把显式值限制在 5～60 秒。对同一个 `lease_id` 续租时，participant、房间和请求等元数据必须保持一致。
+
+`PATCH` 上报单调递增的状态序号和可选阶段。阶段只来自 Runtime 可验证的事件：
+
+| 阶段 | 页面文案 | 触发事件 |
+|---|---|---|
+| `preparing_reply` | 正在准备回复 | 租约创建或新一轮模型输出开始，但还没有 reasoning/正文 |
+| `thinking` | 正在思考 | 收到非空 reasoning stream；空回调继续保持“正在准备回复” |
+| `running_tool` | 正在执行/调用工具 | 工具或 work item 开始 |
+| `processing_tool_result` | 正在处理工具结果 | 工具结果或终态 item 到达，模型继续处理 |
+| `generating_reply` | 正在生成回复 | 收到非空 final partial reply |
+
+阶段通过 `work_stage_v1` capability 协商；`thinking` 正文仍通过 `thinking_status_v1` 上报。显式 `thinking` 阶段必须同时携带非空正文，最后一段正文会保留到工具执行或最终回复开始。服务端保留原来的 `working/thinking` phase，供旧 Runtime 和旧 Web 兼容使用。
 
 ## 服务端如何避免脏状态
 

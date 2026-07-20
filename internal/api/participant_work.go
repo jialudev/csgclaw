@@ -14,6 +14,8 @@ import (
 	"csgclaw/internal/worklease"
 )
 
+const participantWorkStatusBodyLimit = 32 * 1024
+
 func (h *Handler) putParticipantWorkLease(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(chi.URLParam(r, "channel")) != "csgclaw" {
 		http.NotFound(w, r)
@@ -76,6 +78,94 @@ func (h *Handler) putParticipantWorkLease(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, update)
 }
 
+func (h *Handler) patchParticipantWorkLease(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(chi.URLParam(r, "channel")) != "csgclaw" {
+		http.NotFound(w, r)
+		return
+	}
+	if !h.validateServerAccessToken(r.Header.Get("Authorization")) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	participantID := strings.TrimSpace(chi.URLParam(r, "id"))
+	leaseID := strings.TrimSpace(chi.URLParam(r, "lease_id"))
+	if participantID == "" || !worklease.ValidID(leaseID) {
+		http.Error(w, "invalid participant or lease id", http.StatusBadRequest)
+		return
+	}
+	controller, ok := h.participantWork.(worklease.ParticipantWorkController)
+	if !ok {
+		http.Error(w, "participant work leases are not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, participantWorkStatusBodyLimit)
+	var request apitypes.ParticipantWorkStatusPatchRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	update, accepted, err := controller.UpdateStatus(r.Context(), participantID, leaseID, request)
+	if err != nil {
+		h.writeParticipantWorkError(w, err)
+		return
+	}
+	if !accepted {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, http.StatusOK, update)
+}
+
+func (h *Handler) stopParticipantWork(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(chi.URLParam(r, "channel")) != "csgclaw" {
+		http.NotFound(w, r)
+		return
+	}
+	participantID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if participantID == "" {
+		http.Error(w, "invalid participant id", http.StatusBadRequest)
+		return
+	}
+	controller, ok := h.participantWork.(worklease.ParticipantWorkController)
+	if !ok || h.workControlBus == nil {
+		http.Error(w, "participant work controls are not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, participantWorkStatusBodyLimit)
+	var request apitypes.ParticipantWorkStopRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	request.RoomID = strings.TrimSpace(request.RoomID)
+	request.LeaseID = strings.TrimSpace(request.LeaseID)
+	request.RequestID = strings.TrimSpace(request.RequestID)
+	if request.RoomID == "" || request.RequestID == "" || !worklease.ValidID(request.LeaseID) {
+		http.Error(w, "room_id, request_id, and a valid lease_id are required", http.StatusBadRequest)
+		return
+	}
+	response, err := controller.RequestStop(r.Context(), participantID, request)
+	if err != nil {
+		h.writeParticipantWorkError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, response)
+}
+
 func (h *Handler) deleteParticipantWorkLease(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(chi.URLParam(r, "channel")) != "csgclaw" {
 		http.NotFound(w, r)
@@ -109,10 +199,17 @@ func (h *Handler) writeParticipantWorkError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, worklease.ErrParticipantNotFound), errors.Is(err, worklease.ErrRoomNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, worklease.ErrLeaseNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, worklease.ErrNotRoomMember):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, worklease.ErrConflict):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, worklease.ErrInvalidStatus):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, worklease.ErrRateLimited):
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, err.Error(), http.StatusTooManyRequests)
 	case errors.Is(err, worklease.ErrClosed):
 		epoch := ""
 		if source, ok := h.participantWork.(interface{ Epoch() string }); ok {

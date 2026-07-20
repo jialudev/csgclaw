@@ -17,6 +17,7 @@ import (
 	"csgclaw/internal/im"
 	"csgclaw/internal/participant"
 	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/worklease"
 )
 
 const (
@@ -407,6 +408,12 @@ func (h *Handler) handleParticipantEventsStream(w http.ResponseWriter, r *http.R
 		cancel()
 		h.requeueBufferedParticipantEvents(participantID, events)
 	}()
+	var controls <-chan worklease.ControlEvent
+	var cancelControls func()
+	if h.workControlBus != nil {
+		controls, cancelControls = h.workControlBus.Subscribe(participantID)
+		defer cancelControls()
+	}
 	controller := http.NewResponseController(w)
 
 	if _, err := io.WriteString(w, ": connected\n\n"); err != nil {
@@ -429,13 +436,22 @@ func (h *Handler) handleParticipantEventsStream(w http.ResponseWriter, r *http.R
 			}
 		case evt, ok := <-events:
 			if !ok {
-				return
+				events = nil
+				continue
 			}
 			if err := writeParticipantSSEEvent(w, controller, flusher, evt); err != nil {
 				h.participantBridge.Requeue(participantID, evt)
 				return
 			}
 			h.participantBridge.Ack(participantID, evt.MessageID)
+		case control, ok := <-controls:
+			if !ok {
+				controls = nil
+				continue
+			}
+			if err := writeParticipantWorkControlSSEEvent(w, controller, flusher, control); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -451,6 +467,27 @@ func writeParticipantSSEEvent(w http.ResponseWriter, controller *http.ResponseCo
 		}
 	}
 	if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", data); err != nil {
+		return err
+	}
+	return flushParticipantSSE(controller, fallback)
+}
+
+func writeParticipantWorkControlSSEEvent(
+	w http.ResponseWriter,
+	controller *http.ResponseController,
+	fallback http.Flusher,
+	event worklease.ControlEvent,
+) error {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		w,
+		"event: %s\ndata: %s\n\n",
+		worklease.ControlEventTypeParticipantWorkStopRequested,
+		data,
+	); err != nil {
 		return err
 	}
 	return flushParticipantSSE(controller, fallback)
