@@ -48,6 +48,7 @@ type Handler struct {
 	csgclaw                    *csgclawchannel.Service
 	imBus                      *im.Bus
 	workBus                    *worklease.Bus
+	workControlBus             *worklease.ControlBus
 	participantWork            worklease.ParticipantWorkReporter
 	imProvisioner              *im.Provisioner
 	participantBridge          *im.ParticipantBridge
@@ -739,10 +740,17 @@ func (h *Handler) SetParticipantService(svc *participant.Service) {
 	}
 }
 
-func (h *Handler) SetParticipantWorkService(reporter worklease.ParticipantWorkReporter, bus *worklease.Bus) {
+func (h *Handler) SetParticipantWorkService(
+	reporter worklease.ParticipantWorkReporter,
+	bus *worklease.Bus,
+	controlBus ...*worklease.ControlBus,
+) {
 	if h != nil {
 		h.participantWork = reporter
 		h.workBus = bus
+		if len(controlBus) > 0 {
+			h.workControlBus = controlBus[0]
+		}
 	}
 }
 

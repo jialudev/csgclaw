@@ -61,6 +61,33 @@ export function activeParticipantWorkForRoom(
   return state.activeByRoom[String(roomID || "").trim()] ?? {};
 }
 
+export const activeWorkLeasesForRoom = activeParticipantWorkForRoom;
+
+export function workLeaseForRequest(
+  state: ParticipantWorkState,
+  roomIDValue: string | null | undefined,
+  participantIDValue: string | null | undefined,
+  requestIDValue: string | null | undefined,
+): ActiveParticipantWorkLease | null {
+  const roomID = String(roomIDValue || "").trim();
+  const participantID = String(participantIDValue || "").trim();
+  const requestID = String(requestIDValue || "").trim();
+  if (!roomID || !participantID || !requestID) {
+    return null;
+  }
+  const byParticipant = state.activeByRoom[roomID] ?? {};
+  for (const [candidateID, byLease] of Object.entries(byParticipant)) {
+    if (!localIdentitiesMatch(candidateID, participantID)) {
+      continue;
+    }
+    const match = Object.values(byLease).find((lease) => lease.request_id === requestID);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
 export function nextParticipantWorkDeadline(state: ParticipantWorkState): number | null {
   let next: number | null = null;
   Object.values(state.activeByRoom).forEach((byParticipant) => {
@@ -260,23 +287,76 @@ function normalizeWorkEvent(work: ParticipantWorkUpdate): ParticipantWorkUpdate 
     !requestID ||
     work?.kind !== "agent_turn" ||
     (work?.state !== "working" && work?.state !== "idle") ||
-    !["started", "renewed", "released", "expired"].includes(work?.reason) ||
+    !["started", "renewed", "status_updated", "stop_requested", "released", "stopped", "expired"].includes(
+      work?.reason,
+    ) ||
     !Number.isInteger(revision) ||
     revision <= 0 ||
     !Number.isFinite(expiresAt)
   ) {
     return null;
   }
+  const capabilities = Array.isArray(work.capabilities)
+    ? work.capabilities.filter(
+        (value): value is "thinking_status_v1" | "turn_stop_v1" =>
+          value === "thinking_status_v1" || value === "turn_stop_v1",
+      )
+    : undefined;
+  const status = normalizeParticipantWorkStatus(work.status);
+  if (work.status && !status) {
+    return null;
+  }
+  const stopRequestedAt = String(work.stop_requested_at || "").trim();
+  if (stopRequestedAt && !Number.isFinite(Date.parse(stopRequestedAt))) {
+    return null;
+  }
   return {
     ...work,
+    capabilities,
     lease_id: leaseID,
     participant_id: participantID,
     registry_epoch: registryEpoch,
     request_id: requestID,
     revision,
     room_id: roomID,
+    status,
+    stop_requested_at: stopRequestedAt || undefined,
     thread_root_id: String(work.thread_root_id || "").trim() || undefined,
     user_id: userID,
+  };
+}
+
+function normalizeParticipantWorkStatus(
+  status: ParticipantWorkUpdate["status"],
+): ParticipantWorkUpdate["status"] | undefined {
+  if (!status) {
+    return undefined;
+  }
+  const sequence = Number(status.sequence);
+  if (!Number.isInteger(sequence) || sequence <= 0 || (status.phase !== "working" && status.phase !== "thinking")) {
+    return undefined;
+  }
+  if (status.phase === "working") {
+    return { phase: "working", sequence };
+  }
+  if (!status.thinking) {
+    return { phase: "thinking", sequence };
+  }
+  if (
+    status.thinking.format !== "plain_text" ||
+    typeof status.thinking.text !== "string" ||
+    typeof status.thinking.truncated !== "boolean"
+  ) {
+    return undefined;
+  }
+  return {
+    phase: "thinking",
+    sequence,
+    thinking: {
+      format: "plain_text",
+      text: status.thinking.text,
+      truncated: status.thinking.truncated,
+    },
   };
 }
 

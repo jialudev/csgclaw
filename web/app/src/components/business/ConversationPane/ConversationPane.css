@@ -586,6 +586,23 @@
   min-width: 0;
 }
 
+.composer-working-turn {
+  width: 100%;
+  min-width: 0;
+}
+
+.composer-working-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.composer-working-turn.is-stopping {
+  opacity: 0.78;
+}
+
 .composer-working-item {
   display: grid;
   grid-template-columns: auto auto auto minmax(0, 1fr);
@@ -606,6 +623,53 @@
     inset 0 1px 0 color-mix(in oklab, var(--surface) 88%, transparent);
   font: inherit;
   text-align: left;
+}
+
+.composer-working-stop {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in oklab, var(--danger) 28%, var(--line));
+  border-radius: var(--radius-md);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 5%, var(--surface));
+  font: var(--text-xs-medium);
+  cursor: pointer;
+}
+
+.composer-working-stop:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 10%, var(--surface));
+}
+
+.composer-working-stop:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.composer-working-stop:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.composer-thinking-latest {
+  display: block;
+  overflow: hidden;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 360px;
+  padding: 3px 2px 3px 9px;
+  border-left: 1px solid color-mix(in oklab, var(--brand-400) 28%, var(--line));
+  color: var(--muted);
+  font: var(--text-xs-normal);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-working-error {
+  margin-top: 4px;
+  font: var(--text-xs-normal);
+  margin-left: 24px;
+  color: var(--danger);
 }
 
 button.composer-working-item {

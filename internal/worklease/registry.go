@@ -2,13 +2,12 @@ package worklease
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/im"
@@ -16,11 +15,14 @@ import (
 )
 
 const (
-	DefaultTTLSeconds = 15
-	MinTTLSeconds     = 5
-	MaxTTLSeconds     = 60
-	TombstoneTTL      = 70 * time.Second
-	JanitorInterval   = time.Second
+	DefaultTTLSeconds  = 15
+	MinTTLSeconds      = 5
+	MaxTTLSeconds      = 60
+	TombstoneTTL       = 70 * time.Second
+	JanitorInterval    = time.Second
+	MaxThinkingBytes   = 16 * 1024
+	StatusRateWindow   = time.Second
+	MaxStatusPerWindow = 10
 )
 
 var (
@@ -29,6 +31,9 @@ var (
 	ErrNotRoomMember       = errors.New("participant is not a room member")
 	ErrConflict            = errors.New("work lease metadata conflicts with the active lease")
 	ErrClosed              = errors.New("work lease is closed")
+	ErrLeaseNotFound       = errors.New("active work lease not found")
+	ErrInvalidStatus       = errors.New("invalid work lease status")
+	ErrRateLimited         = errors.New("work lease status update rate limit exceeded")
 	ErrUnavailable         = errors.New("work lease service is not configured")
 )
 
@@ -46,6 +51,12 @@ type ParticipantWorkLease struct {
 type ParticipantWorkReporter interface {
 	StartOrRenew(ctx context.Context, lease ParticipantWorkLease) (apitypes.ParticipantWorkUpdate, error)
 	Stop(ctx context.Context, participantID, leaseID string) error
+}
+
+type ParticipantWorkController interface {
+	ParticipantWorkReporter
+	UpdateStatus(ctx context.Context, participantID, leaseID string, request apitypes.ParticipantWorkStatusPatchRequest) (apitypes.ParticipantWorkUpdate, bool, error)
+	RequestStop(ctx context.Context, participantID string, request apitypes.ParticipantWorkStopRequest) (apitypes.ParticipantWorkStopResponse, error)
 }
 
 type ParticipantDirectory interface {
@@ -82,15 +93,21 @@ type leaseKey struct {
 }
 
 type activeLease struct {
-	participantID string
-	leaseID       string
-	userID        string
-	roomID        string
-	threadRootID  string
-	requestID     string
-	kind          string
-	revision      uint64
-	expiresAt     time.Time
+	participantID         string
+	leaseID               string
+	userID                string
+	roomID                string
+	threadRootID          string
+	requestID             string
+	kind                  string
+	revision              uint64
+	expiresAt             time.Time
+	capabilities          []string
+	status                *apitypes.ParticipantWorkStatus
+	statusSequence        uint64
+	stopRequestedAt       *time.Time
+	statusWindowStartedAt time.Time
+	statusWindowCount     int
 }
 
 type tombstone struct {
@@ -102,6 +119,7 @@ type Registry struct {
 	participants ParticipantDirectory
 	im           IMDirectory
 	bus          *Bus
+	controlBus   *ControlBus
 	epoch        string
 	now          func() time.Time
 
@@ -116,7 +134,7 @@ func NewRegistry(participants ParticipantDirectory, imDirectory IMDirectory, bus
 		participants:    participants,
 		im:              imDirectory,
 		bus:             bus,
-		epoch:           newUUID(),
+		epoch:           NewID(),
 		now:             time.Now,
 		activeByKey:     make(map[leaseKey]activeLease),
 		activeBySubject: make(map[string]map[string]map[string]struct{}),
@@ -128,6 +146,12 @@ func NewRegistry(participants ParticipantDirectory, imDirectory IMDirectory, bus
 		}
 	}
 	return registry
+}
+
+func WithControlBus(bus *ControlBus) Option {
+	return func(registry *Registry) {
+		registry.controlBus = bus
+	}
 }
 
 func (r *Registry) Epoch() string {
@@ -177,6 +201,147 @@ func (r *Registry) StartOrRenew(_ context.Context, request ParticipantWorkLease)
 	return update, nil
 }
 
+func (r *Registry) UpdateStatus(
+	_ context.Context,
+	participantID,
+	leaseID string,
+	request apitypes.ParticipantWorkStatusPatchRequest,
+) (apitypes.ParticipantWorkUpdate, bool, error) {
+	if r == nil {
+		return apitypes.ParticipantWorkUpdate{}, false, ErrUnavailable
+	}
+	participantID = r.canonicalParticipantID(participantID)
+	leaseID = strings.TrimSpace(leaseID)
+	if err := validateStatusPatch(request); err != nil {
+		return apitypes.ParticipantWorkUpdate{}, false, err
+	}
+	key := leaseKey{participantID: participantID, leaseID: leaseID}
+	now := r.now().UTC()
+
+	r.mu.Lock()
+	lease, ok := r.activeByKey[key]
+	if !ok {
+		_, closed := r.tombstones[key]
+		r.mu.Unlock()
+		if closed {
+			return apitypes.ParticipantWorkUpdate{}, false, ErrClosed
+		}
+		return apitypes.ParticipantWorkUpdate{}, false, ErrLeaseNotFound
+	}
+	if lease.stopRequestedAt != nil {
+		update := r.updateFor(lease, apitypes.ParticipantWorkStateWorking, apitypes.ParticipantWorkReasonStopRequested)
+		r.mu.Unlock()
+		return update, true, nil
+	}
+	if request.Sequence <= lease.statusSequence {
+		r.mu.Unlock()
+		return apitypes.ParticipantWorkUpdate{}, false, nil
+	}
+	if !capabilitiesExtend(lease.capabilities, request.Capabilities) {
+		r.mu.Unlock()
+		return apitypes.ParticipantWorkUpdate{}, false, ErrConflict
+	}
+	if lease.statusWindowStartedAt.IsZero() || now.Sub(lease.statusWindowStartedAt) >= StatusRateWindow {
+		lease.statusWindowStartedAt = now
+		lease.statusWindowCount = 0
+	}
+	if lease.statusWindowCount >= MaxStatusPerWindow {
+		r.mu.Unlock()
+		return apitypes.ParticipantWorkUpdate{}, false, ErrRateLimited
+	}
+	lease.statusWindowCount++
+	lease.capabilities = append([]string(nil), request.Capabilities...)
+	lease.statusSequence = request.Sequence
+	lease.status = &apitypes.ParticipantWorkStatus{
+		Sequence: request.Sequence,
+		Phase:    request.Phase,
+		Thinking: cloneThinking(request.Thinking),
+	}
+	lease.revision++
+	r.activeByKey[key] = lease
+	update := r.updateFor(lease, apitypes.ParticipantWorkStateWorking, apitypes.ParticipantWorkReasonStatusUpdated)
+	r.mu.Unlock()
+
+	r.publish(update)
+	return update, true, nil
+}
+
+func (r *Registry) RequestStop(
+	_ context.Context,
+	participantID string,
+	request apitypes.ParticipantWorkStopRequest,
+) (apitypes.ParticipantWorkStopResponse, error) {
+	if r == nil || r.participants == nil || r.im == nil {
+		return apitypes.ParticipantWorkStopResponse{}, ErrUnavailable
+	}
+	normalized, err := r.validate(ParticipantWorkLease{
+		ParticipantID: participantID,
+		LeaseID:       request.LeaseID,
+		RoomID:        request.RoomID,
+		RequestID:     request.RequestID,
+		Kind:          apitypes.ParticipantWorkKindAgentTurn,
+	})
+	if err != nil {
+		return apitypes.ParticipantWorkStopResponse{}, err
+	}
+	key := leaseKey{participantID: normalized.participantID, leaseID: strings.TrimSpace(request.LeaseID)}
+	now := r.now().UTC()
+
+	var workUpdate *apitypes.ParticipantWorkUpdate
+	r.mu.Lock()
+	lease, ok := r.activeByKey[key]
+	if !ok {
+		_, closed := r.tombstones[key]
+		r.mu.Unlock()
+		if closed {
+			return apitypes.ParticipantWorkStopResponse{}, ErrClosed
+		}
+		return apitypes.ParticipantWorkStopResponse{}, ErrLeaseNotFound
+	}
+	if lease.roomID != normalized.roomID || lease.requestID != normalized.requestID {
+		r.mu.Unlock()
+		return apitypes.ParticipantWorkStopResponse{}, ErrConflict
+	}
+	if !slices.Contains(lease.capabilities, apitypes.ParticipantWorkCapabilityTurnStopV1) {
+		r.mu.Unlock()
+		return apitypes.ParticipantWorkStopResponse{}, ErrConflict
+	}
+	if lease.stopRequestedAt == nil {
+		requestedAt := now
+		lease.stopRequestedAt = &requestedAt
+		lease.revision++
+		r.activeByKey[key] = lease
+		update := r.updateFor(lease, apitypes.ParticipantWorkStateWorking, apitypes.ParticipantWorkReasonStopRequested)
+		workUpdate = &update
+	}
+	requestedAt := *lease.stopRequestedAt
+	response := apitypes.ParticipantWorkStopResponse{
+		Accepted:      true,
+		RegistryEpoch: r.epoch,
+		ParticipantID: lease.participantID,
+		RoomID:        lease.roomID,
+		LeaseID:       lease.leaseID,
+		RequestID:     lease.requestID,
+		State:         "stop_requested",
+		RequestedAt:   requestedAt,
+	}
+	control := ControlEvent{
+		RegistryEpoch: r.epoch,
+		ParticipantID: lease.participantID,
+		RoomID:        lease.roomID,
+		LeaseID:       lease.leaseID,
+		RequestID:     lease.requestID,
+		RequestedAt:   requestedAt,
+	}
+	r.mu.Unlock()
+
+	if workUpdate != nil {
+		r.publish(*workUpdate)
+	}
+	r.controlBus.Publish(control)
+	return response, nil
+}
+
 func (r *Registry) Stop(_ context.Context, participantID, leaseID string) error {
 	if r == nil {
 		return ErrUnavailable
@@ -193,7 +358,11 @@ func (r *Registry) Stop(_ context.Context, participantID, leaseID string) error 
 		r.removeSubjectLocked(lease.roomID, lease.participantID, key.leaseID)
 		lease.revision++
 		r.tombstones[key] = tombstone{lastRevision: lease.revision, rejectUntil: now.Add(TombstoneTTL)}
-		event := r.updateFor(lease, apitypes.ParticipantWorkStateIdle, apitypes.ParticipantWorkReasonReleased)
+		reason := apitypes.ParticipantWorkReasonReleased
+		if lease.stopRequestedAt != nil {
+			reason = apitypes.ParticipantWorkReasonStopped
+		}
+		event := r.updateFor(lease, apitypes.ParticipantWorkStateIdle, reason)
 		update = &event
 	} else {
 		closed := r.tombstones[key]
@@ -337,20 +506,30 @@ func (r *Registry) removeSubjectLocked(roomID, participantID, leaseID string) {
 }
 
 func (r *Registry) updateFor(lease activeLease, state, reason string) apitypes.ParticipantWorkUpdate {
-	return apitypes.ParticipantWorkUpdate{
-		RegistryEpoch: r.epoch,
-		LeaseID:       lease.leaseID,
-		ParticipantID: lease.participantID,
-		UserID:        lease.userID,
-		RoomID:        lease.roomID,
-		ThreadRootID:  lease.threadRootID,
-		RequestID:     lease.requestID,
-		Kind:          lease.kind,
-		State:         state,
-		Reason:        reason,
-		Revision:      lease.revision,
-		ExpiresAt:     lease.expiresAt,
+	update := apitypes.ParticipantWorkUpdate{
+		RegistryEpoch:   r.epoch,
+		LeaseID:         lease.leaseID,
+		ParticipantID:   lease.participantID,
+		UserID:          lease.userID,
+		RoomID:          lease.roomID,
+		ThreadRootID:    lease.threadRootID,
+		RequestID:       lease.requestID,
+		Kind:            lease.kind,
+		State:           state,
+		Reason:          reason,
+		Revision:        lease.revision,
+		ExpiresAt:       lease.expiresAt,
+		Capabilities:    append([]string(nil), lease.capabilities...),
+		StopRequestedAt: cloneTime(lease.stopRequestedAt),
 	}
+	if lease.status != nil {
+		update.Status = &apitypes.ParticipantWorkStatus{
+			Sequence: lease.status.Sequence,
+			Phase:    lease.status.Phase,
+			Thinking: cloneThinking(lease.status.Thinking),
+		}
+	}
+	return update
 }
 
 func (r *Registry) publish(update apitypes.ParticipantWorkUpdate) {
@@ -389,17 +568,66 @@ func maxTime(left, right time.Time) time.Time {
 	return right
 }
 
-func NewID() string {
-	var value [16]byte
-	if _, err := rand.Read(value[:]); err != nil {
-		panic(fmt.Sprintf("generate work lease registry epoch: %v", err))
+func validateStatusPatch(request apitypes.ParticipantWorkStatusPatchRequest) error {
+	if request.Sequence == 0 {
+		return ErrInvalidStatus
 	}
-	value[6] = (value[6] & 0x0f) | 0x40
-	value[8] = (value[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
+	seen := make(map[string]struct{}, len(request.Capabilities))
+	for _, capability := range request.Capabilities {
+		if capability != apitypes.ParticipantWorkCapabilityThinkingStatusV1 &&
+			capability != apitypes.ParticipantWorkCapabilityTurnStopV1 {
+			return ErrInvalidStatus
+		}
+		if _, duplicate := seen[capability]; duplicate {
+			return ErrInvalidStatus
+		}
+		seen[capability] = struct{}{}
+	}
+	if request.Phase != apitypes.ParticipantWorkPhaseWorking &&
+		request.Phase != apitypes.ParticipantWorkPhaseThinking {
+		return ErrInvalidStatus
+	}
+	if request.Phase == apitypes.ParticipantWorkPhaseWorking {
+		if request.Thinking != nil {
+			return ErrInvalidStatus
+		}
+		return nil
+	}
+	if !slices.Contains(request.Capabilities, apitypes.ParticipantWorkCapabilityThinkingStatusV1) {
+		return ErrInvalidStatus
+	}
+	if request.Thinking == nil {
+		return nil
+	}
+	if request.Thinking.Format != apitypes.ParticipantThinkingFormatPlainText ||
+		!utf8.ValidString(request.Thinking.Text) ||
+		len([]byte(request.Thinking.Text)) > MaxThinkingBytes {
+		return ErrInvalidStatus
+	}
+	return nil
 }
 
-func newUUID() string {
-	return NewID()
+func capabilitiesExtend(current, next []string) bool {
+	for _, capability := range current {
+		if !slices.Contains(next, capability) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneThinking(source *apitypes.ParticipantThinkingStatus) *apitypes.ParticipantThinkingStatus {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
+}
+
+func cloneTime(source *time.Time) *time.Time {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
 }

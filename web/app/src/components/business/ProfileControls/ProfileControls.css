@@ -145,6 +145,16 @@
   overflow-wrap: anywhere;
 }
 
+.reasoning-controls-field {
+  min-width: 0;
+}
+
+.reasoning-controls-help {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .auth-status-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

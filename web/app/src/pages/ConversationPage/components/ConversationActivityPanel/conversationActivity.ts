@@ -224,6 +224,17 @@ export function conversationWorkingParticipantsWithActivity(
 ): ConversationWorkingParticipant[] {
   return participants
     .map((participant, originalIndex) => {
+      if (participant.thinkingText !== undefined || participant.stopping || participant.stopSending) {
+        return {
+          originalIndex,
+          participant: {
+            ...participant,
+            activity: {
+              action: ConversationWorkingActions.thinking,
+            },
+          },
+        };
+      }
       const agent = agents.find(
         (candidate) =>
           identityMatches(participant.id, candidate.identities) ||

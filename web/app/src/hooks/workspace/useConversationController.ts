@@ -206,6 +206,7 @@ export function useConversationController({
   messageActionFeedback,
   messageListActive = true,
   hasObservedWorkLease,
+  stopWorkingTurn,
   workingParticipantsForRoom,
 }: UseConversationControllerArgs) {
   const [draftsByConversationId, setDraftsByConversationId] = useState<DraftsByConversationId>({});
@@ -1329,6 +1330,7 @@ export function useConversationController({
       t,
       theme,
       workingParticipants,
+      onStopWorkingTurn: stopWorkingTurn,
       selectedMessageCount,
       logAgent,
       conversationMembers: activeConversationMembers,

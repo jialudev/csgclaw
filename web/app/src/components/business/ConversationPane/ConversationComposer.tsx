@@ -62,6 +62,7 @@ export type ConversationComposerProps = {
   onProviderLogin: (provider: string) => VoidOrPromise;
   onSaveConnectorConfig?: (draft: ConnectorConfigDraft) => VoidOrPromise;
   onSendMessage: () => VoidOrPromise;
+  onStopWorkingTurn?: (participant: ConversationWorkingParticipant) => VoidOrPromise;
   onRemoveAttachment?: (id: string) => void;
   onSyncComposer: () => void;
   onWorkingAction?: (participant?: ConversationWorkingParticipant) => void;
@@ -110,6 +111,7 @@ export const ConversationComposer = memo(function ConversationComposer({
   onProviderLogin,
   onRemoveAttachment = () => {},
   onSendMessage,
+  onStopWorkingTurn,
   onSyncComposer,
   onWorkingAction,
 }: ConversationComposerProps) {
@@ -151,7 +153,12 @@ export const ConversationComposer = memo(function ConversationComposer({
         />
       ) : null}
       {workingParticipants.length > 0 ? (
-        <ComposerWorkingIndicator participants={workingParticipants} t={t} onAction={onWorkingAction} />
+        <ComposerWorkingIndicator
+          participants={workingParticipants}
+          t={t}
+          onAction={onWorkingAction}
+          onStop={onStopWorkingTurn}
+        />
       ) : null}
       <div
         className="composer-box"
@@ -261,58 +268,117 @@ function ComposerWorkingIndicator({
   participants,
   t,
   onAction,
+  onStop,
 }: {
   participants: readonly ConversationWorkingParticipant[];
   t: TranslateFn;
   onAction?: (participant?: ConversationWorkingParticipant) => void;
+  onStop?: (participant: ConversationWorkingParticipant) => VoidOrPromise;
 }) {
   return (
     <div className="composer-working">
       <div className="composer-working-status" role="status" aria-live="polite">
-        {participants.map((participant) => {
-          const action = participant.activity?.action || ConversationWorkingActions.thinking;
-          const actionLabel = workingActionLabel(action, t);
-          const summary = participant.activity?.summary?.trim() || "";
-          const content = (
-            <>
-              <span className="composer-working-dots" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-              <strong className="composer-working-name">{participant.name}</strong>
-              <span className="composer-working-verb">{actionLabel}</span>
-              {summary ? <span className="composer-working-summary">{summary}</span> : null}
-            </>
-          );
-          return onAction ? (
-            <button
-              key={participant.id || participant.name}
-              type="button"
-              className="composer-working-item"
-              data-working-action={action}
-              aria-label={t("conversationWorkingOpenActivity", {
-                detail: summary || actionLabel,
-                name: participant.name,
-              })}
-              title={summary || actionLabel}
-              onClick={() => onAction(participant)}
-            >
-              {content}
-            </button>
-          ) : (
-            <div
-              key={participant.id || participant.name}
-              className="composer-working-item"
-              data-working-action={action}
-            >
-              {content}
-            </div>
-          );
-        })}
+        {participants.map((participant) => (
+          <ComposerWorkingTurn
+            key={participant.leaseID || participant.id || participant.name}
+            participant={participant}
+            t={t}
+            onAction={onAction}
+            onStop={onStop}
+          />
+        ))}
       </div>
     </div>
   );
+}
+
+function ComposerWorkingTurn({
+  participant,
+  t,
+  onAction,
+  onStop,
+}: {
+  participant: ConversationWorkingParticipant;
+  t: TranslateFn;
+  onAction?: (participant?: ConversationWorkingParticipant) => void;
+  onStop?: (participant: ConversationWorkingParticipant) => VoidOrPromise;
+}) {
+  const action = participant.activity?.action || ConversationWorkingActions.thinking;
+  const actionLabel = participant.stopping
+    ? t("conversationWorkingStopping")
+    : participant.stopSending
+      ? t("conversationWorkingStopSending")
+      : workingActionLabel(action, t);
+  const summary = participant.activity?.summary?.trim() || "";
+  const thinkingText = participant.thinkingText;
+  const thinkingFallback = t("conversationWorkingThinking");
+  const thinkingLatestLine = thinkingText === undefined ? "" : latestThinkingLine(thinkingText, thinkingFallback);
+  const content = (
+    <>
+      <span className="composer-working-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      <strong className="composer-working-name">{participant.name}</strong>
+      <span className="composer-working-verb">{actionLabel}</span>
+      {summary ? <span className="composer-working-summary">{summary}</span> : null}
+    </>
+  );
+
+  return (
+    <div className={`composer-working-turn${participant.stopping ? " is-stopping" : ""}`}>
+      <div className="composer-working-row">
+        {onAction ? (
+          <button
+            type="button"
+            className="composer-working-item"
+            data-working-action={action}
+            aria-label={t("conversationWorkingOpenActivity", {
+              detail: summary || actionLabel,
+              name: participant.name,
+            })}
+            title={summary || actionLabel}
+            onClick={() => onAction(participant)}
+          >
+            {content}
+          </button>
+        ) : (
+          <div className="composer-working-item" data-working-action={action}>
+            {content}
+          </div>
+        )}
+        {participant.canStop && onStop ? (
+          <button
+            type="button"
+            className="composer-working-stop"
+            aria-label={t("conversationWorkingStopAria", { name: participant.name })}
+            disabled={participant.stopSending || participant.stopping}
+            onClick={() => void onStop(participant)}
+          >
+            {participant.stopping
+              ? t("conversationWorkingStopping")
+              : participant.stopSending
+                ? t("conversationWorkingStopSending")
+                : t("conversationWorkingStop")}
+          </button>
+        ) : null}
+        {thinkingText !== undefined ? <span className="composer-thinking-latest">{thinkingLatestLine}</span> : null}
+      </div>
+      {participant.stopError ? <div className="composer-working-error">{participant.stopError}</div> : null}
+    </div>
+  );
+}
+
+function latestThinkingLine(text: string, fallback: string): string {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index].trim();
+    if (line) {
+      return line;
+    }
+  }
+  return fallback;
 }
 
 function workingActionLabel(action: ConversationWorkingAction, t: TranslateFn): string {

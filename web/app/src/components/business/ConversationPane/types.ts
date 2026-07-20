@@ -43,9 +43,18 @@ export type ConversationWorkingParticipant = {
     updatedAt?: string;
   };
   activityAfter?: string;
+  canStop?: boolean;
   id: string;
+  leaseID?: string;
   name: string;
+  participantID?: string;
   requestID?: string;
+  roomID?: string;
+  stopError?: string;
+  stopSending?: boolean;
+  stopping?: boolean;
+  thinkingText?: string;
+  thinkingTruncated?: boolean;
 };
 
 export type ConversationPaneProps = {
@@ -111,6 +120,7 @@ export type ConversationPaneProps = {
   onProviderLogin: (provider: string) => VoidOrPromise;
   onSaveConnectorConfig?: (draft: ConnectorConfigDraft) => VoidOrPromise;
   onSendMessage: () => VoidOrPromise;
+  onStopWorkingTurn?: (participant: ConversationWorkingParticipant) => VoidOrPromise;
   onSendThreadReply: () => VoidOrPromise;
   onSetThreadSlashIndex?: (index: number) => void;
   onSyncComposer: () => void;

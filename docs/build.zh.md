@@ -60,7 +60,7 @@ Manager 与 Worker 模板保留不同的内置 workspace，但同一种 runtime 
 
 | Runtime | 固定镜像 |
 |---|---|
-| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260717.27-csgclaw` |
+| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260721.3-csgclaw` |
 | PicoClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.6.10` |
 
 固定引用直接写在内置 `agent.toml` 中。CSGClaw 不负责生成这些镜像 tag，也不在 CI 中构建这些运行时镜像。

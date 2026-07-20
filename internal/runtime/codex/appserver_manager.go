@@ -16,6 +16,7 @@ import (
 
 	"csgclaw/internal/activity"
 	"csgclaw/internal/codexcli"
+	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 )
 
@@ -514,7 +515,7 @@ func appServerTurnStartParams(spec SessionSpec, threadID string, prompt string) 
 			{"type": "text", "text": prompt},
 		},
 	}
-	if effort := strings.TrimSpace(spec.Profile.ReasoningEffort); effort != "" {
+	if effort := config.NormalizeReasoningEffort(spec.Profile.ReasoningEffort); !config.UsesModelReasoningDefault(effort) {
 		params["effort"] = effort
 	}
 	return params
@@ -648,8 +649,8 @@ func appServerRequestID(raw json.RawMessage) string {
 }
 
 func appServerReasoningConfig(effort string) map[string]any {
-	effort = strings.TrimSpace(effort)
-	if effort == "" {
+	effort = config.NormalizeReasoningEffort(effort)
+	if config.UsesModelReasoningDefault(effort) {
 		return nil
 	}
 	return map[string]any{"model_reasoning_effort": effort}

@@ -8,10 +8,21 @@ const (
 	ParticipantWorkStateWorking = "working"
 	ParticipantWorkStateIdle    = "idle"
 
-	ParticipantWorkReasonStarted  = "started"
-	ParticipantWorkReasonRenewed  = "renewed"
-	ParticipantWorkReasonReleased = "released"
-	ParticipantWorkReasonExpired  = "expired"
+	ParticipantWorkReasonStarted       = "started"
+	ParticipantWorkReasonRenewed       = "renewed"
+	ParticipantWorkReasonStatusUpdated = "status_updated"
+	ParticipantWorkReasonStopRequested = "stop_requested"
+	ParticipantWorkReasonReleased      = "released"
+	ParticipantWorkReasonStopped       = "stopped"
+	ParticipantWorkReasonExpired       = "expired"
+
+	ParticipantWorkCapabilityThinkingStatusV1 = "thinking_status_v1"
+	ParticipantWorkCapabilityTurnStopV1       = "turn_stop_v1"
+
+	ParticipantWorkPhaseWorking  = "working"
+	ParticipantWorkPhaseThinking = "thinking"
+
+	ParticipantThinkingFormatPlainText = "plain_text"
 )
 
 type ParticipantWorkLeaseRequest struct {
@@ -22,22 +33,61 @@ type ParticipantWorkLeaseRequest struct {
 	TTLSeconds   *int   `json:"ttl_seconds,omitempty"`
 }
 
+type ParticipantThinkingStatus struct {
+	Format    string `json:"format"`
+	Text      string `json:"text"`
+	Truncated bool   `json:"truncated"`
+}
+
+type ParticipantWorkStatus struct {
+	Sequence uint64                     `json:"sequence"`
+	Phase    string                     `json:"phase"`
+	Thinking *ParticipantThinkingStatus `json:"thinking,omitempty"`
+}
+
+type ParticipantWorkStatusPatchRequest struct {
+	Capabilities []string                   `json:"capabilities"`
+	Sequence     uint64                     `json:"sequence"`
+	Phase        string                     `json:"phase"`
+	Thinking     *ParticipantThinkingStatus `json:"thinking,omitempty"`
+}
+
 type ParticipantWorkUpdate struct {
-	RegistryEpoch string    `json:"registry_epoch"`
-	LeaseID       string    `json:"lease_id"`
-	ParticipantID string    `json:"participant_id"`
-	UserID        string    `json:"user_id"`
-	RoomID        string    `json:"room_id"`
-	ThreadRootID  string    `json:"thread_root_id,omitempty"`
-	RequestID     string    `json:"request_id"`
-	Kind          string    `json:"kind"`
-	State         string    `json:"state"`
-	Reason        string    `json:"reason"`
-	Revision      uint64    `json:"revision"`
-	ExpiresAt     time.Time `json:"expires_at"`
+	RegistryEpoch   string                 `json:"registry_epoch"`
+	LeaseID         string                 `json:"lease_id"`
+	ParticipantID   string                 `json:"participant_id"`
+	UserID          string                 `json:"user_id"`
+	RoomID          string                 `json:"room_id"`
+	ThreadRootID    string                 `json:"thread_root_id,omitempty"`
+	RequestID       string                 `json:"request_id"`
+	Kind            string                 `json:"kind"`
+	State           string                 `json:"state"`
+	Reason          string                 `json:"reason"`
+	Revision        uint64                 `json:"revision"`
+	ExpiresAt       time.Time              `json:"expires_at"`
+	Capabilities    []string               `json:"capabilities,omitempty"`
+	Status          *ParticipantWorkStatus `json:"status,omitempty"`
+	StopRequestedAt *time.Time             `json:"stop_requested_at,omitempty"`
 }
 
 type ParticipantWorkClosedResponse struct {
 	Error         string `json:"error"`
 	RegistryEpoch string `json:"registry_epoch"`
+}
+
+type ParticipantWorkStopRequest struct {
+	RoomID    string `json:"room_id"`
+	LeaseID   string `json:"lease_id"`
+	RequestID string `json:"request_id"`
+}
+
+type ParticipantWorkStopResponse struct {
+	Accepted      bool      `json:"accepted"`
+	RegistryEpoch string    `json:"registry_epoch"`
+	ParticipantID string    `json:"participant_id"`
+	RoomID        string    `json:"room_id"`
+	LeaseID       string    `json:"lease_id"`
+	RequestID     string    `json:"request_id"`
+	State         string    `json:"state"`
+	RequestedAt   time.Time `json:"requested_at"`
 }
