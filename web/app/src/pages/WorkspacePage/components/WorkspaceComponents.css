@@ -3571,10 +3571,10 @@ select,
 }
 
 .profile-preview-popover {
-  width: min(360px, calc(100vw - 24px));
-  gap: 14px;
-  padding: 16px;
-  border-radius: 14px;
+  width: min(320px, calc(100vw - 24px));
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
   box-shadow: var(--shadow-md);
 }
 
@@ -3584,38 +3584,40 @@ select,
 
 .preview-title {
   color: var(--gray-600);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 16px;
   text-transform: uppercase;
 }
 
 .preview-header .modal-close {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  min-height: 34px;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .preview-header .modal-close-icon,
 .preview-header .modal-close-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .preview-hero {
-  gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--brand-25), var(--surface));
+  gap: 10px;
+  padding: 2px 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .preview-avatar {
-  width: 54px;
-  height: 54px;
-  flex-basis: 54px;
+  width: 46px;
+  height: 46px;
+  flex-basis: 46px;
   border-radius: 50%;
   border: none;
   background: var(--avatar-default-bg);
@@ -3626,8 +3628,8 @@ select,
 
 .preview-avatar .svg-icon,
 .preview-avatar svg {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
 }
 
 .preview-avatar .agent-avatar-image {
@@ -3635,37 +3637,101 @@ select,
   object-fit: cover;
 }
 
+.preview-name-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .preview-name {
+  min-width: 0;
+  overflow: hidden;
   color: var(--gray-900);
-  font-size: 21px;
+  font-size: 17px;
   font-weight: 700;
-  line-height: 26px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-presence {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gray-500);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.preview-presence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gray-300);
+}
+
+.preview-presence.online .preview-presence-dot {
+  background: var(--success-500);
+  box-shadow: 0 0 0 2px var(--success-50);
 }
 
 .preview-meta {
   color: var(--gray-600);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-fields {
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 2px 0;
 }
 
 .preview-fields .entity-field {
-  padding: 12px;
-  border-radius: 12px;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.preview-fields .entity-field span {
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.06em;
+}
+
+.preview-fields .entity-field strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-popover .entity-badge-row {
+  gap: 5px;
 }
 
 .preview-actions {
-  gap: 10px;
+  gap: 8px;
   justify-content: stretch;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .preview-actions .btn {
   flex: 1 1 0;
-  min-height: 40px;
+  min-height: 32px;
   min-width: 0;
   justify-content: center;
 }
@@ -3680,7 +3746,11 @@ select,
 }
 
 :root[data-theme="dark"] .preview-hero {
-  background: var(--panel-strong);
+  background: transparent;
+}
+
+:root[data-theme="dark"] .preview-presence.online .preview-presence-dot {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success-500) 18%, transparent);
 }
 
 .chat-panel > .entity-pane {

@@ -14,17 +14,21 @@ import (
 	"csgclaw/internal/channelbridge/runtimebridge"
 	runtimecodex "csgclaw/internal/runtime/codex"
 	"csgclaw/internal/slashcommand"
+	"csgclaw/internal/worklease"
 )
 
 const (
-	defaultQueueSize          = 32
-	defaultSeenWindow         = 256
-	defaultPromptSettle       = 150 * time.Millisecond
-	localChannel              = csgclawchannel.ChannelID
-	turnPlaceholderText       = "\u200b"
-	turnCompleteText          = "Done."
-	processingPinEmoji        = "Pin"
-	processingReactionTimeout = 2 * time.Second
+	defaultQueueSize           = 32
+	defaultSeenWindow          = 256
+	defaultPromptSettle        = 150 * time.Millisecond
+	localChannel               = csgclawchannel.ChannelID
+	turnPlaceholderText        = "\u200b"
+	turnCompleteText           = "Done."
+	processingPinEmoji         = "Pin"
+	processingReactionTimeout  = 2 * time.Second
+	participantWorkTTLSeconds  = 15
+	participantWorkRenewEvery  = 5 * time.Second
+	participantWorkStopTimeout = 2 * time.Second
 )
 
 type Binding struct {
@@ -55,12 +59,28 @@ type Service struct {
 	queueSize      int
 	seenWindow     int
 	promptSettle   time.Duration
+	workReporter   worklease.ParticipantWorkReporter
+	workRenewEvery time.Duration
 
 	mu      sync.Mutex
 	workers map[string]*worker
 }
 
-func NewService(client BotClient, prompter SessionPrompter, events runtimecodex.SessionEventSubscriber, userInputs ...runtimecodex.UserInputBroker) *Service {
+type ServiceOption func(*Service)
+
+func WithUserInputBroker(broker runtimecodex.UserInputBroker) ServiceOption {
+	return func(service *Service) {
+		service.userInput = broker
+	}
+}
+
+func WithParticipantWorkReporter(reporter worklease.ParticipantWorkReporter) ServiceOption {
+	return func(service *Service) {
+		service.workReporter = reporter
+	}
+}
+
+func NewService(client BotClient, prompter SessionPrompter, events runtimecodex.SessionEventSubscriber, opts ...ServiceOption) *Service {
 	service := &Service{
 		client:         client,
 		prompter:       prompter,
@@ -69,10 +89,13 @@ func NewService(client BotClient, prompter SessionPrompter, events runtimecodex.
 		queueSize:      defaultQueueSize,
 		seenWindow:     defaultSeenWindow,
 		promptSettle:   defaultPromptSettle,
+		workRenewEvery: participantWorkRenewEvery,
 		workers:        make(map[string]*worker),
 	}
-	if len(userInputs) > 0 {
-		service.userInput = userInputs[0]
+	for _, opt := range opts {
+		if opt != nil {
+			opt(service)
+		}
 	}
 	return service
 }
@@ -269,6 +292,8 @@ func (w *worker) enqueue(ctx context.Context, evt BotEvent) {
 }
 
 func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-chan runtimecodex.SessionEvent) error {
+	stopParticipantWork := w.startParticipantWork(ctx, evt)
+	defer stopParticipantWork()
 	eventStartedAt := time.Now()
 	cleanupProcessingReaction := w.startProcessingReaction(ctx, evt)
 	defer cleanupProcessingReaction(context.Background())
@@ -558,6 +583,87 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 				return err
 			}
 		}
+	}
+}
+
+func (w *worker) startParticipantWork(ctx context.Context, evt BotEvent) func() {
+	if w == nil || w.service == nil || w.service.workReporter == nil || !strings.EqualFold(strings.TrimSpace(evt.Channel), localChannel) {
+		return func() {}
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lease := worklease.ParticipantWorkLease{
+		ParticipantID: w.binding.BotID,
+		LeaseID:       worklease.NewID(),
+		RoomID:        strings.TrimSpace(evt.RoomID),
+		ThreadRootID:  strings.TrimSpace(evt.ThreadRootID),
+		RequestID:     strings.TrimSpace(evt.MessageID),
+		Kind:          "agent_turn",
+		TTLSeconds:    participantWorkTTLSeconds,
+		TTLExplicit:   true,
+	}
+	reporter := w.service.workReporter
+	closed := false
+	if _, err := reporter.StartOrRenew(ctx, lease); err != nil {
+		closed = errors.Is(err, worklease.ErrClosed)
+		slog.Warn("codex bridge participant work lease start failed",
+			"participant_id", lease.ParticipantID,
+			"room_id", lease.RoomID,
+			"message_id", lease.RequestID,
+			"lease_id", lease.LeaseID,
+			"error", err,
+		)
+	}
+
+	renewCtx, cancelRenew := context.WithCancel(ctx)
+	renewDone := make(chan struct{})
+	if closed {
+		close(renewDone)
+	} else {
+		go func() {
+			defer close(renewDone)
+			ticker := time.NewTicker(w.service.workRenewEvery)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-renewCtx.Done():
+					return
+				case <-ticker.C:
+					if _, err := reporter.StartOrRenew(renewCtx, lease); err != nil {
+						slog.Warn("codex bridge participant work lease renew failed",
+							"participant_id", lease.ParticipantID,
+							"room_id", lease.RoomID,
+							"message_id", lease.RequestID,
+							"lease_id", lease.LeaseID,
+							"error", err,
+						)
+						if errors.Is(err, worklease.ErrClosed) {
+							return
+						}
+					}
+				}
+			}
+		}()
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancelRenew()
+			<-renewDone
+			releaseCtx, cancelRelease := context.WithTimeout(context.WithoutCancel(ctx), participantWorkStopTimeout)
+			defer cancelRelease()
+			if err := reporter.Stop(releaseCtx, lease.ParticipantID, lease.LeaseID); err != nil {
+				slog.Warn("codex bridge participant work lease stop failed",
+					"participant_id", lease.ParticipantID,
+					"room_id", lease.RoomID,
+					"message_id", lease.RequestID,
+					"lease_id", lease.LeaseID,
+					"error", err,
+				)
+			}
+		})
 	}
 }
 

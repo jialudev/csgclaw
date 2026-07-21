@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	testBuiltinOpenClawImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260702.25-csgclaw"
+	testBuiltinOpenClawImage = "opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260717.27-csgclaw"
 )
 
 func TestBuiltinStoreListGetAndFetchWorkspace(t *testing.T) {

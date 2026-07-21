@@ -384,6 +384,10 @@
   background: var(--surface);
 }
 
+.composer.has-working-status {
+  padding-top: var(--space-2);
+}
+
 .question-composer {
   z-index: 2;
   display: grid;
@@ -567,126 +571,157 @@
 }
 
 .composer-working {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 24px;
+  min-width: 0;
   margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 18px;
+  padding: 0 6px;
+  font: var(--text-xs-normal);
 }
 
 .composer-working-status {
   display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
   min-width: 0;
-}
-
-.composer-working-action.btn {
-  --btn-height: 26px;
-  --btn-min-width: 0;
-  --btn-padding-x: 10px;
-
-  flex: 0 0 auto;
-  border-radius: 6px;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.composer-working-action.btn.needs-attention::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: conic-gradient(
-    from var(--composer-working-action-beam-angle),
-    transparent 0deg,
-    transparent 220deg,
-    #ffbe7b 245deg,
-    #ff777f 270deg,
-    #ff8ab4 295deg,
-    #a07cfe 320deg,
-    #5b9dff 345deg,
-    transparent 360deg
-  );
-  pointer-events: none;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: composer-working-action-beam 3.2s linear infinite;
-}
-
-@property --composer-working-action-beam-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-
-@keyframes composer-working-action-beam {
-  to {
-    --composer-working-action-beam-angle: 360deg;
-  }
 }
 
 .composer-working-item {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr);
+  width: fit-content;
   min-width: 0;
+  max-width: min(22rem, 100%);
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 11px 5px 8px;
+  appearance: none;
+  border: 1px solid color-mix(in oklab, var(--line) 72%, transparent);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  background: color-mix(in oklab, var(--panel-strong) 74%, var(--surface));
+  box-shadow:
+    0 1px 2px color-mix(in oklab, var(--gray-950) 5%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--surface) 88%, transparent);
+  font: inherit;
+  text-align: left;
+}
+
+button.composer-working-item {
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+button.composer-working-item:hover {
+  border-color: color-mix(in oklab, var(--brand-400) 28%, var(--line));
+  background: color-mix(in oklab, var(--brand-25) 30%, var(--surface));
+  box-shadow:
+    0 2px 5px color-mix(in oklab, var(--gray-950) 7%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--surface) 92%, transparent);
+}
+
+button.composer-working-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow-soft);
+}
+
+button.composer-working-item:active {
+  background: color-mix(in oklab, var(--brand-50) 24%, var(--surface));
+}
+
+.composer-working-name {
+  overflow: hidden;
+  max-width: 150px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-working-verb {
+  display: inline-flex;
+  align-items: center;
+  color: color-mix(in oklab, var(--primary-strong) 76%, var(--text));
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.composer-working-summary {
+  overflow: hidden;
+  min-width: 0;
+  max-width: min(240px, 34vw);
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-working-item:is([data-working-action="running"], [data-working-action="using_tool"])
+  .composer-working-summary {
+  font-family: var(--font-family-mono);
+  font-size: 11px;
 }
 
 .composer-working-dots {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 2px;
+  width: 16px;
+  height: 12px;
 }
 
 .composer-working-dots span {
-  width: 6px;
-  height: 6px;
+  width: 3px;
+  height: 3px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--brand-500) 54%, var(--surface));
-  animation: composer-working-dot 1.1s ease-in-out infinite;
+  background: var(--primary);
+  animation: composer-working-dot 0.48s ease-in-out infinite;
 }
 
 .composer-working-dots span:nth-child(2) {
-  animation-delay: 0.16s;
+  animation-delay: 0.08s;
 }
 
 .composer-working-dots span:nth-child(3) {
-  animation-delay: 0.32s;
+  animation-delay: 0.16s;
 }
 
 @keyframes composer-working-dot {
   0%,
-  80%,
+  70%,
   100% {
-    opacity: 0.36;
-    transform: translateY(0);
+    opacity: 0.38;
+    transform: translateY(1.5px);
   }
 
-  40% {
+  35% {
     opacity: 1;
-    transform: translateY(-2px);
+    transform: translateY(-3px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-working-action.btn.needs-attention::before {
+  .composer-working-dots span {
     animation: none;
-    background: linear-gradient(90deg, #ffbe7b, #ff777f, #ff8ab4, #a07cfe, #5b9dff);
+  }
+}
+
+@media (max-width: 720px) {
+  .composer-working {
+    padding-inline: 0;
+  }
+
+  .composer-working-item {
+    max-width: 100%;
+  }
+
+  .composer-working-summary {
+    max-width: none;
   }
 }
 

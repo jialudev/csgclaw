@@ -17,15 +17,11 @@ import type { AuthEnvironmentDraft, AuthEnvironmentPresetID } from "@/models/aut
 import type { LocaleCode, TranslateFn } from "@/models/conversations";
 import { githubFeedbackIssueURL } from "@/models/feedback";
 import type { UpgradePhase, UpgradeStatus } from "@/models/upgradeStatus";
-import {
-  formatSidebarVersionLabel,
-  hasUpgradeAttention,
-  isLocalBuildUpgradeStatus,
-  upgradeErrorMessage,
-} from "@/models/upgradeStatus";
+import { formatSidebarVersionLabel, isLocalBuildUpgradeStatus, upgradeErrorMessage } from "@/models/upgradeStatus";
 import { classNames } from "@/shared/lib/classNames";
 import { readStoredAuthEnvironmentDraft, writeStoredAuthEnvironmentDraft } from "@/shared/storage/authEnvironment";
 import type { ThemeMode } from "@/shared/theme/theme";
+import { shouldShowUpgradeAlertDot } from "./sidebarUpgradeAlert";
 import styles from "./SidebarUserButton.module.css";
 
 type SidebarUserButtonProps = {
@@ -479,23 +475,6 @@ export function SidebarUserButton({
       ) : null}
     </div>
   );
-}
-
-export function shouldShowUpgradeAlertDot({
-  busy = false,
-  controlsAvailable,
-  phase,
-  status,
-}: {
-  busy?: boolean;
-  controlsAvailable: boolean;
-  phase: UpgradePhase;
-  status: UpgradeStatus | null | undefined;
-}): boolean {
-  if (!controlsAvailable || phase === "done") {
-    return false;
-  }
-  return hasUpgradeAttention(status, phase, busy);
 }
 
 function initialsForAccount(name: string): string {

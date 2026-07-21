@@ -218,6 +218,8 @@ func (h *Handler) registerChannelRoutes(router chi.Router) {
 			r.Get("/events", h.getParticipantEvents)
 			r.Post("/messages", h.createParticipantMessage)
 			r.Post("/notifications", h.createParticipantNotification)
+			r.Put("/work-leases/{lease_id}", h.putParticipantWorkLease)
+			r.Delete("/work-leases/{lease_id}", h.deleteParticipantWorkLease)
 		})
 		r.Post("/{channel}/activities/{activity_action}", h.handleChannelActivityAction)
 

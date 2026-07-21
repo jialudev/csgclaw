@@ -29,6 +29,7 @@ import { useConversationController } from "./useConversationController";
 import { useProfilePreviewController } from "./useProfilePreviewController";
 import { useTaskController } from "./useTaskController";
 import { useWorkspaceRealtime } from "./useWorkspaceRealtime";
+import { useParticipantWorkStatus } from "./useParticipantWorkStatus";
 import type { CreateTeamPayload } from "@/api/tasks";
 import type { AgentLike } from "@/models/agents";
 import type { HubTemplate } from "@/models/hubWorkspace";
@@ -325,6 +326,7 @@ export function useWorkspaceController() {
     () => resolveManagerDirectConversation(rooms, displayData?.current_user_id ?? "", agent.managerAgent),
     [agent.managerAgent, displayData?.current_user_id, rooms],
   );
+  const participantWork = useParticipantWorkStatus({ agents, users: displayData?.users ?? [] });
   const conversation = useConversationController({
     activeConversationId,
     activePane,
@@ -346,6 +348,8 @@ export function useWorkspaceController() {
     managerRuntimeUnavailable: agent.managerRuntimeUnavailable,
     messageActionBusy: agent.messageActionBusy,
     messageActionFeedback: agent.messageActionFeedback,
+    hasObservedWorkLease: participantWork.hasObservedWorkLease,
+    workingParticipantsForRoom: participantWork.workingParticipantsForRoom,
     navigatePane,
     onMessageAction: agent.handleMessageAction,
     onProviderLogin: agent.loginCLIProxyProvider,
@@ -392,6 +396,8 @@ export function useWorkspaceController() {
     managerRuntimeUnavailable: agent.managerRuntimeUnavailable,
     messageActionBusy: agent.messageActionBusy,
     messageActionFeedback: agent.messageActionFeedback,
+    hasObservedWorkLease: participantWork.hasObservedWorkLease,
+    workingParticipantsForRoom: participantWork.workingParticipantsForRoom,
     messageListActive: floatingChatOpen,
     navigatePane: ignoreFloatingChatNavigation,
     onMessageAction: agent.handleMessageAction,
@@ -431,6 +437,7 @@ export function useWorkspaceController() {
     agents,
     onConversationEvent: conversation.handleRealtimeEvent,
     onFloatingConversationEvent: floatingConversation.handleRealtimeEvent,
+    onParticipantWorkEvent: participantWork.handleRealtimeEvent,
     onRefreshAgentState: agent.refreshAgentState,
     onUpgradeStatusChange: upgrade.handleUpgradeStatusChange,
     refreshWorkspaceAgents,

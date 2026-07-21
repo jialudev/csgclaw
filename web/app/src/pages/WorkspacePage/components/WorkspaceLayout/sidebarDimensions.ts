@@ -19,11 +19,11 @@ const SidebarChrome = {
   header: 24 + 106 + 16 + 32 + 20,
   icon: 24,
   maxExpanded: 720,
-  minExpanded: 560,
+  minContext: 200,
   navInlinePadding: 32,
   primaryAutoMinimum: 240,
   primaryMax: 300,
-  primaryMin: 220,
+  primaryMin: 200,
   rowInlinePadding: 24,
   step: 16,
 } as const;
@@ -32,7 +32,7 @@ export const SidebarWidth = {
   collapsedPrimary: SidebarChrome.collapsedPrimary,
   default: SidebarChrome.defaultExpanded,
   max: SidebarChrome.maxExpanded,
-  min: SidebarChrome.minExpanded,
+  min: SidebarChrome.primaryAutoMinimum + SidebarChrome.minContext,
   primaryFallback: SidebarChrome.primaryAutoMinimum,
   primaryMax: SidebarChrome.primaryMax,
   primaryMin: SidebarChrome.primaryMin,
@@ -65,11 +65,11 @@ export function workspacePrimarySidebarWidth(labels: readonly PrimarySidebarLabe
   return clampPrimarySidebarWidth(width);
 }
 
-export function workspaceSidebarWidthBounds() {
+export function workspaceSidebarWidthBounds(primarySidebarWidth: number = SidebarChrome.primaryAutoMinimum) {
   return {
     default: SidebarChrome.defaultExpanded,
     max: SidebarChrome.maxExpanded,
-    min: SidebarChrome.minExpanded,
+    min: primarySidebarWidth + SidebarChrome.minContext,
   };
 }
 

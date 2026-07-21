@@ -22,9 +22,30 @@ export type BooleanStateSetter = Dispatch<SetStateAction<boolean>>;
 export type MentionPickerUser = ComposerMentionUser & Pick<IMUser, "avatar" | "role">;
 export type VoidOrPromise = void | Promise<void>;
 
+export const ConversationWorkingActions = {
+  editing: "editing",
+  reading: "reading",
+  replying: "replying",
+  running: "running",
+  searching: "searching",
+  thinking: "thinking",
+  usingTool: "using_tool",
+  waiting: "waiting",
+} as const;
+
+export type ConversationWorkingAction = (typeof ConversationWorkingActions)[keyof typeof ConversationWorkingActions];
+
 export type ConversationWorkingParticipant = {
+  activity?: {
+    action: ConversationWorkingAction;
+    entryID?: string;
+    summary?: string;
+    updatedAt?: string;
+  };
+  activityAfter?: string;
   id: string;
   name: string;
+  requestID?: string;
 };
 
 export type ConversationPaneProps = {

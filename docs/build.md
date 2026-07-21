@@ -60,10 +60,10 @@ Manager and worker templates have different embedded workspaces but share one im
 
 | Runtime | Fixed image |
 |---|---|
-| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260610.2-csgclaw` |
+| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260717.27-csgclaw` |
 | PicoClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.6.10` |
 
-These refs are stored directly in the builtin `agent.toml` files. They have no template `version` field, no generated tag, and no CSGClaw CI image-build workflow.
+These refs are stored directly in the builtin `agent.toml` files. CSGClaw does not generate their image tags or build these runtime images in CI.
 
 ## Web UI
 

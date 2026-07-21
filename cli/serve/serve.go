@@ -56,6 +56,7 @@ import (
 	hub "csgclaw/internal/template"
 	"csgclaw/internal/upgrade"
 	appversion "csgclaw/internal/version"
+	"csgclaw/internal/worklease"
 )
 
 var (
@@ -561,7 +562,16 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	if err := reconcileInterruptedUserInputMessages(imSvc); err != nil {
 		return err
 	}
-	codexBridgeMgr, err := NewCodexBridgeManager(cfg, svc, feishuSvc)
+	participantSvc, err := newParticipantService(svc, imSvc)
+	if err != nil {
+		return err
+	}
+	workBus := worklease.NewBus()
+	workRegistry := worklease.NewRegistry(participantSvc, imSvc, workBus)
+	janitorCtx, stopJanitor := context.WithCancel(ctx)
+	defer stopJanitor()
+	go workRegistry.Run(janitorCtx)
+	codexBridgeMgr, err := NewCodexBridgeManager(cfg, svc, feishuSvc, workRegistry)
 	if err != nil {
 		return err
 	}
@@ -571,10 +581,6 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	}
 	if codexBridgeMgr != nil {
 		defer codexBridgeMgr.Close()
-	}
-	participantSvc, err := newParticipantService(svc, imSvc)
-	if err != nil {
-		return err
 	}
 	llmSvc, err := NewLLMService(cfg, svc)
 	if err != nil {
@@ -648,6 +654,8 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		Participant:        participantSvc,
 		IM:                 imSvc,
 		IMBus:              imBus,
+		WorkReporter:       workRegistry,
+		WorkBus:            workBus,
 		ParticipantBridge:  im.NewParticipantBridge(cfg.Server.AccessToken),
 		Feishu:             feishuSvc,
 		LLM:                llmSvc,
@@ -1155,13 +1163,14 @@ func channelUserInputResponder(m codexBridgeManager) api.UserInputResponder {
 	return withUserInput.UserInputResponder()
 }
 
-func newCodexBridgeManager(cfg config.Config, svc *agent.Service, feishuSvc *feishu.Service) (codexBridgeManager, error) {
+func newCodexBridgeManager(cfg config.Config, svc *agent.Service, feishuSvc *feishu.Service, workReporter worklease.ParticipantWorkReporter) (codexBridgeManager, error) {
 	if svc == nil {
 		return nil, nil
 	}
 	opts := codexmanager.Options{
-		Agents:   svc,
-		Runtimes: svc,
+		Agents:       svc,
+		Runtimes:     svc,
+		WorkReporter: workReporter,
 		CSGClawClient: &codexbridge.HTTPClient{
 			BaseURL:     apiBaseURL(cfg.Server),
 			Token:       cfg.Server.AccessToken,

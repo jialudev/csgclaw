@@ -22,6 +22,7 @@ import (
 	"csgclaw/internal/team"
 	hub "csgclaw/internal/template"
 	"csgclaw/internal/upgrade"
+	"csgclaw/internal/worklease"
 )
 
 type Options struct {
@@ -32,6 +33,8 @@ type Options struct {
 	Participant        *participant.Service
 	IM                 *im.Service
 	IMBus              *im.Bus
+	WorkReporter       worklease.ParticipantWorkReporter
+	WorkBus            *worklease.Bus
 	ParticipantBridge  *im.ParticipantBridge
 	Feishu             *feishu.Service
 	LLM                *llm.Service
@@ -53,6 +56,7 @@ type Options struct {
 func newHandler(opts Options) *api.Handler {
 	handler := api.NewHandlerWithAuth(opts.Service, opts.IM, opts.IMBus, opts.ParticipantBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
 	handler.SetParticipantService(opts.Participant)
+	handler.SetParticipantWorkService(opts.WorkReporter, opts.WorkBus)
 	handler.SetHubService(opts.Hub)
 	handler.SetMCPService(opts.MCP)
 	handler.SetTeamService(opts.Team)

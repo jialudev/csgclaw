@@ -63,6 +63,7 @@ export function ProfilePreviewContent({ agent, user, t, onOpenAgent, onOpenDM }:
   const previewModel = agent ? agentModelWithReasoning(agent) : localizeRole(user?.role || "admin", t);
   const displayName = agent?.name || user?.name || "";
   const displayRole = agent ? agent.role || "worker" : user?.role || "";
+  const statusLabel = agent ? agentStatusLabel(agentRuntimeState(agent), t) : t("online");
 
   return (
     <>
@@ -84,7 +85,13 @@ export function ProfilePreviewContent({ agent, user, t, onOpenAgent, onOpenDM }:
           </div>
         )}
         <div className="preview-identity">
-          <div className="preview-name">{displayName}</div>
+          <div className="preview-name-line">
+            <div className="preview-name">{displayName}</div>
+            <span className={`preview-presence ${running || localAdminPreview ? "online" : ""}`}>
+              <span className="preview-presence-dot" aria-hidden="true" />
+              {statusLabel}
+            </span>
+          </div>
           <div className="preview-meta">
             {user?.id || agent?.id || ""} · {localizeRole(displayRole, t)}
           </div>
@@ -95,26 +102,21 @@ export function ProfilePreviewContent({ agent, user, t, onOpenAgent, onOpenDM }:
         <>
           <div className="preview-fields">
             <div className="entity-field">
-              <span>{previewFieldLabel(t("status"))}</span>
-              <strong>{agent ? agentStatusLabel(agentRuntimeState(agent), t) : t("online")}</strong>
-            </div>
-            <div className="entity-field">
               <span>{previewFieldLabel(t("profileRuntimeKind"))}</span>
-              <strong>{previewRuntime}</strong>
+              <strong title={previewRuntime}>{previewRuntime}</strong>
             </div>
             <div className="entity-field">
               <span>{previewFieldLabel(t("profileProvider"))}</span>
-              <strong>{previewProvider}</strong>
+              <strong title={previewProvider}>{previewProvider}</strong>
             </div>
             <div className="entity-field">
               <span>{previewFieldLabel(t("profileModel"))}</span>
-              <strong>{previewModel}</strong>
+              <strong title={previewModel}>{previewModel}</strong>
             </div>
           </div>
           {agent ? (
             <>
               <div className="entity-badge-row">
-                <span className={`agent-badge ${running ? "" : "warn"}`}>{running ? t("online") : t("offline")}</span>
                 <span className={`agent-badge ${incomplete ? "warn" : "ready"}`}>
                   {incomplete ? t("profileIncompleteBadge") : t("profileCompleteBadge")}
                 </span>
@@ -122,10 +124,10 @@ export function ProfilePreviewContent({ agent, user, t, onOpenAgent, onOpenDM }:
                 {restartNeeded ? <span className="agent-badge warn">{t("profileRestartRequired")}</span> : null}
               </div>
               <div className="preview-actions">
-                <Button variant="primary" size="md" onClick={() => onOpenAgent(agent)}>
+                <Button variant="primary" size="sm" onClick={() => onOpenAgent(agent)}>
                   {t("openProfile")}
                 </Button>
-                <Button variant="secondaryGray" size="md" onClick={() => onOpenDM(agent)}>
+                <Button variant="secondaryGray" size="sm" onClick={() => onOpenDM(agent)}>
                   {t("openDM")}
                 </Button>
               </div>
@@ -135,16 +137,12 @@ export function ProfilePreviewContent({ agent, user, t, onOpenAgent, onOpenDM }:
       ) : (
         <div className="preview-fields">
           <div className="entity-field">
-            <span>{previewFieldLabel(t("status"))}</span>
-            <strong>{t("online")}</strong>
-          </div>
-          <div className="entity-field">
             <span>{previewFieldLabel(t("roleLabel"))}</span>
-            <strong>{localizeRole(user?.role || "", t)}</strong>
+            <strong title={localizeRole(user?.role || "", t)}>{localizeRole(user?.role || "", t)}</strong>
           </div>
           <div className="entity-field">
             <span>{previewFieldLabel(t("userIDLabel"))}</span>
-            <strong>{user?.id || ""}</strong>
+            <strong title={user?.id || ""}>{user?.id || ""}</strong>
           </div>
         </div>
       )}

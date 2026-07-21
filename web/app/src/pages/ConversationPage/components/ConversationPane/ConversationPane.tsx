@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAgentLogsRequest } from "@/api/agents";
 import { errorMessage } from "@/api/client";
 import {
   Conversation,
   AgentQuestionComposer,
+  type ConversationWorkingParticipant,
   type ConversationPaneProps,
   useQuestionAnswerMode,
   useConversationDraftEditorSync,
@@ -13,30 +14,12 @@ import { Button, DialogCloseButton, DialogContent, DialogRoot, DialogTitle } fro
 import { normalizeAuthProviderName } from "@/models/agents";
 import { getConversationDescription, isDirectConversation } from "@/models/conversations";
 import type { AgentDetailSidePanelProps } from "@/hooks/workspace/types";
-import { CONVERSATION_ACTIVITY_ACTION_SEEN_STORAGE_KEY } from "@/shared/storage/keys";
 import { ConversationActivityPanel } from "../ConversationActivityPanel";
-
-function readConversationActivityActionSeen(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  try {
-    return window.localStorage.getItem(CONVERSATION_ACTIVITY_ACTION_SEEN_STORAGE_KEY) === "seen";
-  } catch {
-    return false;
-  }
-}
-
-function writeConversationActivityActionSeen() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(CONVERSATION_ACTIVITY_ACTION_SEEN_STORAGE_KEY, "seen");
-  } catch {
-    // Browsers can deny localStorage access; the action still works for this session.
-  }
-}
+import {
+  conversationActivityAgents,
+  conversationActivityEntries,
+  conversationWorkingParticipantsWithActivity,
+} from "../ConversationActivityPanel/conversationActivity";
 
 function hasBlockingAgentDetailChangesAfterMetadataCommit(
   props: Pick<AgentDetailSidePanelProps, "draft" | "hasUnsavedChanges" | "savedDraft">,
@@ -207,7 +190,7 @@ export function ConversationPane({
   const [logError, setLogError] = useState("");
   const [logLoading, setLogLoading] = useState(false);
   const [activityPanelOpen, setActivityPanelOpen] = useState(false);
-  const [activityActionSeen, setActivityActionSeen] = useState(readConversationActivityActionSeen);
+  const [focusedActivityEntryID, setFocusedActivityEntryID] = useState<string | null>(null);
   const [clearMessagesDialogOpen, setClearMessagesDialogOpen] = useState(false);
   const [deleteRoomDialogOpen, setDeleteRoomDialogOpen] = useState(false);
   const logAgentID = logAgent?.id || "";
@@ -226,6 +209,15 @@ export function ConversationPane({
     roomID: conversation.id,
     t,
   });
+  const activityAgents = useMemo(() => conversationActivityAgents(conversation, agents), [agents, conversation]);
+  const activityEntries = useMemo(
+    () => conversationActivityEntries(conversation.messages, activityAgents, conversation.members, usersById),
+    [activityAgents, conversation.members, conversation.messages, usersById],
+  );
+  const workingParticipantsWithActivity = useMemo(
+    () => conversationWorkingParticipantsWithActivity(workingParticipants, activityAgents, activityEntries),
+    [activityAgents, activityEntries, workingParticipants],
+  );
 
   useConversationDraftEditorSync(editorRef, draftSegments);
 
@@ -258,26 +250,23 @@ export function ConversationPane({
     void refreshAgentLogs();
   }, [refreshAgentLogs]);
 
-  const markActivityActionSeen = useCallback(() => {
-    setActivityActionSeen(true);
-    writeConversationActivityActionSeen();
-  }, []);
-
   const handleToggleActivityPanel = useCallback(() => {
     if (!activityPanelOpen) {
-      markActivityActionSeen();
       onCloseThread();
       onToggleChannelTools(false);
     }
     setActivityPanelOpen((open) => !open);
-  }, [activityPanelOpen, markActivityActionSeen, onCloseThread, onToggleChannelTools]);
+  }, [activityPanelOpen, onCloseThread, onToggleChannelTools]);
 
-  const handleOpenActivityPanel = useCallback(() => {
-    markActivityActionSeen();
-    onCloseThread();
-    onToggleChannelTools(false);
-    setActivityPanelOpen(true);
-  }, [markActivityActionSeen, onCloseThread, onToggleChannelTools]);
+  const handleOpenActivityPanel = useCallback(
+    (participant?: ConversationWorkingParticipant) => {
+      setFocusedActivityEntryID(participant?.activity?.entryID || null);
+      onCloseThread();
+      onToggleChannelTools(false);
+      setActivityPanelOpen(true);
+    },
+    [onCloseThread, onToggleChannelTools],
+  );
 
   useEffect(() => {
     if (activeThreadRootID) {
@@ -337,6 +326,7 @@ export function ConversationPane({
       key={conversation.id}
       agents={agents}
       conversation={conversation}
+      initialEntryID={focusedActivityEntryID}
       locale={locale}
       t={t}
       usersById={usersById}
@@ -438,9 +428,7 @@ export function ConversationPane({
           slashPickerLoading={slashPickerLoading}
           slashPickerOpen={slashPickerOpen}
           t={t}
-          workingActionAttention={!activityActionSeen}
-          workingActionLabel={t("conversationActivityView")}
-          workingParticipants={workingParticipants}
+          workingParticipants={workingParticipantsWithActivity}
           onApplyMention={onApplyMention}
           onApplySlashCandidate={onApplySlashCandidate}
           onAddAttachments={onAddAttachments}

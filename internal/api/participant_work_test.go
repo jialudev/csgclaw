@@ -1,0 +1,249 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"csgclaw/internal/apitypes"
+	"csgclaw/internal/im"
+	"csgclaw/internal/participant"
+	"csgclaw/internal/worklease"
+)
+
+type participantWorkSSEWriter struct {
+	header  http.Header
+	body    bytes.Buffer
+	flushed chan struct{}
+}
+
+func (w *participantWorkSSEWriter) Header() http.Header { return w.header }
+func (w *participantWorkSSEWriter) WriteHeader(int)     {}
+func (w *participantWorkSSEWriter) Write(data []byte) (int, error) {
+	return w.body.Write(data)
+}
+func (w *participantWorkSSEWriter) Flush() {
+	w.flushed <- struct{}{}
+}
+
+func TestParticipantWorkLeaseAPI(t *testing.T) {
+	handler, registry := newParticipantWorkTestHandler(t, true)
+	leaseID := worklease.NewID()
+	path := "/api/v1/channels/csgclaw/participants/worker/work-leases/" + leaseID
+
+	started := performParticipantWorkRequest(t, handler, http.MethodPut, path, map[string]any{
+		"room_id":    "room-1",
+		"request_id": "message-1",
+		"kind":       "agent_turn",
+	})
+	if started.Code != http.StatusOK {
+		t.Fatalf("start status = %d, body=%s", started.Code, started.Body.String())
+	}
+	var startUpdate apitypes.ParticipantWorkUpdate
+	if err := json.Unmarshal(started.Body.Bytes(), &startUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if startUpdate.Revision != 1 || startUpdate.ParticipantID != "pt-worker" || startUpdate.UserID != "user-worker" {
+		t.Fatalf("start update = %#v", startUpdate)
+	}
+	if delta := startUpdate.ExpiresAt.Sub(time.Now().UTC()); delta < 14*time.Second || delta > 16*time.Second {
+		t.Fatalf("default ttl delta = %s", delta)
+	}
+
+	renewed := performParticipantWorkRequest(t, handler, http.MethodPut, path, map[string]any{
+		"room_id":     "room-1",
+		"request_id":  "message-1",
+		"kind":        "agent_turn",
+		"ttl_seconds": 90,
+	})
+	if renewed.Code != http.StatusOK {
+		t.Fatalf("renew status = %d, body=%s", renewed.Code, renewed.Body.String())
+	}
+	var renewUpdate apitypes.ParticipantWorkUpdate
+	if err := json.Unmarshal(renewed.Body.Bytes(), &renewUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if renewUpdate.Revision != 2 {
+		t.Fatalf("renew revision = %d", renewUpdate.Revision)
+	}
+	if delta := renewUpdate.ExpiresAt.Sub(time.Now().UTC()); delta < 59*time.Second || delta > 61*time.Second {
+		t.Fatalf("upper-clamped ttl delta = %s", delta)
+	}
+
+	conflict := performParticipantWorkRequest(t, handler, http.MethodPut, path, map[string]any{
+		"room_id":    "room-1",
+		"request_id": "message-other",
+		"kind":       "agent_turn",
+	})
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("conflict status = %d, body=%s", conflict.Code, conflict.Body.String())
+	}
+
+	released := performParticipantWorkRequest(t, handler, http.MethodDelete, path, nil)
+	if released.Code != http.StatusNoContent {
+		t.Fatalf("release status = %d, body=%s", released.Code, released.Body.String())
+	}
+	if got := registry.ActiveCount("room-1", "pt-worker"); got != 0 {
+		t.Fatalf("active count = %d", got)
+	}
+	duplicate := performParticipantWorkRequest(t, handler, http.MethodDelete, path, nil)
+	if duplicate.Code != http.StatusNoContent {
+		t.Fatalf("duplicate release status = %d", duplicate.Code)
+	}
+	closed := performParticipantWorkRequest(t, handler, http.MethodPut, path, map[string]any{
+		"room_id":    "room-1",
+		"request_id": "message-1",
+		"kind":       "agent_turn",
+	})
+	if closed.Code != http.StatusGone {
+		t.Fatalf("closed status = %d, body=%s", closed.Code, closed.Body.String())
+	}
+}
+
+func TestParticipantWorkLeaseAPIValidationAndAuth(t *testing.T) {
+	handler, _ := newParticipantWorkTestHandler(t, false)
+	leaseID := worklease.NewID()
+	path := "/api/v1/channels/csgclaw/participants/worker/work-leases/" + leaseID
+
+	unauthorized := performParticipantWorkRequest(t, handler, http.MethodPut, path, map[string]any{
+		"room_id":    "room-1",
+		"request_id": "message-1",
+		"kind":       "agent_turn",
+	})
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized status = %d", unauthorized.Code)
+	}
+
+	request := httptest.NewRequest(http.MethodPut, path, bytes.NewBufferString(`{"room_id":"room-1","request_id":"message-1","kind":"other"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	recorder := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid kind status = %d", recorder.Code)
+	}
+
+	unknownRoom := httptest.NewRequest(http.MethodPut, path, bytes.NewBufferString(`{"room_id":"missing","request_id":"message-1","kind":"agent_turn"}`))
+	unknownRoom.Header.Set("Authorization", "Bearer secret")
+	recorder = httptest.NewRecorder()
+	handler.Routes().ServeHTTP(recorder, unknownRoom)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("unknown room status = %d", recorder.Code)
+	}
+
+	wrongChannelPath := "/api/v1/channels/feishu/participants/worker/work-leases/" + leaseID
+	wrongChannel := httptest.NewRequest(http.MethodDelete, wrongChannelPath, nil)
+	wrongChannel.Header.Set("Authorization", "Bearer secret")
+	recorder = httptest.NewRecorder()
+	handler.Routes().ServeHTTP(recorder, wrongChannel)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("wrong channel status = %d", recorder.Code)
+	}
+}
+
+func TestParticipantWorkEventsMergeWithIMEvents(t *testing.T) {
+	imBus := im.NewBus()
+	workBus := worklease.NewBus()
+	handler := &Handler{imBus: imBus, workBus: workBus}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil).WithContext(ctx)
+	writer := &participantWorkSSEWriter{header: make(http.Header), flushed: make(chan struct{}, 4)}
+	done := make(chan struct{})
+	go func() {
+		handler.handleIMEvents(writer, request)
+		close(done)
+	}()
+
+	waitForParticipantWorkFlush(t, writer.flushed)
+	workBus.Publish(worklease.Event{
+		Type:   worklease.EventTypeParticipantWorkUpdated,
+		RoomID: "room-1",
+		Work: apitypes.ParticipantWorkUpdate{
+			RegistryEpoch: "epoch-1",
+			LeaseID:       worklease.NewID(),
+			ParticipantID: "pt-worker",
+			UserID:        "user-worker",
+			RoomID:        "room-1",
+			RequestID:     "message-1",
+			Kind:          apitypes.ParticipantWorkKindAgentTurn,
+			State:         apitypes.ParticipantWorkStateWorking,
+			Reason:        apitypes.ParticipantWorkReasonStarted,
+			Revision:      1,
+			ExpiresAt:     time.Now().Add(15 * time.Second),
+		},
+	})
+	waitForParticipantWorkFlush(t, writer.flushed)
+	imBus.Publish(im.Event{Type: im.EventTypeRoomDeleted, RoomID: "room-2"})
+	waitForParticipantWorkFlush(t, writer.flushed)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("SSE handler did not stop")
+	}
+
+	body, err := io.ReadAll(bytes.NewReader(writer.body.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`"type":"participant.work.updated"`)) ||
+		!bytes.Contains(body, []byte(`"work":{"registry_epoch":"epoch-1"`)) ||
+		!bytes.Contains(body, []byte(`"type":"room.deleted"`)) {
+		t.Fatalf("merged SSE body = %s", body)
+	}
+}
+
+func newParticipantWorkTestHandler(t *testing.T, noAuth bool) (*Handler, *worklease.Registry) {
+	t.Helper()
+	imService := im.NewServiceFromBootstrap(im.Bootstrap{
+		CurrentUserID: "user-admin",
+		Users: []im.User{
+			{ID: "user-admin", Name: "Admin"},
+			{ID: "user-worker", Name: "Worker"},
+		},
+		Rooms: []im.Room{{ID: "room-1", Members: []string{"user-admin", "u-worker"}}},
+	})
+	participantService := participant.NewService(participant.NewMemoryStore([]apitypes.Participant{{
+		ID:              "pt-worker",
+		Channel:         participant.ChannelCSGClaw,
+		Type:            participant.TypeAgent,
+		ChannelUserRef:  "u-worker",
+		LifecycleStatus: participant.LifecycleStatusActive,
+	}}))
+	bus := worklease.NewBus()
+	registry := worklease.NewRegistry(participantService, imService, bus, worklease.WithEpoch("epoch-api-test"))
+	handler := NewHandlerWithAuth(nil, imService, im.NewBus(), nil, nil, nil, "secret", noAuth)
+	handler.SetParticipantService(participantService)
+	handler.SetParticipantWorkService(registry, bus)
+	return handler, registry
+}
+
+func performParticipantWorkRequest(t *testing.T, handler *Handler, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var requestBody []byte
+	if body != nil {
+		var err error
+		requestBody, err = json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := httptest.NewRequest(method, path, bytes.NewReader(requestBody))
+	recorder := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(recorder, request)
+	return recorder
+}
+
+func waitForParticipantWorkFlush(t *testing.T, flushed <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-flushed:
+	case <-time.After(time.Second):
+		t.Fatal("SSE event was not flushed")
+	}
+}

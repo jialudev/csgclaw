@@ -64,38 +64,14 @@ import {
   selectAttachmentFiles,
   type AttachmentDraft,
 } from "@/models/attachments";
-import {
-  agentActivityToolMergeKey,
-  isTerminalAgentActivityTool,
-  parseAgentActivity,
-  parseMessageActivityCommand,
-  questionActivityKeepsAgentWorking,
-} from "@/models/agentActivity";
-import {
-  isNewConversationSlashCommand,
-  skillDescriptionFromMarkdown,
-  skillOptionsFromWorkspace,
-  type SlashSkillOption,
-} from "@/models/slashCommands";
+import { skillDescriptionFromMarkdown, skillOptionsFromWorkspace, type SlashSkillOption } from "@/models/slashCommands";
 import { localizeError } from "@/shared/i18n";
-import { AgentActivityKinds, AgentActivityMsgTypes } from "@/shared/constants/messages";
-import type { AgentLike } from "@/models/agents";
-import type {
-  IMConversation,
-  IMMessage,
-  IMServerEvent,
-  IMUser,
-  ThreadView,
-  TranslateFn,
-  UsersById,
-} from "@/models/conversations";
+import type { IMConversation, IMMessage, IMServerEvent, IMUser, ThreadView, TranslateFn } from "@/models/conversations";
 import type { SlashPickerCandidate } from "@/models/slashCommands";
+import { useLegacyOpenClawWorkingFallback } from "./legacyOpenClawWorking";
 import type { UseConversationControllerArgs } from "./types";
 import { messageListScrollKey, useMessageListAutoScroll } from "./useMessageListAutoScroll";
-import {
-  handleSlashPickerNavigation,
-  type ConversationWorkingParticipant,
-} from "@/components/business/ConversationPane";
+import { handleSlashPickerNavigation } from "@/components/business/ConversationPane";
 
 const slashSkillOptionsCache = new Map<string, SlashSkillOption[]>();
 const slashSkillOptionsRequests = new Map<string, Promise<SlashSkillOption[]>>();
@@ -119,12 +95,6 @@ type OpenCreateRoomOptions = {
   preselectedMemberIDs?: string[];
   title?: string;
 };
-
-type WorkingParticipantsByConversationId = Record<string, ConversationWorkingParticipant[]>;
-
-const MESSAGE_WORKING_TIMEOUT_MS = 120_000;
-const QUESTION_CONTINUATION_WORKING_TIMEOUT_MS = 10 * 60_000;
-const PARTICIPANT_ACTIVITY_TURN_PLACEHOLDER = "\u200b";
 
 function clearThreadDraftsForConversation(current: DraftsByThreadKey, conversationID: string): DraftsByThreadKey {
   const prefix = `${conversationID}:`;
@@ -199,287 +169,6 @@ function conversationHasLocalIdentity(
   return (conversation?.members || []).some((memberID) => localIdentitiesMatch(memberID, id));
 }
 
-function isParticipantActivityTurnPlaceholder(message: IMMessage | null | undefined): boolean {
-  return String(message?.content || "") === PARTICIPANT_ACTIVITY_TURN_PLACEHOLDER;
-}
-
-function agentTargetsForConversation(
-  conversation: IMConversation | null | undefined,
-  currentUserID: string | null | undefined,
-  agents: readonly AgentLike[],
-  usersById: UsersById,
-): ConversationWorkingParticipant[] {
-  if (!conversation || !currentUserID) {
-    return [];
-  }
-
-  const byID = new Map<string, ConversationWorkingParticipant>();
-  conversation.members.forEach((memberID) => {
-    if (!memberID || localIdentitiesMatch(memberID, currentUserID)) {
-      return;
-    }
-    const user = resolveUserByLocalIdentity(memberID, usersById);
-    const agent = agents.find(
-      (item) =>
-        localIdentitiesMatch(item.id, memberID) ||
-        localIdentitiesMatch(item.user_id, memberID) ||
-        (user ? agentMatchesUser(item, user) : false),
-    );
-    if (!agent) {
-      return;
-    }
-    const participantID = String(user?.id || agent.user_id || agent.id || memberID).trim();
-    const name = String(agent.name || user?.name || participantID).trim();
-    if (participantID && name) {
-      byID.set(participantID, { id: participantID, name });
-    }
-  });
-  return Array.from(byID.values()).sort((left, right) => left.name.localeCompare(right.name));
-}
-
-function messageWorkingTargets(
-  conversation: IMConversation | null | undefined,
-  currentUserID: string | null | undefined,
-  agents: readonly AgentLike[],
-  usersById: UsersById,
-  segments: readonly ComposerSegment[],
-): ConversationWorkingParticipant[] {
-  const targets = agentTargetsForConversation(conversation, currentUserID, agents, usersById);
-  if (!conversation || targets.length === 0) {
-    return [];
-  }
-  if (isDirectConversation(conversation)) {
-    return targets;
-  }
-
-  const mentionedIDs = segments
-    .filter((segment) => segment.type === "mention")
-    .map((segment) => segment.userId)
-    .filter(Boolean);
-  if (!mentionedIDs.length) {
-    return [];
-  }
-  return targets.filter((target) => mentionedIDs.some((mentionedID) => localIdentitiesMatch(mentionedID, target.id)));
-}
-
-export function derivedMessageWorkingParticipants(
-  conversation: IMConversation | null | undefined,
-  currentUserID: string | null | undefined,
-  agents: readonly AgentLike[],
-  usersById: UsersById,
-): ConversationWorkingParticipant[] {
-  const roomID = String(conversation?.id || "").trim();
-  const currentID = String(currentUserID || "").trim();
-  if (!conversation || !roomID || !currentID) {
-    return [];
-  }
-  const targets = agentTargetsForConversation(conversation, currentID, agents, usersById);
-  if (!targets.length) {
-    return [];
-  }
-
-  const repliedTargetIDs = new Set<string>();
-  let questionContinuationAt: number | null = null;
-  for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
-    const message = conversation.messages[index];
-    if (isThreadReply(message) || isToolCallMessage(message) || isParticipantActivityTurnPlaceholder(message)) {
-      continue;
-    }
-    if (localIdentitiesMatch(message.sender_id, currentID) && isNewConversationSlashCommand(message.content)) {
-      return [];
-    }
-    if (questionActivityKeepsAgentWorking(message)) {
-      const question = parseAgentActivity(message.content)?.content.question;
-      const continuationAt = Date.parse(
-        String(question?.resolved_at || question?.requested_at || message.created_at || ""),
-      );
-      if (Number.isFinite(continuationAt)) {
-        questionContinuationAt = Math.max(questionContinuationAt ?? continuationAt, continuationAt);
-      }
-      continue;
-    }
-
-    const senderID = String(message.sender_id || "").trim();
-    const replyTarget = targets.find((target) => localIdentitiesMatch(target.id, senderID));
-    if (replyTarget) {
-      repliedTargetIDs.add(replyTarget.id);
-      continue;
-    }
-
-    if (!localIdentitiesMatch(senderID, currentID)) {
-      continue;
-    }
-
-    const messageTargets = targetsForStoredMessage(conversation, message, targets);
-    const pendingTargets = messageTargets.filter(
-      (target) => !Array.from(repliedTargetIDs).some((id) => localIdentitiesMatch(id, target.id)),
-    );
-    if (!pendingTargets.length) {
-      continue;
-    }
-    return messageWorkingExpired(message, questionContinuationAt) ? [] : pendingTargets;
-  }
-
-  return [];
-}
-
-export function activityWorkingParticipantsForConversation(
-  conversation: IMConversation | null | undefined,
-  currentUserID: string | null | undefined,
-  agents: readonly AgentLike[],
-  usersById: UsersById,
-): ConversationWorkingParticipant[] {
-  if (!conversation || !currentUserID) {
-    return [];
-  }
-  const targets = agentTargetsForConversation(conversation, currentUserID, agents, usersById);
-  if (!targets.length) {
-    return [];
-  }
-
-  const activeToolKeysByParticipantID = new Map<string, Set<string>>();
-  const activeLegacyCommandCountsByParticipantID = new Map<string, Map<string, number>>();
-  conversation.messages.forEach((message) => {
-    if (
-      !isThreadReply(message) &&
-      localIdentitiesMatch(message.sender_id, currentUserID) &&
-      isNewConversationSlashCommand(message.content)
-    ) {
-      activeToolKeysByParticipantID.clear();
-      activeLegacyCommandCountsByParticipantID.clear();
-      return;
-    }
-    const activity = parseAgentActivity(message.content);
-    const tool = activity?.content.tool;
-    const target = activityWorkingTargetForMessage(message, activity?.sender, targets);
-
-    if (activity?.content.msgtype === AgentActivityMsgTypes.tool && tool) {
-      if (!target) {
-        return;
-      }
-      const toolKey = agentActivityToolMergeKey(tool);
-      if (!toolKey) {
-        return;
-      }
-
-      const activeKeys = activeToolKeysByParticipantID.get(target.id) ?? new Set<string>();
-      if (isTerminalAgentActivityTool(tool)) {
-        activeKeys.delete(toolKey);
-      } else {
-        activeKeys.add(toolKey);
-      }
-      if (activeKeys.size) {
-        activeToolKeysByParticipantID.set(target.id, activeKeys);
-      } else {
-        activeToolKeysByParticipantID.delete(target.id);
-      }
-      return;
-    }
-
-    const legacyCommand = parseMessageActivityCommand(message);
-    if (legacyCommand?.kind === AgentActivityKinds.execCommand && target) {
-      const activeCommands = activeLegacyCommandCountsByParticipantID.get(target.id) ?? new Map<string, number>();
-      const currentCount = activeCommands.get(legacyCommand.signature) ?? 0;
-      if (legacyCommand.output) {
-        const nextCount = currentCount - 1;
-        if (nextCount > 0) {
-          activeCommands.set(legacyCommand.signature, nextCount);
-        } else {
-          activeCommands.delete(legacyCommand.signature);
-        }
-      } else {
-        activeCommands.set(legacyCommand.signature, currentCount + 1);
-      }
-      if (activeCommands.size) {
-        activeLegacyCommandCountsByParticipantID.set(target.id, activeCommands);
-      } else {
-        activeLegacyCommandCountsByParticipantID.delete(target.id);
-      }
-      return;
-    }
-
-    if (target && !isToolCallMessage(message) && !isParticipantActivityTurnPlaceholder(message)) {
-      activeToolKeysByParticipantID.delete(target.id);
-      activeLegacyCommandCountsByParticipantID.delete(target.id);
-    }
-  });
-
-  return targets.filter(
-    (target) => activeToolKeysByParticipantID.has(target.id) || activeLegacyCommandCountsByParticipantID.has(target.id),
-  );
-}
-
-function activityWorkingTargetForMessage(
-  message: IMMessage,
-  activitySender: string | null | undefined,
-  targets: readonly ConversationWorkingParticipant[],
-): ConversationWorkingParticipant | undefined {
-  const senderIDs = [message.sender_id, activitySender];
-  return targets.find((candidate) => senderIDs.some((senderID) => localIdentitiesMatch(senderID, candidate.id)));
-}
-
-function targetsForStoredMessage(
-  conversation: IMConversation,
-  message: IMMessage,
-  targets: readonly ConversationWorkingParticipant[],
-): ConversationWorkingParticipant[] {
-  if (isDirectConversation(conversation)) {
-    return [...targets];
-  }
-  const mentionedIDs = mentionedIDsFromMessage(message);
-  if (!mentionedIDs.length) {
-    return [];
-  }
-  return targets.filter((target) => mentionedIDs.some((id) => localIdentitiesMatch(id, target.id)));
-}
-
-function mentionedIDsFromMessage(message: IMMessage): string[] {
-  const ids = new Set<string>();
-  (message.mentions || []).forEach((mention) => {
-    const id = typeof mention === "string" ? mention : mention?.id;
-    const normalized = String(id || "").trim();
-    if (normalized) {
-      ids.add(normalized);
-    }
-  });
-
-  const content = String(message.content || "");
-  const atPattern = /<at\s+[^>]*user_id=["']([^"']+)["'][^>]*>/g;
-  for (const match of content.matchAll(atPattern)) {
-    const id = String(match[1] || "").trim();
-    if (id) {
-      ids.add(id);
-    }
-  }
-  return Array.from(ids);
-}
-
-function messageWorkingExpired(message: IMMessage, questionContinuationAt: number | null = null): boolean {
-  const createdAt = questionContinuationAt ?? Date.parse(String(message.created_at || ""));
-  if (!Number.isFinite(createdAt)) {
-    return false;
-  }
-  const timeout =
-    questionContinuationAt === null ? MESSAGE_WORKING_TIMEOUT_MS : QUESTION_CONTINUATION_WORKING_TIMEOUT_MS;
-  return Date.now() - createdAt > timeout;
-}
-
-function mergeWorkingParticipants(
-  ...groups: readonly (readonly ConversationWorkingParticipant[] | null | undefined)[]
-): ConversationWorkingParticipant[] {
-  const byID = new Map<string, ConversationWorkingParticipant>();
-  groups.forEach((group) => {
-    (group || []).forEach((participant) => {
-      const id = String(participant.id || "").trim();
-      const name = String(participant.name || id).trim();
-      if (id && name) {
-        byID.set(id, { id, name });
-      }
-    });
-  });
-  return Array.from(byID.values()).sort((left, right) => left.name.localeCompare(right.name));
-}
-
 export function useConversationController({
   activeConversationId,
   activePane,
@@ -516,6 +205,8 @@ export function useConversationController({
   messageActionBusy,
   messageActionFeedback,
   messageListActive = true,
+  hasObservedWorkLease,
+  workingParticipantsForRoom,
 }: UseConversationControllerArgs) {
   const [draftsByConversationId, setDraftsByConversationId] = useState<DraftsByConversationId>({});
   const [threadDraftsByKey, setThreadDraftsByKey] = useState<DraftsByThreadKey>({});
@@ -548,8 +239,6 @@ export function useConversationController({
   const [memberActionBusyID, setMemberActionBusyID] = useState("");
   const [memberActionError, setMemberActionError] = useState("");
   const [composerError, setComposerError] = useState("");
-  const [messageWorkingByConversationId, setMessageWorkingByConversationId] =
-    useState<WorkingParticipantsByConversationId>({});
   const editorRef = useRef<HTMLDivElement | null>(null);
   const composerIsComposingRef = useRef(false);
   const composerJustEndedCompositionRef = useRef(false);
@@ -594,11 +283,14 @@ export function useConversationController({
     selectedConversation && !isDirectConversation(selectedConversation) ? selectedConversation : null;
   const selectedConversationID = selectedConversation?.id ?? "";
   const selectedMessageCount = selectedConversation?.messages?.length ?? 0;
-  const workingParticipants = mergeWorkingParticipants(
-    activityWorkingParticipantsForConversation(selectedConversation, data?.current_user_id, agents, usersById),
-    derivedMessageWorkingParticipants(selectedConversation, data?.current_user_id, agents, usersById),
-    selectedConversationID ? messageWorkingByConversationId[selectedConversationID] : [],
-  );
+  const workingParticipants = useLegacyOpenClawWorkingFallback({
+    agents,
+    authoritative: workingParticipantsForRoom(selectedConversationID),
+    conversation: selectedConversation,
+    currentUserID: data?.current_user_id,
+    hasObservedWorkLease,
+    usersById,
+  });
   const logAgent = useMemo(() => {
     if (!selectedConversation || !data?.current_user_id) {
       return null;
@@ -743,97 +435,22 @@ export function useConversationController({
   const threadSlashCandidates = threadSlashPickerState.candidates;
   const isAnySlashPickerNeeded = slashPickerActive || threadSlashPickerActive;
 
-  const clearMessageWorkingParticipants = useCallback(
-    (conversationID: string | null | undefined, participantID?: string | null) => {
-      const roomID = String(conversationID || "").trim();
-      if (!roomID) {
-        return;
-      }
-      const senderID = String(participantID || "").trim();
-
-      setMessageWorkingByConversationId((current) => {
-        const currentParticipants = current[roomID] ?? [];
-        if (!currentParticipants.length) {
-          return current;
-        }
-        const nextParticipants = senderID
-          ? currentParticipants.filter((participant) => !localIdentitiesMatch(participant.id, senderID))
-          : [];
-        if (nextParticipants.length === currentParticipants.length) {
-          return current;
-        }
-        const next = { ...current };
-        if (nextParticipants.length) {
-          next[roomID] = nextParticipants;
-        } else {
-          delete next[roomID];
-        }
-        return next;
-      });
-    },
-    [],
-  );
-
-  const markMessageWorkingParticipants = useCallback(
-    (conversationID: string | null | undefined, participants: readonly ConversationWorkingParticipant[]) => {
-      const roomID = String(conversationID || "").trim();
-      if (!roomID || !participants.length) {
-        return;
-      }
-      const nextParticipants = Array.from(
-        participants.reduce((map, participant) => {
-          const id = String(participant.id || "").trim();
-          const name = String(participant.name || id).trim();
-          if (id && name) {
-            map.set(id, { id, name });
-          }
-          return map;
-        }, new Map<string, ConversationWorkingParticipant>()),
-      )
-        .map(([, participant]) => participant)
-        .sort((left, right) => left.name.localeCompare(right.name));
-      if (!nextParticipants.length) {
-        return;
-      }
-
-      setMessageWorkingByConversationId((current) => {
-        const merged = new Map((current[roomID] ?? []).map((participant) => [participant.id, participant]));
-        nextParticipants.forEach((participant) => merged.set(participant.id, participant));
-        return {
-          ...current,
-          [roomID]: Array.from(merged.values()).sort((left, right) => left.name.localeCompare(right.name)),
-        };
-      });
-    },
-    [],
-  );
-
   useEffect(() => {
     activeThreadKeyRef.current = activeThreadRootID ? threadKey(activeConversationId, activeThreadRootID) : "";
   }, [activeConversationId, activeThreadRootID]);
 
-  const handleRealtimeEvent = useCallback(
-    (payload: IMServerEvent) => {
-      if ((payload?.type === "thread.created" || payload?.type === "thread.updated") && payload.thread) {
-        if (threadViewKey(payload.thread) === activeThreadKeyRef.current) {
-          setActiveThreadView(payload.thread);
-        }
+  const handleRealtimeEvent = useCallback((payload: IMServerEvent) => {
+    if ((payload?.type === "thread.created" || payload?.type === "thread.updated") && payload.thread) {
+      if (threadViewKey(payload.thread) === activeThreadKeyRef.current) {
+        setActiveThreadView(payload.thread);
       }
-      if (payload?.type === "message.created" && payload.message) {
-        if (threadMessageKey(payload.room_id, payload.message) === activeThreadKeyRef.current) {
-          setActiveThreadView((current) => appendReplyToThreadView(current, payload.message) ?? null);
-        }
-        if (
-          !isToolCallMessage(payload.message) &&
-          !isParticipantActivityTurnPlaceholder(payload.message) &&
-          !questionActivityKeepsAgentWorking(payload.message)
-        ) {
-          clearMessageWorkingParticipants(payload.room_id, payload.message.sender_id);
-        }
+    }
+    if (payload?.type === "message.created" && payload.message) {
+      if (threadMessageKey(payload.room_id, payload.message) === activeThreadKeyRef.current) {
+        setActiveThreadView((current) => appendReplyToThreadView(current, payload.message) ?? null);
       }
-    },
-    [clearMessageWorkingParticipants],
-  );
+    }
+  }, []);
 
   useEffect(() => {
     setMentionIndex(0);
@@ -1126,10 +743,6 @@ export function useConversationController({
     setComposerError("");
     const serializedDraft = serializeComposerSegments(draftSegments);
     const content = normalizeSlashShorthandForPayload(serializedDraft);
-    const startsNewConversation = isNewConversationSlashCommand(content);
-    const workingTargets = startsNewConversation
-      ? []
-      : messageWorkingTargets(activeConversation, data.current_user_id, agents, usersById, draftSegments);
     try {
       const created = await sendMessageRequest({
         room_id: activeConversation.id,
@@ -1139,11 +752,6 @@ export function useConversationController({
       });
       setBootstrapData((current) => appendMessageToData(current, activeConversation.id, created));
       messageListAutoScroll.follow("smooth");
-      if (startsNewConversation) {
-        clearMessageWorkingParticipants(activeConversation.id);
-      } else {
-        markMessageWorkingParticipants(activeConversation.id, workingTargets);
-      }
       clearComposer();
     } catch (err) {
       setComposerError(errorMessage(err, t("sendFailed")));

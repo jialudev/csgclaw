@@ -38,6 +38,7 @@ import (
 	"csgclaw/internal/upgrade"
 	"csgclaw/internal/utils"
 	"csgclaw/internal/version"
+	"csgclaw/internal/worklease"
 )
 
 type Handler struct {
@@ -46,6 +47,8 @@ type Handler struct {
 	im                         *im.Service
 	csgclaw                    *csgclawchannel.Service
 	imBus                      *im.Bus
+	workBus                    *worklease.Bus
+	participantWork            worklease.ParticipantWorkReporter
 	imProvisioner              *im.Provisioner
 	participantBridge          *im.ParticipantBridge
 	feishu                     *feishu.Service
@@ -103,17 +106,18 @@ type imBootstrapResponse struct {
 }
 
 type imEventResponse struct {
-	Type        string                  `json:"type"`
-	RoomID      string                  `json:"room_id,omitempty"`
-	TeamID      string                  `json:"team_id,omitempty"`
-	Room        *im.Room                `json:"room,omitempty"`
-	User        *im.User                `json:"user,omitempty"`
-	Message     *im.Message             `json:"message,omitempty"`
-	Participant *apitypes.Participant   `json:"participant,omitempty"`
-	Team        *apitypes.Team          `json:"team,omitempty"`
-	Thread      *im.ThreadView          `json:"thread,omitempty"`
-	Sender      *im.User                `json:"sender,omitempty"`
-	Upgrade     *apitypes.UpgradeStatus `json:"upgrade,omitempty"`
+	Type        string                          `json:"type"`
+	RoomID      string                          `json:"room_id,omitempty"`
+	TeamID      string                          `json:"team_id,omitempty"`
+	Room        *im.Room                        `json:"room,omitempty"`
+	User        *im.User                        `json:"user,omitempty"`
+	Message     *im.Message                     `json:"message,omitempty"`
+	Participant *apitypes.Participant           `json:"participant,omitempty"`
+	Team        *apitypes.Team                  `json:"team,omitempty"`
+	Thread      *im.ThreadView                  `json:"thread,omitempty"`
+	Sender      *im.User                        `json:"sender,omitempty"`
+	Upgrade     *apitypes.UpgradeStatus         `json:"upgrade,omitempty"`
+	Work        *apitypes.ParticipantWorkUpdate `json:"work,omitempty"`
 }
 
 type bootstrapConfigResponse struct {
@@ -732,6 +736,13 @@ func (h *Handler) SetNotificationDeliver(d notification.Fanouter) {
 func (h *Handler) SetParticipantService(svc *participant.Service) {
 	if h != nil {
 		h.participant = svc
+	}
+}
+
+func (h *Handler) SetParticipantWorkService(reporter worklease.ParticipantWorkReporter, bus *worklease.Bus) {
+	if h != nil {
+		h.participantWork = reporter
+		h.workBus = bus
 	}
 }
 
@@ -2454,8 +2465,8 @@ func (h *Handler) handleIMEvents(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if h.imBus == nil {
-		http.Error(w, "im events are not configured", http.StatusServiceUnavailable)
+	if h.imBus == nil && h.workBus == nil {
+		http.Error(w, "events are not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -2468,8 +2479,18 @@ func (h *Handler) handleIMEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	events, cancel := h.imBus.Subscribe()
-	defer cancel()
+	var imEvents <-chan im.Event
+	var cancelIM func()
+	if h.imBus != nil {
+		imEvents, cancelIM = h.imBus.Subscribe()
+		defer cancelIM()
+	}
+	var workEvents <-chan worklease.Event
+	var cancelWork func()
+	if h.workBus != nil {
+		workEvents, cancelWork = h.workBus.Subscribe()
+		defer cancelWork()
+	}
 
 	_, _ = io.WriteString(w, ": connected\n\n")
 	flusher.Flush()
@@ -2486,26 +2507,43 @@ func (h *Handler) handleIMEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			flusher.Flush()
-		case evt, ok := <-events:
+		case evt, ok := <-imEvents:
 			if !ok {
+				imEvents = nil
+				continue
+			}
+			if !writeSSEEvent(w, flusher, presentEvent(evt)) {
 				return
 			}
-			data, err := json.Marshal(presentEvent(evt))
-			if err != nil {
+		case evt, ok := <-workEvents:
+			if !ok {
+				workEvents = nil
+				continue
+			}
+			work := evt.Work
+			if !writeSSEEvent(w, flusher, imEventResponse{Type: evt.Type, RoomID: evt.RoomID, Work: &work}) {
 				return
 			}
-			if _, err := io.Copy(w, bytes.NewReader([]byte("data: "))); err != nil {
-				return
-			}
-			if _, err := io.Copy(w, bytes.NewReader(data)); err != nil {
-				return
-			}
-			if _, err := io.WriteString(w, "\n\n"); err != nil {
-				return
-			}
-			flusher.Flush()
 		}
 	}
+}
+
+func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, event any) bool {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return false
+	}
+	if _, err := io.Copy(w, bytes.NewReader([]byte("data: "))); err != nil {
+		return false
+	}
+	if _, err := io.Copy(w, bytes.NewReader(data)); err != nil {
+		return false
+	}
+	if _, err := io.WriteString(w, "\n\n"); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

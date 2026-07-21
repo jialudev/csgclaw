@@ -128,6 +128,21 @@ export type IMData = {
   users: IMUser[];
 };
 
+export type ParticipantWorkUpdate = {
+  expires_at: string;
+  kind: "agent_turn";
+  lease_id: string;
+  participant_id: string;
+  reason: "started" | "renewed" | "released" | "expired";
+  registry_epoch: string;
+  request_id: string;
+  revision: number;
+  room_id: string;
+  state: "working" | "idle";
+  thread_root_id?: string | null;
+  user_id: string;
+};
+
 export type IMServerEvent = {
   message?: IMMessage | null;
   participant?: IMParticipantLike | null;
@@ -139,6 +154,7 @@ export type IMServerEvent = {
   type?: string | null;
   upgrade?: unknown;
   user?: IMUser | null;
+  work?: ParticipantWorkUpdate | null;
 };
 
 export type ThreadView = {

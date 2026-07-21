@@ -1,0 +1,74 @@
+import { createRef } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { ConversationMessageList } from "@/components/business/ConversationPane";
+import type { IMConversation, IMUser, TranslateFn } from "@/models/conversations";
+
+const t: TranslateFn = (key) => key;
+
+const agentUser: IMUser = {
+  id: "agent-1",
+  name: "Builder",
+  role: "worker",
+};
+
+const conversation: IMConversation = {
+  id: "room-1",
+  members: [agentUser.id],
+  messages: [
+    {
+      content: "Done",
+      id: "message-1",
+      sender_id: agentUser.id,
+    },
+  ],
+  title: "Build room",
+};
+
+function renderMessageList({
+  agents = [{ id: agentUser.id, name: agentUser.name, role: "worker" }],
+  onOpenAgentDetail = vi.fn(),
+  onPreviewUser = vi.fn(),
+} = {}) {
+  render(
+    <ConversationMessageList
+      agents={agents}
+      conversation={conversation}
+      locale="en"
+      messageActionBusy=""
+      messageActionFeedback={{}}
+      messageListRef={createRef<HTMLElement>()}
+      t={t}
+      theme="light"
+      usersById={new Map([[agentUser.id, agentUser]])}
+      visibleMessages={conversation.messages}
+      onMessageAction={vi.fn()}
+      onOpenAgentDetail={onOpenAgentDetail}
+      onOpenThread={vi.fn()}
+      onPreviewUser={onPreviewUser}
+    />,
+  );
+  return { onOpenAgentDetail, onPreviewUser };
+}
+
+describe("ConversationMessageList profile preview", () => {
+  it("does not reopen the compact preview when focus returns from agent details", () => {
+    const { onOpenAgentDetail, onPreviewUser } = renderMessageList();
+    const avatar = screen.getByRole("button", { name: "profilePreview Builder" });
+
+    avatar.focus();
+    expect(onPreviewUser).not.toHaveBeenCalled();
+
+    fireEvent.click(avatar);
+    expect(onOpenAgentDetail).toHaveBeenCalledWith(expect.objectContaining({ id: agentUser.id }), avatar);
+    expect(onPreviewUser).not.toHaveBeenCalled();
+  });
+
+  it("still opens the compact preview when a human avatar is activated", () => {
+    const { onOpenAgentDetail, onPreviewUser } = renderMessageList({ agents: [] });
+    const avatar = screen.getByRole("button", { name: "profilePreview Builder" });
+
+    fireEvent.click(avatar);
+    expect(onOpenAgentDetail).not.toHaveBeenCalled();
+    expect(onPreviewUser).toHaveBeenCalledWith(agentUser, avatar);
+  });
+});

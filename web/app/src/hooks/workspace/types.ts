@@ -18,6 +18,7 @@ import type { ConnectorConfigDraft, ConnectorStatus } from "@/models/connectors"
 import type { CLIProxyAuthStatusMap } from "./useCLIProxyAuthStatuses";
 import type { ConfigPhase } from "./useConfigController";
 import type { WorkspaceUiState } from "./workspaceUiStore";
+import type { ParticipantWorkStatus } from "./useParticipantWorkStatus";
 
 export type WorkspaceQueryData<T> = T | ((current: T) => T);
 export type WorkspaceQuerySetter<T> = (value: WorkspaceQueryData<T>) => void;
@@ -212,6 +213,8 @@ export type UseConversationControllerArgs = {
   messageActionBusy: string;
   messageActionFeedback: MessageActionFeedback;
   messageListActive?: boolean;
+  hasObservedWorkLease: ParticipantWorkStatus["hasObservedWorkLease"];
+  workingParticipantsForRoom: ParticipantWorkStatus["workingParticipantsForRoom"];
   navigatePane: WorkspaceNavigationController["navigatePane"];
   onMessageAction: (
     action: MessageAction | null | undefined,

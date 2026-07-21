@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"csgclaw/internal/activity"
+	"csgclaw/internal/apitypes"
 	csgclawchannel "csgclaw/internal/channel/csgclaw"
 	"csgclaw/internal/channelbridge/runtimebridge"
 	runtimecodex "csgclaw/internal/runtime/codex"
+	"csgclaw/internal/worklease"
 )
 
 type streamResult struct {
@@ -1737,7 +1739,7 @@ func TestServiceUsesStableMessageIDForQuestionResolution(t *testing.T) {
 		sink.Publish(runtimecodex.SessionEvent{RuntimeID: handle.RuntimeID, SessionID: req.SessionID, Kind: runtimecodex.SessionEventPromptCompleted})
 		return err
 	}}
-	svc := NewService(client, prompter, sink, broker)
+	svc := NewService(client, prompter, sink, WithUserInputBroker(broker))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := svc.StartBot(ctx, Binding{BotID: "u-codex", RuntimeID: "rt-1", SessionID: "sess-1"}); err != nil {
@@ -1826,7 +1828,7 @@ func TestServiceFlushesCommentaryBeforeUserInputQuestion(t *testing.T) {
 		sink.Publish(runtimecodex.SessionEvent{RuntimeID: handle.RuntimeID, SessionID: req.SessionID, Kind: runtimecodex.SessionEventPromptCompleted})
 		return err
 	}}
-	svc := NewService(client, prompter, sink, broker)
+	svc := NewService(client, prompter, sink, WithUserInputBroker(broker))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer svc.Close()
 	defer cancel()
@@ -1892,7 +1894,7 @@ func TestServiceSkipsFeishuQuestionWithUnsupportedNotice(t *testing.T) {
 		decisionCh <- decision
 		return err
 	}}
-	svc := NewService(client, prompter, sink, broker)
+	svc := NewService(client, prompter, sink, WithUserInputBroker(broker))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := svc.StartBot(ctx, Binding{BotID: "u-codex", RuntimeID: "rt-1", SessionID: "sess-1"}); err != nil {
@@ -2353,6 +2355,88 @@ var _ BotClient = (*fakeBotClient)(nil)
 var _ MessageUpdater = (*fakeBotClient)(nil)
 var _ MessageReactor = (*fakeBotClient)(nil)
 var _ SessionPrompter = (*fakePrompter)(nil)
+
+type fakeWorkReporter struct {
+	mu              sync.Mutex
+	leases          []worklease.ParticipantWorkLease
+	stops           []worklease.ParticipantWorkLease
+	stopContextErrs []error
+}
+
+func (f *fakeWorkReporter) StartOrRenew(_ context.Context, lease worklease.ParticipantWorkLease) (apitypes.ParticipantWorkUpdate, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.leases = append(f.leases, lease)
+	return apitypes.ParticipantWorkUpdate{}, nil
+}
+
+func (f *fakeWorkReporter) Stop(ctx context.Context, participantID, leaseID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stops = append(f.stops, worklease.ParticipantWorkLease{ParticipantID: participantID, LeaseID: leaseID})
+	f.stopContextErrs = append(f.stopContextErrs, ctx.Err())
+	return nil
+}
+
+func (f *fakeWorkReporter) snapshot() ([]worklease.ParticipantWorkLease, []worklease.ParticipantWorkLease, []error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]worklease.ParticipantWorkLease(nil), f.leases...), append([]worklease.ParticipantWorkLease(nil), f.stops...), append([]error(nil), f.stopContextErrs...)
+}
+
+func TestParticipantWorkReporterLifecycle(t *testing.T) {
+	reporter := &fakeWorkReporter{}
+	service := NewService(nil, nil, nil, WithParticipantWorkReporter(reporter))
+	service.workRenewEvery = 10 * time.Millisecond
+	worker := &worker{service: service, binding: Binding{BotID: "pt-worker"}}
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := worker.startParticipantWork(ctx, BotEvent{
+		Channel:      localChannel,
+		RoomID:       "room-1",
+		ThreadRootID: "root-1",
+		MessageID:    "message-1",
+	})
+
+	waitFor(t, func() bool {
+		leases, _, _ := reporter.snapshot()
+		return len(leases) >= 2
+	})
+	cancel()
+	stop()
+
+	leases, stops, stopContextErrs := reporter.snapshot()
+	if len(leases) < 2 {
+		t.Fatalf("lease calls = %d, want start and renew", len(leases))
+	}
+	for _, lease := range leases {
+		if lease.LeaseID != leases[0].LeaseID || lease.ParticipantID != "pt-worker" || lease.RoomID != "room-1" || lease.RequestID != "message-1" {
+			t.Fatalf("lease metadata changed: %#v versus %#v", lease, leases[0])
+		}
+	}
+	if len(stops) != 1 || stops[0].LeaseID != leases[0].LeaseID {
+		t.Fatalf("stops = %#v", stops)
+	}
+	if len(stopContextErrs) != 1 || stopContextErrs[0] != nil {
+		t.Fatalf("release context errors = %#v", stopContextErrs)
+	}
+	time.Sleep(20 * time.Millisecond)
+	after, _, _ := reporter.snapshot()
+	if len(after) != len(leases) {
+		t.Fatalf("renew continued after release: %d -> %d", len(leases), len(after))
+	}
+}
+
+func TestParticipantWorkReporterSkipsFeishu(t *testing.T) {
+	reporter := &fakeWorkReporter{}
+	service := NewService(nil, nil, nil, WithParticipantWorkReporter(reporter))
+	worker := &worker{service: service, binding: Binding{BotID: "pt-worker"}}
+	stop := worker.startParticipantWork(context.Background(), BotEvent{Channel: "feishu", RoomID: "room-1", MessageID: "message-1"})
+	stop()
+	leases, stops, _ := reporter.snapshot()
+	if len(leases) != 0 || len(stops) != 0 {
+		t.Fatalf("feishu work reporting calls = leases %#v stops %#v", leases, stops)
+	}
+}
 
 func TestWorkerReturnsPromptError(t *testing.T) {
 	t.Parallel()
