@@ -371,6 +371,7 @@ func TestRefreshCodexHomeAgentsFileAddsManagerConnectorRules(t *testing.T) {
 	for _, want := range []string{
 		"GitHub Connector Access",
 		"/api/v1/agents/agent-manager/connectors/github/credential",
+		"X-CSGClaw-Connector-Capability: $CSGCLAW_CONNECTOR_CAPABILITY",
 		"`access_token`",
 		"Do not rely on connector tokens from environment variables",
 		"external Codex GitHub app connector",

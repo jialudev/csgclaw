@@ -142,12 +142,16 @@ export function ConversationPane({
   authStatuses,
   authBusyProvider,
   connectorStatus,
+  gitlabConnectorStatus,
   connectorBusyAction,
+  connectorBusyProvider,
   connectorError,
   connectorPending,
   onSaveConnectorConfig,
+  onSaveGitLabConnectorConfig,
   onConnectConnector,
   onDisconnectConnector,
+  onDisconnectGitLabConnector,
   onManageConnector,
   onProviderLogin,
   draftSegments,
@@ -408,7 +412,9 @@ export function ConversationPane({
           authBusyProvider={authBusyProvider}
           authStatuses={authStatuses}
           connectorStatus={connectorStatus}
+          gitlabConnectorStatus={gitlabConnectorStatus}
           connectorBusyAction={connectorBusyAction}
+          connectorBusyProvider={connectorBusyProvider}
           connectorError={connectorError}
           connectorPending={connectorPending}
           composerDisabled={composerDisabled}
@@ -437,9 +443,11 @@ export function ConversationPane({
           onComposerKeyDown={onComposerKeyDown}
           onConnectConnector={onConnectConnector}
           onDisconnectConnector={onDisconnectConnector}
+          onDisconnectGitLabConnector={onDisconnectGitLabConnector}
           onManageConnector={onManageConnector}
           onProviderLogin={onProviderLogin}
           onSaveConnectorConfig={onSaveConnectorConfig}
+          onSaveGitLabConnectorConfig={onSaveGitLabConnectorConfig}
           onSendMessage={onSendMessage}
           onRemoveAttachment={onRemoveAttachment}
           onSyncComposer={onSyncComposer}
