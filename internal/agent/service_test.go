@@ -440,6 +440,21 @@ func (f *fakeLifecycleObserver) StopAgent(agentID string) {
 	f.events = append(f.events, "stop:"+agentID)
 }
 
+type fakeBindingActivator struct {
+	refreshCalls []bindingRefreshCall
+	refreshErr   error
+}
+
+type bindingRefreshCall struct {
+	agent   Agent
+	channel string
+}
+
+func (f *fakeBindingActivator) RefreshAgentChannel(_ context.Context, a Agent, channel string) error {
+	f.refreshCalls = append(f.refreshCalls, bindingRefreshCall{agent: a, channel: channel})
+	return f.refreshErr
+}
+
 type cancelOnWrite struct {
 	writer io.Writer
 	cancel context.CancelFunc
@@ -6697,6 +6712,93 @@ func TestStartTriggersLifecycleObserver(t *testing.T) {
 	}
 	if len(observer.ensureCalls) != 1 || observer.ensureCalls[0].ID != "agent-alice" {
 		t.Fatalf("EnsureAgent() calls = %+v, want one call for agent-alice", observer.ensureCalls)
+	}
+}
+
+func TestApplyExternalBindingRefreshesCodexChannelWithoutStartingRuntime(t *testing.T) {
+	observer := &fakeLifecycleObserver{}
+	activator := &fakeBindingActivator{}
+	runtimeStartCalls := 0
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{}, "manager-image:test", "",
+		WithLifecycleObserver(observer),
+		WithBindingActivator(activator),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			start: func(context.Context, agentruntime.Handle) (agentruntime.State, error) {
+				runtimeStartCalls++
+				return agentruntime.StateRunning, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents[ManagerUserID] = Agent{
+		ID:              ManagerUserID,
+		Name:            ManagerName,
+		Role:            RoleManager,
+		RuntimeID:       "rt-manager",
+		RuntimeKind:     RuntimeKindCodex,
+		Status:          string(agentruntime.StateRunning),
+		AgentProfile:    AgentProfile{Name: ManagerName, Provider: ProviderCodex, ModelID: "gpt-5.4", ProfileComplete: true},
+		ProfileComplete: true,
+	}
+
+	reconciled, activation, err := svc.ApplyExternalBinding(context.Background(), ManagerUserID, "feishu")
+	if err != nil {
+		t.Fatalf("ApplyExternalBinding() error = %v", err)
+	}
+	if reconciled.ID != ManagerUserID {
+		t.Fatalf("ApplyExternalBinding() agent = %q, want %q", reconciled.ID, ManagerUserID)
+	}
+	if activation != ExternalBindingActivationChannelRefreshed {
+		t.Fatalf("activation = %q, want %q", activation, ExternalBindingActivationChannelRefreshed)
+	}
+	if runtimeStartCalls != 0 {
+		t.Fatalf("runtime Start() calls = %d, want 0", runtimeStartCalls)
+	}
+	if len(observer.ensureCalls) != 0 {
+		t.Fatalf("EnsureAgent() calls = %+v, want none", observer.ensureCalls)
+	}
+	if len(activator.refreshCalls) != 1 || activator.refreshCalls[0].agent.ID != ManagerUserID || activator.refreshCalls[0].channel != "feishu" {
+		t.Fatalf("RefreshAgentChannel() calls = %+v, want manager feishu once", activator.refreshCalls)
+	}
+}
+
+func TestApplyExternalBindingRejectsStoppedCodexAgent(t *testing.T) {
+	activator := &fakeBindingActivator{}
+	svc, err := NewService(
+		config.ModelConfig{},
+		config.ServerConfig{}, "manager-image:test", "",
+		WithBindingActivator(activator),
+		WithRuntime(fakeAgentRuntime{
+			kind: RuntimeKindCodex,
+			info: func(_ context.Context, h agentruntime.Handle) (agentruntime.Info, error) {
+				return agentruntime.Info{HandleID: h.HandleID, State: agentruntime.StateStopped}, nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents[ManagerUserID] = Agent{
+		ID:              ManagerUserID,
+		Name:            ManagerName,
+		Role:            RoleManager,
+		RuntimeID:       "rt-manager",
+		RuntimeKind:     RuntimeKindCodex,
+		Status:          string(agentruntime.StateStopped),
+		AgentProfile:    AgentProfile{Name: ManagerName, Provider: ProviderCodex, ModelID: "gpt-5.4", ProfileComplete: true},
+		ProfileComplete: true,
+	}
+
+	if _, _, err := svc.ApplyExternalBinding(context.Background(), ManagerUserID, "feishu"); err == nil {
+		t.Fatal("ApplyExternalBinding() error = nil, want stopped agent rejection")
+	}
+	if len(activator.refreshCalls) != 0 {
+		t.Fatalf("RefreshAgentChannel() calls = %+v, want none", activator.refreshCalls)
 	}
 }
 

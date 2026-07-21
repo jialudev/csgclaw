@@ -1241,6 +1241,75 @@ func (h *Handler) handleAgentStopByID(w http.ResponseWriter, r *http.Request) {
 	h.handleAgentStop(w, r, id)
 }
 
+func (h *Handler) handleAgentApplyBindings(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.svc == nil {
+		http.Error(w, "agent service is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	channel, err := applyBindingsChannel(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.Reload(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	activated, _, err := h.svc.ApplyExternalBinding(r.Context(), id, channel)
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	writeJSON(w, http.StatusOK, presentAgent(activated))
+}
+
+type applyAgentBindingsRequest struct {
+	Channel string `json:"channel"`
+}
+
+func applyBindingsChannel(r *http.Request) (string, error) {
+	if r == nil {
+		return "", nil
+	}
+	channel := strings.TrimSpace(r.URL.Query().Get("channel"))
+	if channel != "" {
+		return channel, nil
+	}
+	if r.Body == nil {
+		return feishu.ChannelID, nil
+	}
+	var req applyAgentBindingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if errors.Is(err, io.EOF) {
+			return feishu.ChannelID, nil
+		}
+		return "", fmt.Errorf("decode apply bindings request: %w", err)
+	}
+	channel = strings.TrimSpace(req.Channel)
+	if channel == "" {
+		// Legacy Feishu skills called this endpoint before channel was explicit.
+		return feishu.ChannelID, nil
+	}
+	return channel, nil
+}
+
+func (h *Handler) handleAgentApplyBindingsByID(w http.ResponseWriter, r *http.Request) {
+	id := pathValue(r, "id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	h.handleAgentApplyBindings(w, r, id)
+}
+
 func (h *Handler) handleAgentLogs(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

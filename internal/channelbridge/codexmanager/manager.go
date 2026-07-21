@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"csgclaw/internal/agent"
+	csgclawchannel "csgclaw/internal/channel/csgclaw"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/channelbridge/codexbridge"
 	agentruntime "csgclaw/internal/runtime"
@@ -18,6 +19,7 @@ type Manager interface {
 	Start(context.Context) error
 	EnsureAgent(context.Context, agent.Agent) error
 	StopAgent(string)
+	RefreshAgentChannel(context.Context, agent.Agent, string) error
 	Close()
 }
 
@@ -27,6 +29,11 @@ type AgentLister interface {
 
 type RuntimeProvider interface {
 	Runtime(kind string) (agentruntime.Runtime, error)
+}
+
+type channelManager interface {
+	Manager
+	supportsAgentChannel(string) bool
 }
 
 type Options struct {
@@ -142,6 +149,32 @@ func (m *multiManager) EnsureAgent(ctx context.Context, a agent.Agent) error {
 	return outErr
 }
 
+func (m *multiManager) RefreshAgentChannel(ctx context.Context, a agent.Agent, channel string) error {
+	channel = normalizeAgentChannel(channel)
+	if channel == "" {
+		return fmt.Errorf("channel is required")
+	}
+	if m == nil {
+		return nil
+	}
+	var outErr error
+	handled := false
+	for _, manager := range m.managers {
+		target, ok := manager.(channelManager)
+		if !ok || !target.supportsAgentChannel(channel) {
+			continue
+		}
+		handled = true
+		if err := target.RefreshAgentChannel(ctx, a, channel); err != nil {
+			outErr = errors.Join(outErr, err)
+		}
+	}
+	if !handled {
+		return fmt.Errorf("channel %q bridge manager is not configured", channel)
+	}
+	return outErr
+}
+
 func (m *multiManager) StopAgent(agentID string) {
 	if m == nil {
 		return
@@ -246,16 +279,32 @@ func (m *csgclawManager) EnsureAgent(ctx context.Context, a agent.Agent) error {
 	if !m.ensuring.begin(a.ID) {
 		return nil
 	}
-	defer m.ensuring.finish(a.ID)
-	session, err := currentSession(m.runtime, a)
-	if err != nil {
+	for {
+		session, err := currentSession(m.runtime, a)
+		if err == nil {
+			// Force a fresh bot-event subscription even when the binding is unchanged.
+			// This repairs cases where the bridge worker exists but missed its initial
+			// subscription window and would otherwise be treated as a no-op restart.
+			m.stopAgentBridge(a)
+			err = m.bridge.StartBot(ctx, bindingForAgent(a, session.SessionID))
+		}
+		if m.ensuring.finish(a.ID) {
+			continue
+		}
 		return err
 	}
-	// Force a fresh bot-event subscription even when the binding is unchanged.
-	// This repairs cases where the bridge worker exists but missed its initial
-	// subscription window and would otherwise be treated as a no-op restart.
-	m.stopAgentBridge(a)
-	return m.bridge.StartBot(ctx, bindingForAgent(a, session.SessionID))
+}
+
+func (m *csgclawManager) RefreshAgentChannel(ctx context.Context, a agent.Agent, channel string) error {
+	channel = normalizeAgentChannel(channel)
+	if !m.supportsAgentChannel(channel) {
+		return unsupportedAgentChannelError(channel)
+	}
+	return m.EnsureAgent(ctx, a)
+}
+
+func (m *csgclawManager) supportsAgentChannel(channel string) bool {
+	return normalizeAgentChannel(channel) == csgclawchannel.ChannelID
 }
 
 func (m *csgclawManager) StopAgent(agentID string) {
@@ -349,29 +398,49 @@ func (m *feishuManager) EnsureAgent(ctx context.Context, a agent.Agent) error {
 	if m == nil || m.runtime == nil || m.bridge == nil {
 		return nil
 	}
-	participantID := strings.TrimSpace(m.participantIDForAgent(a))
-	if !shouldStartCodexBridge(a) || participantID == "" {
+	if !shouldStartCodexBridge(a) {
 		m.StopAgent(a.ID)
 		return nil
 	}
 	if !m.ensuring.begin(a.ID) {
 		return nil
 	}
-	defer m.ensuring.finish(a.ID)
+	for {
+		participantID := strings.TrimSpace(m.participantIDForAgent(a))
+		var err error
+		if participantID == "" {
+			m.StopAgent(a.ID)
+		} else {
+			m.stopStaleBridgeForAgent(a.ID, participantID)
+			var session *runtimecodex.Session
+			session, err = currentSession(m.runtime, a)
+			if err == nil {
+				m.stopAgentBridgeForAgent(a.ID, participantID, a)
+				binding := bindingForAgent(a, session.SessionID)
+				binding.BotID = participantID
+				err = m.bridge.StartBot(ctx, binding)
+				if err == nil {
+					m.rememberParticipant(a.ID, participantID)
+				}
+			}
+		}
+		if m.ensuring.finish(a.ID) {
+			continue
+		}
+		return err
+	}
+}
 
-	m.stopStaleBridgeForAgent(a.ID, participantID)
-	session, err := currentSession(m.runtime, a)
-	if err != nil {
-		return err
+func (m *feishuManager) RefreshAgentChannel(ctx context.Context, a agent.Agent, channel string) error {
+	channel = normalizeAgentChannel(channel)
+	if !m.supportsAgentChannel(channel) {
+		return unsupportedAgentChannelError(channel)
 	}
-	m.stopAgentBridgeForAgent(a.ID, participantID, a)
-	binding := bindingForAgent(a, session.SessionID)
-	binding.BotID = participantID
-	if err := m.bridge.StartBot(ctx, binding); err != nil {
-		return err
-	}
-	m.rememberParticipant(a.ID, participantID)
-	return nil
+	return m.EnsureAgent(ctx, a)
+}
+
+func (m *feishuManager) supportsAgentChannel(channel string) bool {
+	return normalizeAgentChannel(channel) == feishu.ChannelID
 }
 
 func (m *feishuManager) shouldStartForAgent(a agent.Agent) bool {
@@ -529,13 +598,26 @@ func isCodexBridgeRole(role string) bool {
 	return strings.EqualFold(role, agent.RoleWorker) || strings.EqualFold(role, agent.RoleManager)
 }
 
+func normalizeAgentChannel(channel string) string {
+	return strings.ToLower(strings.TrimSpace(channel))
+}
+
+func unsupportedAgentChannelError(channel string) error {
+	channel = normalizeAgentChannel(channel)
+	if channel == "" {
+		return fmt.Errorf("channel is required")
+	}
+	return fmt.Errorf("channel %q is not supported by this codex bridge manager", channel)
+}
+
 type ensureGate struct {
-	mu     sync.Mutex
-	active map[string]bool
+	mu      sync.Mutex
+	active  map[string]bool
+	pending map[string]bool
 }
 
 func newEnsureGate() ensureGate {
-	return ensureGate{active: make(map[string]bool)}
+	return ensureGate{active: make(map[string]bool), pending: make(map[string]bool)}
 }
 
 func (g *ensureGate) begin(agentID string) bool {
@@ -549,20 +631,29 @@ func (g *ensureGate) begin(agentID string) bool {
 		g.active = make(map[string]bool)
 	}
 	if g.active[agentID] {
+		if g.pending == nil {
+			g.pending = make(map[string]bool)
+		}
+		g.pending[agentID] = true
 		return false
 	}
 	g.active[agentID] = true
 	return true
 }
 
-func (g *ensureGate) finish(agentID string) {
+func (g *ensureGate) finish(agentID string) bool {
 	agentID = strings.TrimSpace(agentID)
 	if agentID == "" {
-		return
+		return false
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.pending[agentID] {
+		delete(g.pending, agentID)
+		return true
+	}
 	delete(g.active, agentID)
+	return false
 }
 
 func stopBotIDs(bridge *codexbridge.Service, ids ...string) {
