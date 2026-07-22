@@ -208,9 +208,10 @@ func (f fakeAgentRuntime) Layout(agentHome string) agentruntime.Layout {
 		}
 	case RuntimeKindCodex:
 		return agentruntime.Layout{
-			WorkspaceRoot: filepath.Join(agentHome, ".codex", "workspace"),
-			SkillsRoot:    filepath.Join(agentHome, ".codex", "home", "skills"),
-			HostLogPaths:  []string{filepath.Join(agentHome, ".codex", "home", "stderr.log")},
+			WorkspaceRoot:    filepath.Join(agentHome, ".codex", "workspace"),
+			InstructionsPath: filepath.Join(agentHome, ".codex", "home", "AGENTS.md"),
+			SkillsRoot:       filepath.Join(agentHome, ".codex", "home", "skills"),
+			HostLogPaths:     []string{filepath.Join(agentHome, ".codex", "home", "stderr.log")},
 		}
 	default:
 		return agentruntime.Layout{}
@@ -7238,6 +7239,9 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 	if got.RuntimeKind != RuntimeKindPicoClawSandbox {
 		t.Fatalf("RuntimeKind = %q, want %q", got.RuntimeKind, RuntimeKindPicoClawSandbox)
 	}
+	if server, ok := got.MCPServers["template-docs"].(map[string]any); !ok || server["command"] != "npx" {
+		t.Fatalf("MCPServers = %#v, want template-docs from mcps/mcp.json", got.MCPServers)
+	}
 
 	workspaceRoot, err := testBuiltinWorkspaceRoot(got.ID, RuntimeKindPicoClawSandbox)
 	if err != nil {
@@ -7255,6 +7259,40 @@ func TestCreateWorkerFromTemplateAppliesDefaultsAndOverlaysWorkspace(t *testing.
 	}
 	if _, err := os.Stat(filepath.Join(workspaceRoot, "skills", "custom", "SKILL.md")); err != nil {
 		t.Fatalf("template skill missing after overlay: %v", err)
+	}
+}
+
+func TestResolveCodexTemplateCreateSpecSeparatesBaseFromProfileInstructions(t *testing.T) {
+	hubSvc := mustNewLocalTemplateHubService(t, "codex-worker", hub.Template{
+		ID:          "codex-worker",
+		Name:        "codex-worker",
+		Role:        hub.TemplateRoleWorker,
+		RuntimeKind: RuntimeNameCodex,
+	})
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:1", "", WithHubService(hubSvc))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	resolved, cleanup, err := svc.resolveTemplateCreateSpec(context.Background(), CreateAgentSpec{
+		Name:         "alice",
+		Instructions: "must not be installed during template creation",
+		FromTemplate: "local.codex-worker",
+	})
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		t.Fatalf("resolveTemplateCreateSpec() error = %v", err)
+	}
+	if resolved.Instructions != "" {
+		t.Fatalf("Instructions = %q, want empty for Codex template creation", resolved.Instructions)
+	}
+	if !strings.Contains(resolved.TemplateInstructions, "# Agent Instructions") {
+		t.Fatalf("TemplateInstructions = %q, want template base document", resolved.TemplateInstructions)
+	}
+	if _, err := os.Stat(filepath.Join(resolved.FromTemplate, "AGENTS.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("workspace AGENTS.md stat error = %v, want template instructions separated from overlay", err)
 	}
 }
 
@@ -8072,7 +8110,7 @@ func TestRecreateRefreshesBuiltInSkillsAndPreservesUserSkills(t *testing.T) {
 		t.Fatal("Recreate().AgentProfile.EnvRestartRequired = true, want false")
 	}
 
-	wantBuiltIn, err := templateembed.FS().Open(templateembed.WorkspacePath(templateembed.CodexManagerRoot) + "/skills/agent-teams/SKILL.md")
+	wantBuiltIn, err := templateembed.FS().Open(templateembed.CodexManagerRoot + "/skills/agent-teams/SKILL.md")
 	if err != nil {
 		t.Fatalf("open embedded agent-teams skill: %v", err)
 	}
@@ -8389,6 +8427,65 @@ func TestHubPublishSpecUsesOpenClawWorkspaceSnapshot(t *testing.T) {
 	}
 	if spec.WorkspaceRef.Path == filepath.Join(picoclawsandbox.Root(agentHome), picoclawsandbox.HostWorkspaceDir) {
 		t.Fatalf("WorkspaceRef.Path = %q, want OpenClaw workspace root", spec.WorkspaceRef.Path)
+	}
+}
+
+func TestHubPublishSpecUsesCodexHomeAssets(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	svc, err := NewService(testModelConfig(), config.ServerConfig{}, "manager-image:1", "")
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	svc.agents["u-alice"] = Agent{
+		ID: "u-alice", Name: "alice", Role: RoleWorker, RuntimeKind: RuntimeKindCodex,
+		MCPServers: map[string]any{"remote": map[string]any{
+			"url": "https://mcp.example.test", "headers": map[string]any{"Authorization": "secret"},
+		}},
+	}
+	layout, err := svc.agentLayout("u-alice", RuntimeKindCodex)
+	if err != nil {
+		t.Fatalf("agentLayout() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(layout.SkillsRoot, "custom"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(skills) error = %v", err)
+	}
+	if err := os.WriteFile(layout.InstructionsPath, []byte("effective codex instructions\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(AGENTS.md) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(layout.SkillsRoot, "custom", "SKILL.md"), []byte("custom skill\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(SKILL.md) error = %v", err)
+	}
+
+	spec, err := svc.HubPublishSpec("u-alice")
+	if err != nil {
+		t.Fatalf("HubPublishSpec() error = %v", err)
+	}
+	if got, want := spec.WorkspaceRef.InstructionsPath, layout.InstructionsPath; got != want {
+		t.Fatalf("InstructionsPath = %q, want %q", got, want)
+	}
+	if got, want := spec.WorkspaceRef.SkillsPath, layout.SkillsRoot; got != want {
+		t.Fatalf("SkillsPath = %q, want %q", got, want)
+	}
+	remote := spec.MCPServers["remote"].(map[string]any)
+	if _, ok := remote["headers"]; ok {
+		t.Fatalf("published MCP config leaked runtime headers: %#v", remote)
+	}
+}
+
+func TestTemplateWorkspaceCleanupRemovesMaterializedLocalWorkspace(t *testing.T) {
+	path := t.TempDir()
+	cleanup := templateWorkspaceCleanup(hub.RegistryKindLocal, hub.WorkspaceRef{
+		Kind:      hub.WorkspaceKindDir,
+		Path:      path,
+		Temporary: true,
+	})
+	if cleanup == nil {
+		t.Fatal("templateWorkspaceCleanup() = nil, want cleanup for materialized local workspace")
+	}
+	cleanup()
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("os.Stat(%q) error = %v, want not exist", path, err)
 	}
 }
 
@@ -10032,8 +10129,8 @@ func TestGatewayCreateSpecBuildsSandboxSpec(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wantConfigRoot, picoclawsandbox.HostConfig)); err != nil {
 		t.Fatalf("worker PicoClaw config was not written: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(wantWorkspaceRoot, "AGENT.md")); err != nil {
-		t.Fatalf("worker workspace was not written: %v", err)
+	if info, err := os.Stat(filepath.Join(wantWorkspaceRoot, "projects")); err != nil || !info.IsDir() {
+		t.Fatalf("worker workspace projects mountpoint was not written: info=%v err=%v", info, err)
 	}
 	if _, err := os.Stat(filepath.Join(wantAgentHome, hostWorkspaceDir)); !os.IsNotExist(err) {
 		t.Fatalf("legacy workspace stat error = %v, want not exist", err)
@@ -10182,7 +10279,10 @@ func mustNewLocalTemplateHubService(t *testing.T, id string, item hub.Template) 
 		Version:      item.Version,
 		Image:        item.Image,
 		WorkspaceRef: hub.WorkspaceRef{Kind: hub.WorkspaceKindDir, Path: workspaceRoot},
-		UpdatedAt:    time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
+		MCPServers: map[string]any{
+			"template-docs": map[string]any{"command": "npx", "args": []any{"-y", "template-docs"}},
+		},
+		UpdatedAt: time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("Publish() error = %v", err)
 	}

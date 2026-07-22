@@ -27,7 +27,6 @@ const (
 	defaultRemoteMaxFileBytes = 50 * 1024 * 1024
 	officialTemplateNamespace = "Agentic"
 	remoteManifestFileName    = "agent.toml"
-	remoteWorkspaceDirName    = "workspace"
 	remoteFilePreviewMaxBytes = 256 * 1024
 )
 
@@ -209,19 +208,35 @@ func (s *RemoteStore) FetchWorkspace(ctx context.Context, id string) (WorkspaceR
 		return WorkspaceRef{}, err
 	}
 
-	tmpDir, err := mkdirHubWorkspaceTemp("csgclaw-hub-remote-*")
+	templateDir, err := mkdirHubWorkspaceTemp("csgclaw-hub-remote-*")
 	if err != nil {
 		return WorkspaceRef{}, fmt.Errorf("create remote hub workspace temp dir: %w", err)
 	}
 	var totalBytes int64
-	if err := s.fetchWorkspaceTree(ctx, id, branch, remoteWorkspaceDirName, tmpDir, &totalBytes); err != nil {
-		_ = os.RemoveAll(tmpDir)
-		if errors.Is(err, ErrTemplateNotFound) {
-			return WorkspaceRef{}, nil
+	legacyLayout := false
+	for index, dir := range []string{localInstructionsDirName, localSkillsDirName, localMCPsDirName, localMemoriesDirName} {
+		err := s.fetchWorkspaceTree(ctx, id, branch, dir, templateDir, &totalBytes)
+		if index == 0 && errors.Is(err, ErrTemplateNotFound) {
+			legacyLayout = true
+			break
 		}
-		return WorkspaceRef{}, err
+		if errors.Is(err, ErrTemplateNotFound) && (dir == localSkillsDirName || dir == localMemoriesDirName) {
+			continue
+		}
+		if err != nil {
+			_ = os.RemoveAll(templateDir)
+			return WorkspaceRef{}, err
+		}
 	}
-	return WorkspaceRef{Kind: WorkspaceKindDir, Path: tmpDir}, nil
+	if legacyLayout {
+		if err := s.fetchWorkspaceTree(ctx, id, branch, "workspace", templateDir, &totalBytes); err != nil {
+			_ = os.RemoveAll(templateDir)
+			return WorkspaceRef{}, fmt.Errorf("fetch legacy remote hub workspace: %w", err)
+		}
+	}
+	workspace, err := materializeTemplateDir(templateDir)
+	_ = os.RemoveAll(templateDir)
+	return workspace, err
 }
 
 func (s *RemoteStore) ListWorkspace(
@@ -242,10 +257,7 @@ func (s *RemoteStore) ListWorkspace(
 		return apitypes.WorkspaceListing{}, err
 	}
 
-	treePath := remoteWorkspaceDirName
-	if cleanPath != "" {
-		treePath += "/" + cleanPath
-	}
+	treePath := cleanPath
 	entries := make([]apitypes.WorkspaceEntry, 0)
 	cursor := ""
 	for {
@@ -258,10 +270,7 @@ func (s *RemoteStore) ListWorkspace(
 		}
 		for _, entry := range payload.Data.Files {
 			entryPath := strings.Trim(strings.TrimSpace(entry.Path), "/")
-			if !strings.HasPrefix(entryPath, remoteWorkspaceDirName+"/") {
-				return apitypes.WorkspaceListing{}, fmt.Errorf("%w: %s", ErrWorkspacePathUnsafe, entryPath)
-			}
-			relativePath := strings.TrimPrefix(entryPath, remoteWorkspaceDirName+"/")
+			relativePath := entryPath
 			if path.Dir(relativePath) != path.Clean(cleanPath) && !(cleanPath == "" && !strings.Contains(relativePath, "/")) {
 				continue
 			}
@@ -306,7 +315,12 @@ func (s *RemoteStore) ReadWorkspaceFile(
 	if err != nil {
 		return apitypes.WorkspaceFile{}, err
 	}
-	data, err := s.fetchBlob(ctx, id, remoteWorkspaceDirName+"/"+cleanPath, branch)
+	data, err := s.fetchBlob(ctx, id, cleanPath, branch)
+	if errors.Is(err, ErrTemplateNotFound) {
+		if legacyPath := legacyRemoteWorkspacePath(cleanPath); legacyPath != "" {
+			data, err = s.fetchBlob(ctx, id, legacyPath, branch)
+		}
+	}
 	if err != nil {
 		return apitypes.WorkspaceFile{}, err
 	}
@@ -337,6 +351,17 @@ func (s *RemoteStore) ReadWorkspaceFile(
 	return file, nil
 }
 
+func legacyRemoteWorkspacePath(workspacePath string) string {
+	switch workspacePath {
+	case localInstructionsDirName + "/" + requiredInstructionsFile:
+		return "workspace/" + requiredInstructionsFile
+	}
+	if strings.HasPrefix(workspacePath, localSkillsDirName+"/") {
+		return "workspace/" + workspacePath
+	}
+	return ""
+}
+
 func (s *RemoteStore) defaultBranch(ctx context.Context, id string) (string, error) {
 	var payload remoteCodeResponse
 	if err := s.getJSON(ctx, s.templateURL(id), &payload); err != nil {
@@ -365,12 +390,12 @@ func (s *RemoteStore) fetchWorkspaceTree(
 		}
 		for _, entry := range payload.Data.Files {
 			entryPath := strings.Trim(strings.TrimSpace(entry.Path), "/")
-			if entryPath != remoteWorkspaceDirName &&
-				!strings.HasPrefix(entryPath, remoteWorkspaceDirName+"/") {
+			rootName := strings.Split(strings.Trim(treePath, "/"), "/")[0]
+			if entryPath != rootName && !strings.HasPrefix(entryPath, rootName+"/") {
 				return fmt.Errorf("%w: %s", ErrWorkspacePathUnsafe, entryPath)
 			}
-			rel := strings.TrimPrefix(entryPath, remoteWorkspaceDirName+"/")
-			if entryPath == remoteWorkspaceDirName {
+			rel := entryPath
+			if entryPath == rootName {
 				rel = ""
 			}
 			if rel != "" {
@@ -477,6 +502,9 @@ func (s *RemoteStore) getJSON(ctx context.Context, endpoint string, out any) err
 	}
 	if status < 200 || status >= 300 {
 		return fmt.Errorf("remote hub request failed with status %d: %s", status, truncateRemoteBody(body))
+	}
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return fmt.Errorf("%w", ErrTemplateNotFound)
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("decode remote hub response: %w", err)
