@@ -615,14 +615,32 @@
   grid-column: 1 / -1;
 }
 
-.hub-template-instructions-section textarea.compact-textarea {
-  min-height: 180px;
-  resize: vertical;
+.hub-detail-pane .hub-template-instructions-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.hub-template-instructions-section textarea.hub-template-instructions-editor.is-advanced {
-  height: clamp(280px, 45vh, 560px);
-  min-height: 280px;
+.hub-template-instructions-section .profile-grid-compact,
+.hub-template-instructions-section .profile-grid-compact .field {
+  height: 100%;
+  min-height: 0;
+}
+
+.hub-template-instructions-section .profile-grid-compact {
+  flex: 1 1 auto;
+}
+
+.hub-template-instructions-section .profile-grid-compact .field {
+  grid-template-rows: auto minmax(0, 1fr);
+  margin-top: 0;
+}
+
+.hub-template-instructions-section textarea.compact-textarea {
+  height: 100%;
+  min-height: 180px;
+  resize: none;
 }
 
 .hub-detail-pane .agent-page-form-content {
