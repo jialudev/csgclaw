@@ -568,7 +568,14 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	}
 	workBus := worklease.NewBus()
 	workControlBus := worklease.NewControlBus()
-	workRegistry := worklease.NewRegistry(participantSvc, imSvc, workBus, worklease.WithControlBus(workControlBus))
+	turnControlDispatcher := worklease.NewTurnControlDispatcher(workControlBus)
+	workRegistry := worklease.NewRegistry(
+		participantSvc,
+		imSvc,
+		workBus,
+		worklease.WithControlBus(workControlBus),
+		worklease.WithTurnControlDispatcher(turnControlDispatcher),
+	)
 	janitorCtx, stopJanitor := context.WithCancel(ctx)
 	defer stopJanitor()
 	go workRegistry.Run(janitorCtx)

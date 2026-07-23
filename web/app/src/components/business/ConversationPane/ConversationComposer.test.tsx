@@ -17,6 +17,16 @@ describe("ConversationComposer working activity", () => {
       id: "u-manager",
       name: "manager",
     };
+    const toolParticipant: ConversationWorkingParticipant = {
+      activity: {
+        action: ConversationWorkingActions.running,
+        entryID: "dev:tool-8",
+        summary: "csgclaw-cli participant list --channel csgclaw",
+        toolName: "exec_command",
+      },
+      id: "u-dev",
+      name: "dev",
+    };
     const onWorkingAction = vi.fn();
 
     const { container } = render(
@@ -38,10 +48,11 @@ describe("ConversationComposer working activity", () => {
         slashPickerOpen={false}
         t={(key, params) => {
           if (key === "conversationWorkingReplying") return "正在回复";
+          if (key === "conversationWorkingRunning") return "正在运行";
           if (key === "conversationWorkingOpenActivity") return `查看 ${params?.name} 的活动记录`;
           return key;
         }}
-        workingParticipants={[participant]}
+        workingParticipants={[participant, toolParticipant]}
         onApplyMention={vi.fn()}
         onApplySlashCandidate={vi.fn()}
         onComposerCompositionEnd={vi.fn()}
@@ -58,6 +69,9 @@ describe("ConversationComposer working activity", () => {
     expect(activity).toHaveTextContent("manager");
     expect(activity).toHaveTextContent("正在回复");
     expect(activity).toHaveTextContent("正在检查可用的 agent");
+    expect(screen.getByText("exec_command")).toBeInTheDocument();
+    expect(screen.getByText("csgclaw-cli participant list --channel csgclaw")).toBeInTheDocument();
+    expect(screen.queryByText("正在运行")).not.toBeInTheDocument();
     expect(screen.queryByText("manager 正在工作")).not.toBeInTheDocument();
     expect(container.querySelector(".composer > .composer-working")).toBeInTheDocument();
     expect(container.querySelector(".composer-box .composer-working")).not.toBeInTheDocument();

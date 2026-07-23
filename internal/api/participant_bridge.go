@@ -43,7 +43,7 @@ func (h *Handler) PublishParticipantEvent(evt im.Event) {
 	if evt.Type != im.EventTypeMessageCreated || evt.Message == nil || evt.Sender == nil {
 		return
 	}
-	if isUserInputAnswerTranscript(evt.Message) {
+	if isUserInputAnswerTranscript(evt.Message) || isParticipantControlRecord(*evt.Message) {
 		return
 	}
 
@@ -60,6 +60,14 @@ func (h *Handler) PublishParticipantEvent(evt im.Event) {
 	}
 	missed := h.publishMessageParticipantEvent(room, *evt.Sender, *evt.Message)
 	h.reconnectMissedParticipantAgents(evt.Sender.ID, missed)
+}
+
+func isParticipantControlRecord(message im.Message) bool {
+	csgclaw, ok := message.Metadata["csgclaw"].(map[string]any)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(csgclaw["delivery_kind"])), "turn_stopped")
 }
 
 type participantBridgeTarget struct {

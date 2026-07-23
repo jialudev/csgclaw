@@ -12,9 +12,20 @@ const (
 	ParticipantWorkReasonRenewed       = "renewed"
 	ParticipantWorkReasonStatusUpdated = "status_updated"
 	ParticipantWorkReasonStopRequested = "stop_requested"
+	ParticipantWorkReasonStopFailed    = "stop_failed"
+	ParticipantWorkReasonStopTimedOut  = "stop_timed_out"
 	ParticipantWorkReasonReleased      = "released"
 	ParticipantWorkReasonStopped       = "stopped"
 	ParticipantWorkReasonExpired       = "expired"
+
+	ParticipantWorkStopStateRequested = "stop_requested"
+	ParticipantWorkStopStateFailed    = "stop_failed"
+	ParticipantWorkStopStateTimedOut  = "stop_timed_out"
+	ParticipantWorkStopStateStopped   = "stopped"
+
+	ParticipantWorkOutcomeReleased     = "released"
+	ParticipantWorkOutcomeStopped      = "stopped"
+	ParticipantWorkOutcomeStopTimedOut = "stop_timed_out"
 
 	ParticipantWorkCapabilityThinkingStatusV1 = "thinking_status_v1"
 	ParticipantWorkCapabilityTurnStopV1       = "turn_stop_v1"
@@ -23,11 +34,10 @@ const (
 	ParticipantWorkPhaseWorking  = "working"
 	ParticipantWorkPhaseThinking = "thinking"
 
-	ParticipantWorkStagePreparingReply       = "preparing_reply"
-	ParticipantWorkStageThinking             = "thinking"
-	ParticipantWorkStageRunningTool          = "running_tool"
-	ParticipantWorkStageProcessingToolResult = "processing_tool_result"
-	ParticipantWorkStageGeneratingReply      = "generating_reply"
+	ParticipantWorkStagePreparingReply  = "preparing_reply"
+	ParticipantWorkStageThinking        = "thinking"
+	ParticipantWorkStageRunningTool     = "running_tool"
+	ParticipantWorkStageGeneratingReply = "generating_reply"
 
 	ParticipantThinkingFormatPlainText = "plain_text"
 )
@@ -77,6 +87,8 @@ type ParticipantWorkUpdate struct {
 	Capabilities    []string               `json:"capabilities,omitempty"`
 	Status          *ParticipantWorkStatus `json:"status,omitempty"`
 	StopRequestedAt *time.Time             `json:"stop_requested_at,omitempty"`
+	StopState       string                 `json:"stop_state,omitempty"`
+	StopError       string                 `json:"stop_error,omitempty"`
 }
 
 type ParticipantWorkClosedResponse struct {
@@ -94,9 +106,15 @@ type ParticipantWorkStopResponse struct {
 	Accepted      bool      `json:"accepted"`
 	RegistryEpoch string    `json:"registry_epoch"`
 	ParticipantID string    `json:"participant_id"`
+	UserID        string    `json:"-"`
 	RoomID        string    `json:"room_id"`
+	ThreadRootID  string    `json:"-"`
 	LeaseID       string    `json:"lease_id"`
 	RequestID     string    `json:"request_id"`
 	State         string    `json:"state"`
 	RequestedAt   time.Time `json:"requested_at"`
+}
+
+type ParticipantWorkReleaseRequest struct {
+	Outcome string `json:"outcome,omitempty"`
 }

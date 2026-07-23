@@ -138,7 +138,6 @@ const t: TranslateFn = (key, params = {}) => {
     conversationWorkingGeneratingReply: "Generating reply",
     conversationWorkingOpenActivity: "View {name}'s activity: {detail}",
     conversationWorkingPreparingReply: "Preparing a reply",
-    conversationWorkingProcessingToolResult: "Processing tool result",
     conversationWorkingReading: "Reading",
     conversationWorkingReplying: "Replying",
     conversationWorkingRunning: "Running",

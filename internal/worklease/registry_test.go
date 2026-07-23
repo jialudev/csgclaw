@@ -11,6 +11,7 @@ import (
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/im"
 	"csgclaw/internal/participant"
+	agentruntime "csgclaw/internal/runtime"
 )
 
 func TestRegistryLeaseLifecycleAndTombstone(t *testing.T) {
@@ -261,10 +262,13 @@ func TestRegistryStatusAndTurnStopLifecycle(t *testing.T) {
 	}
 	assertNoWorkEvent(t, events)
 
-	if err := registry.Stop(context.Background(), "worker", lease.LeaseID); err != nil {
+	if err := registry.Finish(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkOutcomeStopped); err != nil {
 		t.Fatal(err)
 	}
-	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopped, 4)
+	stopped := assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopped, 4)
+	if stopped.StopState != apitypes.ParticipantWorkStopStateStopped {
+		t.Fatalf("stopped update = %#v", stopped)
+	}
 	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, statusRequest); !errors.Is(err, ErrClosed) {
 		t.Fatalf("late status error = %v, want closed", err)
 	}
@@ -272,6 +276,97 @@ func TestRegistryStatusAndTurnStopLifecycle(t *testing.T) {
 		RoomID: lease.RoomID, LeaseID: lease.LeaseID, RequestID: lease.RequestID,
 	}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("late stop error = %v, want closed", err)
+	}
+}
+
+func TestRegistryReportsTurnControlFailureAndAllowsRetry(t *testing.T) {
+	now := time.Date(2026, 7, 22, 13, 0, 0, 0, time.UTC)
+	registry, events := newTestRegistry(t, &now)
+	lease := testLease(NewID())
+	if _, err := registry.StartOrRenew(context.Background(), lease); err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStarted, 1)
+	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkStatusPatchRequest{
+		Capabilities: []string{apitypes.ParticipantWorkCapabilityTurnStopV1},
+		Sequence:     1,
+		Phase:        apitypes.ParticipantWorkPhaseWorking,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStatusUpdated, 2)
+
+	request := apitypes.ParticipantWorkStopRequest{RoomID: lease.RoomID, LeaseID: lease.LeaseID, RequestID: lease.RequestID}
+	if _, err := registry.RequestStop(context.Background(), "worker", request); !errors.Is(err, ErrTurnControlFailed) {
+		t.Fatalf("stop delivery error = %v", err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopRequested, 3)
+	failed := assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopFailed, 4)
+	if failed.StopState != apitypes.ParticipantWorkStopStateFailed || failed.StopError == "" {
+		t.Fatalf("failed stop update = %#v", failed)
+	}
+
+	delivered := false
+	unregister := registry.RegisterTurnController("pt-worker", turnControllerFunc(func(context.Context, agentruntime.TurnRef) error {
+		delivered = true
+		return nil
+	}))
+	defer unregister()
+	now = now.Add(time.Second)
+	retried, err := registry.RequestStop(context.Background(), "worker", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !delivered || !retried.RequestedAt.Equal(now) {
+		t.Fatalf("retry response = %#v, delivered=%v", retried, delivered)
+	}
+	retrying := assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopRequested, 5)
+	if retrying.StopState != apitypes.ParticipantWorkStopStateRequested || retrying.StopError != "" {
+		t.Fatalf("retry stop update = %#v", retrying)
+	}
+	if err := registry.Stop(context.Background(), "worker", lease.LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonReleased, 6)
+}
+
+func TestRegistryReportsTurnControlTimeout(t *testing.T) {
+	now := time.Date(2026, 7, 22, 13, 0, 0, 0, time.UTC)
+	registry, events := newTestRegistry(t, &now)
+	lease := testLease(NewID())
+	if _, err := registry.StartOrRenew(context.Background(), lease); err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStarted, 1)
+	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkStatusPatchRequest{
+		Capabilities: []string{apitypes.ParticipantWorkCapabilityTurnStopV1},
+		Sequence:     1,
+		Phase:        apitypes.ParticipantWorkPhaseWorking,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStatusUpdated, 2)
+	unregister := registry.RegisterTurnController("pt-worker", turnControllerFunc(func(context.Context, agentruntime.TurnRef) error {
+		return context.DeadlineExceeded
+	}))
+	defer unregister()
+
+	if _, err := registry.RequestStop(context.Background(), "worker", apitypes.ParticipantWorkStopRequest{
+		RoomID: lease.RoomID, LeaseID: lease.LeaseID, RequestID: lease.RequestID,
+	}); !errors.Is(err, ErrTurnControlTimedOut) {
+		t.Fatalf("stop timeout error = %v", err)
+	}
+	assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopRequested, 3)
+	timedOut := assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopTimedOut, 4)
+	if timedOut.StopState != apitypes.ParticipantWorkStopStateTimedOut {
+		t.Fatalf("timed out stop update = %#v", timedOut)
+	}
+	if err := registry.Finish(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkOutcomeStopTimedOut); err != nil {
+		t.Fatal(err)
+	}
+	terminal := assertWorkEvent(t, events, apitypes.ParticipantWorkReasonStopTimedOut, 5)
+	if terminal.State != apitypes.ParticipantWorkStateIdle || terminal.StopState != apitypes.ParticipantWorkStopStateTimedOut {
+		t.Fatalf("terminal timeout update = %#v", terminal)
 	}
 }
 
@@ -310,7 +405,7 @@ func TestRegistryRejectsInvalidStatusAndStopMetadata(t *testing.T) {
 		},
 		Sequence: 1,
 		Phase:    apitypes.ParticipantWorkPhaseWorking,
-		Stage:    apitypes.ParticipantWorkStageProcessingToolResult,
+		Stage:    apitypes.ParticipantWorkStagePreparingReply,
 	}); !errors.Is(err, ErrInvalidStatus) {
 		t.Fatalf("stage with incompatible phase error = %v", err)
 	}

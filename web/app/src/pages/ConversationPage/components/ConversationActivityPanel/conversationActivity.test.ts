@@ -224,13 +224,58 @@ describe("conversation activity model", () => {
     expect(working?.activity).toEqual({ action: "preparing_reply" });
   });
 
+  it("keeps the latest tool command visible while the runtime processes its result", () => {
+    const roomAgents = conversationActivityAgents(room, agents);
+    const entries = conversationActivityEntries(
+      [
+        toolMessage(
+          "tool-start",
+          "2026-07-16T10:00:00Z",
+          {
+            input: { command: "csgclaw-cli participant list --channel csgclaw" },
+            kind: "exec_command",
+            status: "running",
+            title: "Run shell command",
+            tool_call_id: "call-list",
+          },
+          "u-dev",
+        ),
+        toolMessage(
+          "tool-end",
+          "2026-07-16T10:00:01Z",
+          {
+            kind: "exec_command",
+            output: "3 participants",
+            status: "completed",
+            title: "Run shell command",
+            tool_call_id: "call-list",
+          },
+          "u-dev",
+        ),
+      ],
+      roomAgents,
+      room.members,
+    );
+
+    const [working] = conversationWorkingParticipantsWithActivity(
+      [{ id: "u-dev", name: "dev", requestID: "turn-7" }],
+      roomAgents,
+      entries,
+    );
+
+    expect(working?.activity).toMatchObject({
+      action: "running",
+      summary: "csgclaw-cli participant list --channel csgclaw",
+      toolName: "exec_command",
+    });
+  });
+
   it("uses explicit work stages for model waits and final generation", () => {
     const working = conversationWorkingParticipantsWithActivity(
       [
         { id: "u-dev", name: "prepare", workStage: "preparing_reply" },
         { id: "u-dev", name: "reason", thinkingText: "checking", workStage: "thinking" },
         { id: "u-dev", name: "empty-reason", thinkingText: "", workStage: "thinking" },
-        { id: "u-dev", name: "tool-result", workStage: "processing_tool_result" },
         { id: "u-dev", name: "final", workStage: "generating_reply" },
         { id: "u-dev", name: "tool", workStage: "running_tool" },
       ],
@@ -242,7 +287,6 @@ describe("conversation activity model", () => {
       "preparing_reply",
       "thinking",
       "preparing_reply",
-      "processing_tool_result",
       "generating_reply",
       "using_tool",
     ]);

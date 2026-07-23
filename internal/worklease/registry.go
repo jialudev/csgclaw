@@ -3,6 +3,7 @@ package worklease
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/im"
 	"csgclaw/internal/participant"
+	agentruntime "csgclaw/internal/runtime"
 )
 
 const (
@@ -34,6 +36,8 @@ var (
 	ErrLeaseNotFound       = errors.New("active work lease not found")
 	ErrInvalidStatus       = errors.New("invalid work lease status")
 	ErrRateLimited         = errors.New("work lease status update rate limit exceeded")
+	ErrTurnControlFailed   = errors.New("turn stop delivery failed")
+	ErrTurnControlTimedOut = errors.New("turn stop delivery timed out")
 	ErrUnavailable         = errors.New("work lease service is not configured")
 )
 
@@ -51,6 +55,14 @@ type ParticipantWorkLease struct {
 type ParticipantWorkReporter interface {
 	StartOrRenew(ctx context.Context, lease ParticipantWorkLease) (apitypes.ParticipantWorkUpdate, error)
 	Stop(ctx context.Context, participantID, leaseID string) error
+}
+
+type ParticipantWorkStatusReporter interface {
+	UpdateStatus(ctx context.Context, participantID, leaseID string, request apitypes.ParticipantWorkStatusPatchRequest) (apitypes.ParticipantWorkUpdate, bool, error)
+}
+
+type ParticipantWorkFinisher interface {
+	Finish(ctx context.Context, participantID, leaseID, outcome string) error
 }
 
 type ParticipantWorkController interface {
@@ -106,6 +118,8 @@ type activeLease struct {
 	status                *apitypes.ParticipantWorkStatus
 	statusSequence        uint64
 	stopRequestedAt       *time.Time
+	stopState             string
+	stopError             string
 	statusWindowStartedAt time.Time
 	statusWindowCount     int
 }
@@ -120,6 +134,7 @@ type Registry struct {
 	im           IMDirectory
 	bus          *Bus
 	controlBus   *ControlBus
+	turnControls *TurnControlDispatcher
 	epoch        string
 	now          func() time.Time
 
@@ -145,6 +160,9 @@ func NewRegistry(participants ParticipantDirectory, imDirectory IMDirectory, bus
 			opt(registry)
 		}
 	}
+	if registry.turnControls == nil && registry.controlBus != nil {
+		registry.turnControls = NewTurnControlDispatcher(registry.controlBus)
+	}
 	return registry
 }
 
@@ -152,6 +170,19 @@ func WithControlBus(bus *ControlBus) Option {
 	return func(registry *Registry) {
 		registry.controlBus = bus
 	}
+}
+
+func WithTurnControlDispatcher(dispatcher *TurnControlDispatcher) Option {
+	return func(registry *Registry) {
+		registry.turnControls = dispatcher
+	}
+}
+
+func (r *Registry) RegisterTurnController(participantID string, controller agentruntime.TurnController) func() {
+	if r == nil || r.turnControls == nil {
+		return func() {}
+	}
+	return r.turnControls.RegisterTurnController(r.canonicalParticipantID(participantID), controller)
 }
 
 func (r *Registry) Epoch() string {
@@ -228,7 +259,7 @@ func (r *Registry) UpdateStatus(
 		}
 		return apitypes.ParticipantWorkUpdate{}, false, ErrLeaseNotFound
 	}
-	if lease.stopRequestedAt != nil {
+	if lease.stopState == apitypes.ParticipantWorkStopStateRequested {
 		update := r.updateFor(lease, apitypes.ParticipantWorkStateWorking, apitypes.ParticipantWorkReasonStopRequested)
 		r.mu.Unlock()
 		return update, true, nil
@@ -268,7 +299,7 @@ func (r *Registry) UpdateStatus(
 }
 
 func (r *Registry) RequestStop(
-	_ context.Context,
+	ctx context.Context,
 	participantID string,
 	request apitypes.ParticipantWorkStopRequest,
 ) (apitypes.ParticipantWorkStopResponse, error) {
@@ -307,9 +338,13 @@ func (r *Registry) RequestStop(
 		r.mu.Unlock()
 		return apitypes.ParticipantWorkStopResponse{}, ErrConflict
 	}
-	if lease.stopRequestedAt == nil {
+	if lease.stopRequestedAt == nil ||
+		lease.stopState == apitypes.ParticipantWorkStopStateFailed ||
+		lease.stopState == apitypes.ParticipantWorkStopStateTimedOut {
 		requestedAt := now
 		lease.stopRequestedAt = &requestedAt
+		lease.stopState = apitypes.ParticipantWorkStopStateRequested
+		lease.stopError = ""
 		lease.revision++
 		r.activeByKey[key] = lease
 		update := r.updateFor(lease, apitypes.ParticipantWorkStateWorking, apitypes.ParticipantWorkReasonStopRequested)
@@ -320,13 +355,15 @@ func (r *Registry) RequestStop(
 		Accepted:      true,
 		RegistryEpoch: r.epoch,
 		ParticipantID: lease.participantID,
+		UserID:        lease.userID,
 		RoomID:        lease.roomID,
+		ThreadRootID:  lease.threadRootID,
 		LeaseID:       lease.leaseID,
 		RequestID:     lease.requestID,
 		State:         "stop_requested",
 		RequestedAt:   requestedAt,
 	}
-	control := ControlEvent{
+	ref := agentruntime.TurnRef{
 		RegistryEpoch: r.epoch,
 		ParticipantID: lease.participantID,
 		RoomID:        lease.roomID,
@@ -339,13 +376,31 @@ func (r *Registry) RequestStop(
 	if workUpdate != nil {
 		r.publish(*workUpdate)
 	}
-	r.controlBus.Publish(control)
+	if r.turnControls == nil {
+		return response, r.recordTurnControlFailure(key, requestedAt, agentruntime.ErrTurnControlUnavailable)
+	}
+	if err := r.turnControls.StopTurn(ctx, ref); err != nil {
+		return response, r.recordTurnControlFailure(key, requestedAt, err)
+	}
 	return response, nil
 }
 
-func (r *Registry) Stop(_ context.Context, participantID, leaseID string) error {
+func (r *Registry) Stop(ctx context.Context, participantID, leaseID string) error {
+	return r.Finish(ctx, participantID, leaseID, apitypes.ParticipantWorkOutcomeReleased)
+}
+
+func (r *Registry) Finish(_ context.Context, participantID, leaseID, outcome string) error {
 	if r == nil {
 		return ErrUnavailable
+	}
+	outcome = strings.TrimSpace(outcome)
+	if outcome == "" {
+		outcome = apitypes.ParticipantWorkOutcomeReleased
+	}
+	if outcome != apitypes.ParticipantWorkOutcomeReleased &&
+		outcome != apitypes.ParticipantWorkOutcomeStopped &&
+		outcome != apitypes.ParticipantWorkOutcomeStopTimedOut {
+		return ErrInvalidStatus
 	}
 	participantID = r.canonicalParticipantID(participantID)
 	leaseID = strings.TrimSpace(leaseID)
@@ -355,13 +410,27 @@ func (r *Registry) Stop(_ context.Context, participantID, leaseID string) error 
 	var update *apitypes.ParticipantWorkUpdate
 	r.mu.Lock()
 	if lease, ok := r.activeByKey[key]; ok {
+		if outcome != apitypes.ParticipantWorkOutcomeReleased && lease.stopRequestedAt == nil {
+			r.mu.Unlock()
+			return ErrConflict
+		}
 		delete(r.activeByKey, key)
 		r.removeSubjectLocked(lease.roomID, lease.participantID, key.leaseID)
 		lease.revision++
 		r.tombstones[key] = tombstone{lastRevision: lease.revision, rejectUntil: now.Add(TombstoneTTL)}
 		reason := apitypes.ParticipantWorkReasonReleased
-		if lease.stopRequestedAt != nil {
+		switch outcome {
+		case apitypes.ParticipantWorkOutcomeStopped:
 			reason = apitypes.ParticipantWorkReasonStopped
+			lease.stopState = apitypes.ParticipantWorkStopStateStopped
+			lease.stopError = ""
+		case apitypes.ParticipantWorkOutcomeStopTimedOut:
+			reason = apitypes.ParticipantWorkReasonStopTimedOut
+			lease.stopState = apitypes.ParticipantWorkStopStateTimedOut
+			lease.stopError = "runtime did not confirm turn stop before the control timeout"
+		default:
+			lease.stopState = ""
+			lease.stopError = ""
 		}
 		event := r.updateFor(lease, apitypes.ParticipantWorkStateIdle, reason)
 		update = &event
@@ -376,6 +445,37 @@ func (r *Registry) Stop(_ context.Context, participantID, leaseID string) error 
 		r.publish(*update)
 	}
 	return nil
+}
+
+func (r *Registry) recordTurnControlFailure(key leaseKey, requestedAt time.Time, cause error) error {
+	state := apitypes.ParticipantWorkStopStateFailed
+	reason := apitypes.ParticipantWorkReasonStopFailed
+	publicErr := ErrTurnControlFailed
+	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(cause, context.Canceled) {
+		state = apitypes.ParticipantWorkStopStateTimedOut
+		reason = apitypes.ParticipantWorkReasonStopTimedOut
+		publicErr = ErrTurnControlTimedOut
+	}
+	errorText := strings.TrimSpace(cause.Error())
+	if len(errorText) > 1024 {
+		errorText = errorText[:1024]
+	}
+
+	var update *apitypes.ParticipantWorkUpdate
+	r.mu.Lock()
+	if lease, ok := r.activeByKey[key]; ok && lease.stopRequestedAt != nil && lease.stopRequestedAt.Equal(requestedAt) {
+		lease.stopState = state
+		lease.stopError = errorText
+		lease.revision++
+		r.activeByKey[key] = lease
+		event := r.updateFor(lease, apitypes.ParticipantWorkStateWorking, reason)
+		update = &event
+	}
+	r.mu.Unlock()
+	if update != nil {
+		r.publish(*update)
+	}
+	return fmt.Errorf("%w: %v", publicErr, cause)
 }
 
 func (r *Registry) Sweep(now time.Time) {
@@ -522,6 +622,8 @@ func (r *Registry) updateFor(lease activeLease, state, reason string) apitypes.P
 		ExpiresAt:       lease.expiresAt,
 		Capabilities:    append([]string(nil), lease.capabilities...),
 		StopRequestedAt: cloneTime(lease.stopRequestedAt),
+		StopState:       lease.stopState,
+		StopError:       lease.stopError,
 	}
 	if lease.status != nil {
 		update.Status = &apitypes.ParticipantWorkStatus{
@@ -625,8 +727,7 @@ func validateStatusPatch(request apitypes.ParticipantWorkStatusPatchRequest) err
 func validStageForPhase(stage, phase string) bool {
 	switch stage {
 	case apitypes.ParticipantWorkStagePreparingReply,
-		apitypes.ParticipantWorkStageThinking,
-		apitypes.ParticipantWorkStageProcessingToolResult:
+		apitypes.ParticipantWorkStageThinking:
 		return phase == apitypes.ParticipantWorkPhaseThinking
 	case apitypes.ParticipantWorkStageRunningTool,
 		apitypes.ParticipantWorkStageGeneratingReply:

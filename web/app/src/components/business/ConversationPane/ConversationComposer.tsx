@@ -1,6 +1,6 @@
 import { memo, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-import { ArrowUp, GitBranch, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, ChevronRight, GitBranch, Paperclip, Plus } from "lucide-react";
 import { CLIProxyAuthControl } from "@/components/business/ProfileControls";
 import { Button, PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger, TextInput, Tooltip } from "@/components/ui";
 import { IconImage } from "@/components/ui/Icons";
@@ -334,11 +334,13 @@ function ComposerWorkingTurn({
     (participant.thinkingText?.trim()
       ? ConversationWorkingActions.thinking
       : ConversationWorkingActions.preparingReply);
+  const toolName =
+    participant.stopping || participant.stopSending ? "" : (participant.activity?.toolName?.trim() ?? "");
   const actionLabel = participant.stopping
     ? t("conversationWorkingStopping")
     : participant.stopSending
       ? t("conversationWorkingStopSending")
-      : workingActionLabel(action, t);
+      : toolName || workingActionLabel(action, t);
   const stopLabel = participant.stopping
     ? t("conversationWorkingStopping")
     : participant.stopSending
@@ -355,7 +357,10 @@ function ComposerWorkingTurn({
         <span />
       </span>
       <strong className="composer-working-name">{participant.name}</strong>
-      <span className="composer-working-verb">{actionLabel}</span>
+      <span className={`composer-working-verb${toolName ? " is-tool" : ""}`}>
+        {actionLabel}
+        {toolName && summary ? <ChevronRight aria-hidden="true" size={12} strokeWidth={2} /> : null}
+      </span>
       {summary ? <span className="composer-working-summary">{summary}</span> : null}
     </>
   );
@@ -421,8 +426,6 @@ function workingActionLabel(action: ConversationWorkingAction, t: TranslateFn): 
       return t("conversationWorkingGeneratingReply");
     case ConversationWorkingActions.preparingReply:
       return t("conversationWorkingPreparingReply");
-    case ConversationWorkingActions.processingToolResult:
-      return t("conversationWorkingProcessingToolResult");
     case ConversationWorkingActions.reading:
       return t("conversationWorkingReading");
     case ConversationWorkingActions.replying:

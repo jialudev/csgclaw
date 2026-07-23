@@ -164,10 +164,11 @@ describe("participantWorkReducer", () => {
         status: {
           phase: "thinking",
           sequence: 1,
-          stage: "processing_tool_result",
+          stage: "thinking",
           thinking: { format: "plain_text", text: "checking config", truncated: false },
         },
         stop_requested_at: "2026-07-14T12:00:01Z",
+        stop_state: "stop_requested",
       }),
     });
     expect(activeParticipantWorkForRoom(state, "room-1")["pt-worker"]?.["lease-1"]?.stop_requested_at).toBe(

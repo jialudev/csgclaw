@@ -14,8 +14,15 @@ import (
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/im"
 	"csgclaw/internal/participant"
+	agentruntime "csgclaw/internal/runtime"
 	"csgclaw/internal/worklease"
 )
+
+type apiTurnControllerFunc func(context.Context, agentruntime.TurnRef) error
+
+func (f apiTurnControllerFunc) StopTurn(ctx context.Context, ref agentruntime.TurnRef) error {
+	return f(ctx, ref)
+}
 
 type participantWorkSSEWriter struct {
 	header  http.Header
@@ -201,6 +208,35 @@ func TestParticipantWorkStatusAndStopAPI(t *testing.T) {
 	if !stopResponse.Accepted || stopResponse.LeaseID != leaseID || stopResponse.State != "stop_requested" {
 		t.Fatalf("stop response = %#v", stopResponse)
 	}
+	messages, err := handler.im.ListMessages("room-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 ||
+		messages[0].ID != "msg-turn-stopped-"+leaseID ||
+		messages[0].SenderID != "user-worker" ||
+		messages[0].Content != "Conversation interrupted" {
+		t.Fatalf("stop messages = %#v", messages)
+	}
+	csgclawMetadata, ok := messages[0].Metadata["csgclaw"].(map[string]any)
+	if !ok || csgclawMetadata["delivery_kind"] != "turn_stopped" || csgclawMetadata["lease_id"] != leaseID {
+		t.Fatalf("stop message metadata = %#v", messages[0].Metadata)
+	}
+	repeatedStop := performParticipantWorkRequest(t, handler, http.MethodPost, stopPath, map[string]any{
+		"room_id":    "room-1",
+		"lease_id":   leaseID,
+		"request_id": "message-1",
+	})
+	if repeatedStop.Code != http.StatusAccepted {
+		t.Fatalf("repeated stop status = %d, body=%s", repeatedStop.Code, repeatedStop.Body.String())
+	}
+	messages, err = handler.im.ListMessages("room-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("repeated stop messages = %#v, want one idempotent record", messages)
+	}
 
 	renewed := performParticipantWorkRequest(t, handler, http.MethodPut, leasePath, map[string]any{
 		"room_id":    "room-1",
@@ -210,7 +246,9 @@ func TestParticipantWorkStatusAndStopAPI(t *testing.T) {
 	if renewed.Code != http.StatusOK || !bytes.Contains(renewed.Body.Bytes(), []byte(`"stop_requested_at"`)) {
 		t.Fatalf("renew after stop status=%d body=%s", renewed.Code, renewed.Body.String())
 	}
-	released := performParticipantWorkRequest(t, handler, http.MethodDelete, leasePath, nil)
+	released := performParticipantWorkRequest(t, handler, http.MethodDelete, leasePath, map[string]any{
+		"outcome": apitypes.ParticipantWorkOutcomeStopped,
+	})
 	if released.Code != http.StatusNoContent || registry.ActiveCount("room-1", "worker") != 0 {
 		t.Fatalf("release status=%d active=%d", released.Code, registry.ActiveCount("room-1", "worker"))
 	}
@@ -221,6 +259,19 @@ func TestParticipantWorkStatusAndStopAPI(t *testing.T) {
 	})
 	if late.Code != http.StatusGone {
 		t.Fatalf("late patch status = %d, body=%s", late.Code, late.Body.String())
+	}
+}
+
+func TestParticipantControlRecordIsNotDispatchedAsAgentInput(t *testing.T) {
+	if !isParticipantControlRecord(im.Message{Metadata: map[string]any{
+		"csgclaw": map[string]any{"delivery_kind": "turn_stopped"},
+	}}) {
+		t.Fatal("turn stop record was not recognized as participant control")
+	}
+	if isParticipantControlRecord(im.Message{Metadata: map[string]any{
+		"csgclaw": map[string]any{"delivery_kind": "final"},
+	}}) {
+		t.Fatal("ordinary participant message was recognized as control")
 	}
 }
 
@@ -254,6 +305,40 @@ func TestParticipantWorkStatusValidation(t *testing.T) {
 	})
 	if emptyThinking.Code != http.StatusBadRequest {
 		t.Fatalf("empty thinking status = %d, body=%s", emptyThinking.Code, emptyThinking.Body.String())
+	}
+}
+
+func TestParticipantWorkStopReportsDeliveryFailureAndTimeout(t *testing.T) {
+	handler, registry := newParticipantWorkTestHandler(t, true)
+	leaseID := worklease.NewID()
+	leasePath := "/api/v1/channels/csgclaw/participants/worker/work-leases/" + leaseID
+	performParticipantWorkRequest(t, handler, http.MethodPut, leasePath, map[string]any{
+		"room_id": "room-1", "request_id": "message-1", "kind": "agent_turn",
+	})
+	performParticipantWorkRequest(t, handler, http.MethodPatch, leasePath, map[string]any{
+		"capabilities": []string{"turn_stop_v1"},
+		"sequence":     1,
+		"phase":        "working",
+	})
+	stopPath := "/api/v1/channels/csgclaw/participants/worker/work:stop"
+	stopBody := map[string]any{"room_id": "room-1", "lease_id": leaseID, "request_id": "message-1"}
+
+	unregister := registry.RegisterTurnController("pt-worker", apiTurnControllerFunc(func(context.Context, agentruntime.TurnRef) error {
+		return agentruntime.ErrTurnControlUnavailable
+	}))
+	failed := performParticipantWorkRequest(t, handler, http.MethodPost, stopPath, stopBody)
+	unregister()
+	if failed.Code != http.StatusBadGateway {
+		t.Fatalf("failed stop status = %d, body=%s", failed.Code, failed.Body.String())
+	}
+
+	unregister = registry.RegisterTurnController("pt-worker", apiTurnControllerFunc(func(context.Context, agentruntime.TurnRef) error {
+		return context.DeadlineExceeded
+	}))
+	defer unregister()
+	timedOut := performParticipantWorkRequest(t, handler, http.MethodPost, stopPath, stopBody)
+	if timedOut.Code != http.StatusGatewayTimeout {
+		t.Fatalf("timed out stop status = %d, body=%s", timedOut.Code, timedOut.Body.String())
 	}
 }
 
@@ -380,6 +465,8 @@ func newParticipantWorkTestHandler(t *testing.T, noAuth bool) (*Handler, *workle
 	}}))
 	bus := worklease.NewBus()
 	controlBus := worklease.NewControlBus()
+	_, cancelControl := controlBus.Subscribe("pt-worker")
+	t.Cleanup(cancelControl)
 	registry := worklease.NewRegistry(
 		participantService,
 		imService,

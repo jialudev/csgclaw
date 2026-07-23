@@ -163,9 +163,13 @@ export function useParticipantWorkStatus({ agents, users }: UseParticipantWorkSt
             participantID: lease.participant_id,
             requestID: lease.request_id,
             roomID: lease.room_id,
-            stopError: stopRequest?.error,
+            stopError: stopRequest?.error || lease.stop_error || undefined,
             stopSending: stopRequest?.state === "sending" && !stopRequest.error,
-            stopping: Boolean(lease.stop_requested_at || stopRequest?.state === "accepted"),
+            stopping: Boolean(
+              lease.stop_state === "stop_requested" ||
+              (!lease.stop_state && lease.stop_requested_at) ||
+              stopRequest?.state === "accepted",
+            ),
             thinkingText: thinking,
             thinkingTruncated: lease.status?.thinking?.truncated === true,
             workStage: lease.status?.stage ?? undefined,

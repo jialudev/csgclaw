@@ -1,20 +1,28 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"csgclaw/internal/apitypes"
+	"csgclaw/internal/im"
 	"csgclaw/internal/worklease"
 )
 
-const participantWorkStatusBodyLimit = 32 * 1024
+const (
+	participantWorkStatusBodyLimit = 32 * 1024
+	participantTurnStopTimeout     = 10 * time.Second
+	participantTurnStoppedText     = "Conversation interrupted"
+)
 
 func (h *Handler) putParticipantWorkLease(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(chi.URLParam(r, "channel")) != "csgclaw" {
@@ -134,7 +142,7 @@ func (h *Handler) stopParticipantWork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	controller, ok := h.participantWork.(worklease.ParticipantWorkController)
-	if !ok || h.workControlBus == nil {
+	if !ok {
 		http.Error(w, "participant work controls are not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -158,12 +166,51 @@ func (h *Handler) stopParticipantWork(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "room_id, request_id, and a valid lease_id are required", http.StatusBadRequest)
 		return
 	}
-	response, err := controller.RequestStop(r.Context(), participantID, request)
+	stopCtx, cancel := context.WithTimeout(r.Context(), participantTurnStopTimeout)
+	defer cancel()
+	response, err := controller.RequestStop(stopCtx, participantID, request)
 	if err != nil {
 		h.writeParticipantWorkError(w, err)
 		return
 	}
+	h.recordParticipantTurnStopped(response)
 	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (h *Handler) recordParticipantTurnStopped(response apitypes.ParticipantWorkStopResponse) {
+	if h == nil || h.im == nil || !response.Accepted {
+		return
+	}
+	senderID := strings.TrimSpace(response.UserID)
+	if senderID == "" {
+		senderID = strings.TrimSpace(response.ParticipantID)
+	}
+	if senderID == "" || strings.TrimSpace(response.RoomID) == "" || strings.TrimSpace(response.LeaseID) == "" {
+		return
+	}
+	_, err := h.im.DeliverMessage(im.DeliverMessageRequest{
+		RoomID:       response.RoomID,
+		SenderID:     senderID,
+		Content:      participantTurnStoppedText,
+		MessageID:    "msg-turn-stopped-" + response.LeaseID,
+		ThreadRootID: response.ThreadRootID,
+		Metadata: map[string]any{
+			"csgclaw": map[string]any{
+				"delivery_kind": "turn_stopped",
+				"lease_id":      response.LeaseID,
+				"request_id":    response.RequestID,
+			},
+		},
+	})
+	if err != nil {
+		slog.Warn("record participant turn stop failed",
+			"participant_id", response.ParticipantID,
+			"room_id", response.RoomID,
+			"lease_id", response.LeaseID,
+			"request_id", response.RequestID,
+			"error", err,
+		)
+	}
 }
 
 func (h *Handler) deleteParticipantWorkLease(w http.ResponseWriter, r *http.Request) {
@@ -185,11 +232,31 @@ func (h *Handler) deleteParticipantWorkLease(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "participant work leases are not configured", http.StatusServiceUnavailable)
 		return
 	}
-	if err := h.participantWork.Stop(r.Context(), participantID, leaseID); err != nil && !errors.Is(err, worklease.ErrUnavailable) {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	outcome := apitypes.ParticipantWorkOutcomeReleased
+	r.Body = http.MaxBytesReader(w, r.Body, participantWorkStatusBodyLimit)
+	var request apitypes.ParticipantWorkReleaseRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
 		return
-	} else if errors.Is(err, worklease.ErrUnavailable) {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	} else if err == nil {
+		if err := ensureJSONEOF(decoder); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if value := strings.TrimSpace(request.Outcome); value != "" {
+			outcome = value
+		}
+	}
+	var err error
+	if finisher, ok := h.participantWork.(worklease.ParticipantWorkFinisher); ok {
+		err = finisher.Finish(r.Context(), participantID, leaseID, outcome)
+	} else {
+		err = h.participantWork.Stop(r.Context(), participantID, leaseID)
+	}
+	if err != nil {
+		h.writeParticipantWorkError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -210,6 +277,10 @@ func (h *Handler) writeParticipantWorkError(w http.ResponseWriter, err error) {
 	case errors.Is(err, worklease.ErrRateLimited):
 		w.Header().Set("Retry-After", "1")
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
+	case errors.Is(err, worklease.ErrTurnControlTimedOut):
+		http.Error(w, err.Error(), http.StatusGatewayTimeout)
+	case errors.Is(err, worklease.ErrTurnControlFailed):
+		http.Error(w, err.Error(), http.StatusBadGateway)
 	case errors.Is(err, worklease.ErrClosed):
 		epoch := ""
 		if source, ok := h.participantWork.(interface{ Epoch() string }); ok {

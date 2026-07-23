@@ -27,7 +27,6 @@ export const ConversationWorkingActions = {
   editing: "editing",
   generatingReply: "generating_reply",
   preparingReply: "preparing_reply",
-  processingToolResult: "processing_tool_result",
   reading: "reading",
   replying: "replying",
   running: "running",
@@ -44,6 +43,7 @@ export type ConversationWorkingParticipant = {
     action: ConversationWorkingAction;
     entryID?: string;
     summary?: string;
+    toolName?: string;
     updatedAt?: string;
   };
   activityAfter?: string;

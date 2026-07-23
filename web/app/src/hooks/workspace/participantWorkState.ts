@@ -287,9 +287,17 @@ function normalizeWorkEvent(work: ParticipantWorkUpdate): ParticipantWorkUpdate 
     !requestID ||
     work?.kind !== "agent_turn" ||
     (work?.state !== "working" && work?.state !== "idle") ||
-    !["started", "renewed", "status_updated", "stop_requested", "released", "stopped", "expired"].includes(
-      work?.reason,
-    ) ||
+    ![
+      "started",
+      "renewed",
+      "status_updated",
+      "stop_requested",
+      "stop_failed",
+      "stop_timed_out",
+      "released",
+      "stopped",
+      "expired",
+    ].includes(work?.reason) ||
     !Number.isInteger(revision) ||
     revision <= 0 ||
     !Number.isFinite(expiresAt)
@@ -310,6 +318,10 @@ function normalizeWorkEvent(work: ParticipantWorkUpdate): ParticipantWorkUpdate 
   if (stopRequestedAt && !Number.isFinite(Date.parse(stopRequestedAt))) {
     return null;
   }
+  const stopState = String(work.stop_state || "").trim();
+  if (stopState && !["stop_requested", "stop_failed", "stop_timed_out", "stopped"].includes(stopState)) {
+    return null;
+  }
   return {
     ...work,
     capabilities,
@@ -320,7 +332,9 @@ function normalizeWorkEvent(work: ParticipantWorkUpdate): ParticipantWorkUpdate 
     revision,
     room_id: roomID,
     status,
+    stop_error: String(work.stop_error || "").trim() || undefined,
     stop_requested_at: stopRequestedAt || undefined,
+    stop_state: (stopState || undefined) as ParticipantWorkUpdate["stop_state"],
     thread_root_id: String(work.thread_root_id || "").trim() || undefined,
     user_id: userID,
   };
@@ -369,10 +383,7 @@ function normalizeParticipantWorkStage(
   if (phase === "working" && (stage === "running_tool" || stage === "generating_reply")) {
     return stage;
   }
-  if (
-    phase === "thinking" &&
-    (stage === "preparing_reply" || stage === "thinking" || stage === "processing_tool_result")
-  ) {
+  if (phase === "thinking" && (stage === "preparing_reply" || stage === "thinking")) {
     return stage;
   }
   return undefined;

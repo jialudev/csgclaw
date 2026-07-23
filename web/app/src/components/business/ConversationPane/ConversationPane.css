@@ -816,6 +816,12 @@ button.composer-working-item:active {
   white-space: nowrap;
 }
 
+.composer-working-verb.is-tool {
+  gap: 2px;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+}
+
 .composer-working-summary {
   overflow: hidden;
   min-width: 0;

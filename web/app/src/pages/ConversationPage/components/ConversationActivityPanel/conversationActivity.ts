@@ -284,6 +284,7 @@ export function conversationWorkingParticipantsWithActivity(
             action: conversationWorkingActionForEntry(entry),
             entryID: entry.id,
             summary: compactWorkingSummary(conversationActivityEntrySummary(entry)),
+            toolName: entry.tone === "tool" ? entry.eventType : undefined,
             updatedAt: entry.updatedAt || entry.createdAt,
           },
         },
@@ -307,8 +308,6 @@ function conversationWorkingActionForStage(
       return ConversationWorkingActions.preparingReply;
     case "thinking":
       return hasThinkingText ? ConversationWorkingActions.thinking : ConversationWorkingActions.preparingReply;
-    case "processing_tool_result":
-      return ConversationWorkingActions.processingToolResult;
     case "generating_reply":
       return ConversationWorkingActions.generatingReply;
     default:

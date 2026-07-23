@@ -128,12 +128,7 @@ export type IMData = {
   users: IMUser[];
 };
 
-export type ParticipantWorkStage =
-  | "preparing_reply"
-  | "thinking"
-  | "running_tool"
-  | "processing_tool_result"
-  | "generating_reply";
+export type ParticipantWorkStage = "preparing_reply" | "thinking" | "running_tool" | "generating_reply";
 
 export type ParticipantWorkUpdate = {
   capabilities?: Array<"thinking_status_v1" | "turn_stop_v1" | "work_stage_v1"> | null;
@@ -141,7 +136,16 @@ export type ParticipantWorkUpdate = {
   kind: "agent_turn";
   lease_id: string;
   participant_id: string;
-  reason: "started" | "renewed" | "status_updated" | "stop_requested" | "released" | "stopped" | "expired";
+  reason:
+    | "started"
+    | "renewed"
+    | "status_updated"
+    | "stop_requested"
+    | "stop_failed"
+    | "stop_timed_out"
+    | "released"
+    | "stopped"
+    | "expired";
   registry_epoch: string;
   request_id: string;
   revision: number;
@@ -157,7 +161,9 @@ export type ParticipantWorkUpdate = {
       truncated: boolean;
     } | null;
   } | null;
+  stop_error?: string | null;
   stop_requested_at?: string | null;
+  stop_state?: "stop_requested" | "stop_failed" | "stop_timed_out" | "stopped" | null;
   thread_root_id?: string | null;
   user_id: string;
 };

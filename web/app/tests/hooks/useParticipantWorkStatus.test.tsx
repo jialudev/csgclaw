@@ -70,6 +70,41 @@ describe("useParticipantWorkStatus", () => {
     expect(result.current.hasObservedWorkLease("user-worker")).toBe(true);
     expect(vi.getTimerCount()).toBe(1);
 
+    act(() =>
+      result.current.handleRealtimeEvent(
+        workEvent({
+          capabilities: ["turn_stop_v1"],
+          reason: "stop_requested",
+          revision: 3,
+          stop_requested_at: "2026-07-14T12:00:01Z",
+          stop_state: "stop_requested",
+        }),
+      ),
+    );
+    expect(result.current.workingParticipantsForRoom("room-1")[0]).toEqual(
+      expect.objectContaining({ canStop: true, stopping: true }),
+    );
+
+    act(() =>
+      result.current.handleRealtimeEvent(
+        workEvent({
+          capabilities: ["turn_stop_v1"],
+          reason: "stop_failed",
+          revision: 4,
+          stop_error: "turn control is unavailable",
+          stop_requested_at: "2026-07-14T12:00:01Z",
+          stop_state: "stop_failed",
+        }),
+      ),
+    );
+    expect(result.current.workingParticipantsForRoom("room-1")[0]).toEqual(
+      expect.objectContaining({
+        canStop: true,
+        stopError: "turn control is unavailable",
+        stopping: false,
+      }),
+    );
+
     act(() => vi.advanceTimersByTime(15_000));
     expect(result.current.workingParticipantsForRoom("room-1")).toEqual([]);
     expect(vi.getTimerCount()).toBe(1);
