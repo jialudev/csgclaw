@@ -99,6 +99,7 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Get("/status", h.handleAuthStatus)
 			r.Get("/callback", h.handleAuthCallback)
 			r.Post("/login", h.handleAuthLogin)
+			r.Post("/access-token", h.handleAuthAccessTokenLogin)
 			r.Post("/logout", h.handleAuthLogout)
 		})
 		r.Route("/connectors", func(r chi.Router) {

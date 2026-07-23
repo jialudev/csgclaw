@@ -641,6 +641,55 @@ catalog 条目时使用 `{ "name": "...", "config": { ... } }`，其中 `config`
 - 超过 `256 KiB` 的文本内容会被截断，并返回 `truncated=true`
 - 不允许绝对路径或 `..` 越界路径
 
+## OpenCSG 社区账号认证 API
+
+### `POST /api/v1/auth/access-token`
+
+无需打开浏览器登录流程，直接使用 OpenCSG 社区访问令牌让 CSGClaw 完成登录。
+调用方传入 OpenCSG Git access token，以及与 Web UI 站点选择器一致的环境 URL。
+
+该接口要求请求头携带 `Authorization: Bearer <token>`，其中 `<token>` 是
+CSGClaw 服务端 access token。仅当服务端启用 `no_auth` 时跳过该校验。
+
+请求示例：
+
+```json
+{
+  "access_token": "your-opencsg-access-token",
+  "opencsg_base_url": "https://opencsg-stg.com"
+}
+```
+
+`opencsg_base_url` 用于选择并持久化登录环境。CSGClaw 使用与浏览器登录相同的
+规则派生关联的 CSGHub 和 AI Gateway 地址：
+
+- `https://opencsg.com` 对应 `https://hub.opencsg.com` 和 `https://ai.space.opencsg.com/v1`
+- `https://opencsg-stg.com` 对应 `https://opencsg-stg.com` 和 `https://aigateway.opencsg-stg.com/v1`
+- 自定义站点使用站点 URL 作为 CSGHub 地址，并使用 `<site>/aigateway/v1` 作为 AI Gateway 地址
+
+CSGClaw 会在所选 CSGHub 站点校验 access token、解析账号身份、尽可能补全公开资料
+和内置 AI Gateway Key，写入与浏览器登录共用的本地认证状态，并刷新 OpenCSG 模型
+Provider。响应为普通认证状态，不会返回提交的 access token 或内置 API Key：
+
+```json
+{
+  "authenticated": true,
+  "user_id": "alice",
+  "user_uuid": "user-uuid",
+  "name": "Alice",
+  "opencsg_base_url": "https://opencsg-stg.com",
+  "base_url": "https://opencsg-stg.com",
+  "ai_gateway_base_url": "https://aigateway.opencsg-stg.com/v1",
+  "logged_in_at": "2026-07-23T09:00:00Z"
+}
+```
+
+错误状态：
+
+- `400 Bad Request`：缺少 token 或环境 URL 无效
+- `401 Unauthorized`：缺少/错误的 CSGClaw 服务端 token，或 OpenCSG access token 被拒绝
+- `502 Bad Gateway`：所选 OpenCSG 站点无法校验或解析 token
+
 ## CLIProxy Auth API
 
 ### `GET /api/v1/cliproxy/auth/status?provider=...`

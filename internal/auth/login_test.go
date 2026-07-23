@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,172 @@ import (
 	"testing"
 	"time"
 )
+
+func TestLoginWithAccessTokenStoresResolvedAccountAndProviderCredentials(t *testing.T) {
+	var sawTokenLookup bool
+	var sawBuiltinLookup bool
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/token/site-access-token":
+			if got := r.URL.Query().Get("app"); got != "git" {
+				t.Fatalf("app query = %q, want git", got)
+			}
+			if got := r.Header.Get("Authorization"); got != "" {
+				t.Fatalf("token lookup Authorization = %q, want empty", got)
+			}
+			sawTokenLookup = true
+			writeJSON(t, w, map[string]any{
+				"msg": "OK",
+				"data": map[string]any{
+					"user_name": "alice",
+					"user_uuid": "user-1",
+				},
+			})
+		case "/api/v1/user/alice":
+			writeJSON(t, w, map[string]any{
+				"msg": "OK",
+				"data": map[string]any{
+					"username": "alice",
+					"nickname": "Alice Zhang",
+					"avatar":   "https://example.test/avatar.png",
+				},
+			})
+		case "/api/v1/namespaces/user-1/apikeys/builtin":
+			if got := r.URL.Query().Get("current_user"); got != "alice" {
+				t.Fatalf("builtin current_user = %q, want alice", got)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer site-access-token" {
+				t.Fatalf("builtin Authorization = %q", got)
+			}
+			sawBuiltinLookup = true
+			writeJSON(t, w, map[string]any{
+				"msg": "OK",
+				"data": map[string]any{
+					"token": "gk_aigateway-key",
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+
+	store := newTestStore(t)
+	now := time.Date(2026, 7, 23, 9, 0, 0, 0, time.UTC)
+	service := &Service{
+		Store:      store,
+		HTTPClient: api.Client(),
+		Now:        func() time.Time { return now },
+	}
+	status, err := service.LoginWithAccessToken(context.Background(), AccessTokenLoginOptions{
+		AccessToken:    " site-access-token ",
+		OpenCSGBaseURL: api.URL + "/",
+	})
+	if err != nil {
+		t.Fatalf("LoginWithAccessToken() error = %v", err)
+	}
+	if !sawTokenLookup || !sawBuiltinLookup {
+		t.Fatalf("upstream lookups token=%v builtin=%v, want both", sawTokenLookup, sawBuiltinLookup)
+	}
+	if !status.Authenticated || status.UserID != "alice" || status.UserUUID != "user-1" {
+		t.Fatalf("status = %+v, want authenticated alice", status)
+	}
+	if status.Name != "Alice Zhang" || status.Avatar != "https://example.test/avatar.png" {
+		t.Fatalf("status profile = %+v", status)
+	}
+	if status.OpenCSGBaseURL != api.URL || status.BaseURL != api.URL {
+		t.Fatalf("status environment = %+v", status)
+	}
+	if status.AIGatewayBaseURL != api.URL+"/aigateway/v1" {
+		t.Fatalf("status AIGatewayBaseURL = %q", status.AIGatewayBaseURL)
+	}
+	if status.LoggedInAt == nil || !status.LoggedInAt.Equal(now) {
+		t.Fatalf("status LoggedInAt = %v, want %v", status.LoggedInAt, now)
+	}
+
+	record, ok, err := store.Load()
+	if err != nil || !ok {
+		t.Fatalf("Load() = %+v, %v, %v", record, ok, err)
+	}
+	if record.Tokens.AccessToken != "site-access-token" {
+		t.Fatalf("stored access token = %q", record.Tokens.AccessToken)
+	}
+	if record.Account.PortalURL != "" {
+		t.Fatalf("stored portal URL = %q, want empty", record.Account.PortalURL)
+	}
+	credentials, ok, err := store.LoadCSGHubProviderCredentials()
+	if err != nil || !ok {
+		t.Fatalf("LoadCSGHubProviderCredentials() = %+v, %v, %v", credentials, ok, err)
+	}
+	if credentials.AIGatewayBuiltinAPIKey != "gk_aigateway-key" {
+		t.Fatalf("stored builtin API key = %q", credentials.AIGatewayBuiltinAPIKey)
+	}
+}
+
+func TestLoginWithAccessTokenDerivesSelectedEnvironment(t *testing.T) {
+	service := &Service{}
+	env, err := service.resolveLoginEnvironment(StageOpenCSGBaseURL, "", "")
+	if err != nil {
+		t.Fatalf("resolveLoginEnvironment() error = %v", err)
+	}
+	if env.OpenCSGBaseURL != StageOpenCSGBaseURL {
+		t.Fatalf("OpenCSGBaseURL = %q", env.OpenCSGBaseURL)
+	}
+	if env.CSGHubBaseURL != StageCSGHubBaseURL {
+		t.Fatalf("CSGHubBaseURL = %q", env.CSGHubBaseURL)
+	}
+	if env.AIGatewayBaseURL != StageAIGatewayBaseURL {
+		t.Fatalf("AIGatewayBaseURL = %q", env.AIGatewayBaseURL)
+	}
+}
+
+func TestLoginWithAccessTokenRejectsMissingOrUnknownToken(t *testing.T) {
+	service := &Service{}
+	if _, err := service.LoginWithAccessToken(context.Background(), AccessTokenLoginOptions{}); err == nil ||
+		!IsAccessTokenLoginValidationError(err) {
+		t.Fatalf("missing token error = %v, want validation error", err)
+	}
+	if _, err := service.LoginWithAccessToken(context.Background(), AccessTokenLoginOptions{
+		AccessToken: "site-access-token",
+	}); err == nil || !IsAccessTokenLoginValidationError(err) {
+		t.Fatalf("missing environment error = %v, want validation error", err)
+	}
+
+	api := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(api.Close)
+	service = &Service{
+		HTTPClient:     api.Client(),
+		OpenCSGBaseURL: api.URL,
+		CSGHubBaseURL:  api.URL,
+	}
+	if _, err := service.LoginWithAccessToken(context.Background(), AccessTokenLoginOptions{
+		AccessToken:    "unknown-token",
+		OpenCSGBaseURL: api.URL,
+	}); err == nil || !IsAccessTokenRejectedError(err) {
+		t.Fatalf("unknown token error = %v, want rejected error", err)
+	}
+}
+
+func TestLoginWithAccessTokenDoesNotExposeTokenInTransportErrors(t *testing.T) {
+	const accessToken = "sensitive-site-access-token"
+	service := &Service{
+		HTTPClient: &http.Client{
+			Transport: authRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return nil, errors.New("request failed for " + req.URL.String())
+			}),
+		},
+	}
+	_, err := service.LoginWithAccessToken(context.Background(), AccessTokenLoginOptions{
+		AccessToken:    accessToken,
+		OpenCSGBaseURL: "https://opencsg.example.test",
+	})
+	if err == nil {
+		t.Fatal("LoginWithAccessToken() error = nil, want transport error")
+	}
+	if strings.Contains(err.Error(), accessToken) {
+		t.Fatalf("LoginWithAccessToken() error leaked access token: %v", err)
+	}
+}
 
 func TestCompleteCallbackStoresCredentials(t *testing.T) {
 	var sawTokenAuth bool
@@ -671,4 +838,10 @@ func writeJSON(t *testing.T, w http.ResponseWriter, data any) {
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		t.Fatalf("encode response: %v", err)
 	}
+}
+
+type authRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn authRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }

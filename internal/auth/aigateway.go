@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -120,10 +121,30 @@ func doJSONWithClient(client *http.Client, req *http.Request, out any) error {
 		if msg == "" {
 			msg = resp.Status
 		}
-		return fmt.Errorf("http %d: %s", resp.StatusCode, msg)
+		return &upstreamHTTPStatusError{
+			StatusCode: resp.StatusCode,
+			Message:    msg,
+		}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+type upstreamHTTPStatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *upstreamHTTPStatusError) Error() string {
+	return fmt.Sprintf("http %d: %s", e.StatusCode, e.Message)
+}
+
+func upstreamHTTPStatusCode(err error) int {
+	var statusErr *upstreamHTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode
+	}
+	return 0
 }

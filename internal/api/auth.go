@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +27,11 @@ type authLoginRequest struct {
 	AdvertiseBaseURL string `json:"-"`
 }
 
+type authAccessTokenLoginRequest struct {
+	AccessToken    string `json:"access_token"`
+	OpenCSGBaseURL string `json:"opencsg_base_url,omitempty"`
+}
+
 var appAuthStatus = func(r *http.Request) (auth.Status, error) {
 	return auth.Default().Status(r.Context())
 }
@@ -38,6 +44,13 @@ var appAuthLogin = func(r *http.Request, req authLoginRequest) (auth.LoginRespon
 		OpenCSGBaseURL:   req.OpenCSGBaseURL,
 		CSGHubBaseURL:    req.CSGHubBaseURL,
 		AIGatewayBaseURL: req.AIGatewayBaseURL,
+	})
+}
+
+var appAuthAccessTokenLogin = func(r *http.Request, req authAccessTokenLoginRequest) (auth.Status, error) {
+	return auth.Default().LoginWithAccessToken(r.Context(), auth.AccessTokenLoginOptions{
+		AccessToken:    req.AccessToken,
+		OpenCSGBaseURL: req.OpenCSGBaseURL,
 	})
 }
 
@@ -85,9 +98,7 @@ func (h *Handler) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
-	if err := h.refreshOpenCSGModelProvider(r.Context()); err != nil {
-		slog.Warn("refresh OpenCSG models after login failed", "error", err)
-	}
+	h.refreshOpenCSGModelProviderAfterLogin(r.Context())
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
@@ -121,6 +132,43 @@ func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) handleAuthAccessTokenLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !h.validateServerAccessToken(r.Header.Get("Authorization")) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req authAccessTokenLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	status, err := appAuthAccessTokenLogin(r, req)
+	if err != nil {
+		switch {
+		case auth.IsAccessTokenLoginValidationError(err):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case auth.IsAccessTokenRejectedError(err):
+			http.Error(w, err.Error(), http.StatusUnauthorized)
+		default:
+			http.Error(w, err.Error(), http.StatusBadGateway)
+		}
+		return
+	}
+	h.refreshOpenCSGModelProviderAfterLogin(r.Context())
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (h *Handler) refreshOpenCSGModelProviderAfterLogin(ctx context.Context) {
+	if err := h.refreshOpenCSGModelProvider(ctx); err != nil {
+		slog.Warn("refresh OpenCSG models after login failed", "error", err)
+	}
 }
 
 func (h *Handler) authAdvertiseBaseURL() string {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -128,6 +129,117 @@ advertise_base_url = "${CSGCLAW_ADVERTISE_BASE_URL}"
 	}
 	if want := advertiseBaseURL + authCallbackPath; got.CallbackURL != want {
 		t.Fatalf("callback_url = %q, want %q", got.CallbackURL, want)
+	}
+}
+
+func TestHandleAuthAccessTokenLogin(t *testing.T) {
+	var got authAccessTokenLoginRequest
+	restore := stubAuthAccessTokenLogin(func(_ *http.Request, req authAccessTokenLoginRequest) (auth.Status, error) {
+		got = req
+		return auth.Status{
+			Authenticated:    true,
+			UserID:           "alice",
+			UserUUID:         "user-1",
+			OpenCSGBaseURL:   "https://opencsg-stg.com",
+			BaseURL:          "https://opencsg-stg.com",
+			AIGatewayBaseURL: "https://aigateway.opencsg-stg.com/v1",
+		}, nil
+	})
+	defer restore()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/access-token", strings.NewReader(`{
+		"access_token":"site-access-token",
+		"opencsg_base_url":"https://opencsg-stg.com"
+	}`))
+	req.Header.Set("Authorization", "Bearer server-token")
+	handler := &Handler{serverAccessToken: "server-token"}
+	handler.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if got.AccessToken != "site-access-token" {
+		t.Fatalf("access_token = %q", got.AccessToken)
+	}
+	if got.OpenCSGBaseURL != "https://opencsg-stg.com" {
+		t.Fatalf("opencsg_base_url = %q", got.OpenCSGBaseURL)
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
+	}
+	var status auth.Status
+	if err := json.NewDecoder(rec.Body).Decode(&status); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !status.Authenticated || status.UserID != "alice" {
+		t.Fatalf("response = %+v, want authenticated alice", status)
+	}
+}
+
+func TestHandleAuthAccessTokenLoginRequiresServerAccessToken(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/access-token", strings.NewReader(`{
+		"access_token":"site-access-token",
+		"opencsg_base_url":"https://opencsg-stg.com"
+	}`))
+	(&Handler{serverAccessToken: "server-token"}).Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
+func TestHandleAuthAccessTokenLoginMapsErrors(t *testing.T) {
+	_, validationErr := (&auth.Service{}).LoginWithAccessToken(context.Background(), auth.AccessTokenLoginOptions{})
+	rejectedTokenServer := httptest.NewServer(http.NotFoundHandler())
+	defer rejectedTokenServer.Close()
+	_, rejectedErr := (&auth.Service{
+		HTTPClient:     rejectedTokenServer.Client(),
+		CSGHubBaseURL:  rejectedTokenServer.URL,
+		OpenCSGBaseURL: rejectedTokenServer.URL,
+	}).LoginWithAccessToken(context.Background(), auth.AccessTokenLoginOptions{
+		AccessToken:    "site-access-token",
+		OpenCSGBaseURL: rejectedTokenServer.URL,
+	})
+
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{
+			name:       "invalid request",
+			err:        validationErr,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "rejected token",
+			err:        rejectedErr,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "upstream failure",
+			err:        errors.New("upstream unavailable"),
+			wantStatus: http.StatusBadGateway,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restore := stubAuthAccessTokenLogin(func(*http.Request, authAccessTokenLoginRequest) (auth.Status, error) {
+				return auth.Status{}, tt.err
+			})
+			defer restore()
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/access-token", strings.NewReader(`{
+				"access_token":"site-access-token",
+				"opencsg_base_url":"https://opencsg-stg.com"
+			}`))
+			req.Header.Set("Authorization", "Bearer server-token")
+			(&Handler{serverAccessToken: "server-token"}).Routes().ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -387,6 +499,12 @@ func stubAuthLogin(fn func(*http.Request, authLoginRequest) (auth.LoginResponse,
 	previous := appAuthLogin
 	appAuthLogin = fn
 	return func() { appAuthLogin = previous }
+}
+
+func stubAuthAccessTokenLogin(fn func(*http.Request, authAccessTokenLoginRequest) (auth.Status, error)) func() {
+	previous := appAuthAccessTokenLogin
+	appAuthAccessTokenLogin = fn
+	return func() { appAuthAccessTokenLogin = previous }
 }
 
 func stubAuthCallback(fn func(*http.Request, string) (string, error)) func() {

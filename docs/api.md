@@ -657,6 +657,59 @@ Notes:
 - Text content larger than `256 KiB` is truncated and returned with `truncated=true`
 - Absolute paths and `..` traversal are rejected
 
+## OpenCSG Account Auth API
+
+### `POST /api/v1/auth/access-token`
+
+Signs CSGClaw in to an OpenCSG community site without opening the browser login flow.
+The caller supplies an OpenCSG Git access token and the same environment URL used by
+the Web UI site selector.
+
+This endpoint requires `Authorization: Bearer <token>`, where `<token>` is the
+CSGClaw server access token. The check is skipped only when the server runs with
+`no_auth`.
+
+Request:
+
+```json
+{
+  "access_token": "your-opencsg-access-token",
+  "opencsg_base_url": "https://opencsg-stg.com"
+}
+```
+
+`opencsg_base_url` selects and persists the login environment. CSGClaw derives the
+related CSGHub and AI Gateway URLs with the same rules as browser login:
+
+- `https://opencsg.com` uses `https://hub.opencsg.com` and `https://ai.space.opencsg.com/v1`
+- `https://opencsg-stg.com` uses `https://opencsg-stg.com` and `https://aigateway.opencsg-stg.com/v1`
+- custom sites use the site URL for CSGHub and `<site>/aigateway/v1` for AI Gateway
+
+CSGClaw validates the access token against the selected CSGHub site, resolves the
+account identity, loads the public profile and built-in AI Gateway key when
+available, persists the same local auth state used by browser login, and refreshes
+the OpenCSG model provider. The response is the normal auth status and never
+contains the submitted access token or built-in API key:
+
+```json
+{
+  "authenticated": true,
+  "user_id": "alice",
+  "user_uuid": "user-uuid",
+  "name": "Alice",
+  "opencsg_base_url": "https://opencsg-stg.com",
+  "base_url": "https://opencsg-stg.com",
+  "ai_gateway_base_url": "https://aigateway.opencsg-stg.com/v1",
+  "logged_in_at": "2026-07-23T09:00:00Z"
+}
+```
+
+Errors:
+
+- `400 Bad Request`: missing token or invalid environment URL
+- `401 Unauthorized`: missing/invalid CSGClaw server token, or rejected OpenCSG access token
+- `502 Bad Gateway`: the selected OpenCSG site could not validate or resolve the token
+
 ## CLIProxy Auth API
 
 ### `GET /api/v1/cliproxy/auth/status?provider=...`

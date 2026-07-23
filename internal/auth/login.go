@@ -34,6 +34,11 @@ type LoginOptions struct {
 	AIGatewayBaseURL string
 }
 
+type AccessTokenLoginOptions struct {
+	AccessToken    string
+	OpenCSGBaseURL string
+}
+
 type CallbackOptions struct {
 	AdvertiseBaseURL string
 }
@@ -50,6 +55,13 @@ type authEnvironment struct {
 	OpenCSGBaseURL   string
 	CSGHubBaseURL    string
 	AIGatewayBaseURL string
+}
+
+type authenticatedIdentity struct {
+	AccessToken string
+	AuthToken   string
+	UserID      string
+	UserUUID    string
 }
 
 type Environment struct {
@@ -115,6 +127,29 @@ func (s *Service) Login(_ context.Context, opts ...LoginOptions) (LoginResponse,
 	return LoginResponse{LoginURL: s.buildLoginURL(callbackURL, env.OpenCSGBaseURL)}, nil
 }
 
+func (s *Service) LoginWithAccessToken(ctx context.Context, opts AccessTokenLoginOptions) (Status, error) {
+	accessToken := strings.TrimSpace(opts.AccessToken)
+	if accessToken == "" {
+		return Status{}, accessTokenLoginValidationError("access_token is required")
+	}
+	if strings.TrimSpace(opts.OpenCSGBaseURL) == "" {
+		return Status{}, accessTokenLoginValidationError("opencsg_base_url is required")
+	}
+	env, err := s.resolveLoginEnvironment(
+		opts.OpenCSGBaseURL,
+		"",
+		"",
+	)
+	if err != nil {
+		return Status{}, accessTokenLoginValidationError(err.Error())
+	}
+	identity, err := s.resolveAccessTokenIdentity(ctx, env.CSGHubBaseURL, accessToken)
+	if err != nil {
+		return Status{}, err
+	}
+	return s.finalizeLogin(ctx, env, identity, "")
+}
+
 func (s *Service) Logout(context.Context) (Status, error) {
 	store, err := s.store()
 	if err != nil {
@@ -173,42 +208,17 @@ func (s *Service) completeCallbackWithAdvertiseBaseURL(ctx context.Context, valu
 			return "", callbackValidationError("portal_url must match csghub base url")
 		}
 	}
-	accessToken, builtinAPIKey, profile, err := s.fetchAuthDetails(ctx, csgHubBaseURL, jwtToken, userID, userUUID)
+	accessToken, err := s.fetchUserAccessToken(ctx, csgHubBaseURL, jwtToken, userID)
 	if err != nil {
 		return "", err
 	}
-
-	store, err := s.store()
-	if err != nil {
+	if _, err := s.finalizeLogin(ctx, env, authenticatedIdentity{
+		AccessToken: accessToken,
+		AuthToken:   jwtToken,
+		UserID:      userID,
+		UserUUID:    userUUID,
+	}, portalURL); err != nil {
 		return "", err
-	}
-	now := s.now().UTC()
-	record := Record{
-		Tokens: Tokens{
-			AccessToken: accessToken,
-		},
-		Account: Account{
-			UserID:         userID,
-			UserUUID:       userUUID,
-			Name:           profile.Name,
-			Avatar:         profile.Avatar,
-			OpenCSGBaseURL: env.OpenCSGBaseURL,
-			BaseURL:        csgHubBaseURL,
-			PortalURL:      portalURL,
-			LoggedInAt:     now,
-		},
-		LastRefresh: now,
-	}
-	if err := store.Save(record); err != nil {
-		return "", err
-	}
-	if builtinAPIKey != "" || env.AIGatewayBaseURL != "" {
-		if err := store.SaveCSGHubProviderCredentials(CSGHubProviderCredentials{
-			AIGatewayBaseURL:       env.AIGatewayBaseURL,
-			AIGatewayBuiltinAPIKey: builtinAPIKey,
-		}); err != nil {
-			return "", err
-		}
 	}
 
 	if returnURL := callbackReturnURL(values, advertiseBaseURL); returnURL != "" {
@@ -226,20 +236,111 @@ type userProfile struct {
 	Avatar   string
 }
 
-func (s *Service) fetchAuthDetails(ctx context.Context, baseURL, jwtToken, userID, userUUID string) (string, string, userProfile, error) {
-	token, err := s.fetchUserAccessToken(ctx, baseURL, jwtToken, userID)
-	if err != nil {
-		return "", "", userProfile{}, err
-	}
-	profile, err := s.fetchUserProfile(ctx, baseURL, userID)
+func (s *Service) finalizeLogin(
+	ctx context.Context,
+	env authEnvironment,
+	identity authenticatedIdentity,
+	portalURL string,
+) (Status, error) {
+	profile, err := s.fetchUserProfile(ctx, env.CSGHubBaseURL, identity.UserID)
 	if err != nil {
 		profile = userProfile{}
 	}
-	apiKey, err := s.fetchBuiltinAPIKey(ctx, baseURL, jwtToken, userID, userUUID)
+	builtinAPIKey, err := s.fetchBuiltinAPIKey(
+		ctx,
+		env.CSGHubBaseURL,
+		identity.AuthToken,
+		identity.UserID,
+		identity.UserUUID,
+	)
 	if err != nil {
-		apiKey = ""
+		builtinAPIKey = ""
 	}
-	return token, apiKey, profile, nil
+
+	store, err := s.store()
+	if err != nil {
+		return Status{}, err
+	}
+	now := s.now().UTC()
+	if err := store.Save(Record{
+		Tokens: Tokens{
+			AccessToken: identity.AccessToken,
+		},
+		Account: Account{
+			UserID:         identity.UserID,
+			UserUUID:       identity.UserUUID,
+			Name:           profile.Name,
+			Avatar:         profile.Avatar,
+			OpenCSGBaseURL: env.OpenCSGBaseURL,
+			BaseURL:        env.CSGHubBaseURL,
+			PortalURL:      portalURL,
+			LoggedInAt:     now,
+		},
+		LastRefresh: now,
+	}); err != nil {
+		return Status{}, err
+	}
+	if builtinAPIKey != "" || env.AIGatewayBaseURL != "" {
+		if err := store.SaveCSGHubProviderCredentials(CSGHubProviderCredentials{
+			AIGatewayBaseURL:       env.AIGatewayBaseURL,
+			AIGatewayBuiltinAPIKey: builtinAPIKey,
+		}); err != nil {
+			return Status{}, err
+		}
+	}
+	return store.Status()
+}
+
+func (s *Service) resolveAccessTokenIdentity(
+	ctx context.Context,
+	baseURL string,
+	accessToken string,
+) (authenticatedIdentity, error) {
+	endpoint, err := joinAPIPath(baseURL, "/api/v1/token/"+url.PathEscape(accessToken))
+	if err != nil {
+		return authenticatedIdentity{}, err
+	}
+	q := endpoint.Query()
+	q.Set("app", "git")
+	endpoint.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return authenticatedIdentity{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	var resp struct {
+		Msg  string `json:"msg"`
+		Data struct {
+			UserID   string `json:"user_name"`
+			Username string `json:"username"`
+			UserUUID string `json:"user_uuid"`
+			UUID     string `json:"uuid"`
+		} `json:"data"`
+	}
+	if err := s.doJSON(req, &resp); err != nil {
+		statusCode := upstreamHTTPStatusCode(err)
+		switch statusCode {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+			return authenticatedIdentity{}, accessTokenRejectedError("access token is invalid")
+		}
+		if statusCode != 0 {
+			return authenticatedIdentity{}, fmt.Errorf("validate csghub access token: upstream returned HTTP %d", statusCode)
+		}
+		return authenticatedIdentity{}, fmt.Errorf("validate csghub access token: request failed")
+	}
+	userID := firstNonEmpty(resp.Data.UserID, resp.Data.Username)
+	userUUID := firstNonEmpty(resp.Data.UserUUID, resp.Data.UUID)
+	if userID == "" || userUUID == "" {
+		return authenticatedIdentity{}, accessTokenRejectedError("access token identity is incomplete")
+	}
+	return authenticatedIdentity{
+		AccessToken: accessToken,
+		AuthToken:   accessToken,
+		UserID:      userID,
+		UserUUID:    userUUID,
+	}, nil
 }
 
 func (s *Service) fetchUserAccessToken(ctx context.Context, baseURL, jwtToken, userID string) (string, error) {
@@ -361,6 +462,18 @@ func (s *Service) opencsgBaseURL() string {
 }
 
 func (s *Service) loginEnvironment(opts LoginOptions) (authEnvironment, error) {
+	return s.resolveLoginEnvironment(
+		opts.OpenCSGBaseURL,
+		opts.CSGHubBaseURL,
+		opts.AIGatewayBaseURL,
+	)
+}
+
+func (s *Service) resolveLoginEnvironment(
+	openCSGBaseURL string,
+	csgHubBaseURL string,
+	aiGatewayBaseURL string,
+) (authEnvironment, error) {
 	env := authEnvironment{
 		OpenCSGBaseURL: s.opencsgBaseURL(),
 		CSGHubBaseURL:  s.csghubBaseURL(),
@@ -368,7 +481,7 @@ func (s *Service) loginEnvironment(opts LoginOptions) (authEnvironment, error) {
 	hasOpenCSGBaseURL := false
 	hasCSGHubBaseURL := false
 	hasAIGatewayBaseURL := false
-	if raw := strings.TrimSpace(opts.OpenCSGBaseURL); raw != "" {
+	if raw := strings.TrimSpace(openCSGBaseURL); raw != "" {
 		baseURL, err := normalizeAuthBaseURL(raw, "opencsg base url")
 		if err != nil {
 			return authEnvironment{}, err
@@ -376,7 +489,7 @@ func (s *Service) loginEnvironment(opts LoginOptions) (authEnvironment, error) {
 		env.OpenCSGBaseURL = baseURL
 		hasOpenCSGBaseURL = true
 	}
-	if raw := strings.TrimSpace(opts.CSGHubBaseURL); raw != "" {
+	if raw := strings.TrimSpace(csgHubBaseURL); raw != "" {
 		baseURL, err := normalizeAuthBaseURL(raw, "csghub base url")
 		if err != nil {
 			return authEnvironment{}, err
@@ -384,7 +497,7 @@ func (s *Service) loginEnvironment(opts LoginOptions) (authEnvironment, error) {
 		env.CSGHubBaseURL = baseURL
 		hasCSGHubBaseURL = true
 	}
-	if raw := strings.TrimSpace(opts.AIGatewayBaseURL); raw != "" {
+	if raw := strings.TrimSpace(aiGatewayBaseURL); raw != "" {
 		baseURL, err := normalizeAuthAIGatewayBaseURL(raw)
 		if err != nil {
 			return authEnvironment{}, err
@@ -770,4 +883,26 @@ func isCallbackValidationError(err error) bool {
 
 func IsCallbackValidationError(err error) bool {
 	return isCallbackValidationError(err)
+}
+
+type accessTokenLoginValidationError string
+
+func (e accessTokenLoginValidationError) Error() string {
+	return string(e)
+}
+
+func IsAccessTokenLoginValidationError(err error) bool {
+	_, ok := err.(accessTokenLoginValidationError)
+	return ok
+}
+
+type accessTokenRejectedError string
+
+func (e accessTokenRejectedError) Error() string {
+	return string(e)
+}
+
+func IsAccessTokenRejectedError(err error) bool {
+	_, ok := err.(accessTokenRejectedError)
+	return ok
 }
