@@ -58,17 +58,24 @@ func RefreshFromBundle(bundleRoot string) (RefreshResult, error) {
 		return RefreshResult{}, err
 	}
 	result := RefreshResult{SandboxToolsDir: toolsDir}
-	source := filepath.Join(bundleRoot, "bin", "csgclaw_dir", SandboxCLIName)
-	if info, err := os.Stat(source); err != nil || !info.Mode().IsRegular() {
-		return result, nil
+	source := sandboxCLISource(bundleRoot)
+	if info, err := os.Stat(source); err == nil && info.Mode().IsRegular() {
+		target := filepath.Join(toolsDir, SandboxCLIName)
+		if err := SyncFile(source, target, 0o755); err != nil {
+			return RefreshResult{}, err
+		}
+		result.SandboxCLIPath = target
+		result.SandboxCLISync = true
 	}
-	target := filepath.Join(toolsDir, SandboxCLIName)
-	if err := SyncFile(source, target, 0o755); err != nil {
-		return RefreshResult{}, err
-	}
-	result.SandboxCLIPath = target
-	result.SandboxCLISync = true
 	return result, nil
+}
+
+func sandboxCLISource(bundleRoot string) string {
+	current := filepath.Join(bundleRoot, "bin", SandboxToolsDirName, SandboxCLIName)
+	if info, err := os.Stat(current); err == nil && info.Mode().IsRegular() {
+		return current
+	}
+	return filepath.Join(bundleRoot, "bin", "csgclaw_dir", SandboxCLIName)
 }
 
 func SyncFile(source, target string, mode os.FileMode) error {

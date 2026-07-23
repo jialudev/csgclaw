@@ -619,7 +619,6 @@ func (r *Runtime) hydratePersistedSession(ctx context.Context, manager *appServe
 	if err != nil {
 		return nil, fmt.Errorf("resolve codex binary: %w", err)
 	}
-
 	spec := SessionSpec{
 		RuntimeID:    runtimeID,
 		AgentID:      agentID,

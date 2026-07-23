@@ -124,10 +124,13 @@ function Write-LauncherCmd {
 }
 
 function Install-Launcher {
-    param([string]$TargetExePath)
+    param(
+        [string]$Name,
+        [string]$TargetExePath
+    )
 
-    $launcherExePath = Join-Path $InstallDir "${App}.exe"
-    $launcherCmdPath = Join-Path $InstallDir "${App}.cmd"
+    $launcherExePath = Join-Path $InstallDir "${Name}.exe"
+    $launcherCmdPath = Join-Path $InstallDir "${Name}.cmd"
 
     if (Test-Path -LiteralPath $launcherExePath) {
         Remove-Item -LiteralPath $launcherExePath -Force
@@ -169,12 +172,24 @@ function Install-Bundle {
         $bundlePath = Join-Path $extractDir $App
         $bundleBinPath = Join-Path $bundlePath "bin"
         $bundleExePath = Join-Path $bundleBinPath "${App}.exe"
-        $bundleCliPath = Join-Path $bundleBinPath "csgclaw_dir\csgclaw-cli"
+        $bundleCliPath = Join-Path $bundleBinPath "sandbox-tools\csgclaw-cli"
+        if (-not (Test-Path -LiteralPath $bundleCliPath)) {
+            $bundleCliPath = Join-Path $bundleBinPath "csgclaw_dir\csgclaw-cli"
+        }
+        $bundleHostCliRelative = "bin\csgclaw-cli.exe"
+        $bundleHostCliPath = Join-Path $bundlePath $bundleHostCliRelative
+        if (-not (Test-Path -LiteralPath $bundleHostCliPath)) {
+            $bundleHostCliRelative = "bin\csgclaw_dir\host\csgclaw-cli.exe"
+            $bundleHostCliPath = Join-Path $bundlePath $bundleHostCliRelative
+        }
         if (-not (Test-Path -LiteralPath $bundleExePath)) {
             throw "Archive did not contain $App/bin/${App}.exe"
         }
         if (-not (Test-Path -LiteralPath $bundleCliPath)) {
-            throw "Archive did not contain $App/bin/csgclaw_dir/csgclaw-cli"
+            throw "Archive did not contain $App/bin/sandbox-tools/csgclaw-cli"
+        }
+        if (-not (Test-Path -LiteralPath $bundleHostCliPath)) {
+            throw "Archive did not contain $App/bin/csgclaw-cli.exe"
         }
 
         Ensure-Directory -Path $InstallDir
@@ -192,13 +207,16 @@ function Install-Bundle {
         Copy-Item -LiteralPath $bundlePath -Destination $installedBundlePath -Recurse
 
         $targetExePath = Join-Path $installedBundlePath "bin\${App}.exe"
-        $launcherPath = Install-Launcher -TargetExePath $targetExePath
+        $launcherPath = Install-Launcher -Name $App -TargetExePath $targetExePath
+        $targetCliExePath = Join-Path $installedBundlePath $bundleHostCliRelative
+        $cliLauncherPath = Install-Launcher -Name "csgclaw-cli" -TargetExePath $targetCliExePath
 
         $pathUpdated = Add-InstallDirToUserPath
 
         Write-Host ""
         Write-Host "Installed $App $ResolvedVersion to $targetExePath"
         Write-Host "Launcher: $launcherPath"
+        Write-Host "Companion CLI: $cliLauncherPath"
         Write-Host "Sandbox CLI: $(Join-Path $SandboxToolsDir 'csgclaw-cli')"
         Write-Host ""
         Write-Host "Next steps:"
