@@ -647,9 +647,10 @@ function ComposerAddMenu({
                   autoComplete="url"
                   placeholder="https://gitlab.example.com"
                   value={gitlabDraft.base_url}
-                  onChange={(event) =>
-                    setGitLabDraft((current) => ({ ...current, base_url: event.currentTarget.value }))
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setGitLabDraft((current) => ({ ...current, base_url: value }));
+                  }}
                 />
               </label>
               <label>
@@ -660,9 +661,10 @@ function ComposerAddMenu({
                   placeholder={gitlabStatus.access_token_set ? t("connectorGitLabTokenKeep") : "glpat-…"}
                   type="password"
                   value={gitlabDraft.access_token}
-                  onChange={(event) =>
-                    setGitLabDraft((current) => ({ ...current, access_token: event.currentTarget.value }))
-                  }
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setGitLabDraft((current) => ({ ...current, access_token: value }));
+                  }}
                 />
               </label>
               <div className="connector-gitlab-form-actions">
