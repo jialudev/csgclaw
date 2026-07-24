@@ -63,7 +63,7 @@ Sandbox runtime 使用以下固定默认镜像：
 
 | Runtime | 固定镜像 |
 |---|---|
-| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260717.27-csgclaw` |
+| OpenClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/openclaw:20260723.2-csgclaw` |
 | PicoClaw | `opencsg-registry.cn-beijing.cr.aliyuncs.com/opencsghq/picoclaw:2026.6.10` |
 
 OpenClaw 的固定引用保存在内置 `agent.toml` 中。PicoClaw 不再提供内置模板，其引用改为 runtime 默认值。CSGClaw 不负责生成这些镜像 tag，也不在 CI 中构建这些运行时镜像。
