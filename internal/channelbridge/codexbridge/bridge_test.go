@@ -261,13 +261,14 @@ type resetCall struct {
 }
 
 type fakePrompter struct {
-	mu      sync.Mutex
-	calls   []promptCall
-	ensures []ensureCall
-	resets  []resetCall
-	prompt  func(context.Context, runtimecodex.SessionHandle, runtimecodex.PromptRequest) error
-	ensure  func(context.Context, runtimecodex.SessionHandle, string) (string, error)
-	reset   func(context.Context, runtimecodex.SessionHandle, string) error
+	mu             sync.Mutex
+	calls          []promptCall
+	ensures        []ensureCall
+	resets         []resetCall
+	prompt         func(context.Context, runtimecodex.SessionHandle, runtimecodex.PromptRequest) error
+	promptResponse func(context.Context, runtimecodex.SessionHandle, runtimecodex.PromptRequest) (runtimecodex.PromptResponse, error)
+	ensure         func(context.Context, runtimecodex.SessionHandle, string) (string, error)
+	reset          func(context.Context, runtimecodex.SessionHandle, string) error
 }
 
 func (p *fakePrompter) Prompt(ctx context.Context, handle runtimecodex.SessionHandle, req runtimecodex.PromptRequest) (runtimecodex.PromptResponse, error) {
@@ -279,6 +280,9 @@ func (p *fakePrompter) Prompt(ctx context.Context, handle runtimecodex.SessionHa
 	p.calls = append(p.calls, call)
 	p.mu.Unlock()
 
+	if p.promptResponse != nil {
+		return p.promptResponse(ctx, handle, req)
+	}
 	if p.prompt != nil {
 		if err := p.prompt(ctx, handle, req); err != nil {
 			return runtimecodex.PromptResponse{}, err
@@ -2635,62 +2639,81 @@ func TestParticipantWorkReporterSkipsFeishu(t *testing.T) {
 	}
 }
 
-func TestCodexTurnControlAdvertisesCapabilityAndConfirmsStop(t *testing.T) {
-	stream := make(chan BotEvent, 1)
-	errs := make(chan error)
-	stream <- BotEvent{Channel: localChannel, MessageID: "message-1", RoomID: "room-1", Text: "keep working"}
-	reporter := &fakeWorkReporter{}
-	dispatcher := worklease.NewTurnControlDispatcher(nil)
-	promptStarted := make(chan struct{})
-	prompter := &fakePrompter{prompt: func(ctx context.Context, _ runtimecodex.SessionHandle, _ runtimecodex.PromptRequest) error {
-		close(promptStarted)
-		<-ctx.Done()
-		return ctx.Err()
-	}}
-	service := NewService(
-		&fakeBotClient{streams: map[string][]streamResult{"pt-worker": {{events: stream, errs: errs}}}},
-		prompter,
-		runtimecodex.NewEventSink(),
-		WithParticipantWorkReporter(reporter),
-		WithTurnControllerRegistrar(dispatcher),
-	)
-	if err := service.StartBot(context.Background(), Binding{BotID: "pt-worker", RuntimeID: "runtime-1", SessionID: "session-1"}); err != nil {
-		t.Fatal(err)
+func TestCodexTurnControlRequiresRuntimeStopConfirmation(t *testing.T) {
+	tests := []struct {
+		name        string
+		stopReason  string
+		wantOutcome string
+	}{
+		{
+			name:        "confirmed",
+			stopReason:  runtimecodex.StopReasonInterrupted,
+			wantOutcome: apitypes.ParticipantWorkOutcomeStopped,
+		},
+		{
+			name:        "unconfirmed",
+			wantOutcome: apitypes.ParticipantWorkOutcomeStopTimedOut,
+		},
 	}
-	defer service.Close()
-	select {
-	case <-promptStarted:
-	case <-time.After(time.Second):
-		t.Fatal("prompt did not start")
-	}
-	waitFor(t, func() bool {
-		statuses, _ := reporter.controlSnapshot()
-		return len(statuses) == 1
-	})
-	leases, _, _ := reporter.snapshot()
-	if len(leases) == 0 {
-		t.Fatal("missing participant work lease")
-	}
-	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := dispatcher.StopTurn(stopCtx, agentruntime.TurnRef{
-		ParticipantID: "pt-worker",
-		RoomID:        "room-1",
-		LeaseID:       leases[0].LeaseID,
-		RequestID:     "message-1",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, func() bool {
-		_, outcomes := reporter.controlSnapshot()
-		return len(outcomes) == 1
-	})
-	statuses, outcomes := reporter.controlSnapshot()
-	if len(statuses) != 1 || !slices.Equal(statuses[0].Capabilities, []string{apitypes.ParticipantWorkCapabilityTurnStopV1}) {
-		t.Fatalf("status reports = %#v", statuses)
-	}
-	if !slices.Equal(outcomes, []string{apitypes.ParticipantWorkOutcomeStopped}) {
-		t.Fatalf("completion outcomes = %#v", outcomes)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			stream := make(chan BotEvent, 1)
+			errs := make(chan error)
+			stream <- BotEvent{Channel: localChannel, MessageID: "message-1", RoomID: "room-1", Text: "keep working"}
+			reporter := &fakeWorkReporter{}
+			dispatcher := worklease.NewTurnControlDispatcher(nil)
+			promptStarted := make(chan struct{})
+			prompter := &fakePrompter{promptResponse: func(ctx context.Context, _ runtimecodex.SessionHandle, _ runtimecodex.PromptRequest) (runtimecodex.PromptResponse, error) {
+				close(promptStarted)
+				<-ctx.Done()
+				return runtimecodex.PromptResponse{StopReason: test.stopReason}, ctx.Err()
+			}}
+			service := NewService(
+				&fakeBotClient{streams: map[string][]streamResult{"pt-worker": {{events: stream, errs: errs}}}},
+				prompter,
+				runtimecodex.NewEventSink(),
+				WithParticipantWorkReporter(reporter),
+				WithTurnControllerRegistrar(dispatcher),
+			)
+			if err := service.StartBot(context.Background(), Binding{BotID: "pt-worker", RuntimeID: "runtime-1", SessionID: "session-1"}); err != nil {
+				t.Fatal(err)
+			}
+			defer service.Close()
+			select {
+			case <-promptStarted:
+			case <-time.After(time.Second):
+				t.Fatal("prompt did not start")
+			}
+			waitFor(t, func() bool {
+				statuses, _ := reporter.controlSnapshot()
+				return len(statuses) == 1
+			})
+			leases, _, _ := reporter.snapshot()
+			if len(leases) == 0 {
+				t.Fatal("missing participant work lease")
+			}
+			stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := dispatcher.StopTurn(stopCtx, agentruntime.TurnRef{
+				ParticipantID: "pt-worker",
+				RoomID:        "room-1",
+				LeaseID:       leases[0].LeaseID,
+				RequestID:     "message-1",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, func() bool {
+				_, outcomes := reporter.controlSnapshot()
+				return len(outcomes) == 1
+			})
+			statuses, outcomes := reporter.controlSnapshot()
+			if len(statuses) != 1 || !slices.Equal(statuses[0].Capabilities, []string{apitypes.ParticipantWorkCapabilityTurnStopV1}) {
+				t.Fatalf("status reports = %#v", statuses)
+			}
+			if !slices.Equal(outcomes, []string{test.wantOutcome}) {
+				t.Fatalf("completion outcomes = %#v, want %q", outcomes, test.wantOutcome)
+			}
+		})
 	}
 }
 

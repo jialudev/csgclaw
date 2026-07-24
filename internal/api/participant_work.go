@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -14,14 +13,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"csgclaw/internal/apitypes"
-	"csgclaw/internal/im"
 	"csgclaw/internal/worklease"
 )
 
 const (
 	participantWorkStatusBodyLimit = 32 * 1024
 	participantTurnStopTimeout     = 10 * time.Second
-	participantTurnStoppedText     = "Conversation interrupted"
 )
 
 func (h *Handler) putParticipantWorkLease(w http.ResponseWriter, r *http.Request) {
@@ -173,44 +170,7 @@ func (h *Handler) stopParticipantWork(w http.ResponseWriter, r *http.Request) {
 		h.writeParticipantWorkError(w, err)
 		return
 	}
-	h.recordParticipantTurnStopped(response)
 	writeJSON(w, http.StatusAccepted, response)
-}
-
-func (h *Handler) recordParticipantTurnStopped(response apitypes.ParticipantWorkStopResponse) {
-	if h == nil || h.im == nil || !response.Accepted {
-		return
-	}
-	senderID := strings.TrimSpace(response.UserID)
-	if senderID == "" {
-		senderID = strings.TrimSpace(response.ParticipantID)
-	}
-	if senderID == "" || strings.TrimSpace(response.RoomID) == "" || strings.TrimSpace(response.LeaseID) == "" {
-		return
-	}
-	_, err := h.im.DeliverMessage(im.DeliverMessageRequest{
-		RoomID:       response.RoomID,
-		SenderID:     senderID,
-		Content:      participantTurnStoppedText,
-		MessageID:    "msg-turn-stopped-" + response.LeaseID,
-		ThreadRootID: response.ThreadRootID,
-		Metadata: map[string]any{
-			"csgclaw": map[string]any{
-				"delivery_kind": "turn_stopped",
-				"lease_id":      response.LeaseID,
-				"request_id":    response.RequestID,
-			},
-		},
-	})
-	if err != nil {
-		slog.Warn("record participant turn stop failed",
-			"participant_id", response.ParticipantID,
-			"room_id", response.RoomID,
-			"lease_id", response.LeaseID,
-			"request_id", response.RequestID,
-			"error", err,
-		)
-	}
 }
 
 func (h *Handler) deleteParticipantWorkLease(w http.ResponseWriter, r *http.Request) {

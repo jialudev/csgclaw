@@ -212,15 +212,8 @@ func TestParticipantWorkStatusAndStopAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 1 ||
-		messages[0].ID != "msg-turn-stopped-"+leaseID ||
-		messages[0].SenderID != "user-worker" ||
-		messages[0].Content != "Conversation interrupted" {
-		t.Fatalf("stop messages = %#v", messages)
-	}
-	csgclawMetadata, ok := messages[0].Metadata["csgclaw"].(map[string]any)
-	if !ok || csgclawMetadata["delivery_kind"] != "turn_stopped" || csgclawMetadata["lease_id"] != leaseID {
-		t.Fatalf("stop message metadata = %#v", messages[0].Metadata)
+	if len(messages) != 0 {
+		t.Fatalf("messages before runtime confirmation = %#v, want none", messages)
 	}
 	repeatedStop := performParticipantWorkRequest(t, handler, http.MethodPost, stopPath, map[string]any{
 		"room_id":    "room-1",
@@ -234,8 +227,8 @@ func TestParticipantWorkStatusAndStopAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 1 {
-		t.Fatalf("repeated stop messages = %#v, want one idempotent record", messages)
+	if len(messages) != 0 {
+		t.Fatalf("messages after repeated stop request = %#v, want none", messages)
 	}
 
 	renewed := performParticipantWorkRequest(t, handler, http.MethodPut, leasePath, map[string]any{
@@ -251,6 +244,33 @@ func TestParticipantWorkStatusAndStopAPI(t *testing.T) {
 	})
 	if released.Code != http.StatusNoContent || registry.ActiveCount("room-1", "worker") != 0 {
 		t.Fatalf("release status=%d active=%d", released.Code, registry.ActiveCount("room-1", "worker"))
+	}
+	messages, err = handler.im.ListMessages("room-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 ||
+		messages[0].ID != "msg-turn-stopped-"+leaseID ||
+		messages[0].SenderID != "user-worker" ||
+		messages[0].Content != "Conversation interrupted" {
+		t.Fatalf("confirmed stop messages = %#v", messages)
+	}
+	csgclawMetadata, ok := messages[0].Metadata["csgclaw"].(map[string]any)
+	if !ok || csgclawMetadata["delivery_kind"] != "turn_stopped" || csgclawMetadata["lease_id"] != leaseID {
+		t.Fatalf("stop message metadata = %#v", messages[0].Metadata)
+	}
+	repeatedRelease := performParticipantWorkRequest(t, handler, http.MethodDelete, leasePath, map[string]any{
+		"outcome": apitypes.ParticipantWorkOutcomeStopped,
+	})
+	if repeatedRelease.Code != http.StatusNoContent {
+		t.Fatalf("repeated release status = %d, body=%s", repeatedRelease.Code, repeatedRelease.Body.String())
+	}
+	messages, err = handler.im.ListMessages("room-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("repeated release messages = %#v, want one idempotent record", messages)
 	}
 	late := performParticipantWorkRequest(t, handler, http.MethodPatch, leasePath, map[string]any{
 		"capabilities": []string{"thinking_status_v1", "turn_stop_v1", "work_stage_v1"},
@@ -331,6 +351,13 @@ func TestParticipantWorkStopReportsDeliveryFailureAndTimeout(t *testing.T) {
 	if failed.Code != http.StatusBadGateway {
 		t.Fatalf("failed stop status = %d, body=%s", failed.Code, failed.Body.String())
 	}
+	messages, err := handler.im.ListMessages("room-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("failed stop messages = %#v, want none", messages)
+	}
 
 	unregister = registry.RegisterTurnController("pt-worker", apiTurnControllerFunc(func(context.Context, agentruntime.TurnRef) error {
 		return context.DeadlineExceeded
@@ -339,6 +366,19 @@ func TestParticipantWorkStopReportsDeliveryFailureAndTimeout(t *testing.T) {
 	timedOut := performParticipantWorkRequest(t, handler, http.MethodPost, stopPath, stopBody)
 	if timedOut.Code != http.StatusGatewayTimeout {
 		t.Fatalf("timed out stop status = %d, body=%s", timedOut.Code, timedOut.Body.String())
+	}
+	finished := performParticipantWorkRequest(t, handler, http.MethodDelete, leasePath, map[string]any{
+		"outcome": apitypes.ParticipantWorkOutcomeStopTimedOut,
+	})
+	if finished.Code != http.StatusNoContent {
+		t.Fatalf("timed out finish status = %d, body=%s", finished.Code, finished.Body.String())
+	}
+	messages, err = handler.im.ListMessages("room-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("failed or timed out stop messages = %#v, want none", messages)
 	}
 }
 

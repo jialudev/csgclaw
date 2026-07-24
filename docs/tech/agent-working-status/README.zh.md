@@ -108,13 +108,13 @@ POST   /api/v1/channels/csgclaw/participants/{participant_id}/work:stop
 
 Runtime 结束租约时，`DELETE` 可提交 `{"outcome":"released"}`、`{"outcome":"stopped"}` 或 `{"outcome":"stop_timed_out"}`。只有 Runtime 在处理停止请求后显式确认 `stopped`，服务端才发布 `stopped`；旧 Runtime 省略请求体时按普通 `released` 处理。
 
-停止控制成功投递后，API 还会用对应 Agent 的用户身份在原房间（有话题时在原话题）写入一条 “Conversation interrupted” 记录。同一 `lease_id` 使用固定消息 ID，重复请求只更新同一条记录；该内部控制记录只进入会话历史和 Web 实时流，不会再次分发给任何 Agent。
+Runtime 显式确认 `stopped` 后，服务端会用对应 Agent 的用户身份在原房间（有话题时在原话题）写入一条 “Conversation interrupted” 记录。仅投递停止请求、投递失败或停止超时都不会写入该记录。同一 `lease_id` 使用固定消息 ID，重复完成请求不会产生重复记录；该内部控制记录只进入会话历史和 Web 实时流，不会再次分发给任何 Agent。
 
 ## 服务端如何避免脏状态
 
 核心实现在 `internal/worklease/`：
 
-- Registry 只在内存中保存活动租约；只有显式停止控制成功投递时，API 层会额外写入上述会话记录。
+- Registry 只在内存中保存活动租约；只有 Runtime 显式确认 `stopped` 时，统一完成路径才会额外写入上述会话记录。
 - janitor 每秒清理一次过期租约。
 - 租约释放或过期后保留 70 秒 tombstone；迟到的续租会收到 `410 Gone`，不能重新激活已经结束的请求。
 - 每个服务进程都有独立的 `registry_epoch`。服务重启后，Web 收到新 epoch 会丢弃旧进程的状态。

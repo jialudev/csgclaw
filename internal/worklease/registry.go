@@ -75,10 +75,11 @@ type ParticipantDirectory interface {
 	Get(channel, id string) (apitypes.Participant, bool)
 }
 
-type IMDirectory interface {
+type IMService interface {
 	ResolveUserID(userID string) string
 	Room(roomID string) (im.Room, bool)
 	User(userID string) (im.User, bool)
+	DeliverMessage(req im.DeliverMessageRequest) (im.Message, error)
 }
 
 type Option func(*Registry)
@@ -131,7 +132,7 @@ type tombstone struct {
 
 type Registry struct {
 	participants ParticipantDirectory
-	im           IMDirectory
+	im           IMService
 	bus          *Bus
 	controlBus   *ControlBus
 	turnControls *TurnControlDispatcher
@@ -144,10 +145,10 @@ type Registry struct {
 	tombstones      map[leaseKey]tombstone
 }
 
-func NewRegistry(participants ParticipantDirectory, imDirectory IMDirectory, bus *Bus, opts ...Option) *Registry {
+func NewRegistry(participants ParticipantDirectory, imService IMService, bus *Bus, opts ...Option) *Registry {
 	registry := &Registry{
 		participants:    participants,
-		im:              imDirectory,
+		im:              imService,
 		bus:             bus,
 		epoch:           NewID(),
 		now:             time.Now,
@@ -443,6 +444,9 @@ func (r *Registry) Finish(_ context.Context, participantID, leaseID, outcome str
 
 	if update != nil {
 		r.publish(*update)
+		if outcome == apitypes.ParticipantWorkOutcomeStopped {
+			r.recordParticipantTurnStopped(*update)
+		}
 	}
 	return nil
 }

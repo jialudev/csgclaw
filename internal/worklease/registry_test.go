@@ -269,6 +269,10 @@ func TestRegistryStatusAndTurnStopLifecycle(t *testing.T) {
 	if stopped.StopState != apitypes.ParticipantWorkStopStateStopped {
 		t.Fatalf("stopped update = %#v", stopped)
 	}
+	if err := registry.Finish(context.Background(), "worker", lease.LeaseID, apitypes.ParticipantWorkOutcomeStopped); err != nil {
+		t.Fatal(err)
+	}
+	assertNoWorkEvent(t, events)
 	if _, _, err := registry.UpdateStatus(context.Background(), "worker", lease.LeaseID, statusRequest); !errors.Is(err, ErrClosed) {
 		t.Fatalf("late status error = %v, want closed", err)
 	}

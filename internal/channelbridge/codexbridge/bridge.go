@@ -514,22 +514,24 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 	}
 
 	type promptResult struct {
-		err error
+		response runtimecodex.PromptResponse
+		err      error
 	}
 	promptDone := make(chan promptResult, 1)
 	w.markActiveTurnPromptStarted()
 	go func() {
 		promptStartedAt := time.Now()
-		_, err := w.service.prompter.Prompt(ctx, runtimecodex.SessionHandle{RuntimeID: w.binding.RuntimeID}, req)
+		response, err := w.service.prompter.Prompt(ctx, runtimecodex.SessionHandle{RuntimeID: w.binding.RuntimeID}, req)
 		slog.Debug("codex bridge prompt returned",
 			"bot_id", w.binding.BotID,
 			"runtime_id", w.binding.RuntimeID,
 			"session_id", sessionID,
 			"message_id", strings.TrimSpace(evt.MessageID),
 			"duration", time.Since(promptStartedAt),
+			"stop_reason", strings.TrimSpace(response.StopReason),
 			"error", err,
 		)
-		promptDone <- promptResult{err: err}
+		promptDone <- promptResult{response: response, err: err}
 	}()
 
 	promptReturned := false
@@ -642,8 +644,10 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 			}
 			drainTimer := time.NewTimer(turnControlDrainTimeout)
 			select {
-			case <-promptDone:
-				w.confirmActiveTurnStop()
+			case result := <-promptDone:
+				if result.response.StopReason == runtimecodex.StopReasonInterrupted {
+					w.confirmActiveTurnStop()
+				}
 			case <-drainTimer.C:
 			}
 			if !drainTimer.Stop() {
@@ -676,7 +680,9 @@ func (w *worker) handleEvent(ctx context.Context, evt BotEvent, runtimeEvents <-
 		case result := <-promptDone:
 			promptReturned = true
 			if ctx.Err() != nil {
-				w.confirmActiveTurnStop()
+				if result.response.StopReason == runtimecodex.StopReasonInterrupted {
+					w.confirmActiveTurnStop()
+				}
 				return ctx.Err()
 			}
 			if w.isSuperseded(evt) {
