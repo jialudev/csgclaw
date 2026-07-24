@@ -93,6 +93,7 @@ export function FloatingChatPanel({ agentName, chatProps, headerAccessory, onPic
     onSaveGitLabConnectorConfig,
     onSetThreadSlashIndex = (_index) => {},
     onSyncComposer,
+    onStopWorkingTurn,
     onThreadDraftChange,
     onThreadSlashQueryChange,
     onToggleChannelTools,
@@ -320,6 +321,7 @@ export function FloatingChatPanel({ agentName, chatProps, headerAccessory, onPic
           onSaveConnectorConfig={onSaveConnectorConfig}
           onSaveGitLabConnectorConfig={onSaveGitLabConnectorConfig}
           onSendMessage={onSendMessage}
+          onStopWorkingTurn={onStopWorkingTurn}
           onRemoveAttachment={onRemoveAttachment}
           onSyncComposer={onSyncComposer}
         />
