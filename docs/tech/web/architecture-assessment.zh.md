@@ -8,6 +8,7 @@
 关联文档：
 
 - [后端架构评估](../backend-architecture-assessment.zh.md)
+- [Multica 分层架构参考分析](../multica-architecture-reference.zh.md)
 - [Mantine 采用与渐进迁移方案](mantine-adoption-plan.zh.md)
 
 ## 1. 总结

@@ -3,412 +3,234 @@
 > - 评估日期：2026-07-24
 > - 代码基线：`f6559fed`（`upstream/main`）
 > - 范围：Go CLI、HTTP Server、API、领域服务、Runtime、Sandbox、持久化与装配链路
-> - 结论性质：模块化单体演进建议，不建议拆成微服务
+> - 结论：继续演进模块化单体，不拆微服务
 
-关联文档：[前端架构评估](web/architecture-assessment.zh.md)
+关联文档：
 
-## 1. 总结
+- [前端架构评估](web/architecture-assessment.zh.md)
+- [Multica 分层架构参考分析](multica-architecture-reference.zh.md)
+- [历史架构图](architecture.md)
 
-### 1.1 一句话结论
+## 1. 结论
 
-CSGClaw 后端的领域能力已经比较完整，当前最需要的不是增加更多 package，也不是拆微服务，而是建立真正的应用层，让 API、CLI、Domain、Runtime 和基础设施回到各自边界。
+CSGClaw 后端已经具备主要业务能力，当前问题不是功能不足，而是部分实现放错了位置：
 
-> 保持单进程模块化单体，补齐 `internal/app`，统一任务真相，解除 Runtime 对具体 Channel 的反向依赖。
+- `internal/api.Handler` 同时处理 HTTP、业务编排、业务状态和文件持久化。
+- `cli/serve` 同时处理命令行和整个应用的构造、恢复与启动。
+- `internal/team` 和 `internal/taskcore` 各自维护一套任务状态机。
+- `internal/runtime` / `internal/agent` 直接依赖 Feishu 类型。
+- CLI Client 使用 Server 内部领域类型。
+- `internal/localstore` 知道过多上层迁移规则。
 
-当前职责主要向三个中心泄漏：
+下一步应保持单进程，渐进完成以下调整：
 
-- `internal/api.Handler` 同时承担 HTTP Adapter、应用服务和业务状态容器。
-- `cli/serve` 同时承担 CLI 命令和整个应用的 Composition Root。
-- `internal/runtime` / `internal/agent` 直接依赖 Feishu 具体类型。
+1. 跨领域流程放入 `internal/app`。
+2. `internal/api` 和 `cli/serve` 只保留入口职责。
+3. `taskcore` 成为任务状态、审批、事件和持久化的唯一真相。
+4. Runtime 通过中立的 `ChannelBinding` 获取 Channel 配置。
+5. CLI 和 Server 只通过 `apitypes` 传输数据。
+6. 建立版本化、幂等、可审计的 Migration Runner。
 
-此外，`internal/team` 与 `internal/taskcore` 各自实现任务状态、审批、事件、Presence 和持久化，形成两套任务真相。
+## 2. 各层职责
 
-### 1.2 核心决策
-
-| 决策            | 处理方式                                                   |
-| --------------- | ---------------------------------------------------------- |
-| 部署模型        | 保持单进程，不拆微服务                                     |
-| 应用装配        | 从 `cli/serve` 移入 `internal/app`                         |
-| HTTP API        | 只解析请求、调用 Use Case、映射错误和返回响应              |
-| 领域状态        | 不保存在 API Handler 中                                    |
-| Task            | 以 `taskcore` 为唯一状态机和持久化真相                     |
-| Team            | 保留 metadata、成员、planning 和 projection                |
-| Runtime/Channel | 通过中立 `ChannelBinding` contract 解耦                    |
-| API Contract    | CLI 与 Server 通过 `apitypes` 通讯，不共享内部领域 command |
-| Migration       | 建立版本化、幂等、可审计的 migration runner                |
-| 大 Service      | 先在现有领域包内按能力拆分，不急于增加 package             |
-
-### 1.3 优先级
-
-1. **P1：把业务状态和持久化从 API Handler 移出。**
-2. **P1：统一 Team Task 与 Task Core。**
-3. **P1：解除 Runtime/Agent 对 Feishu 具体实现的依赖。**
-4. **P2：把应用 Bootstrap 和生命周期从 `cli/serve` 移入 `internal/app`。**
-5. **P2：净化 API Contract、Migration 和依赖注入。**
-6. **P2：在领域包内部拆分过大的 Service。**
-
-## 2. 当前架构
-
-### 2.1 图的阅读方式
-
-本文采用 ASCII 的组件边界图：
-
-- 横向表示不同入口或领域能力。
-- 纵向表示从 Adapter 到业务再到 Runtime/Infrastructure 的调用方向。
-- `(!)` 表示职责错位、重复真相或反向依赖。
-- 图只表达关键边界和主数据流；具体文件证据放在后面的详细分析。
-
-这种形式比完整 package 依赖图更适合人类阅读。package 级依赖数量会作为证据，但不会全部画入主图。
-
-### 2.2 当前后端架构图
+这些名称表示职责，不要求为每层新建一个顶级目录。
 
 ```text
-+-------------------------------- External --------------------------------------+
-|                                                                                |
-|  Web UI        csgclaw CLI       csgclaw-cli       Feishu / CSGClaw Channel   |
-|    |                |                 |                       |                 |
-+----+----------------+-----------------+-----------------------+-----------------+
-     |                |                 |                       |
-     v                v                 v                       v
-+------------------------------- Entrypoints ------------------------------------+
-|                                                                                |
-| internal/server   (!) cli/serve       internal/apiclient      channel adapters |
-|      |            flags + daemon             |                       |          |
-|      |            + app bootstrap            |                       |          |
-|      |            + lifecycle                |                       |          |
-|      |            + recovery                 |                       |          |
-|      v                                                                         |
-| (!) internal/api.Handler                                                       |
-|     HTTP routing + use-case orchestration + business state + file persistence  |
-+-------------------------------+------------------------------------------------+
+Adapter         怎么进来
+Application     要完成什么
+Domain          什么是合法的
+Infrastructure  具体怎么执行
+API Contract    网络上怎么表示
+```
+
+| 概念 | 一句话说明 | CSGClaw 中的职责 |
+| --- | --- | --- |
+| Adapter | 对接外部入口 | 解析 HTTP、CLI、Channel 输入，调用用例并转换输出 |
+| Application | 执行一个完整用例 | 组织业务流程，协调多个领域能力和基础设施 |
+| Domain | 维护业务事实和规则 | 定义实体、状态迁移、业务规则和领域错误 |
+| Infrastructure | 实现外部能力 | 操作文件、SDK、Runtime、Sandbox、LLM 和进程 |
+| API Contract | 定义通信协议 | 定义跨进程请求和响应，不承载业务规则 |
+
+API Contract 不是独立的业务层，而是 Adapter 边界使用的数据协议。
+
+对应当前目录：
+
+```text
+HTTP JSON、路由、状态码             -> internal/api
+CLI 参数、daemon、PID、输出         -> cli/serve
+跨多个领域完成一次操作              -> internal/app
+任务状态转换和业务规则              -> internal/taskcore
+Team metadata、成员和 planning      -> internal/team
+Channel SDK                         -> internal/channel/*
+Runtime / Sandbox                   -> internal/runtime、internal/sandbox
+文件操作                            -> internal/localstore
+版本化迁移                          -> internal/migration（目标）
+跨进程请求和响应                    -> internal/apitypes
+HTTP Client                         -> internal/apiclient
+```
+
+以“创建任务”为例：
+
+```text
+HTTP Handler                         # Adapter：读取 JSON
+  -> CreateTask Use Case             # Application：检查上下文并组织流程
+     -> taskcore                     # Domain：创建任务并检查状态规则
+     -> Task Store                   # Infrastructure：保存任务和事件
+  -> TaskResponse                    # API Contract：转换成稳定 JSON
+```
+
+简单判断：
+
+1. 处理 HTTP、CLI 或 Channel 格式：Adapter。
+2. 组织一次完整用户操作：Application。
+3. 不依赖 HTTP 和存储也成立的规则：Domain。
+4. 读写文件、启动进程或调用 SDK：Infrastructure。
+5. 定义网络 JSON：API Contract。
+
+## 3. 当前实现
+
+`(!)` 表示当前主要问题。
+
+```text
++----------------------------- External ------------------------------+
+| Web UI | csgclaw CLI | csgclaw-cli | Feishu / CSGClaw Channel      |
++----+-----------+-------------+------------------+--------------------+
+     |           |             |                  |
+     v           v             v                  v
++----------------------------- Entrypoints ----------------------------+
+| internal/server                                                    |
+|      |                                                              |
+|      v                                                              |
+| (!) internal/api.Handler                                            |
+|     HTTP + 业务编排 + 业务状态 + 部分文件持久化                     |
+|                                                                     |
+| (!) cli/serve                                                       |
+|     flags + daemon + 应用装配 + migration + recovery + lifecycle    |
++-------------------------------+--------------------------------------+
                                 |
-              +-----------------+------------------+-------------------+
-              |                                    |                   |
-              v                                    v                   v
-+---------------------------+  +---------------------------+  +-------------------+
-| Collaboration / Task      |  | Agent / Runtime           |  | Resources / Model |
-|                           |  |                           |  |                   |
-| participant -> im         |  | agent -> runtime registry |  | hub / skill / MCP |
-| channelbridge             |  |    -> codex               |  | connectors        |
-|                           |  |    -> sandboxgateway      |  | model providers   |
-| (!) team task state       |  |       -> Pico/OpenClaw    |  | LLM / CLIProxy    |
-| (!) taskcore task state   |  |                           |  |                   |
-+-------------+-------------+  +-------------+-------------+  +---------+---------+
-              |                              |                          |
-              |                              | (!) runtime -> Feishu    |
-              |                              v                          |
-              |                    +----------------------+             |
-              |                    | Runtime/Sandbox      |             |
-              |                    | BoxLite / Docker     |             |
-              |                    | Codex app-server     |             |
-              |                    +----------+-----------+             |
-              |                               |                         |
-+-------------+-------------------------------+-------------------------+---------+
-| Infrastructure / Persistence                                                  |
-|                                                                               |
-| local stores / config / session files / migration / provider SDK / filesystem |
-+-------------------------------------------------------------------------------+
+              +-----------------+------------------+
+              |                                    |
+              v                                    v
++-------------------------------+  +-----------------------------------+
+| Collaboration / Task          |  | Agent / Runtime                   |
+| participant / im / team       |  | agent -> runtime -> sandbox       |
+| (!) team task + taskcore task |  | (!) runtime/agent -> Feishu      |
++-------------------------------+  +-----------------------------------+
+              |                                    |
+              +------------------+-----------------+
+                                 v
++-------------------------- Infrastructure ----------------------------+
+| local stores / config / SDK / filesystem / processes                |
++----------------------------------------------------------------------+
 ```
 
-### 2.3 当前四条主链路
-
-历史架构图主要表达：
+当前主要数据流：
 
 ```text
-channel -> room -> participant -> agent -> runtime -> sandbox
+控制面：Web / CLI -> HTTP API -> Handler -> 各领域 Service
+协作面：Channel -> Bridge -> Room / Participant / IM -> Runtime
+任务面：Team Task -> team；Agent / Schedule Task -> taskcore
+模型面：Runtime -> LLM Bridge -> Provider / CLIProxy / CSGHub-lite
 ```
 
-这条关系仍然正确，但当前系统实际至少有四条链路。
+本次基线上，`internal/api` 直接导入约 37 个本地 package，`cli/serve` 直接导入约 36 个；`handler.go` 约 3,274 行，`serve.go` 约 1,373 行。测试基础较好，因此适合逐步迁移，不需要重写。
 
-#### 控制面
+当前已有可继续利用的基础：
+
+- `cmd/csgclaw` 与 `cmd/csgclaw-cli` 入口较薄。
+- 各主要领域已经有可识别的 package。
+- Runtime 和 Sandbox 已有接口。
+- `apitypes`、`apiclient` 已开始分离网络协议。
+- `app/channelwiring`、`app/runtimewiring` 已经存在。
+
+## 4. 主要问题和实现方式
+
+### 4.1 P1：API Handler 保存业务状态
+
+当前 Handler 持有大量具体服务，构造后还需要多个 Setter。以下长期状态也在 API 层：
 
 ```text
-Web / CLI
-  -> HTTP API
-  -> Handler 内编排多个 Service
-  -> Config / Agent / Connector / Upgrade / Hub 等能力
+teamPlanJobs               Team planning job 去重
+participantActivityTurns   Activity turn 生命周期
+feishuRegistrationStateDir Feishu 注册记录目录
 ```
 
-#### 协作数据面
+API 中还直接执行注册文件的创建、JSON 编解码、临时文件写入、Rename、扫描和删除。
+
+这会导致：
+
+- HTTP 生命周期和业务状态生命周期绑定。
+- 同一业务难以被 CLI、Channel 或后台任务复用。
+- Handler 依赖越来越多。
+- 缺失依赖只能在运行期通过 503 暴露。
+
+目标实现：
 
 ```text
-Channel event
-  -> Channel Adapter / Bridge
-  -> Room / Participant / IM
-  -> Agent Runtime Session
-  -> Channel response
+internal/api
+  -> 解析请求
+  -> 调用 Use Case
+  -> 映射错误和响应
+
+internal/app
+  -> 保存工作流状态
+  -> 协调领域 Service
+  -> 调用 Store / Runtime
+
+Infrastructure
+  -> 读写注册文件和其他持久化数据
 ```
 
-#### 任务数据面
+API 使用显式依赖构造；必需依赖启动时检查，可选能力通过 Feature Set 决定是否注册路由。
+
+### 4.2 P1：存在两套 Task
+
+当前重复定义：
 
 ```text
-Team Task -----------------> team.Service 状态机
-Agent/Scheduled Task ------> agenttask -> taskcore 状态机
-                                      |
-                                      v
-                              API 层合并两套结果
+team.TeamTask       <-> taskcore.Task
+team.TeamApproval   <-> taskcore.TaskApproval
+team.TeamEvent      <-> taskcore.TaskEvent
+team.Presence       <-> taskcore.Presence
 ```
 
-#### 模型数据面
+两个 Service 都实现创建、Claim、完成、失败、阻塞、审批、事件和持久化。结果是状态规则可能漂移，API 及其调用方还要合并、归一化两套数据。
 
-```text
-Agent Runtime
-  -> bot LLM bridge
-  -> llm.Service
-  -> Provider / CLIProxy / remote API / CSGHub-lite
-```
-
-### 2.4 当前架构的关键事实
-
-在本次代码基线上：
-
-- 约 87 个 Go package。
-- 333 个非测试 Go 文件，约 94,312 行生产代码。
-- 187 个测试文件，约 79,120 行测试代码。
-- `internal/api` 直接导入约 37 个本地 package。
-- `cli/serve` 直接导入约 36 个本地 package。
-- `internal/api/handler.go` 约 3,274 行。
-- `cli/serve/serve.go` 约 1,373 行。
-- `internal/team/service.go` 与 `internal/taskcore/service.go` 各自维护任务状态机。
-
-测试基础较好，因此适合做渐进重构，不需要重写。
-
-### 2.5 当前做得合理的部分
-
-- `cmd/csgclaw` 与 `cmd/csgclaw-cli` 入口保持很薄。
-- Participant、IM、Team、Agent、Runtime、Sandbox、Skill、MCP 等领域包已经可识别。
-- Runtime 和 Sandbox 已有正式接口。
-- `internal/apitypes` 与 `internal/apiclient` 已开始分离 API Contract。
-- `internal/app/channelwiring` 和 `internal/app/runtimewiring` 已经建立了正确方向的基础。
-- 主 Server 使用 chi，gin 仅存在于 CLIProxy SDK 边界；无需为了统一框架改写第三方 SDK。
-
-## 3. 目标架构
-
-### 3.1 目标后端架构图
-
-```text
-+-------------------------------- External --------------------------------------+
-|                                                                                |
-| Web UI        csgclaw CLI       csgclaw-cli       Feishu / other Channels      |
-+----+----------------+-----------------+-----------------------+-----------------+
-     |                |                 |                       |
-     v                v                 v                       v
-+-------------------------------- Adapters --------------------------------------+
-|                                                                                |
-| HTTP API        CLI command       API client/contracts       Channel adapters  |
-| decode/encode   flags/output      apitypes only              SDK conversion    |
-+-------------------------------+------------------------------------------------+
-                                |
-                                v
-+--------------------------- Application Layer ---------------------------------+
-| internal/app                                                                   |
-|                                                                                |
-| Bootstrap / Dependencies / Lifecycle / Recovery                                |
-|                                                                                |
-| AgentUseCases          ParticipantUseCases          TeamUseCases               |
-| TaskUseCases           RegistrationUseCases         RuntimeProvisioning        |
-| ConnectorUseCases      ModelUseCases                Scheduling                 |
-+-------------------------------+------------------------------------------------+
-                                |
-               +----------------+-------------------+
-               |                                    |
-               v                                    v
-+----------------------------- Domain ------------------------------------------+
-|                                                                                |
-| participant / im       taskcore / team       agent / template / worklease      |
-| skill / MCP            activity              connector + channel contracts      |
-|                                                                                |
-| Rules, state transitions, entities, domain errors and ports                    |
-+-------------------------------+------------------------------------------------+
-                                |
-                                v
-+----------------------- Infrastructure Implementations -------------------------+
-|                                                                                |
-| stores + migration       runtime implementations       sandbox providers       |
-| Feishu SDK               LLM providers / CLIProxy      filesystem / processes  |
-| Codex / PicoClaw / OpenClaw                         BoxLite / Docker            |
-+-------------------------------------------------------------------------------+
-```
-
-### 3.2 目标依赖方向
-
-```text
-adapter -> application -> domain
-                         -> infrastructure ports
-
-infrastructure implementation -> domain/application port
-```
-
-禁止：
-
-```text
-runtime -> channel/feishu concrete type
-domain  -> internal/api
-HTTP Handler -> filesystem persistence
-CLI HTTP client -> server internal domain command
-localstore primitive -> all domain schemas
-```
-
-### 3.3 目标主流程
-
-#### 应用启动
-
-```text
-cli/serve
-  -> 解析 flags 和前后台模式
-  -> internal/app.Bootstrap(config)
-       -> 构造 Dependencies
-       -> 执行 migration/recovery
-       -> 装配 Channel/Runtime
-       -> 启动 Server 和后台生命周期
-  -> 返回 App + Shutdown + Diagnostics
-```
-
-#### HTTP 请求
-
-```text
-HTTP request
-  -> API Adapter 解码
-  -> Application Use Case
-  -> Domain rule
-  -> Port / Infrastructure
-  -> Application result
-  -> API Adapter 映射 response/error
-```
-
-#### Runtime 获取 Channel 配置
-
-```text
-Feishu/Other Channel Adapter
-  -> 生成中立 ChannelBinding
-  -> RuntimeProvisioning Use Case
-  -> Runtime-specific renderer
-  -> PicoClaw/OpenClaw config
-```
-
-Runtime 不再知道 `feishu.AgentCredentialProvider`。
-
-#### Task
+目标逻辑：
 
 ```text
 Team planning ------+
-Agent request ------+--> TaskUseCases -> taskcore -> task store/events
+Agent request ------+--> TaskUseCases -> taskcore -> task store / events
 Schedule trigger ---+
 
-team      = metadata + members + planning + projection
+team      = metadata + members + planning + room projection
 taskcore  = task state machine + approval + events + persistence
 ```
 
-### 3.4 目标职责边界
+实现顺序：
 
-| 层               | 应负责                                   | 不应负责                           |
-| ---------------- | ---------------------------------------- | ---------------------------------- |
-| API Adapter      | HTTP 解码、Use Case 调用、错误映射、响应 | 业务状态、文件持久化、Planner 构造 |
-| CLI Adapter      | flags、daemon、PID、输出、打开浏览器     | 构造所有领域 Service               |
-| Application      | 用例编排、事务边界、生命周期、恢复       | HTTP 或 Channel SDK 细节           |
-| Domain           | 状态机、规则、实体、领域错误和 Port      | CLI、HTTP、文件路径                |
-| Runtime Contract | 中立运行时输入和能力接口                 | Feishu 等具体 Channel 类型         |
-| Infrastructure   | Store、SDK、进程、Runtime/Sandbox 实现   | 反向控制上层用例                   |
-| API Contract     | 稳定 wire request/response               | Server 内部 Service command        |
+1. 建立两套状态迁移的等价测试。
+2. 建立 Team Task 到 `taskcore` 的兼容 Adapter。
+3. 新 Team Task 只写入 `taskcore`。
+4. 迁移存量 Team Task。
+5. 缩减 `team.Service`。
+6. 删除 API 的两套任务合并逻辑。
 
-## 4. 当前与目标的差距
+存量数据迁移完成前不能直接删除旧实现。
 
-| 当前状态                      | 目标状态                           | 主要收益                         |
-| ----------------------------- | ---------------------------------- | -------------------------------- |
-| Handler 保存业务状态          | Application Service 保存或协调状态 | HTTP 生命周期与业务生命周期解耦  |
-| Handler 直接写注册文件        | Registration Store/Service         | 可复用、可测试、可替换           |
-| `cli/serve` 装配整个应用      | `internal/app.Bootstrap`           | 启动逻辑可复用、可验证           |
-| Team 与 Task Core 两套状态机  | Task Core 单一真相                 | 消除规则漂移和 API 合并          |
-| Runtime 依赖 Feishu Provider  | Runtime 依赖 ChannelBinding        | 新 Channel 不修改 Runtime 构造器 |
-| CLI 使用领域类型              | CLI 只使用 API Contract            | Client 与 Server 内部可独立演进  |
-| localstore 了解所有 schema    | Versioned Migration Runner         | 迁移可审计、可演进               |
-| Setter 注入可构造残缺 Handler | 显式 Dependencies 构造             | 启动时发现缺失依赖               |
-
-## 5. 详细问题与代码归属
-
-### 5.1 P1：HTTP Handler 同时是应用服务和状态容器
-
-证据：
-
-- `internal/api` 导入约 37 个本地 package。
-- `handler.go` 约 3,274 行。
-- Handler 持有 Agent、Participant、IM、Feishu、LLM、Hub、MCP、Team、Scheduled Task、Connector、Upgrade、Work Lease 等具体服务。
-- 构造后仍需十多个 `Set*Service` / `Set*Manager`。
-
-不应属于 HTTP Adapter 的状态：
-
-```text
-teamPlanJobs               # Team planning job 去重
-participantActivityTurns   # Activity turn 生命周期
-feishuRegistrationStateDir # Feishu 注册持久化目录
-```
-
-API 内还执行注册记录的目录创建、JSON 编解码、临时文件写入、Rename、扫描和删除。
-
-目标位置：
-
-```text
-internal/app/
-  agentusecase/
-  participantusecase/
-  teamusecase/
-  registration/
-
-internal/api/
-  agents/
-  participants/
-  teams/
-  router.go
-```
-
-API 子 Handler 只做四件事：
-
-1. 解析输入。
-2. 调用应用用例。
-3. 映射领域错误。
-4. 序列化响应。
-
-### 5.2 P1：Team 与 Task Core 存在两套任务真相
-
-当前重复：
-
-```text
-team.TeamTask / TeamApproval / TeamEvent / Presence
-taskcore.Task / TaskApproval / TaskEvent / Presence
-
-team.TaskStatusInProgress
-taskcore.StatusInProgress
-```
-
-`team.Service` 和 `taskcore.Service` 都实现创建、Claim、完成、失败、阻塞、审批、事件和持久化。API 再把 `teamSvc` 与 `agentTaskSvc` 的结果合并。
-
-风险：
-
-- 状态迁移规则会逐渐不一致。
-- 修复任务行为时难以判断权威位置。
-- Scheduled Task 和 Team Task 走不同 Core。
-- API 和前端被迫重新归一化。
-
-目标：
-
-- `taskcore` 成为唯一任务状态机。
-- `assignment_type=team|agent` 表达分配目标。
-- `team` 只保留 metadata、planning、成员和 Room projection。
-- `agenttask`、`scheduledtask` 成为 Task Use Case 的 Adapter。
-
-迁移前必须建立状态迁移等价测试和存量数据 Adapter，不能直接删除 `team.Service`。
-
-### 5.3 P1：Runtime/Agent 反向依赖 Feishu
+### 4.3 P1：Runtime 和 Agent 依赖 Feishu
 
 当前依赖：
 
 ```text
-internal/runtime/sandboxgateway -> internal/channel/feishu
-openclawsandbox/picoclawsandbox -> feishu.AgentCredentialProvider
-internal/agent                 -> Feishu Provider
+runtime/sandboxgateway -> channel/feishu
+openclawsandbox / picoclawsandbox -> feishu.AgentCredentialProvider
+agent -> Feishu Provider
 ```
 
-目标中立 contract：
+增加新 Channel 时需要修改 Runtime 和 Agent。
+
+目标是引入中立输入：
 
 ```go
 type ChannelBinding struct {
@@ -416,251 +238,245 @@ type ChannelBinding struct {
     ParticipantID string
     Config        map[string]string
 }
-
-type ChannelBindingProvider interface {
-    BindingsForAgent(agentID string) []ChannelBinding
-}
 ```
 
-生产实现应对 secret 使用只读 Value Object，避免任意 map 长期成为公开契约。
-
-Feishu Adapter 在 `internal/app/channelwiring` 中生成 Binding；Runtime 只把 Binding 渲染为对应运行时配置。
-
-### 5.4 P2：`cli/serve` 是过重的 Composition Root
-
-`cli/serve/serve.go` 约 1,373 行，除命令行为外还负责：
-
-- Local store migration。
-- Bootstrap state。
-- Agent/IM/Participant/Team/Task/Scheduled Task 构造。
-- Channel bridge 与 Codex bridge。
-- Model Provider preflight。
-- Interrupted user-input 恢复。
-- Runtime 注册、启动 Agent 和 Server 装配。
-
-目标位置：
+目标调用：
 
 ```text
-cli/serve/
-  flags.go
-  daemon.go
-  output.go
-  command.go
-
-internal/app/
-  bootstrap.go
-  dependencies.go
-  lifecycle.go
-  recovery.go
-  channelwiring/
-  runtimewiring/
+Feishu / Other Channel Adapter
+  -> ChannelBinding
+  -> RuntimeProvisioning Use Case
+  -> Runtime Renderer
+  -> PicoClaw / OpenClaw 配置
 ```
 
-CLI 只负责操作系统和命令行体验；应用启动顺序由 `internal/app` 拥有。
+Runtime 只消费 Binding，不再知道 Feishu 类型。正式实现中，Secret 应使用只读 Value Object；任意 Map 只适合作为过渡结构。
 
-### 5.5 P2：Migration 知识位于通用 localstore
+### 4.4 其他问题
 
-`internal/localstore/migrate_ids.go` 约 2,720 行，了解 Agent、Participant、IM、Team、Task、Provider、Auth、目录名和 mention tag 等大量上层 schema。
+| 问题 | 当前实现 | 应该怎么做 |
+| --- | --- | --- |
+| `cli/serve` 过重 | 构造 Service、执行迁移和恢复、注册 Runtime、启动 Agent 和 Server | CLI 只处理 flags、daemon、PID、输出；其余移入 `app.Bootstrap` |
+| Migration 位置错误 | `localstore/migrate_ids.go` 知道大量上层 Schema | 新建版本化 Migration Runner；`localstore` 只保留文件原语 |
+| CLI 泄漏内部类型 | CLI 直接使用 Agent、Team、Task、Feishu 等领域类型 | 请求响应统一使用 `apitypes`，API 再转成 Application Command |
+| Service 文件过大 | IM、Agent、Feishu、LLM Service 承担多类能力 | 先在原 package 内按能力拆文件，不急于增加 package |
+| 兼容逻辑无退出条件 | 旧 ID、配置和协议兼容散落在热路径 | 记录版本、命中统计、迁移标记、最后支持版本和删除条件 |
 
-它使用 `map[string]any` 避免 import cycle，但 schema 变化无法由编译器发现，也缺少统一版本和执行记录。
-
-目标位置：
+大 Service 建议先按以下方式拆文件：
 
 ```text
-internal/migration/
-  runner.go
-  registry.go
-  v1_typed_ids/
-    plan.go
-    agents.go
-    participants.go
-    im.go
-    teams.go
-    auth.go
-    backup.go
+im/                         agent/                     llm/
+|-- users.go                |-- lifecycle.go           |-- routing.go
+|-- rooms.go                |-- manager.go             |-- streaming.go
+|-- messages.go             |-- worker.go              |-- providers.go
+|-- threads.go              |-- profiles.go            `-- errors.go
+`-- store.go                |-- resources.go
+                            `-- logs.go
 ```
 
-`localstore` 只保留 Root Path、原子文件操作和 Backup Primitive。
+## 5. 目标目录结构
 
-### 5.6 P2：CLI HTTP Client 泄漏领域实现类型
-
-普通 CLI 仍直接使用 Agent、Participant、Team、Task Core、Feishu 和 CLIProxy 的内部类型。
-
-处理：
-
-- Wire request/response 移入 `internal/apitypes` 或独立 `api/contracts`。
-- CLI flags 在 CLI 内归一化。
-- API Adapter 把 wire request 转换为领域 command。
-- 必须本地调用 CLIProxy 的 operator command 作为明确例外，不与远程 API Client 混合。
-
-### 5.7 P2：大 Service 的领域位置基本正确，但对象粒度过大
-
-| 文件                                 |   约规模 | 当前职责                                         |
-| ------------------------------------ | -------: | ------------------------------------------------ |
-| `internal/im/service.go`             | 3,195 行 | User、Room、Message、Thread、mention、持久化     |
-| `internal/agent/service.go`          | 2,800 行 | Manager、Worker、runtime、sandbox、logs、startup |
-| `internal/agent/service_profiles.go` | 1,347 行 | Profile、MCP、模型、reconcile、upgrade           |
-| `internal/channel/feishu/service.go` | 2,190 行 | User、Room、Message、Event、SDK                  |
-| `internal/llm/service.go`            | 1,569 行 | Provider 路由、协议代理、stream、错误            |
-
-这些代码多数位于正确领域，不应因为文件大就移入其他层。
-
-建议先在原 package 内按能力拆分：
+这是一份目标职责图：包含本次调整涉及的目录，也保留其他主要后端目录。不要求一次性创建所有目标文件，也不要求把现有包全部搬入新的 `domain/` 或 `infrastructure/` 顶级目录。
 
 ```text
-im/
-  users.go
-  rooms.go
-  messages.go
-  threads.go
-  presentation.go
-  store.go
-
-agent/
-  lifecycle.go
-  manager.go
-  worker.go
-  profiles.go
-  resources.go
-  logs.go
+csgclaw/
+|
+|-- cmd/
+|   |-- csgclaw/                    # 薄入口
+|   `-- csgclaw-cli/                # 薄入口
+|
+|-- cli/
+|   |-- serve/
+|   |   |-- command.go              # 调用 app.Bootstrap
+|   |   |-- flags.go                # 参数
+|   |   |-- daemon.go               # daemon / PID
+|   |   `-- output.go               # 输出、打开浏览器
+|   `-- ...                         # 其他 CLI Adapter
+|
+`-- internal/
+    |
+    |-- server/                      # HTTP Server 和静态资源
+    |
+    |-- api/                         # HTTP Adapter
+    |   |-- router.go
+    |   |-- errors.go                # 业务错误 -> HTTP
+    |   |-- agents/
+    |   |-- participants/
+    |   |-- teams/
+    |   `-- tasks/
+    |
+    |-- apitypes/                    # Wire request / response
+    |-- apiclient/                   # CLI 使用的 HTTP Client
+    |
+    |-- app/                         # 用例和应用装配
+    |   |-- bootstrap.go
+    |   |-- dependencies.go
+    |   |-- lifecycle.go
+    |   |-- recovery.go
+    |   |-- agent_usecases.go
+    |   |-- participant_usecases.go
+    |   |-- team_usecases.go
+    |   |-- task_usecases.go
+    |   |-- registration/            # Registration Use Case 和 Store Port
+    |   |-- channelwiring/           # Channel -> Binding
+    |   `-- runtimewiring/           # Runtime 装配
+    |
+    |-- participant/                 # Participant 规则
+    |   `-- feishubind/              # Participant 与 Feishu 绑定
+    |-- im/                          # User / Room / Message / Thread
+    |-- team/                        # metadata / members / planning
+    |-- taskcore/                    # 唯一 Task 状态机
+    |-- agenttask/                   # Agent Task Use Case Adapter
+    |-- scheduledtask/               # Schedule Task Use Case Adapter
+    |-- agent/                       # Agent lifecycle 和配置
+    |-- agentmanager/                # Manager 相关能力
+    |-- agentworkspace/              # Agent 工作目录
+    |-- activity/
+    |-- worklease/
+    |-- template/
+    |-- templates/                   # 内置模板资源
+    |-- skill/
+    |-- mcp/
+    |-- slashcommand/
+    |
+    |-- channel/                     # Channel Adapter / SDK
+    |   |-- feishu/
+    |   `-- csgclaw/
+    |-- channelbridge/
+    |
+    |-- runtime/                     # Runtime contract 和实现
+    |   |-- codex/
+    |   |-- picoclawsandbox/
+    |   |-- openclawsandbox/
+    |   `-- sandboxgateway/
+    |-- runtimeassets/               # Runtime 内置资源
+    |-- runtimecatalog/              # Runtime 类型目录
+    |
+    |-- sandbox/                     # Sandbox contract 和实现
+    |   |-- boxlitecli/
+    |   |-- dockercli/
+    |   `-- csghub/
+    |-- sandboxproviders/            # Sandbox Provider 装配
+    |
+    |-- llm/
+    |-- modelprovider/
+    |-- modelcap/
+    |-- codexmodel/
+    |-- codexcli/
+    |-- cliproxy/
+    |-- connectors/
+    |
+    |-- migration/                   # 版本化迁移
+    |   |-- runner.go
+    |   |-- registry.go
+    |   `-- v1_typed_ids/
+    |
+    |-- registrationstore/           # Registration 文件 Store 实现
+    |-- localstore/                  # 路径、原子写、备份原语
+    |-- config/
+    |-- auth/
+    |-- identity/
+    |-- onboard/
+    |-- upgrade/
+    |-- desktop/
+    |-- assets/
+    |-- utils/
+    `-- version/
 ```
 
-只有能力能够独立构造、依赖方向稳定后，才考虑提取子 package。
+目标请求链路：
 
-### 5.8 P2：API 允许“部分可用 Handler”
-
-当前 Handler 先构造，再通过多个 Setter 补依赖；所有路由默认注册，缺少服务时运行期返回 503。
-
-建议：
-
-```go
-type api.Dependencies struct {
-    Agents       AgentUseCases
-    Participants ParticipantUseCases
-    Teams        TeamUseCases
-}
-
-func New(deps Dependencies) (*Handler, error)
+```text
+HTTP / CLI / Channel
+  -> Adapter
+  -> Application Use Case
+  -> Domain Rule
+  -> Store / Runtime / SDK
+  -> Application Result
+  -> API Contract / Adapter Response
 ```
 
-- 必需依赖在构造时验证。
-- 可选功能通过显式 Feature Set 决定是否注册路由。
-- 不依赖每个 Handler 自己检查 nil。
+目标启动链路：
 
-### 5.9 P3：兼容逻辑缺少退出策略
+```text
+cli/serve
+  -> 解析 flags
+  -> app.Bootstrap(config)
+       -> 验证 Dependencies
+       -> migration / recovery
+       -> Channel / Runtime wiring
+       -> 启动 Server 和后台任务
+  -> App.Shutdown()
+```
 
-Agent ID、Participant ID、旧 Runtime Kind、旧配置字段、旧消息格式和旧 Codex Protocol 的兼容代码分布在多个包。
+## 6. 实施顺序
 
-需要统一记录：
+### 阶段 0：依赖护栏
 
-- Compatibility Version。
-- 命中统计。
-- Migration 完成标记。
-- 最后支持版本。
-- 删除条件。
+- CI 禁止新增 `runtime -> channel/feishu`。
+- 新业务流程必须明确 Application Use Case owner。
 
-已经被 Migration 消除的数据格式，不应永久保留在热路径。
+### 阶段 1：瘦身 API
 
-## 6. 详细实施计划
-
-### 阶段 0：建立依赖护栏
-
-目标：阻止架构继续向中心包泄漏。
-
-- 记录 `internal/api`、`cli/serve`、Runtime 的当前本地依赖。
-- 增加 package import 检查。
-- 禁止新增 `runtime -> channel/feishu`。
-- 新业务流程必须声明 Application Use Case owner。
-
-完成标志：
-
-- CI 能发现新增反向依赖。
-- 新增 API 不再把业务状态放入 Handler。
-
-### 阶段 1：移动确定错位的状态和持久化
-
-- Feishu Registration Service/Store 移出 API。
-- Team planning job 状态移入 Team Application Workflow。
-- Participant activity turn 状态移入 Bridge/Application Service。
-- Directory picker 建立 Platform Adapter。
-- API 只保留 request-scoped 状态。
-
-### 阶段 2：建立正式的 Application Bootstrap
-
-- 在 `internal/app` 建立 `Bootstrap`、`Dependencies`、`Lifecycle` 和 `Recovery`。
-- 移入 Service 构造顺序、Migration、Provider Preflight 和 Runtime 注册。
+- 移出 Registration 文件操作。
+- 移出 Team planning job 和 Participant activity turn 状态。
 - API 使用显式 Dependencies。
-- `cli/serve` 保留 flags、daemon、PID、输出和浏览器打开。
 
-### 阶段 3：解除 Runtime 与 Channel 耦合
+### 阶段 2：建立 Application Bootstrap
 
-- 定义中立 `ChannelBinding` Port。
-- 在 `channelwiring` 完成 Feishu 到 Binding 的转换。
-- PicoClaw/OpenClaw Renderer 消费 Binding。
-- 删除 Runtime 和 Agent 对 `internal/channel/feishu` 的 import。
-- 增加第二种虚拟 Channel 的 Contract Test，验证抽象没有 Feishu 假设。
+- 将 Service 构造、Migration、Recovery、Runtime 注册和生命周期移入 `internal/app`。
+- `cli/serve` 只保留 CLI 和操作系统行为。
+
+### 阶段 3：Channel Binding
+
+- 定义中立 Binding。
+- 在 `channelwiring` 转换 Feishu 配置。
+- 删除 Runtime 和 Agent 对 Feishu 的 import。
+- 用第二种虚拟 Channel 做 Contract Test。
 
 ### 阶段 4：统一 Task Core
 
-1. 建立 Team Service 与 Task Core 的状态迁移等价测试。
-2. 建立 Team Task 到 Task Core 的兼容 Adapter。
-3. 新 Team Task 写入 Task Core。
-4. 迁移存量 Team Task Store。
-5. Team Service 退化为 metadata、planning 和 projection。
-6. API 删除两套任务的合并逻辑。
+- 先做等价测试和兼容 Adapter。
+- 再迁移新旧 Team Task。
+- 最后删除 API 合并逻辑。
 
-### 阶段 5：净化 Contract 和 Migration
+### 阶段 5：Contract 和 Migration
 
 - CLI 请求响应统一使用 `apitypes`。
 - 建立版本化 Migration Runner。
-- 迁移 Typed ID 等现有 Localstore Migration。
-- 为兼容路径建立 Registry、命中统计和移除条件。
+- 为兼容路径增加命中统计和删除条件。
 
-### 阶段 6：拆分领域包内部的大 Service
+### 阶段 6：拆分大 Service
 
-- 按 IM User/Room/Message/Thread 拆文件和能力接口。
-- 按 Agent Lifecycle/Profile/Resource/Log 拆分。
-- 按 LLM Routing/Streaming/Provider Adapter 拆分。
-- 保持 package 不变，直到出现明确、稳定的新边界。
+- 在原 package 内按能力拆文件。
+- 只有新边界稳定后才提取 package。
 
-## 7. 架构验收标准
+## 7. 验收标准
 
-- `internal/api` 不保存领域状态，不直接读写 Registration 文件。
-- API Handler 必需依赖在启动时完成验证。
-- `cli/serve` 不再构造全部具体 Service。
-- `internal/runtime/**` 和 `internal/agent` 不导入 `internal/channel/feishu`。
-- Task 状态、审批、事件和持久化只有一套权威定义。
-- `/api/v1/tasks` 不在 Adapter 层合并两套状态机。
-- CLI HTTP 请求响应只依赖 API Contract。
-- Migration 有版本、幂等测试和可审计结果。
-- 现有 `go test ./...`、启动流程、Runtime 和 Web API 行为保持兼容。
+- API 不保存领域状态，不直接读写 Registration 文件。
+- API 必需依赖在启动时验证。
+- `cli/serve` 不再构造全部 Service。
+- Runtime 和 Agent 不导入 `channel/feishu`。
+- Task 状态、审批、事件和持久化只有一套定义。
+- CLI HTTP 请求响应只依赖 `apitypes`。
+- Migration 有版本、幂等测试和审计结果。
+- `go test ./...`、启动流程、Runtime 和 Web API 行为保持兼容。
 
-## 8. 与历史架构图的关系
-
-[历史架构图](architecture.md) 对以下概念关系仍然有效：
-
-```text
-channel -> room -> participant -> agent -> runtime -> sandbox
-```
-
-但它没有表达：
-
-- Team、Task 和 Scheduled Task。
-- Hub、Skill、MCP 和 Connector。
-- Model Provider、CLIProxy 和 LLM Bridge。
-- Upgrade、Config、Migration 和 Work Lease。
-- Codex Runtime 与 Sandbox Runtime 的差异。
-- Application Layer 和四条并行业务链路。
-
-建议保留历史文档作为核心概念关系图，本文作为当前组件架构和目标架构。第一阶段应用层重构稳定后，再升级正式主架构图。
-
-## 9. 不建议做的事情
+## 8. 不做什么
 
 - 不拆微服务。
-- 不一次性重写 `internal/api` 或 `internal/agent`。
-- 不为了减少行数创建大量只有少数函数的 package。
-- 不在迁移存量数据前直接删除 Team Task 旧实现。
-- 不用全局 Service Locator 替代显式 Dependencies。
-- 不把所有领域对象都改成接口；只在跨层和可替换基础设施边界定义 Port。
+- 不一次性重写中心模块。
+- 不为了减少行数创建大量小 package。
+- 不在迁移数据前删除旧 Team Task。
+- 不使用全局 Service Locator。
+- 不把所有领域对象都改成接口。
 
-最终判断：CSGClaw 后端适合继续做模块化单体。下一阶段的关键不是目录重排，而是把应用编排从 API/CLI 抽回 `internal/app`，再沿着明确的依赖方向逐步统一 Task、Channel Binding、Contract 和 Migration。
+最终目标：
+
+```text
+入口只处理输入输出
+应用层组织完整操作
+领域层维护业务规则
+基础设施负责真实执行
+API Contract 保持跨进程协议稳定
+```
