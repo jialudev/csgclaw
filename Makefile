@@ -19,14 +19,17 @@ CGO_ENABLED ?= 0
 WEB_APP_DIR ?= web/app
 WEB_STATIC_DIST_DIR ?= web/static-dist
 WEB_PNPM ?= $(CURDIR)/scripts/web-pnpm.sh
+DESKTOP_DIR ?= desktop
+DESKTOP_PNPM ?= $(CURDIR)/scripts/desktop-pnpm.sh
 TARGET_OS ?= $(shell $(GO) env GOOS)
 TARGET_ARCH ?= $(shell $(GO) env GOARCH)
+DESKTOP_ARCH ?= $(if $(filter amd64,$(TARGET_ARCH)),x64,$(TARGET_ARCH))
 SANDBOX_BUNDLE_TOOLS_DIR ?= $(BIN_DIR)/sandbox-tools
 SANDBOX_CLI_BIN ?= $(SANDBOX_BUNDLE_TOOLS_DIR)/csgclaw-cli
 
 .DEFAULT_GOAL := build
 
-.PHONY: help fmt test check-web-toolchain check-web-layout ensure-web-deps web-install web-dev build-web build build-all build-server build-server-bin build-sandbox-cli install-sandbox-cli run clean package package-all release
+.PHONY: help fmt test check-web-toolchain check-web-layout ensure-web-deps web-install web-dev build-web desktop-install desktop-dev desktop-backend-bundle desktop-package desktop-make build build-all build-server build-server-bin build-sandbox-cli install-sandbox-cli run clean package package-all release
 
 help:
 	@printf '%s\n' \
@@ -38,6 +41,11 @@ help:
 		'make web-install - install Web UI dependencies' \
 		'make web-dev    - run Vite Web UI dev server' \
 		'make build-web  - build Web UI app into web/static-dist' \
+		'make desktop-install - install Electron Desktop dependencies' \
+		'make desktop-dev - build the local backend and start Electron Forge' \
+		'make desktop-backend-bundle - stage the complete Go bundle for Electron Forge' \
+		'make desktop-package - create an unpacked Electron application' \
+		'make desktop-make - create platform Electron installers/archives' \
 		'make build-server-bin - build bin/csgclaw and the host-platform bin/csgclaw-cli' \
 		'make build-sandbox-cli - build Linux csgclaw-cli into bin/sandbox-tools' \
 		'make run        - build (no docker images), then run the server' \
@@ -99,6 +107,21 @@ build-web: ensure-web-deps
 		printf '%s\n' "Web UI build did not produce $(WEB_STATIC_DIST_DIR)/index.html."; \
 		exit 1; \
 	}
+
+desktop-install:
+	$(DESKTOP_PNPM) install
+
+desktop-dev: build-web build-server-bin build-sandbox-cli
+	$(DESKTOP_PNPM) start
+
+desktop-backend-bundle: build-web
+	VERSION=$(VERSION) COMMIT=$(COMMIT) BUILD_TIME=$(BUILD_TIME) GOCACHE=$(GOCACHE) INCLUDE_BOXLITE=$(INCLUDE_BOXLITE) BOXLITE_CLI_VERSION=$(BOXLITE_CLI_VERSION) BOXLITE_CLI_BASE_URL=$(BOXLITE_CLI_BASE_URL) $(CURDIR)/scripts/package-desktop-backend.sh $(TARGET_OS) $(TARGET_ARCH)
+
+desktop-package: desktop-backend-bundle
+	CSGCLAW_DESKTOP_GOOS=$(TARGET_OS) CSGCLAW_DESKTOP_GOARCH=$(TARGET_ARCH) CSGCLAW_DESKTOP_ARCH=$(DESKTOP_ARCH) CSGCLAW_DESKTOP_VERSION=$(VERSION) $(DESKTOP_PNPM) package -- --arch=$(DESKTOP_ARCH)
+
+desktop-make: desktop-backend-bundle
+	CSGCLAW_DESKTOP_GOOS=$(TARGET_OS) CSGCLAW_DESKTOP_GOARCH=$(TARGET_ARCH) CSGCLAW_DESKTOP_ARCH=$(DESKTOP_ARCH) CSGCLAW_DESKTOP_VERSION=$(VERSION) $(DESKTOP_PNPM) make -- --arch=$(DESKTOP_ARCH)
 
 build: build-web build-server-bin build-sandbox-cli
 
