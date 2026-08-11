@@ -6,10 +6,12 @@ import test from "node:test";
 
 import {
   compareReleaseVersions,
+  desktopUpdateFeedPaths,
   desktopUploadPaths,
   generateDownloadsManifest,
   inferReleaseChannel,
   normalizeReleaseVersion,
+  releasePackagePaths,
   releaseTag,
   validateReleaseChannel,
 } from "./desktop-oss-release.mjs";
@@ -91,6 +93,117 @@ test("generates a downloads manifest compatible with the existing csglite schema
       publishedAt: "2026-08-05T00:00:00.000Z",
     });
     assert.equal(repeated.latest, version);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("adds GitLab-compatible server and CLI archives without changing desktop artifacts", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "csgclaw-release-packages-"));
+  const version = "0.4.6";
+  const releaseDirectory = path.join(root, "releases", version);
+  const manifestPath = path.join(root, "channels", "release", "downloads.json");
+  fs.mkdirSync(releaseDirectory, { recursive: true });
+  for (const suffix of ["darwin_arm64.dmg", "darwin_amd64.dmg", "windows_amd64.exe"]) {
+    fs.writeFileSync(path.join(releaseDirectory, `csgclaw-desktop_v${version}_${suffix}`), suffix);
+  }
+  for (const osArch of [
+    ["linux", "amd64"],
+    ["linux", "arm64"],
+    ["darwin", "arm64"],
+    ["darwin", "amd64"],
+    ["windows", "amd64"],
+  ]) {
+    const [osName, arch] = osArch;
+    const extension = osName === "windows" ? "zip" : "tar.gz";
+    for (const app of ["csgclaw", "csgclaw-cli"]) {
+      fs.writeFileSync(
+        path.join(releaseDirectory, `${app}_v${version}_${osName}_${arch}.${extension}`),
+        `${app}-${osName}-${arch}`,
+      );
+    }
+  }
+
+  try {
+    const manifest = generateDownloadsManifest({
+      version,
+      channel: "release",
+      releaseDirectory,
+      manifestPath,
+      publicBaseURL: "https://downloads.example/csgclaw-desktop",
+      requirePackages: true,
+    });
+    assert.equal(manifest.versions[version].artifacts.length, 3);
+    assert.equal(manifest.versions[version].packages.length, 10);
+    assert.deepEqual(
+      manifest.versions[version].packages[0],
+      {
+        kind: "server",
+        os: "linux",
+        arch: "amd64",
+        name: "csgclaw_v0.4.6_linux_amd64.tar.gz",
+        url: "https://downloads.example/csgclaw-desktop/releases/0.4.6/csgclaw_v0.4.6_linux_amd64.tar.gz",
+        size_bytes: Buffer.byteLength("csgclaw-linux-amd64"),
+        sha256: manifest.versions[version].packages[0].sha256,
+      },
+    );
+    assert.match(manifest.versions[version].packages[0].sha256, /^[a-f0-9]{64}$/);
+    assert.equal(releasePackagePaths(version, releaseDirectory).length, 10);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("requires the complete Server and CLI package matrix when requested", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "csgclaw-release-packages-missing-"));
+  const version = "0.4.6";
+  const releaseDirectory = path.join(root, "releases", version);
+  const manifestPath = path.join(root, "channels", "release", "downloads.json");
+  fs.mkdirSync(releaseDirectory, { recursive: true });
+  for (const suffix of ["darwin_arm64.dmg", "darwin_amd64.dmg", "windows_amd64.exe"]) {
+    fs.writeFileSync(path.join(releaseDirectory, `csgclaw-desktop_v${version}_${suffix}`), suffix);
+  }
+
+  try {
+    assert.throws(
+      () =>
+        generateDownloadsManifest({
+          version,
+          channel: "release",
+          releaseDirectory,
+          manifestPath,
+          requirePackages: true,
+        }),
+      /cannot generate complete release package set/,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("requires complete native Electron update feeds before publishing", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "csgclaw-update-feeds-"));
+  const files = [
+    "updates/darwin/arm64/CSGClaw-darwin-arm64-0.4.6.zip",
+    "updates/darwin/arm64/RELEASES.json",
+    "updates/darwin/x64/CSGClaw-darwin-x64-0.4.6.zip",
+    "updates/darwin/x64/RELEASES.json",
+    "updates/win32/x64/csgclaw_desktop-0.4.6-full.nupkg",
+    "updates/win32/x64/RELEASES",
+  ];
+  for (const relativePath of files) {
+    const filePath = path.join(root, relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, relativePath);
+  }
+
+  try {
+    assert.deepEqual(
+      desktopUpdateFeedPaths(root).map((filePath) => path.relative(root, filePath)).sort(),
+      files.sort(),
+    );
+    fs.rmSync(path.join(root, "updates", "win32", "x64", "RELEASES"));
+    assert.throws(() => desktopUpdateFeedPaths(root), /desktop update feed is incomplete/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

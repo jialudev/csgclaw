@@ -57,6 +57,7 @@ describe("upgrade status helpers", () => {
     ).toEqual({
       auto_upgrade_supported: false,
       auto_upgrade_unsupported_reason: "not_official_bundle",
+      channel: "release",
       checking: true,
       current_version: "v0.2.0",
       last_checked_at: 123,
@@ -160,6 +161,7 @@ describe("upgrade status helpers", () => {
 const baseUpgradeStatus: UpgradeStatus = {
   auto_upgrade_supported: true,
   auto_upgrade_unsupported_reason: "",
+  channel: "release",
   checking: false,
   current_version: "v0.2.0",
   last_checked_at: "",
