@@ -132,7 +132,7 @@ describe("useAgentTurnNotifications", () => {
     expect(notificationRecords).toHaveLength(1);
     expect(notificationRecords[0]).toMatchObject({
       body: "Research room: The report is ready.",
-      tag: "csgclaw-work:epoch-1:lease-1",
+      tag: "csgclaw-turn:message-1",
       title: "Research Agent finished replying",
     });
 
@@ -162,6 +162,33 @@ describe("useAgentTurnNotifications", () => {
 
     expect(notificationRecords).toHaveLength(1);
     expect(notificationRecords[0]?.body).toBe("Research room: Fallback reply");
+  });
+
+  it("keeps the visible final reply fallback after observing work and deduplicates the release", () => {
+    const { result } = renderNotifications(TurnNotificationModes.always);
+
+    act(() => result.current.handleRealtimeEvent(workEvent()));
+    act(() =>
+      result.current.handleRealtimeEvent({
+        message: {
+          content: "Fallback after reconnect",
+          id: "reply-3",
+          metadata: {
+            openclaw: { delivery_kind: "final", request_id: "message-1" },
+          },
+          sender_id: "user-worker",
+        },
+        room_id: "room-1",
+        type: "message.created",
+      }),
+    );
+    act(() => result.current.handleRealtimeEvent(workEvent({ reason: "released", revision: 2, state: "idle" })));
+
+    expect(notificationRecords).toHaveLength(1);
+    expect(notificationRecords[0]).toMatchObject({
+      body: "Research room: Fallback after reconnect",
+      tag: "csgclaw-turn:message-1",
+    });
   });
 
   it("suppresses unfocused-mode notifications while the app has focus", () => {

@@ -46,7 +46,6 @@ export function readSystemNotificationPermission(): SystemNotificationPermission
 export function useAgentTurnNotifications(args: UseAgentTurnNotificationsArgs): AgentTurnNotificationController {
   const refs = useRef(args);
   const notifiedEventKeysRef = useRef(new Set<string>());
-  const workAwareAgentKeysRef = useRef(new Set<string>());
   const [permission, setPermission] = useState<SystemNotificationPermission>(readSystemNotificationPermission);
 
   useEffect(() => {
@@ -90,14 +89,12 @@ export function useAgentTurnNotifications(args: UseAgentTurnNotificationsArgs): 
       if (!agent) {
         return;
       }
-      const key = agentNotificationKey(agent);
-      workAwareAgentKeysRef.current.add(key);
       if (!isCompletedAgentTurnEvent(event)) {
         return;
       }
       showAgentTurnNotification(current, {
         agent,
-        eventKey: `work:${event.work.registry_epoch}:${event.work.lease_id}`,
+        eventKey: notificationEventKeyForWork(event.work),
         participantIdentities: [event.work.user_id, event.work.participant_id],
         roomID: event.work.room_id || String(event.room_id || ""),
       });
@@ -112,12 +109,12 @@ export function useAgentTurnNotifications(args: UseAgentTurnNotificationsArgs): 
     }
     const senderID = String(event.message.sender_id || "").trim();
     const agent = resolveEventAgent(current.agents, current.usersById, [senderID]);
-    if (!agent || workAwareAgentKeysRef.current.has(agentNotificationKey(agent))) {
+    if (!agent) {
       return;
     }
     showAgentTurnNotification(current, {
       agent,
-      eventKey: `message:${String(event.message.id || event.message.created_at || "")}:${senderID}`,
+      eventKey: notificationEventKeyForMessage(event.message, senderID),
       message: event.message,
       participantIdentities: [senderID],
       roomID: String(event.room_id || event.room?.id || ""),
@@ -197,8 +194,42 @@ function resolveEventAgent(
   return resolveAgentForUser(agents, users[0] ?? null, [...users.slice(1), ...ids.map((id) => ({ id }))]);
 }
 
-function agentNotificationKey(agent: AgentLike): string {
-  return String(agent.id || agent.user_id || agent.name || "").trim();
+function notificationEventKeyForWork(work: NonNullable<IMServerEvent["work"]>): string {
+  const requestID = String(work.request_id || "").trim();
+  return requestID ? `turn:${requestID}` : `work:${work.registry_epoch}:${work.lease_id}`;
+}
+
+function notificationEventKeyForMessage(message: IMMessage, senderID: string): string {
+  const requestID = messageRequestID(message);
+  return requestID ? `turn:${requestID}` : `message:${String(message.id || message.created_at || "")}:${senderID}`;
+}
+
+function messageRequestID(message: IMMessage): string {
+  const metadata = asRecord(message.metadata);
+  const openclaw = asRecord(metadata?.openclaw);
+  const codex = asRecord(metadata?.codex);
+  return firstText(
+    openclaw?.request_id,
+    openclaw?.requestId,
+    openclaw?.source_message_id,
+    codex?.request_id,
+    codex?.requestId,
+    codex?.source_message_id,
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
 }
 
 function latestVisibleAgentMessage(
