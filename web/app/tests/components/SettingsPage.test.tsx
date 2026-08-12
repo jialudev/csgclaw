@@ -18,6 +18,10 @@ const labels: Record<string, string> = {
   settingsParametersDescription: "Configure parameters.",
   settingsVersionDescription: "View the current version and update status.",
   upgradeAction: "Update & Restart",
+  upgradeChannel: "Update channel",
+  upgradeChannelBeta: "Preview",
+  upgradeChannelRelease: "Stable",
+  upgradeProgressLabel: "Checking and preparing the update",
 };
 
 const t: TranslateFn = (key) => labels[key] ?? key;
@@ -39,15 +43,19 @@ describe("SettingsPage", () => {
         onLogout: vi.fn(),
         onOpenConfigSettings: vi.fn(),
         onOpenUpgrade,
+        onUpgradeChannelChange: vi.fn(),
         onThemeChange: vi.fn(),
         showUpgradeControls: true,
         t,
         theme: "light",
         upgradeBusy: false,
+        upgradeChannelBusy: false,
+        upgradeChannelLocked: false,
         upgradePhase: "idle",
         upgradeStatus: {
           auto_upgrade_supported: true,
           auto_upgrade_unsupported_reason: "",
+          channel: "release",
           checking: false,
           current_version: "0.0.101",
           last_checked_at: "",
@@ -71,5 +79,113 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update & Restart" }));
 
     expect(onOpenUpgrade).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows channel selection for a development desktop build and persists preview selection", () => {
+    const onUpgradeChannelChange = vi.fn().mockResolvedValue(undefined);
+    const controller = {
+      ready: true,
+      sidebarProps: {
+        appVersion: "v0.4.6-dev2g6c80d157dirty",
+        authBusy: false,
+        authError: "",
+        authPending: false,
+        authStatus: emptyAuthStatus(),
+        locale: "en",
+        onLocaleChange: vi.fn(),
+        onLogin: vi.fn(),
+        onLogout: vi.fn(),
+        onOpenConfigSettings: vi.fn(),
+        onOpenUpgrade: vi.fn(),
+        onThemeChange: vi.fn(),
+        onUpgradeChannelChange,
+        showUpgradeControls: true,
+        t,
+        theme: "light",
+        upgradeBusy: false,
+        upgradeChannelBusy: false,
+        upgradeChannelLocked: false,
+        upgradePhase: "idle",
+        upgradeStatus: {
+          auto_upgrade_supported: false,
+          auto_upgrade_unsupported_reason: "desktop_update_unsupported",
+          channel: "release",
+          checking: false,
+          current_version: "v0.4.6-dev2g6c80d157dirty",
+          last_checked_at: "",
+          last_error: "",
+          last_error_kind: "",
+          last_error_log_path: "",
+          latest_version: "",
+          manual_restart_required: false,
+          update_available: false,
+          upgrading: false,
+        },
+      },
+    } as unknown as WorkspaceController;
+
+    render(
+      <WorkspaceControllerProvider controller={controller}>
+        <SettingsPage />
+      </WorkspaceControllerProvider>,
+    );
+
+    expect(screen.queryByRole("button", { name: "Update & Restart" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+
+    expect(onUpgradeChannelChange).toHaveBeenCalledWith("beta");
+  });
+
+  it("shows an indeterminate progress bar while switching channels or downloading", () => {
+    const controller = {
+      ready: true,
+      sidebarProps: {
+        appVersion: "0.5.0-beta.2",
+        authBusy: false,
+        authError: "",
+        authPending: false,
+        authStatus: emptyAuthStatus(),
+        locale: "en",
+        onLocaleChange: vi.fn(),
+        onLogin: vi.fn(),
+        onLogout: vi.fn(),
+        onOpenConfigSettings: vi.fn(),
+        onOpenUpgrade: vi.fn(),
+        onThemeChange: vi.fn(),
+        onUpgradeChannelChange: vi.fn(),
+        showUpgradeControls: true,
+        t,
+        theme: "light",
+        upgradeBusy: false,
+        upgradeChannelBusy: false,
+        upgradeChannelLocked: false,
+        upgradePhase: "idle",
+        upgradeStatus: {
+          auto_upgrade_supported: true,
+          auto_upgrade_unsupported_reason: "",
+          channel: "beta",
+          checking: true,
+          current_version: "0.5.0-beta.2",
+          last_checked_at: "",
+          last_error: "",
+          last_error_kind: "",
+          last_error_log_path: "",
+          latest_version: "0.5.0-beta.3",
+          manual_restart_required: false,
+          update_available: false,
+          upgrading: false,
+        },
+      },
+    } as unknown as WorkspaceController;
+
+    render(
+      <WorkspaceControllerProvider controller={controller}>
+        <SettingsPage />
+      </WorkspaceControllerProvider>,
+    );
+
+    expect(screen.getByRole("progressbar", { name: "Checking and preparing the update" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stable" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
   });
 });

@@ -6,6 +6,7 @@ function upgradeStatus(overrides: Partial<UpgradeStatus> = {}): UpgradeStatus {
   return {
     auto_upgrade_supported: true,
     auto_upgrade_unsupported_reason: "",
+    channel: "release",
     checking: false,
     current_version: "v0.3.18",
     latest_version: "v0.3.19",

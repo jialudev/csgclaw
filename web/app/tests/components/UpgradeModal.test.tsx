@@ -25,6 +25,7 @@ function t(key: string, params: Record<string, string | number> = {}): string {
 const manualUpgradeStatus: UpgradeStatus = {
   auto_upgrade_supported: false,
   auto_upgrade_unsupported_reason: "not_official_bundle",
+  channel: "release",
   checking: false,
   current_version: "v0.3.10",
   last_checked_at: "",
@@ -42,6 +43,7 @@ describe("UpgradeModal", () => {
     render(
       <UpgradeModal
         onApply={() => {}}
+        onChannelChange={() => {}}
         onClose={() => {}}
         t={t}
         upgradePhase="idle"
@@ -59,6 +61,7 @@ describe("UpgradeModal", () => {
     render(
       <UpgradeModal
         onApply={() => {}}
+        onChannelChange={() => {}}
         onClose={() => {}}
         t={t}
         upgradePhase="error"

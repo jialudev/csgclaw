@@ -187,6 +187,44 @@
   gap: 16px;
 }
 
+.upgradeProgress {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  margin-top: -8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--gray-200);
+}
+
+.upgradeProgress span {
+  position: absolute;
+  inset-block: 0;
+  left: -38%;
+  width: 38%;
+  border-radius: inherit;
+  background: var(--brand-500);
+  animation: settingsUpgradeProgress 1.15s ease-in-out infinite;
+}
+
+@keyframes settingsUpgradeProgress {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(365%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upgradeProgress span {
+    left: 0;
+    width: 100%;
+    animation: none;
+  }
+}
+
 .settingLine,
 .environmentLine,
 .versionValue {
