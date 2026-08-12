@@ -394,6 +394,17 @@ jobs:
             "CSGCLAW_WINDOWS_SIGN_PARAMS=$env:CI_WINDOWS_SIGN_PARAMS" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
 
+      - name: Configure Windows remote releases
+        if: ${{ matrix.goos == 'windows' }}
+        shell: bash
+        run: |
+          remote_releases_url="${CSGCLAW_DESKTOP_UPDATE_BASE_URL}/win32/x64"
+          if curl --fail --silent --output /dev/null "${remote_releases_url}/RELEASES"; then
+            echo "CSGCLAW_WINDOWS_REMOTE_RELEASES_URL=${remote_releases_url}" >> "$GITHUB_ENV"
+          else
+            echo "::notice::No previous Windows RELEASES index exists; creating a full initial Squirrel package without delta history."
+          fi
+
       - name: Package Unix desktop artifacts
         if: ${{ matrix.goos == 'linux' }}
         shell: bash
