@@ -41,9 +41,23 @@ const targetDefinitions = {
   "windows-amd64": { goos: "windows", goarch: "amd64", host: "win32" },
 };
 
+const releasePackageTargets = [
+  { os: "linux", arch: "amd64" },
+  { os: "linux", arch: "arm64" },
+  { os: "darwin", arch: "arm64" },
+  { os: "darwin", arch: "amd64" },
+  { os: "windows", arch: "amd64" },
+];
+
 export function desktopUploadPaths(version, releaseDirectory) {
   return desktopDownloadArtifacts(version).map(({ fileName }) =>
     path.join(releaseDirectory, fileName));
+}
+
+export function releasePackagePaths(version, releaseDirectory) {
+  return releasePackageDefinitions(version)
+    .map((definition) => path.join(releaseDirectory, definition.fileName))
+    .filter((filePath) => fs.existsSync(filePath));
 }
 
 export function generateDownloadsManifest({
@@ -54,6 +68,7 @@ export function generateDownloadsManifest({
   publicBaseURL = defaultPublicBaseURL,
   publishedAt = new Date().toISOString(),
   allowPartial = false,
+  requirePackages = false,
 }) {
   validateReleaseChannel(version, channel);
   const artifacts = [];
@@ -92,11 +107,25 @@ export function generateDownloadsManifest({
       `refusing to publish ${version} to ${channel}: current latest is newer (${previous.latest}); create a tag newer than or equal to ${previous.latest}`,
     );
   }
+  const packages = collectReleasePackages({
+    version,
+    releaseDirectory,
+    publicBaseURL,
+    requirePackages,
+  });
+  const previousPackages = previous?.versions?.[version]?.packages;
+  const publishedPackages =
+    packages.length > 0
+      ? packages
+      : Array.isArray(previousPackages)
+        ? previousPackages
+        : [];
   const versions = {
     [version]: {
       version,
       published_at: publishedAt,
       artifacts,
+      ...(publishedPackages.length > 0 ? { packages: publishedPackages } : {}),
     },
   };
   for (const [existingVersion, value] of Object.entries(previous?.versions || {})) {
@@ -114,6 +143,56 @@ export function generateDownloadsManifest({
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
+}
+
+function releasePackageDefinitions(version) {
+  const tag = releaseTag(version);
+  return releasePackageTargets.flatMap(({ os, arch }) => {
+    const extension = os === "windows" ? "zip" : "tar.gz";
+    return [
+      {
+        kind: "server",
+        os,
+        arch,
+        fileName: `csgclaw_${tag}_${os}_${arch}.${extension}`,
+      },
+      {
+        kind: "cli",
+        os,
+        arch,
+        fileName: `csgclaw-cli_${tag}_${os}_${arch}.${extension}`,
+      },
+    ];
+  });
+}
+
+function collectReleasePackages({ version, releaseDirectory, publicBaseURL, requirePackages }) {
+  const packages = [];
+  const missing = [];
+  for (const definition of releasePackageDefinitions(version)) {
+    const filePath = path.join(releaseDirectory, definition.fileName);
+    if (!fs.existsSync(filePath)) {
+      missing.push(definition.fileName);
+      continue;
+    }
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size === 0) {
+      throw new Error(`release package is empty or not a file: ${filePath}`);
+    }
+    packages.push({
+      kind: definition.kind,
+      os: definition.os,
+      arch: definition.arch,
+      name: definition.fileName,
+      url: `${publicBaseURL.replace(/\/+$/, "")}/releases/${encodeURIComponent(version)}/${definition.fileName}`,
+      size_bytes: stat.size,
+      sha256: sha256File(filePath),
+    });
+  }
+  if (requirePackages && missing.length > 0) {
+    throw new Error(`cannot generate complete release package set; missing: ${missing.join(", ")}`);
+  }
+  return packages;
 }
 
 function sha256File(filePath) {
@@ -137,7 +216,7 @@ function parseOptions(args) {
   const options = {};
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
-    if (argument === "--force" || argument === "--allow-partial") {
+    if (argument === "--force" || argument === "--allow-partial" || argument === "--require-packages") {
       options[argument.slice(2)] = true;
       continue;
     }
@@ -232,6 +311,7 @@ function buildDesktopInstallers(context, options) {
       VERSION: versionTag,
       TARGET_OS: definition.goos,
       TARGET_ARCH: definition.goarch,
+      CSGCLAW_DESKTOP_UPDATE_BASE_URL: `${defaultPublicBaseURL}/channels/${context.channel}/updates`,
     };
     if (
       process.platform === "darwin" &&
@@ -362,17 +442,41 @@ async function uploadDesktopRelease(context, options) {
     ...context,
     publicBaseURL,
     allowPartial: Boolean(options["allow-partial"]),
+    requirePackages: Boolean(options["require-packages"]),
   });
 
   // GitHub Release also contains macOS ZIP and Linux packages. The website
   // manifest intentionally exposes only the two DMGs and the Windows setup
   // executable, so keep the OSS object set aligned with that public contract.
-  const releaseFiles = desktopUploadPaths(context.version, context.releaseDirectory);
+  const releaseFiles = [
+    ...desktopUploadPaths(context.version, context.releaseDirectory),
+    ...releasePackagePaths(context.version, context.releaseDirectory),
+  ];
   for (const filePath of releaseFiles) {
     const objectPath = `oss://${bucket}/${prefix}/releases/${context.version}/${path.basename(filePath)}`;
     runCommand(
       "ossutil",
       ["cp", filePath, objectPath, "-u", "--cache-control", "public,max-age=31536000,immutable"],
+      ossEnvironment,
+    );
+  }
+
+  const updateFiles = desktopUpdateFeedPaths(context.releaseDirectory);
+  for (const filePath of updateFiles.filter((candidate) => !isUpdateManifest(candidate))) {
+    const relativePath = normalizedRelativePath(path.join(context.releaseDirectory, "updates"), filePath);
+    const objectPath = `oss://${bucket}/${prefix}/channels/${context.channel}/updates/${relativePath}`;
+    runCommand(
+      "ossutil",
+      ["cp", filePath, objectPath, "-u", "--cache-control", "public,max-age=31536000,immutable"],
+      ossEnvironment,
+    );
+  }
+  for (const filePath of updateFiles.filter(isUpdateManifest)) {
+    const relativePath = normalizedRelativePath(path.join(context.releaseDirectory, "updates"), filePath);
+    const objectPath = `oss://${bucket}/${prefix}/channels/${context.channel}/updates/${relativePath}`;
+    runCommand(
+      "ossutil",
+      ["cp", filePath, objectPath, "-f", "--cache-control", "no-cache"],
       ossEnvironment,
     );
   }
@@ -404,11 +508,40 @@ async function uploadDesktopRelease(context, options) {
   console.log(`verified ${manifestURL}`);
 }
 
+export function desktopUpdateFeedPaths(releaseDirectory) {
+  const updateRoot = path.join(releaseDirectory, "updates");
+  const requiredManifests = [
+    path.join(updateRoot, "darwin", "arm64", "RELEASES.json"),
+    path.join(updateRoot, "darwin", "x64", "RELEASES.json"),
+    path.join(updateRoot, "win32", "x64", "RELEASES"),
+  ];
+  const missing = requiredManifests.filter((filePath) => !fs.existsSync(filePath));
+  if (missing.length > 0) {
+    throw new Error(`desktop update feed is incomplete; missing: ${missing.join(", ")}`);
+  }
+  return fs
+    .readdirSync(updateRoot, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath, entry.name));
+}
+
+function isUpdateManifest(filePath) {
+  return path.basename(filePath) === "RELEASES" || path.basename(filePath) === "RELEASES.json";
+}
+
+function normalizedRelativePath(root, filePath) {
+  const relativePath = path.relative(root, filePath);
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error(`desktop update file is outside the update root: ${filePath}`);
+  }
+  return relativePath.split(path.sep).join("/");
+}
+
 function printHelp() {
   console.log(`Usage:
   node scripts/desktop-oss-release.mjs build --version <semver> [--channel <beta|release>] [--targets <list>] [--release-directory <path>] [--force]
-  node scripts/desktop-oss-release.mjs manifest --version <semver> [--channel <beta|release>] [--release-directory <path>] [--allow-partial]
-  node scripts/desktop-oss-release.mjs upload --version <semver> [--channel <beta|release>] [--release-directory <path>] [--env-file <path>]
+  node scripts/desktop-oss-release.mjs manifest --version <semver> [--channel <beta|release>] [--release-directory <path>] [--allow-partial] [--require-packages]
+  node scripts/desktop-oss-release.mjs upload --version <semver> [--channel <beta|release>] [--release-directory <path>] [--env-file <path>] [--require-packages]
 
 Targets:
   darwin-arm64,darwin-amd64  Build on macOS
@@ -436,6 +569,7 @@ async function main(args) {
         ...context,
         publicBaseURL: options["public-base-url"] || defaultPublicBaseURL,
         allowPartial: Boolean(options["allow-partial"]),
+        requirePackages: Boolean(options["require-packages"]),
       });
       console.log(`wrote ${context.manifestPath} with ${manifest.versions[context.version].artifacts.length} installers`);
       break;

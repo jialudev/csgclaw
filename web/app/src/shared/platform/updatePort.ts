@@ -1,5 +1,5 @@
-import { applyUpgradeRequest, fetchUpgradeStatus } from "@/api/upgrade";
-import { normalizeUpgradeStatus, type UpgradeStatus } from "@/models/upgradeStatus";
+import { applyUpgradeRequest, fetchUpgradeStatus, setUpgradeChannelRequest } from "@/api/upgrade";
+import { normalizeUpgradeStatus, type UpgradeChannel, type UpgradeStatus } from "@/models/upgradeStatus";
 import { getDesktopBridge, type DesktopUpdateStatus } from "./desktopBridge";
 
 export type UpgradeApplyMode = "browser-daemon" | "desktop-app";
@@ -15,11 +15,7 @@ export async function fetchPlatformUpgradeStatus(): Promise<UpgradeStatus> {
     return normalizeUpgradeStatus(await fetchUpgradeStatus()) ?? emptyUpgradeStatus();
   }
   ensureDesktopSubscription();
-  const runtime = await bridge.getRuntimeInfo();
-  if (!cachedDesktopStatus) {
-    cachedDesktopStatus = emptyUpgradeStatus(runtime.appVersion);
-  }
-  await bridge.checkForUpdates();
+  cachedDesktopStatus = desktopUpdateStatus(await bridge.checkForUpdates());
   return cachedDesktopStatus;
 }
 
@@ -31,6 +27,16 @@ export async function applyPlatformUpgrade(): Promise<UpgradeApplyMode> {
   }
   await bridge.installDownloadedUpdate();
   return "desktop-app";
+}
+
+export async function setPlatformUpgradeChannel(channel: UpgradeChannel): Promise<UpgradeStatus> {
+  const bridge = getDesktopBridge();
+  if (!bridge) {
+    return normalizeUpgradeStatus(await setUpgradeChannelRequest(channel)) ?? emptyUpgradeStatus();
+  }
+  ensureDesktopSubscription();
+  cachedDesktopStatus = desktopUpdateStatus(await bridge.setUpdateChannel(channel));
+  return cachedDesktopStatus;
 }
 
 export function subscribePlatformUpgradeStatus(listener: UpgradeStatusListener): () => void {
@@ -67,6 +73,7 @@ function desktopUpdateStatus(status: DesktopUpdateStatus): UpgradeStatus {
   return {
     auto_upgrade_supported: !unsupported,
     auto_upgrade_unsupported_reason: unsupported ? "desktop_update_unsupported" : "",
+    channel: status.channel,
     checking: status.state === "checking" || status.state === "available",
     current_version: status.currentVersion,
     last_checked_at: new Date().toISOString(),
@@ -80,10 +87,11 @@ function desktopUpdateStatus(status: DesktopUpdateStatus): UpgradeStatus {
   };
 }
 
-function emptyUpgradeStatus(currentVersion = ""): UpgradeStatus {
+function emptyUpgradeStatus(currentVersion = "", channel: UpgradeChannel = "release"): UpgradeStatus {
   return {
     auto_upgrade_supported: true,
     auto_upgrade_unsupported_reason: "",
+    channel,
     checking: false,
     current_version: currentVersion,
     last_checked_at: "",

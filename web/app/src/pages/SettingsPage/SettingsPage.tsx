@@ -40,13 +40,22 @@ export function SettingsPage() {
     sidebar.t("csghubSignedIn");
   const currentVersion = sidebar.upgradeStatus?.current_version || sidebar.appVersion;
   const version = formatSidebarVersionLabel(currentVersion);
+  const localBuild = isLocalBuildUpgradeStatus(sidebar.upgradeStatus, currentVersion);
   const mockUpgradeAvailable = import.meta.env.DEV && isMockUpgradePreviewEnabled();
   const showUpgradeAction =
     sidebar.showUpgradeControls &&
     (mockUpgradeAvailable ||
-      (!isLocalBuildUpgradeStatus(sidebar.upgradeStatus, currentVersion) &&
+      (!localBuild &&
         sidebar.upgradeStatus?.auto_upgrade_supported !== false &&
         hasUpgradeAttention(sidebar.upgradeStatus, sidebar.upgradePhase, sidebar.upgradeBusy)));
+  const showUpgradeChannel = sidebar.showUpgradeControls;
+  const upgradeChannel = sidebar.upgradeStatus?.channel ?? "release";
+  const upgradeChannelDisabled = Boolean(
+    sidebar.upgradeChannelBusy ||
+    sidebar.upgradeChannelLocked ||
+    sidebar.upgradeBusy ||
+    sidebar.upgradeStatus?.upgrading,
+  );
   const showNewVersionBadge = Boolean(
     sidebar.showUpgradeControls &&
     (mockUpgradeAvailable ||
@@ -209,13 +218,40 @@ export function SettingsPage() {
           }
           description={sidebar.t("settingsVersionDescription")}
         >
-          <div className={classNames(styles.versionValue, showUpgradeAction && styles.versionValueWithAction)}>
-            <span className={styles.versionLabel}>{sidebar.t("settingsCurrentVersion")}</span>
-            <strong>{version}</strong>
-            {showUpgradeAction ? (
-              <Button className={styles.designButton} variant="primary" size="md" onClick={sidebar.onOpenUpgrade}>
-                {sidebar.t("upgradeAction")}
-              </Button>
+          <div className={styles.stack}>
+            <div className={classNames(styles.versionValue, showUpgradeAction && styles.versionValueWithAction)}>
+              <span className={styles.versionLabel}>{sidebar.t("settingsCurrentVersion")}</span>
+              <strong>{version}</strong>
+              {showUpgradeAction ? (
+                <Button className={styles.designButton} variant="primary" size="md" onClick={sidebar.onOpenUpgrade}>
+                  {sidebar.t("upgradeAction")}
+                </Button>
+              ) : null}
+            </div>
+            {showUpgradeChannel ? (
+              <div className={styles.settingLine}>
+                <span className={styles.controlLabel}>{sidebar.t("upgradeChannel")}</span>
+                <div className={styles.segmented} role="group" aria-label={sidebar.t("upgradeChannel")}>
+                  <button
+                    type="button"
+                    className={classNames(styles.textSegmentButton, upgradeChannel === "release" && styles.active)}
+                    aria-pressed={upgradeChannel === "release"}
+                    disabled={upgradeChannelDisabled}
+                    onClick={() => void sidebar.onUpgradeChannelChange("release")}
+                  >
+                    {sidebar.t("upgradeChannelRelease")}
+                  </button>
+                  <button
+                    type="button"
+                    className={classNames(styles.textSegmentButton, upgradeChannel === "beta" && styles.active)}
+                    aria-pressed={upgradeChannel === "beta"}
+                    disabled={upgradeChannelDisabled}
+                    onClick={() => void sidebar.onUpgradeChannelChange("beta")}
+                  >
+                    {sidebar.t("upgradeChannelBeta")}
+                  </button>
+                </div>
+              </div>
             ) : null}
           </div>
         </SettingsRow>
