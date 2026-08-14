@@ -34,10 +34,15 @@ import (
 	"csgclaw/internal/app/channelwiring"
 	"csgclaw/internal/app/runtimewiring"
 	csgclawchannel "csgclaw/internal/channel/csgclaw"
+	"csgclaw/internal/channel/csgclaw/binding"
+	"csgclaw/internal/channel/csgclaw/delivery"
+	"csgclaw/internal/channel/csgclaw/execution"
+	"csgclaw/internal/channel/csgclaw/files"
+	csgclawinteraction "csgclaw/internal/channel/csgclaw/interaction"
+	csgclawsource "csgclaw/internal/channel/csgclaw/source"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/channel/feishu/participantprovider"
 	"csgclaw/internal/channelbridge"
-	"csgclaw/internal/channelbridge/codexbridge"
 	"csgclaw/internal/channelbridge/codexmanager"
 	"csgclaw/internal/channelbridge/runtimebridge"
 	"csgclaw/internal/cliproxy"
@@ -50,6 +55,7 @@ import (
 	"csgclaw/internal/modelprovider"
 	internalonboard "csgclaw/internal/onboard"
 	"csgclaw/internal/participant"
+	agentruntime "csgclaw/internal/runtime"
 	runtimecodex "csgclaw/internal/runtime/codex"
 	"csgclaw/internal/runtimecatalog"
 	"csgclaw/internal/sandboxproviders"
@@ -101,16 +107,22 @@ var (
 		}
 		return svc.StopRunningSandboxAgents(ctx)
 	}
-	NewCodexBridgeManager  = newCodexBridgeManager
-	OpenBrowser            = openBrowser
-	WaitForHealthy         = waitForHealthy
-	stopServerProcessByPID = stopServerProcess
+	NewCodexBridgeManager   = newCodexBridgeManager
+	NewCSGClawAdapterSource = newCSGClawAdapterSource
+	OpenBrowser             = openBrowser
+	WaitForHealthy          = waitForHealthy
+	stopServerProcessByPID  = stopServerProcess
 )
 
 type serveCmd struct{}
 type stopCmd struct{}
 type internalServeCmd struct{}
 type desktopServeCmd struct{}
+
+type csgclawAdapterSource interface {
+	Start(context.Context) error
+	Close()
+}
 
 const cliproxyAutoLoginEnv = "CSGCLAW_CLIPROXY_AUTO_LOGIN"
 
@@ -603,6 +615,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	if err != nil {
 		return err
 	}
+	participantBridge := im.NewParticipantBridge(cfg.Server.AccessToken)
 	workBus := worklease.NewBus()
 	workControlBus := worklease.NewControlBus()
 	turnControlDispatcher := worklease.NewTurnControlDispatcher(workControlBus)
@@ -715,6 +728,16 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		return err
 	}
 	conversationEngine := agentengine.New(svc)
+	imAdapterSource, err := NewCSGClawAdapterSource(conversationEngine, svc, imSvc, imBus, participantSvc, workRegistry, participantBridge)
+	if err != nil {
+		return err
+	}
+	if imAdapterSource != nil {
+		if err := imAdapterSource.Start(ctx); err != nil {
+			return err
+		}
+		defer imAdapterSource.Close()
+	}
 	var beforeShutdown func(context.Context) error
 	if serveOpts.Distribution == "electron" {
 		beforeShutdown = func(shutdownCtx context.Context) error {
@@ -740,7 +763,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		WorkReporter:       workRegistry,
 		WorkBus:            workBus,
 		WorkControlBus:     workControlBus,
-		ParticipantBridge:  im.NewParticipantBridge(cfg.Server.AccessToken),
+		ParticipantBridge:  participantBridge,
 		Feishu:             feishuSvc,
 		LLM:                llmSvc,
 		Team:               teamSvc,
@@ -749,8 +772,8 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		AgentRuntimes:      agentRuntimeSvc,
 		TeamAdapters:       teamAdapters,
 		Upgrade:            upgradeManager,
-		ActivityDecider:    channelActivityDecider(codexBridgeMgr),
-		UserInputResponder: channelUserInputResponder(codexBridgeMgr),
+		ActivityDecider:    channelActivityDecider(svc),
+		UserInputResponder: channelUserInputResponder(svc),
 		AgentEngine:        conversationEngine,
 		SessionBindings:    sessionBindings,
 		ConfigPath:         configPath,
@@ -1242,51 +1265,109 @@ func newAgentTemplateHubService(cfg config.HubConfig) (*hub.Service, error) {
 
 type codexBridgeManager = codexmanager.Manager
 
-func channelActivityDecider(m codexBridgeManager) api.ActivityDecider {
-	withPermissions, ok := m.(interface {
-		PermissionDecider() runtimecodex.PermissionDecider
-	})
-	if !ok {
+func channelActivityDecider(svc *agent.Service) api.ActivityDecider {
+	codexRuntime := codexRuntimeForService(svc)
+	if codexRuntime == nil {
 		return nil
 	}
-	decider := withPermissions.PermissionDecider()
+	decider := codexRuntime.PermissionBroker()
 	if decider == nil {
 		return nil
 	}
 	return runtimecodex.NewPermissionActivityDecider(csgclawchannel.ChannelID, decider)
 }
 
-func channelUserInputResponder(m codexBridgeManager) api.UserInputResponder {
-	withUserInput, ok := m.(interface {
-		UserInputResponder() runtimecodex.UserInputBroker
-	})
-	if !ok {
+func channelUserInputResponder(svc *agent.Service) api.UserInputResponder {
+	codexRuntime := codexRuntimeForService(svc)
+	if codexRuntime == nil {
 		return nil
 	}
-	return withUserInput.UserInputResponder()
+	return codexRuntime.UserInputBroker()
 }
 
-func newCodexBridgeManager(cfg config.Config, svc *agent.Service, feishuSvc *feishu.Service, workReporter worklease.ParticipantWorkReporter) (codexBridgeManager, error) {
+func codexRuntimeForService(svc *agent.Service) *runtimecodex.Runtime {
 	if svc == nil {
+		return nil
+	}
+	runtimeImpl, err := svc.Runtime(agent.RuntimeKindCodex)
+	if err != nil {
+		return nil
+	}
+	codexRuntime, _ := runtimeImpl.(*runtimecodex.Runtime)
+	return codexRuntime
+}
+
+func newCodexBridgeManager(_ config.Config, svc *agent.Service, feishuSvc *feishu.Service, workReporter worklease.ParticipantWorkReporter) (codexBridgeManager, error) {
+	if svc == nil || feishuSvc == nil {
 		return nil, nil
 	}
 	opts := codexmanager.Options{
 		Agents:       svc,
 		Runtimes:     svc,
 		WorkReporter: workReporter,
-		CSGClawClient: &codexbridge.HTTPClient{
-			BaseURL:     codexBridgeBaseURL(cfg.Server),
-			Token:       cfg.Server.AccessToken,
-			MentionOnly: true,
-		},
 	}
-	if feishuSvc != nil {
-		if provider := feishuSvc.ConfigProvider(); provider != nil {
-			opts.FeishuClient = channelbridge.NewFeishuClient(feishuSvc)
-			opts.FeishuProvider = provider
-		}
+	if provider := feishuSvc.ConfigProvider(); provider != nil {
+		opts.FeishuClient = channelbridge.NewFeishuClient(feishuSvc)
+		opts.FeishuProvider = provider
 	}
 	return codexmanager.New(opts)
+}
+
+func newCSGClawAdapterSource(
+	engine *agentengine.Engine,
+	agentSvc *agent.Service,
+	imSvc *im.Service,
+	imBus *im.Bus,
+	participantSvc *participant.Service,
+	workReporter worklease.ParticipantWorkReporter,
+	participantBridge *im.ParticipantBridge,
+) (csgclawAdapterSource, error) {
+	if engine == nil || agentSvc == nil || imSvc == nil || participantSvc == nil || participantBridge == nil {
+		return nil, nil
+	}
+	store, err := delivery.NewIMTranscriptStore(imSvc, participantSvc)
+	if err != nil {
+		return nil, err
+	}
+	attachmentResolver, err := files.NewLocalResolver(imSvc, agentSvc)
+	if err != nil {
+		return nil, err
+	}
+	var interactionCoordinator *csgclawinteraction.Coordinator
+	var rendererOptions []delivery.RendererOption
+	if codexRuntime := codexRuntimeForService(agentSvc); codexRuntime != nil {
+		interactionCoordinator = csgclawinteraction.NewCoordinator(codexRuntime.UserInputBroker(), participantSvc, store)
+		if interactionCoordinator != nil {
+			rendererOptions = append(rendererOptions,
+				delivery.WithUserInputBinder(interactionCoordinator),
+				delivery.WithStructuredUserInputActivator(interactionCoordinator),
+			)
+		}
+	}
+	adapterOptions := []execution.Option{
+		execution.WithAttachmentResolver(attachmentResolver),
+		execution.WithParticipantWorkReporter(workReporter),
+	}
+	if registrar, ok := workReporter.(agentruntime.TurnControllerRegistrar); ok {
+		adapterOptions = append(adapterOptions, execution.WithTurnControllerRegistrar(registrar))
+	}
+	adapter, err := execution.New(engine, delivery.NewTranscriptRenderer(store, rendererOptions...), adapterOptions...)
+	if err != nil {
+		return nil, err
+	}
+	manager, err := binding.NewManager(adapter)
+	if err != nil {
+		return nil, err
+	}
+	if interactionCoordinator != nil {
+		interactionCoordinator.SetSubmitter(manager)
+	}
+	source, err := csgclawsource.New(participantBridge, imBus, participantSvc, engine.Agents(), manager)
+	if err != nil {
+		manager.Close()
+		return nil, err
+	}
+	return source, nil
 }
 
 func sandboxServiceOptions(cfg config.SandboxConfig) ([]agent.ServiceOption, error) {

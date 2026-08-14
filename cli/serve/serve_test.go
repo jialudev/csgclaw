@@ -17,6 +17,7 @@ import (
 	"csgclaw/cli/command"
 	"csgclaw/internal/activity"
 	"csgclaw/internal/agent"
+	"csgclaw/internal/agentengine"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/channelbridge/runtimebridge"
 	"csgclaw/internal/config"
@@ -1174,6 +1175,50 @@ func TestServeForegroundStartsCodexBridgesAfterConfiguredAgents(t *testing.T) {
 	}
 }
 
+func TestServeForegroundStartsBuiltInIMAdapterSource(t *testing.T) {
+	restore := stubServeDependencies(t)
+	defer restore()
+
+	original := NewCSGClawAdapterSource
+	t.Cleanup(func() { NewCSGClawAdapterSource = original })
+	started := make(chan struct{})
+	closed := make(chan struct{})
+	NewCSGClawAdapterSource = func(
+		engine *agentengine.Engine,
+		_ *agent.Service,
+		_ *im.Service,
+		_ *im.Bus,
+		_ *participant.Service,
+		workReporter worklease.ParticipantWorkReporter,
+		bridge *im.ParticipantBridge,
+	) (csgclawAdapterSource, error) {
+		if engine == nil || workReporter == nil || bridge == nil {
+			t.Fatal("built-in IM adapter dependencies were not assembled")
+		}
+		return &fakeCSGClawAdapterSource{start: func(context.Context) error {
+			close(started)
+			return nil
+		}, close: func() { close(closed) }}, nil
+	}
+	RunServer = func(server.Options) error { return nil }
+
+	if err := serveForeground(context.Background(), testContext(), config.Config{
+		Server: config.ServerConfig{ListenAddr: "127.0.0.1:18080"},
+	}, "json"); err != nil {
+		t.Fatalf("serveForeground() error = %v", err)
+	}
+	select {
+	case <-started:
+	default:
+		t.Fatal("built-in IM adapter source was not started")
+	}
+	select {
+	case <-closed:
+	default:
+		t.Fatal("built-in IM adapter source was not closed")
+	}
+}
+
 func TestServeForegroundPreservesBootstrapDefaultTemplates(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	origRunServer := RunServer
@@ -1960,6 +2005,24 @@ type fakeCodexBridgeManager struct {
 	stop    func(string)
 	refresh func(context.Context, agent.Agent, string) error
 	close   func()
+}
+
+type fakeCSGClawAdapterSource struct {
+	start func(context.Context) error
+	close func()
+}
+
+func (s *fakeCSGClawAdapterSource) Start(ctx context.Context) error {
+	if s != nil && s.start != nil {
+		return s.start(ctx)
+	}
+	return nil
+}
+
+func (s *fakeCSGClawAdapterSource) Close() {
+	if s != nil && s.close != nil {
+		s.close()
+	}
 }
 
 func (m *fakeCodexBridgeManager) Start(ctx context.Context) error {
