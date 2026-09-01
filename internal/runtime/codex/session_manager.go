@@ -15,6 +15,15 @@ const (
 	larkCLISourceDirName = "lark-cli-source"
 )
 
+var (
+	standardProxyEnvKeys = []string{
+		"HTTP_PROXY", "http_proxy",
+		"HTTPS_PROXY", "https_proxy",
+		"ALL_PROXY", "all_proxy",
+	}
+	loopbackProxyBypassEntries = []string{"localhost", "127.0.0.1", "::1"}
+)
+
 type liveSession struct {
 	mu                    sync.Mutex
 	conversationResumeMu  sync.Mutex
@@ -124,6 +133,7 @@ func buildSessionEnv(spec SessionSpec) []string {
 			envMap[key] = value
 		}
 	}
+	ensureLoopbackProxyBypass(envMap)
 	keys := make([]string, 0, len(envMap))
 	for key := range envMap {
 		keys = append(keys, key)
@@ -133,6 +143,31 @@ func buildSessionEnv(spec SessionSpec) []string {
 		out = append(out, key+"="+envMap[key])
 	}
 	return out
+}
+
+func ensureLoopbackProxyBypass(envMap map[string]string) {
+	if len(envMap) == 0 {
+		return
+	}
+	hasProxy := false
+	for _, key := range standardProxyEnvKeys {
+		if strings.TrimSpace(envMap[key]) != "" {
+			hasProxy = true
+			break
+		}
+	}
+	if !hasProxy {
+		return
+	}
+
+	entries := make([]string, 0, len(loopbackProxyBypassEntries)+4)
+	for _, key := range []string{"NO_PROXY", "no_proxy"} {
+		entries = append(entries, strings.Split(envMap[key], ",")...)
+	}
+	entries = append(entries, loopbackProxyBypassEntries...)
+	value := strings.Join(uniqueStrings(entries), ",")
+	envMap["NO_PROXY"] = value
+	envMap["no_proxy"] = value
 }
 
 func shouldOmitInheritedSessionEnvKey(key string) bool {

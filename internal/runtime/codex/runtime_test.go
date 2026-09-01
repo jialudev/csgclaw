@@ -1072,6 +1072,73 @@ func TestBuildSessionEnvOnlyInjectsOpenAIAPIKey(t *testing.T) {
 	}
 }
 
+func TestBuildSessionEnvEnsuresLoopbackProxyBypass(t *testing.T) {
+	for _, key := range append(append([]string(nil), standardProxyEnvKeys...), "NO_PROXY", "no_proxy") {
+		t.Setenv(key, "")
+	}
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:6478")
+	t.Setenv("NO_PROXY", "api.moonshot.cn")
+	t.Setenv("no_proxy", ".internal.example,localhost")
+
+	env := buildSessionEnv(SessionSpec{
+		HomeDir:      "/runtime-home",
+		CodexHomeDir: "/runtime-codex-home",
+	})
+	envMap := make(map[string]string, len(env))
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		envMap[key] = value
+	}
+
+	want := "api.moonshot.cn,.internal.example,localhost,127.0.0.1,::1"
+	if got := envMap["NO_PROXY"]; got != want {
+		t.Fatalf("NO_PROXY = %q, want %q", got, want)
+	}
+	if got := envMap["no_proxy"]; got != want {
+		t.Fatalf("no_proxy = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSessionEnvEnsuresLoopbackProxyBypassAfterProfileEnv(t *testing.T) {
+	for _, key := range append(append([]string(nil), standardProxyEnvKeys...), "NO_PROXY", "no_proxy") {
+		t.Setenv(key, "")
+	}
+
+	env := buildSessionEnv(SessionSpec{
+		HomeDir:      "/runtime-home",
+		CodexHomeDir: "/runtime-codex-home",
+		Profile: agentruntime.Profile{Env: map[string]string{
+			"https_proxy": "http://127.0.0.1:7890",
+			"NO_PROXY":    ".profile.example",
+		}},
+	})
+	envMap := make(map[string]string, len(env))
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		envMap[key] = value
+	}
+
+	want := ".profile.example,localhost,127.0.0.1,::1"
+	if got := envMap["NO_PROXY"]; got != want {
+		t.Fatalf("NO_PROXY = %q, want %q", got, want)
+	}
+	if got := envMap["no_proxy"]; got != want {
+		t.Fatalf("no_proxy = %q, want %q", got, want)
+	}
+}
+
+func TestEnsureLoopbackProxyBypassLeavesEnvironmentWithoutProxyUnchanged(t *testing.T) {
+	envMap := map[string]string{"NO_PROXY": ".example.com"}
+	ensureLoopbackProxyBypass(envMap)
+
+	if got := envMap["NO_PROXY"]; got != ".example.com" {
+		t.Fatalf("NO_PROXY = %q, want existing value unchanged", got)
+	}
+	if _, ok := envMap["no_proxy"]; ok {
+		t.Fatal("no_proxy was added without a configured proxy")
+	}
+}
+
 func TestBuildSessionEnvInjectsLarkCLIOnlyWhenBound(t *testing.T) {
 	codexHomeDir := t.TempDir()
 	sourcePath := larkCLISourceConfigPath(codexHomeDir)
