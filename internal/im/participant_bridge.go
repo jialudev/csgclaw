@@ -392,8 +392,11 @@ func messageEventForParticipant(room Room, sender User, message Message, partici
 	threadRootID := threadRootID(message)
 	chatType := chatTypeForRoom(room)
 	mentions := mentionsForParticipant(message.Mentions, participantID)
-	mentioned := len(mentions) > 0 || (!room.IsDirect && room.NotifyAllAgents)
+	mentioned := len(mentions) > 0 || (!room.IsDirect && room.NotifyAllAgents) || room.CollaborationMode == "on_demand"
 	text := textForParticipantEvent(message, participantID)
+	if room.CollaborationMode == "on_demand" && canonicalIMUserID(participantID) == canonicalIMUserID(room.ManagerID) {
+		text = fmt.Sprintf("[On-demand collaboration: room=%s, source_message=%s. You coordinate this room; use room-task tools for actual work, not ordinary chat or status questions. Never create a Team. One root task per room; do not silently change an existing plan. Worker suggestions are not dispatches.]\n%s", room.ID, message.ID, text)
+	}
 	return ParticipantEvent{
 		MessageID:    message.ID,
 		RoomID:       room.ID,
@@ -586,11 +589,22 @@ func (e ParticipantEvent) MarshalJSONLine() ([]byte, error) {
 
 func shouldNotifyParticipant(room Room, message Message, participantID string) bool {
 	userID := userIDForParticipantID(participantID)
-	if canonicalIMUserID(message.SenderID) == userID {
+	if canonicalIMUserID(message.SenderID) == userID && !(room.CollaborationMode == "on_demand" && message.Event != nil && message.Event.Key == "task_feedback") {
 		return false
 	}
 	if !containsUserIDInRoom(room, participantID) {
 		return false
+	}
+	if room.CollaborationMode == "on_demand" && !room.IsDirect {
+		manager := canonicalIMUserID(room.ManagerID)
+		if manager == "" {
+			return false
+		}
+		if userID == manager {
+			// Only completed messages and task feedback wake the manager, never activity streams.
+			return message.Kind == MessageKindMessage || message.Kind == "" || (message.Event != nil && message.Event.Key == "task_feedback")
+		}
+		return canonicalIMUserID(message.SenderID) == manager && message.Event != nil && message.Event.Key == "task_assigned" && messageMentionsParticipant(message, participantID)
 	}
 	return room.IsDirect || room.NotifyAllAgents || messageMentionsParticipant(message, participantID)
 }

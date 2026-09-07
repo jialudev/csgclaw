@@ -13,6 +13,9 @@ type ExecutionRoomDirectory interface {
 }
 
 func (s *Service) EnsureTaskExecutionRoom(ctx context.Context, adapter TeamChannelAdapter, directory ExecutionRoomDirectory, meta TeamMeta, parent TeamTask) (string, error) {
+	if meta.RoomID != "" {
+		return meta.RoomID, nil
+	}
 	if ExecutionRoomBound(parent, meta) {
 		roomID := strings.TrimSpace(parent.RoomID)
 		if err := s.syncTaskExecutionRoomMembers(ctx, adapter, directory, meta, parent, roomID); err != nil {

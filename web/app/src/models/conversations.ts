@@ -115,6 +115,8 @@ export type IMMessage = {
 };
 
 export type IMConversation = {
+  collaboration_mode?: string;
+  manager_id?: string;
   description?: string | null;
   id: string;
   is_direct?: boolean | null;

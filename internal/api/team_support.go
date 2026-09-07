@@ -86,7 +86,7 @@ func writeTeamError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, team.ErrTeamNotFound), errors.Is(err, team.ErrTaskNotFound), errors.Is(err, team.ErrApprovalNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, team.ErrTaskNotClaimable),
+	case errors.Is(err, team.ErrRoomTaskExists), errors.Is(err, team.ErrTaskNotClaimable),
 		errors.Is(err, team.ErrTaskDependenciesOpen),
 		errors.Is(err, team.ErrTaskNoSubtasks),
 		errors.Is(err, team.ErrWorkerAlreadyBusy),
@@ -277,11 +277,16 @@ func (p teamIdentityPresenter) agentDisplayName(id string) string {
 }
 
 func apiTask(item team.TeamTask, presenter teamIdentityPresenter) apitypes.TeamTask {
+	assignmentType, assignmentID, teamID := taskcore.AssignmentTypeTeam, item.TeamID, item.TeamID
+	if team.IsRoomScope(item.TeamID) {
+		assignmentType, assignmentID, teamID = taskcore.AssignmentTypeRoom, item.RoomID, ""
+	}
 	return apitypes.TeamTask{
+		GoalOutcome: item.GoalOutcome, Report: item.Report, ReportStatus: item.ReportStatus,
 		ID:                  item.ID,
-		AssignmentType:      taskcore.AssignmentTypeTeam,
-		AssignmentID:        item.TeamID,
-		TeamID:              item.TeamID,
+		AssignmentType:      assignmentType,
+		AssignmentID:        assignmentID,
+		TeamID:              teamID,
 		ExecutionChannel:    item.ExecutionChannel,
 		RoomID:              item.RoomID,
 		ParentID:            item.ParentID,

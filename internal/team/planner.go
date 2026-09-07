@@ -181,6 +181,9 @@ func (p *ManagerPlanner) managerPlanContext(meta TeamMeta, parent TeamTask) mana
 	members := p.teamPlanMembers(meta)
 	assignable := assignablePlanMemberIDs(meta, members)
 	leadParticipantID := participantIDForAgentID(p.directory, meta.LeadAgentID)
+	if meta.RoomID != "" {
+		leadParticipantID = managerParticipantID(meta)
+	}
 	return managerPlanContext{
 		TeamID:              meta.ID,
 		RoomID:              EventRoomID(meta, &parent),
@@ -202,6 +205,9 @@ func (p *ManagerPlanner) teamPlanMembers(meta TeamMeta) []teamPlanMember {
 	seen := make(map[string]struct{})
 	out := make([]teamPlanMember, 0)
 	leadParticipantID := participantIDForAgentID(p.directory, meta.LeadAgentID)
+	if meta.RoomID != "" {
+		leadParticipantID = managerParticipantID(meta)
+	}
 	add := func(id string) {
 		id = cleanParticipantID(id)
 		if id == "" {
@@ -234,6 +240,12 @@ func (p *ManagerPlanner) teamPlanMembers(meta TeamMeta) []teamPlanMember {
 	}
 
 	add(leadParticipantID)
+	if meta.RoomID != "" && len(meta.RoomWorkerIDs) > 0 {
+		for _, id := range meta.RoomWorkerIDs {
+			add(id)
+		}
+		return out
+	}
 	for _, agentID := range meta.MemberAgentIDs {
 		add(participantIDForAgentID(p.directory, agentID))
 	}
@@ -244,6 +256,12 @@ func assignablePlanMemberIDs(meta TeamMeta, members []teamPlanMember) []string {
 	out := make([]string, 0, len(members))
 	leadParticipantID := defaultParticipantIDForAgentID(meta.LeadAgentID)
 	for _, member := range members {
+		if meta.RoomID != "" {
+			if roomWorker(meta, member.ID) {
+				out = append(out, member.ID)
+			}
+			continue
+		}
 		if member.ID == "" || member.ID == leadParticipantID {
 			continue
 		}
@@ -253,7 +271,7 @@ func assignablePlanMemberIDs(meta TeamMeta, members []teamPlanMember) []string {
 			out = append(out, member.ID)
 		}
 	}
-	if len(out) == 0 && strings.TrimSpace(leadParticipantID) != "" {
+	if meta.RoomID == "" && len(out) == 0 && strings.TrimSpace(leadParticipantID) != "" {
 		out = append(out, leadParticipantID)
 	}
 	return out

@@ -126,7 +126,7 @@ func (s *Service) PlanTaskWithOptionalStart(ctx context.Context, input PlanTaskW
 	if err != nil {
 		return PlanTaskWorkflowResult{}, err
 	}
-	actorID := defaultParticipantIDForAgentID(meta.LeadAgentID)
+	actorID := managerParticipantID(meta)
 	if actorID == "" {
 		actorID = strings.TrimSpace(input.ActorID)
 	}
@@ -245,7 +245,7 @@ func (s *Service) StartTaskWithExecutionRoom(ctx context.Context, input StartTas
 	return s.StartTask(StartTaskInput{
 		TeamID:     teamID,
 		TaskID:     taskID,
-		ActorID:    firstNonEmpty(defaultParticipantIDForAgentID(meta.LeadAgentID), strings.TrimSpace(input.ActorID)),
+		ActorID:    firstNonEmpty(managerParticipantID(meta), strings.TrimSpace(input.ActorID)),
 		TaskRoomID: taskRoomID,
 	})
 }

@@ -124,12 +124,26 @@ func (s *Store) loadRootState() ([]teamSnapshot, error) {
 			Events:    events,
 		})
 	}
+	roomSnapshots, err := s.tasks.Load()
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range roomSnapshots {
+		if item.Root.AssignmentType != taskcore.AssignmentTypeRoom {
+			continue
+		}
+		tasks, approvals, presence, events := teamStateFromTaskCore([]taskcore.Snapshot{item})
+		out = append(out, teamSnapshot{Meta: TeamMeta{ID: RoomScope(item.Root.RoomID), RoomID: item.Root.RoomID}, Tasks: tasks, Approvals: approvals, Presence: presence, Events: events})
+	}
 	return out, nil
 }
 
 func (s *Store) saveRootState(snapshot teamSnapshot, newEvents []TeamEvent) error {
 	if err := s.saveTaskSnapshots(snapshot, newEvents); err != nil {
 		return err
+	}
+	if IsRoomScope(snapshot.Meta.ID) {
+		return nil
 	}
 	items, err := s.loadRootTeamItems()
 	if err != nil {
@@ -376,11 +390,19 @@ func teamStateFromTaskCore(snapshots []taskcore.Snapshot) ([]TeamTask, []TeamApp
 }
 
 func taskCoreTaskFromTeamTask(task TeamTask) taskcore.Task {
+	assignmentType := taskcore.AssignmentTypeTeam
+	assignmentID := task.TeamID
+	if IsRoomScope(task.TeamID) {
+		assignmentType = taskcore.AssignmentTypeRoom
+		assignmentID = task.RoomID
+	}
 	return taskcore.Task{
+		GoalOutcome: task.GoalOutcome, Report: task.Report, ReportStatus: task.ReportStatus,
+		SourceMessageID:  task.SourceMessageID,
 		ID:               task.ID,
 		ParentID:         task.ParentID,
-		AssignmentType:   taskcore.AssignmentTypeTeam,
-		AssignmentID:     task.TeamID,
+		AssignmentType:   assignmentType,
+		AssignmentID:     assignmentID,
 		Title:            task.Title,
 		Body:             task.Body,
 		Status:           task.Status,
@@ -404,9 +426,15 @@ func taskCoreTaskFromTeamTask(task TeamTask) taskcore.Task {
 }
 
 func teamTaskFromTaskCore(task taskcore.Task) TeamTask {
+	scope := task.AssignmentID
+	if task.AssignmentType == taskcore.AssignmentTypeRoom {
+		scope = RoomScope(task.RoomID)
+	}
 	return TeamTask{
+		GoalOutcome: task.GoalOutcome, Report: task.Report, ReportStatus: task.ReportStatus,
+		SourceMessageID:  task.SourceMessageID,
 		ID:               task.ID,
-		TeamID:           task.AssignmentID,
+		TeamID:           scope,
 		ExecutionChannel: task.ExecutionChannel,
 		RoomID:           task.RoomID,
 		ParentID:         task.ParentID,

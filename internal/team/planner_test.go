@@ -92,6 +92,24 @@ func TestNormalizeManagerPlanInfersValidationDependency(t *testing.T) {
 
 type plannerAliasDirectory struct{}
 
+func TestRoomPlanContextUsesRoomRosterIdentities(t *testing.T) {
+	planner := &ManagerPlanner{directory: plannerAliasDirectory{}}
+	meta := TeamMeta{
+		ID: RoomScope("room-test"), RoomID: "room-test",
+		LeadAgentID: "agent-manager", RoomManagerID: "room-manager",
+		MemberAgentIDs: []string{"agent-runtime-123"}, RoomWorkerIDs: []string{"room-dev"},
+	}
+	got := planner.managerPlanContext(meta, TeamTask{ID: "task-1"})
+	if got.LeadParticipantID != "pt-room-manager" || len(got.AssignableMemberIDs) != 1 || got.AssignableMemberIDs[0] != "pt-room-dev" {
+		t.Fatalf("planner lost room identities: %+v", got)
+	}
+	meta.MemberAgentIDs, meta.RoomWorkerIDs = nil, nil
+	got = planner.managerPlanContext(meta, TeamTask{ID: "task-1"})
+	if len(got.AssignableMemberIDs) != 0 {
+		t.Fatalf("empty room must not fall back to manager execution: %+v", got)
+	}
+}
+
 func (plannerAliasDirectory) UserProfile(id string) (MemberProfile, bool) {
 	switch id {
 	case "pt-manager":

@@ -79,6 +79,7 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 	creatorID := fs.String("creator-id", "", "creator participant id")
 	memberIDs := fs.String("member-ids", "", "comma-separated member participant ids")
 	locale := fs.String("locale", "", "room locale")
+	onDemand := fs.Bool("on-demand", false, "enable manager-led collaboration (CSGClaw only)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -86,12 +87,20 @@ func (c cmd) runCreate(ctx context.Context, run *command.Context, args []string,
 		return fmt.Errorf("room create does not accept positional arguments")
 	}
 
+	mode := ""
+	if *onDemand {
+		if *channelName != "csgclaw" {
+			return fmt.Errorf("on-demand collaboration currently supports csgclaw only")
+		}
+		mode = apitypes.CollaborationModeOnDemand
+	}
 	room, err := run.APIClient(globals).CreateRoomByChannel(ctx, *channelName, apitypes.CreateRoomRequest{
-		Title:       *title,
-		Description: *description,
-		CreatorID:   *creatorID,
-		MemberIDs:   command.ParseCSV(*memberIDs),
-		Locale:      *locale,
+		CollaborationMode: mode,
+		Title:             *title,
+		Description:       *description,
+		CreatorID:         *creatorID,
+		MemberIDs:         command.ParseCSV(*memberIDs),
+		Locale:            *locale,
 	})
 	if err != nil {
 		return err

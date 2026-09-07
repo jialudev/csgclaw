@@ -36,6 +36,9 @@ function AvatarStack({ users }: { users: IMUser[] }) {
 }
 
 export type CreateRoomModalProps = {
+  onDemand?: boolean;
+  managerAvailable?: boolean;
+  onDemandChange?: (enabled: boolean) => void;
   candidates: IMUser[];
   lockedRoomMemberIDs: string[];
   onClose: () => void;
@@ -51,6 +54,9 @@ export type CreateRoomModalProps = {
 };
 
 export function CreateRoomModal({
+  onDemand = false,
+  managerAvailable = true,
+  onDemandChange,
   t,
   roomTitle,
   onRoomTitleChange,
@@ -91,6 +97,20 @@ export function CreateRoomModal({
           <ModalCloseButton label={t("close")} onClose={onClose} />
         </div>
         <div className="create-room-modal-content">
+          {onDemandChange ? (
+            <label className="selection-item">
+              <input
+                type="checkbox"
+                checked={onDemand}
+                onChange={(event) => onDemandChange(event.currentTarget.checked)}
+              />
+              <span>
+                {t("onDemandCollaboration")}
+                <small>{t("onDemandCollaborationHint")}</small>
+              </span>
+            </label>
+          ) : null}
+          {onDemand && !managerAvailable ? <div className="form-error">{t("collaborationManagerRequired")}</div> : null}
           <div className="create-room-section">
             <div className="create-room-section-title">{t("basicInfo")}</div>
             <label className="field create-room-field">
@@ -167,7 +187,12 @@ export function CreateRoomModal({
           <CSGButton variant="secondaryGray" size="md" onClick={onClose}>
             {t("cancel")}
           </CSGButton>
-          <CSGButton variant="primary" size="md" disabled={isBlank(roomTitle)} onClick={onCreate}>
+          <CSGButton
+            variant="primary"
+            size="md"
+            disabled={isBlank(roomTitle) || (onDemand && !managerAvailable)}
+            onClick={onCreate}
+          >
             {t("create")}
           </CSGButton>
         </div>

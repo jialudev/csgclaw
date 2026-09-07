@@ -224,7 +224,7 @@ func (a *CSGClawAdapter) SendMessage(_ context.Context, req SendMessageRequest) 
 
 func csgclawEventKey(kind string) string {
 	switch strings.TrimSpace(kind) {
-	case "team_event", "task_assigned":
+	case "team_event", "task_assigned", "task_feedback", "task_reported":
 		return strings.TrimSpace(kind)
 	default:
 		return ""

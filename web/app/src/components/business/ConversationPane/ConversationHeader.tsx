@@ -192,7 +192,9 @@ export const ConversationHeader = memo(function ConversationHeader({
                     <span>{showToolCalls ? t("toggleToolCallsHide") : t("toggleToolCallsShow")}</span>
                     <strong>{showToolCalls ? t("enabled") : t("disabled")}</strong>
                   </Button>
-                  {!isDirectConversation(conversation) && onNotifyAllAgentsChange ? (
+                  {!isDirectConversation(conversation) &&
+                  conversation.collaboration_mode !== "on_demand" &&
+                  onNotifyAllAgentsChange ? (
                     <>
                       <Button
                         className="tool-menu-row room-notification-row"

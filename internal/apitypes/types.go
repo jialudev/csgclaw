@@ -167,28 +167,42 @@ type EventPayload struct {
 	TargetIDs []string `json:"target_ids,omitempty"`
 }
 
+// CollaborationModeOnDemand routes collaboration through the room manager.
+const CollaborationModeOnDemand = "on_demand"
+
 type Room struct {
-	ID              string        `json:"id"`
-	Title           string        `json:"title"`
-	Subtitle        string        `json:"subtitle"`
-	Description     string        `json:"description,omitempty"`
-	Locale          string        `json:"locale,omitempty"`
-	SessionID       string        `json:"session_id,omitempty"`
-	SessionAgentID  string        `json:"session_agent_id,omitempty"`
-	IsDirect        bool          `json:"is_direct,omitempty"`
-	NotifyAllAgents bool          `json:"notify_all_agents"`
-	Members         []string      `json:"members"`
-	MemberNames     []string      `json:"member_names,omitempty"`
-	Messages        []Message     `json:"messages"`
-	Threads         []ThreadState `json:"threads,omitempty"`
+	CollaborationMode string        `json:"collaboration_mode,omitempty"`
+	ManagerID         string        `json:"manager_id,omitempty"`
+	ID                string        `json:"id"`
+	Title             string        `json:"title"`
+	Subtitle          string        `json:"subtitle"`
+	Description       string        `json:"description,omitempty"`
+	Locale            string        `json:"locale,omitempty"`
+	SessionID         string        `json:"session_id,omitempty"`
+	SessionAgentID    string        `json:"session_agent_id,omitempty"`
+	IsDirect          bool          `json:"is_direct,omitempty"`
+	NotifyAllAgents   bool          `json:"notify_all_agents"`
+	Members           []string      `json:"members"`
+	MemberNames       []string      `json:"member_names,omitempty"`
+	Messages          []Message     `json:"messages"`
+	Threads           []ThreadState `json:"threads,omitempty"`
+}
+
+type CreateRoomTaskRequest struct {
+	Title           string `json:"title"`
+	Body            string `json:"body"`
+	CreatedBy       string `json:"created_by"`
+	SourceMessageID string `json:"source_message_id"`
 }
 
 type CreateRoomRequest struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	CreatorID   string   `json:"creator_id"`
-	MemberIDs   []string `json:"member_ids"`
-	Locale      string   `json:"locale"`
+	CollaborationMode string   `json:"collaboration_mode,omitempty"`
+	ManagerID         string   `json:"manager_id,omitempty"`
+	Title             string   `json:"title"`
+	Description       string   `json:"description"`
+	CreatorID         string   `json:"creator_id"`
+	MemberIDs         []string `json:"member_ids"`
+	Locale            string   `json:"locale"`
 }
 
 type UpdateRoomRequest struct {

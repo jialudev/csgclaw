@@ -44,6 +44,14 @@ func (h *Handler) PublishParticipantEvent(evt im.Event) {
 	if evt.Type != im.EventTypeMessageCreated || evt.Message == nil || evt.Sender == nil {
 		return
 	}
+	if isParticipantControlRecord(*evt.Message) && h.teamSvc != nil {
+		metadata, _ := evt.Message.Metadata["csgclaw"].(map[string]any)
+		if metadata["delivery_kind"] == "turn_stopped" {
+			if err := h.teamSvc.RoomWorkerStopped(evt.RoomID, evt.Message.SenderID); err != nil {
+				slog.Warn("record stopped room task", "room_id", evt.RoomID, "error", err)
+			}
+		}
+	}
 	if isUserInputAnswerTranscript(evt.Message) || isParticipantControlRecord(*evt.Message) {
 		return
 	}
@@ -142,7 +150,13 @@ func (h *Handler) enqueueParticipantMessageEventForBridgeTarget(room im.Room, se
 	if h == nil || h.participantBridge == nil || strings.TrimSpace(target.bridgeID) == "" {
 		return true
 	}
-	if target.matches(message.SenderID) {
+	feedback := room.CollaborationMode == apitypes.CollaborationModeOnDemand && message.Event != nil && message.Event.Key == "task_feedback"
+	if room.CollaborationMode == apitypes.CollaborationModeOnDemand && message.Event != nil && (feedback || message.Event.Key == "task_assigned") {
+		if h.teamSvc == nil || !h.teamSvc.ValidRoomProjection(room.ID, message.ID, message.Event.Key, target.bridgeID) {
+			return true
+		}
+	}
+	if target.matches(message.SenderID) && !feedback {
 		return true
 	}
 	deliveryRoom := roomForParticipantBridgeTarget(room, target)
@@ -362,6 +376,9 @@ func roomForParticipantBridgeTarget(room im.Room, target participantBridgeTarget
 		return room
 	}
 	out := room
+	if target.matches(out.ManagerID) {
+		out.ManagerID = target.bridgeID
+	}
 	out.Members = make([]string, 0, len(room.Members))
 	seen := make(map[string]struct{}, len(room.Members))
 	for _, memberID := range room.Members {
