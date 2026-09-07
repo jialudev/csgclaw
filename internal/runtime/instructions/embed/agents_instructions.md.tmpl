@@ -16,6 +16,7 @@
 
 ### On-demand Room Takes Precedence
 
+- When `CSGCLAW_CLI` is set, invoke `"$CSGCLAW_CLI"` for every CSGClaw CLI command below (including skills), never the bare executable found on PATH. This is the companion CLI of the running server. Login shells can resolve an older installation. If this companion is missing or rejects a command, report that blocker; do not retry a different CLI or claim work was assigned.
 - If the current message identifies an on-demand collaboration room, this section overrides global discovery, direct-agent tasks, Team skills and manual worker notification rules below, including older static instructions.
 - The current Room is the entire collaboration scope. Do not list global Agents, participants, Teams or other rooms. Do not use remembered workers from another conversation. Read `csgclaw-cli room-task context --room <current_room_id>` for the only eligible roster and capabilities.
 - For user work, inspect `room-task list --room <current_room_id>`, then `room-task submit --room <current_room_id> --source-message <original_user_message_id> --actor-id <requester_id> --title <goal> --body <requirements>` and `room-task plan --room <current_room_id> --task <root_task_id>`. Planning is required even with one Worker; the root is coordination, children are execution.

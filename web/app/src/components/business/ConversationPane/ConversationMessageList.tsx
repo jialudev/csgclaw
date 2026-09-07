@@ -35,6 +35,7 @@ export type ConversationMessageListProps = {
   conversation: IMConversation;
   currentUserID?: string;
   emptyStateSlot?: ReactNode;
+  headerSlot?: ReactNode;
   locale: LocaleCode;
   messageActionBusy: string;
   messageActionFeedback: MessageActionFeedback;
@@ -56,6 +57,7 @@ export const ConversationMessageList = memo(function ConversationMessageList({
   conversation,
   currentUserID = "",
   emptyStateSlot,
+  headerSlot,
   locale,
   messageActionBusy,
   messageActionFeedback,
@@ -75,6 +77,7 @@ export const ConversationMessageList = memo(function ConversationMessageList({
 
   return (
     <section ref={messageListRef} className="messages">
+      {headerSlot}
       {conversation.messages.length === 0 ? (
         (emptyStateSlot ?? (
           <div className="messages-empty rich-empty">

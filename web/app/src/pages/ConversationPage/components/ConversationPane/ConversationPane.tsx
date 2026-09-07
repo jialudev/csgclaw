@@ -16,6 +16,8 @@ import { normalizeAuthProviderName } from "@/models/agents";
 import { getConversationDescription, isDirectConversation } from "@/models/conversations";
 import type { AgentDetailSidePanelProps } from "@/hooks/workspace/types";
 import { ConversationActivityPanel } from "../ConversationActivityPanel";
+import { RoomTaskPlan } from "../RoomTaskPlan";
+import { useRoomTasks } from "../../useRoomTasks";
 import {
   conversationActivityAgents,
   conversationActivityEntries,
@@ -429,6 +431,11 @@ export function ConversationPane({
       />
 
       <Conversation.MessageList
+        headerSlot={
+          conversation.collaboration_mode === "on_demand" && !conversation.is_direct ? (
+            <RoomTaskPlanContainer key={conversation.id} conversation={conversation} t={t} />
+          ) : null
+        }
         agents={agents}
         conversation={conversation}
         currentUserID={currentUserID}
@@ -549,6 +556,23 @@ export function ConversationPane({
         />
       ) : null}
     </>
+  );
+}
+
+function RoomTaskPlanContainer({ conversation, t }: Pick<ConversationPaneProps, "conversation" | "t">) {
+  const query = useRoomTasks(conversation);
+  return (
+    <RoomTaskPlan
+      roomID={conversation.id}
+      tasks={query.data ?? []}
+      loading={query.isLoading}
+      error={query.isError ? errorMessage(query.error, t("tasksLoadFailed")) : ""}
+      refreshing={query.isFetching}
+      onRefresh={() => {
+        void query.refetch();
+      }}
+      t={t}
+    />
   );
 }
 

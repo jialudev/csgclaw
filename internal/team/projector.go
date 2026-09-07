@@ -39,7 +39,7 @@ func (p *Projector) Project(ctx context.Context, meta TeamMeta, events []TeamEve
 		if meta.RoomID != "" {
 			for i := range plans {
 				if event.Type == EventTaskDispatched {
-					plans[i].content = fmt.Sprintf("Task %s: %s\nRead the room task, claim it, then report results.\ncsgclaw-cli room-task list --room %s\ncsgclaw-cli room-task claim --room %s --task %s --actor-id %s\ncsgclaw-cli room-task update --room %s --task %s --actor-id %s --status completed --result <deliverables-and-unresolved-issues>", event.TaskID, event.Summary, meta.RoomID, meta.RoomID, event.TaskID, event.TargetID, meta.RoomID, event.TaskID, event.TargetID)
+					plans[i].content = fmt.Sprintf("Task %s: %s\nRead the room task, claim it, then report results.\n\"${CSGCLAW_CLI:-csgclaw-cli}\" room-task list --room %s\n\"${CSGCLAW_CLI:-csgclaw-cli}\" room-task claim --room %s --task %s --actor-id %s\n\"${CSGCLAW_CLI:-csgclaw-cli}\" room-task update --room %s --task %s --actor-id %s --status completed --result <deliverables-and-unresolved-issues>", event.TaskID, event.Summary, meta.RoomID, meta.RoomID, event.TaskID, event.TargetID, meta.RoomID, event.TaskID, event.TargetID)
 				}
 				if event.Type == EventTaskReported {
 					plans[i].senderID = leadParticipantID

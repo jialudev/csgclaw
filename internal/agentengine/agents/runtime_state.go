@@ -15,6 +15,7 @@ import (
 
 	"csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
+	"csgclaw/internal/runtimeassets"
 	"csgclaw/internal/sandbox"
 )
 
@@ -219,6 +220,7 @@ func (s *Controller) runtimeProfileForKind(runtimeKind, agentID, fallbackName, f
 			env = make(map[string]string)
 		}
 		env["CSGCLAW_CALLER_AGENT_ID"] = canonicalAgentID(agentID)
+		env["CSGCLAW_CLI"] = runtimeassets.HostCLIPath()
 		managerBaseURL := config.ResolveLocalBaseURL(s.server)
 		if managerBaseURL != "" {
 			baseURL = llmBridgeBaseURL(managerBaseURL, agentID)

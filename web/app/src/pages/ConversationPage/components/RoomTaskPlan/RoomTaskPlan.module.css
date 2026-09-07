@@ -1,0 +1,61 @@
+.panel {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text);
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.panel p {
+  margin: 6px 0;
+}
+
+.toolbar,
+.taskHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.taskHeading {
+  flex-wrap: wrap;
+}
+
+.taskHeading a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.details {
+  max-height: min(32dvh, 360px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.preWrap {
+  white-space: pre-wrap;
+}
+
+.steps {
+  padding-left: 22px;
+}
+
+.steps li,
+.summary {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}

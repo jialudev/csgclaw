@@ -83,6 +83,15 @@ func TestRenderAgentsInstructionsBlockWithoutInstructions(t *testing.T) {
 	}
 }
 
+func TestManagedInstructionsSelectCompanionCLIAndRejectFakeDispatch(t *testing.T) {
+	got := RenderAgentsInstructionsBlock("")
+	for _, want := range []string{"CSGCLAW_CLI", "never the bare executable found on PATH", "do not retry a different CLI or claim work was assigned", "A manual mention is not a task assignment"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing managed rule %q", want)
+		}
+	}
+}
+
 func TestRenderAgentsInstructionsBlockWithInstructions(t *testing.T) {
 	instructions := "Use Chinese for teammate-facing docs.\nKeep code identifiers unchanged."
 	got := RenderAgentsInstructionsBlock(instructions)

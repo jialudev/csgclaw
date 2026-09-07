@@ -1040,6 +1040,7 @@ func TestBuildSessionEnvOnlyInjectsOpenAIAPIKey(t *testing.T) {
 				"LARK_CHANNEL":             "0",
 				"LARK_CHANNEL_CONFIG":      "/profile/lark-channel/config.json",
 				" EXTRA_FLAG ":             " 1 ",
+				"CSGCLAW_CLI":              "/bundle with spaces/bin/csgclaw-cli",
 			},
 		},
 	})
@@ -1055,6 +1056,9 @@ func TestBuildSessionEnvOnlyInjectsOpenAIAPIKey(t *testing.T) {
 
 	if got, want := envMap["HOME"], "/host-home"; got != want {
 		t.Fatalf("HOME = %q, want %q", got, want)
+	}
+	if got, want := envMap["CSGCLAW_CLI"], "/bundle with spaces/bin/csgclaw-cli"; got != want {
+		t.Fatalf("CSGCLAW_CLI = %q, want %q", got, want)
 	}
 	if got, want := envMap["CODEX_HOME"], "/tmp/runtime-codex-home"; got != want {
 		t.Fatalf("CODEX_HOME = %q, want %q", got, want)

@@ -38,6 +38,10 @@ export async function fetchGlobalTasks(): Promise<WorkspaceTask[]> {
   return normalizeTaskList(await get<unknown>("/api/v1/tasks"));
 }
 
+export async function fetchRoomTasks(roomID: string, signal?: AbortSignal): Promise<WorkspaceTask[]> {
+  return normalizeTaskList(await get<unknown>(`/api/v1/rooms/${encodeURIComponent(roomID)}/tasks`, { signal }));
+}
+
 export async function fetchTeams(): Promise<WorkspaceTeam[]> {
   return normalizeTeamList(await get<unknown>("/api/v1/teams"));
 }
