@@ -257,6 +257,7 @@ func (a *Adapter) turnContext(binding channel.Binding, event channel.Event) (cha
 		return channel.TurnContext{}, fmt.Errorf("generated turn id is empty")
 	}
 	return channel.TurnContext{
+		TaskID:          strings.TrimSpace(event.TaskID),
 		BindingID:       binding.StableID(),
 		ParticipantID:   participantID,
 		AgentID:         agentID,

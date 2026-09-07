@@ -160,6 +160,16 @@ func (h *Handler) enqueueParticipantMessageEventForBridgeTarget(room im.Room, se
 	}
 	deliveryRoom := roomForParticipantBridgeTarget(room, target)
 	deliveryMessage := messageForParticipantBridgeTarget(message, target)
+	if room.CollaborationMode == apitypes.CollaborationModeOnDemand && message.Event != nil && message.Event.Key == "task_assigned" {
+		// Never accept a model-authored task/session identity. Dispatch was checked
+		// above; reconstruct the identity from its durable event.
+		metadata := make(map[string]any, len(deliveryMessage.Metadata)+1)
+		for key, value := range deliveryMessage.Metadata {
+			metadata[key] = value
+		}
+		metadata["room_task_id"] = h.teamSvc.RoomProjectionTaskID(room.ID, message.ID)
+		deliveryMessage.Metadata = metadata
+	}
 	deliveryMessage.Attachments = h.materializeAttachmentsForParticipant(deliveryMessage.Attachments, deliveryRoom.ID, deliveryMessage.ID, target.bridgeID)
 	deliveryRoom = h.materializeThreadContextAttachmentsForParticipant(deliveryRoom, deliveryMessage, target.bridgeID)
 	if strings.TrimSpace(text) != "" {

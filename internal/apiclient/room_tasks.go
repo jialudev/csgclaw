@@ -24,6 +24,12 @@ func (c *Client) RetryRoomDelivery(ctx context.Context, roomID string) ([]apityp
 }
 
 func roomTasksPath(roomID string) string { return "/api/v1/rooms/" + url.PathEscape(roomID) + "/tasks" }
+
+func (c *Client) RoomTaskContext(ctx context.Context, roomID string) (map[string]any, error) {
+	var result map[string]any
+	err := c.GetJSON(ctx, "/api/v1/rooms/"+url.PathEscape(roomID)+"/task-context", &result)
+	return result, err
+}
 func (c *Client) ListRoomTasks(ctx context.Context, roomID string) ([]apitypes.TeamTask, error) {
 	var result []apitypes.TeamTask
 	err := c.GetJSON(ctx, roomTasksPath(roomID), &result)

@@ -21,6 +21,26 @@ func TestConversationKeySeparatesTopLevelAndThread(t *testing.T) {
 	}
 }
 
+func TestConversationKeyIsolatesTasksWithoutCreatingThreads(t *testing.T) {
+	binding := channel.Binding{ID: "binding-worker", ParticipantID: "dev", AgentID: "agent-dev"}
+	keys := map[string]bool{}
+	for _, task := range []string{"", "task-1", "task-2"} {
+		event := channel.Event{RoomID: "room-1", TaskID: task}
+		key, err := ConversationKey(binding, event)
+		if err != nil || keys[string(key)] {
+			t.Fatalf("session collision: %s %v", key, err)
+		}
+		keys[string(key)] = true
+		again, _ := ConversationKey(binding, event)
+		if again != key {
+			t.Fatal("same task must reuse its session")
+		}
+		if event.ThreadRootID != "" {
+			t.Fatal("task sessions must not create UI threads")
+		}
+	}
+}
+
 func TestShouldDispatch(t *testing.T) {
 	binding := channel.Binding{ParticipantID: "manager", AgentID: "u-manager"}
 	event := channel.Event{MessageID: "m1", RoomID: "room-1", Text: "hello"}

@@ -47,6 +47,19 @@ func (s *Service) ValidRoomProjection(roomID, messageID, kind, target string) bo
 
 const roomScopePrefix = "room:"
 
+// RoomProjectionTaskID resolves trusted task identity from the scheduling ledger.
+func (s *Service) RoomProjectionTaskID(roomID, messageID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	scope := RoomScope(roomID)
+	for _, event := range s.events[scope] {
+		if event.Type == EventTaskDispatched && messageID == fmt.Sprintf("team:%s:event:%d", scope, event.Seq) {
+			return event.TaskID
+		}
+	}
+	return ""
+}
+
 // Serial room execution stops at an execution failure/cancellation. Unstarted
 // work is explicitly cancelled; completed results remain available to report.
 func (s *Service) finishRoomFailureLocked(meta TeamMeta, task *TeamTask, actorID string, now time.Time) {

@@ -8,6 +8,7 @@ import (
 
 func (h *Handler) Routes() chi.Router {
 	router := chi.NewRouter()
+	router.Use(h.roomRuntimeScope)
 	h.registerCoreRoutes(router)
 	h.registerChannelRoutes(router)
 	return router
@@ -166,6 +167,7 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 				r.Patch("/", h.updateRoom)
 				r.Delete("/", h.deleteRoom)
 				r.Get("/tasks", h.withRoomTaskScope(h.handleListTeamTasks))
+				r.Get("/task-context", h.handleRoomTaskContext)
 				r.Post("/tasks", h.handleCreateRoomTask)
 				r.Post("/tasks/retry-delivery", h.withRoomTaskScope(h.handleRetryRoomDelivery))
 				r.Post("/tasks/{task_id}/report", h.withRoomTaskScope(h.handleReportRoomTask))

@@ -425,6 +425,7 @@ func usesHostCodex(selected agentengine.Agent) bool {
 
 func botEvent(value channel.Binding, event im.ParticipantEvent) channel.Event {
 	return channel.Event{
+		TaskID:        strings.TrimSpace(event.TaskID),
 		Channel:       string(channel.ChannelCSGClaw),
 		ParticipantID: value.ParticipantID,
 		MessageID:     strings.TrimSpace(event.MessageID),

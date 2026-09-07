@@ -215,6 +215,10 @@ func (s *Controller) runtimeProfileForKind(runtimeKind, agentID, fallbackName, f
 	env := normalizeStringMap(profile.Env)
 
 	if runtimeKind == RuntimeKindCodex {
+		if env == nil {
+			env = make(map[string]string)
+		}
+		env["CSGCLAW_CALLER_AGENT_ID"] = canonicalAgentID(agentID)
 		managerBaseURL := config.ResolveLocalBaseURL(s.server)
 		if managerBaseURL != "" {
 			baseURL = llmBridgeBaseURL(managerBaseURL, agentID)
