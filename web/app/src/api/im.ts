@@ -32,6 +32,8 @@ export type StartThreadPayload = {
 };
 
 export type CreateRoomPayload = {
+  collaboration_mode?: "on_demand" | "";
+  manager_id?: string;
   creator_id: string;
   description?: string;
   locale?: string;

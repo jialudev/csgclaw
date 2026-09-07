@@ -88,6 +88,7 @@ func (a *App) registerDefaultCommands() {
 		message.NewCmd(),
 		taskcmd.NewCmd(),
 		teamcmd.NewCmd(),
+		teamcmd.NewRoomTaskCmd(),
 		upgradecmd.NewCmd(),
 		completioncmd.NewCmd("csgclaw", completioncmd.FullSpec()),
 		completioncmd.NewCompleteCmd("csgclaw", completioncmd.FullSpec()),

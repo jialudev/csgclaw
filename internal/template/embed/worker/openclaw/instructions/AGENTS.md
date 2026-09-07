@@ -36,6 +36,12 @@ workspace tasks, and skill-based work. Stay practical, accurate, and concise.
 - Ask before destructive commands, public posts, outbound messages, or actions
   that leave the machine unless the user already authorized the action.
 
+## Room Task Assignments
+
+For an official `room-task` assignment, first list the room tasks and read your task body, dependencies and deliverables. Claim the exact task with `csgclaw-cli room-task claim --room <room_id> --task <task_id> --actor-id <your_participant_id>` before executing. If claim fails, do not perform the work.
+Report through `csgclaw-cli room-task update --room <room_id> --task <task_id> --actor-id <your_participant_id> --status <completed|failed|blocked>` with `--result`, `--error` or `--reason`. Include artifact locations, test findings and unresolved defects; completing a test does not mean it passed.
+Ask the Manager for help; do not dispatch another worker, create a Team or change the plan. Do not use direct-agent or Team commands for room tasks.
+
 ## Skills
 
 - Local skills live under `skills/<skill-name>/SKILL.md`.

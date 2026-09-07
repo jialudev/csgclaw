@@ -306,6 +306,8 @@ export function useConversationController({
   const [threadSlashIndex, setThreadSlashIndex] = useState(0);
   const [threadSlashQuery, setThreadSlashQuery] = useState<string | null>(null);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [roomOnDemand, setRoomOnDemand] = useState(true);
+  const roomManagerID = data?.users.find((user) => user.role?.toLowerCase() === "manager")?.id ?? "";
   const [showInvite, setShowInvite] = useState(false);
   const [showMemberList, setShowMemberList] = useState(false);
   const [showChannelTools, setShowChannelTools] = useState(false);
@@ -1195,6 +1197,8 @@ export function useConversationController({
     try {
       const created = await createRoomRequest({
         title: roomTitle,
+        collaboration_mode: roomOnDemand ? "on_demand" : "",
+        manager_id: roomOnDemand ? roomManagerID : undefined,
         description: roomDescription,
         creator_id: data.current_user_id,
         member_ids: memberIDs,
@@ -1213,6 +1217,7 @@ export function useConversationController({
     if (!data) {
       return;
     }
+    setRoomOnDemand(true);
     const lockedIDs = Array.from(
       new Set((options.lockedMemberIDs ?? [data.current_user_id]).filter((id): id is string => Boolean(id))),
     );
@@ -1221,7 +1226,7 @@ export function useConversationController({
     );
     setRoomTitle(options.title ?? "");
     setRoomDescription(options.description ?? "");
-    setRoomMemberIDs(selectedIDs);
+    setRoomMemberIDs(Array.from(new Set([...selectedIDs, ...(roomManagerID ? [roomManagerID] : [])])));
     setLockedRoomMemberIDs(lockedIDs);
     setSubmitError("");
     setShowInvite(false);
@@ -1811,8 +1816,16 @@ export function useConversationController({
             onRoomDescriptionChange: setRoomDescription,
             candidates: data.users,
             roomMemberIDs,
-            lockedRoomMemberIDs,
+            lockedRoomMemberIDs:
+              roomOnDemand && roomManagerID ? [...lockedRoomMemberIDs, roomManagerID] : lockedRoomMemberIDs,
             onRoomMemberIDsChange: setRoomMemberIDs,
+            onDemand: roomOnDemand,
+            managerAvailable: Boolean(roomManagerID),
+            onDemandChange: (enabled: boolean) => {
+              setRoomOnDemand(enabled);
+              if (enabled && roomManagerID)
+                setRoomMemberIDs((current) => Array.from(new Set([...current, roomManagerID])));
+            },
             submitError,
             onClose: () => setShowCreateRoom(false),
             onCreate: createRoom,

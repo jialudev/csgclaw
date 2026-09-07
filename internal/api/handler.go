@@ -931,6 +931,9 @@ func (h *Handler) SetMCPService(svc *mcp.Service) {
 func (h *Handler) SetTeamService(svc *team.Service) {
 	if h != nil {
 		h.teamSvc = svc
+		if svc != nil {
+			svc.SetRoomResolver(h.roomSchedulingContext)
+		}
 	}
 }
 
@@ -2488,10 +2491,32 @@ func (h *Handler) handleRoomMemberDeletePath(w http.ResponseWriter, r *http.Requ
 		Locale:    req.Locale,
 	}
 
+	if h.im != nil && h.teamSvc != nil {
+		if current, found := h.im.Room(roomID); found && current.CollaborationMode == apitypes.CollaborationModeOnDemand {
+			for _, member := range serviceReq.UserIDs {
+				if team.ParticipantIDsMatch(member, current.ManagerID) {
+					http.Error(w, "cannot remove the collaboration manager", http.StatusConflict)
+					return
+				}
+				for _, task := range h.teamSvc.ListTasks(team.RoomScope(roomID)) {
+					if team.ParticipantIDsMatch(task.AssignedTo, member) && task.Status == team.TaskStatusInProgress {
+						http.Error(w, "stop the running worker before removing it", http.StatusConflict)
+						return
+					}
+				}
+			}
+		}
+	}
 	room, err := channel.RemoveRoomMembers(serviceReq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if room.CollaborationMode == apitypes.CollaborationModeOnDemand && h.teamSvc != nil {
+		if err := h.teamSvc.RoomMembersChanged(room.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, room)
 }
@@ -2879,6 +2904,21 @@ func (h *Handler) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	req.CreatorID = h.resolveCSGClawParticipantUserID(req.CreatorID)
 	req.MemberIDs = h.resolveCSGClawParticipantUserIDs(req.MemberIDs)
+	if req.CollaborationMode == apitypes.CollaborationModeOnDemand {
+		if req.ManagerID == "" {
+			req.ManagerID = agent.ManagerParticipantID
+		}
+		req.ManagerID = h.resolveCSGClawParticipantUserID(req.ManagerID)
+		if h.im == nil {
+			http.Error(w, "manager unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		manager, found := h.im.User(req.ManagerID)
+		if !found || !strings.EqualFold(manager.Role, "manager") {
+			http.Error(w, "valid manager required", http.StatusBadRequest)
+			return
+		}
+	}
 
 	room, err := channel.CreateRoom(req)
 	if err != nil {

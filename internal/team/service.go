@@ -28,6 +28,7 @@ var (
 )
 
 type Service struct {
+	roomResolver   func(string) (TeamMeta, bool)
 	mu             sync.Mutex
 	now            func() time.Time
 	store          *Store
@@ -63,6 +64,7 @@ type UpdateTeamInput struct {
 }
 
 type CreateTaskInput struct {
+	SourceMessageID  string
 	TeamID           string
 	ExecutionChannel string
 	ParentID         string
@@ -144,10 +146,11 @@ type FailTaskInput struct {
 }
 
 type CancelTaskInput struct {
-	TeamID  string
-	TaskID  string
-	ActorID string
-	Reason  string
+	ExecutionStopped bool
+	TeamID           string
+	TaskID           string
+	ActorID          string
+	Reason           string
 }
 
 type RequestApprovalInput struct {
@@ -302,6 +305,9 @@ func (s *Service) CreateTeam(input CreateTeamInput) (TeamMeta, error) {
 	if id == "" {
 		id = s.nextTeamIdentifier()
 	}
+	if IsRoomScope(id) {
+		return TeamMeta{}, fmt.Errorf("team id uses the reserved room task namespace")
+	}
 	if _, exists := s.teams[id]; exists {
 		return TeamMeta{}, fmt.Errorf("team %q already exists", id)
 	}
@@ -322,7 +328,7 @@ func (s *Service) CreateTeam(input CreateTeamInput) (TeamMeta, error) {
 	s.teams[id] = meta
 	s.appendEventLocked(id, TeamEvent{
 		Type:      EventTeamCreated,
-		ActorID:   defaultParticipantIDForAgentID(meta.LeadAgentID),
+		ActorID:   managerParticipantID(meta),
 		Summary:   meta.Title,
 		CreatedAt: now,
 	})
@@ -336,8 +342,8 @@ func (s *Service) GetTeam(teamID string) (TeamMeta, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	meta, ok := s.teams[teamID]
-	return cloneTeamMeta(meta), ok
+	meta, err := s.requireTeamLocked(teamID)
+	return cloneTeamMeta(meta), err == nil
 }
 
 func (s *Service) ListTeams() []TeamMeta {
@@ -406,7 +412,7 @@ func (s *Service) UpdateTeam(input UpdateTeamInput) (TeamMeta, error) {
 	s.teams[meta.ID] = meta
 	s.appendEventLocked(meta.ID, TeamEvent{
 		Type:      EventTeamUpdated,
-		ActorID:   defaultParticipantIDForAgentID(meta.LeadAgentID),
+		ActorID:   managerParticipantID(meta),
 		Summary:   meta.Title,
 		CreatedAt: now,
 	})
@@ -450,8 +456,8 @@ func (s *Service) FindTeamByRoom(channel, roomID string) (TeamMeta, TeamTask, bo
 		return TeamMeta{}, TeamTask{}, false
 	}
 	for teamID, tasks := range s.tasks {
-		meta, ok := s.teams[teamID]
-		if !ok {
+		meta, err := s.requireTeamLocked(teamID)
+		if err != nil {
 			continue
 		}
 		for _, task := range tasks {
@@ -473,6 +479,25 @@ func (s *Service) CreateTask(input CreateTaskInput) (TeamTask, error) {
 	meta, err := s.requireTeamLocked(input.TeamID)
 	if err != nil {
 		return TeamTask{}, err
+	}
+	if meta.RoomID != "" {
+		if input.ParentID != "" {
+			return TeamTask{}, fmt.Errorf("room subtasks must be created by the manager plan")
+		}
+		if strings.TrimSpace(input.SourceMessageID) == "" {
+			return TeamTask{}, fmt.Errorf("source_message_id is required")
+		}
+		for _, existing := range s.tasks[meta.ID] {
+			if existing.ParentID != "" {
+				continue
+			}
+			if existing.SourceMessageID == input.SourceMessageID {
+				return cloneTask(*existing), nil
+			}
+			return TeamTask{}, ErrRoomTaskExists
+		}
+		input.AssignTo = managerParticipantID(meta)
+		input.ExecutionChannel = "csgclaw"
 	}
 	before := s.captureTeamStateLocked(meta.ID)
 	eventStart := len(s.events[meta.ID])
@@ -519,6 +544,9 @@ func (s *Service) CreateTask(input CreateTaskInput) (TeamTask, error) {
 }
 
 func (s *Service) CreateTasks(input CreateTaskBatchInput) (CreateTasksResult, error) {
+	if IsRoomScope(input.TeamID) {
+		return CreateTasksResult{}, fmt.Errorf("use room-task submit and plan for room work")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -685,6 +713,16 @@ func (s *Service) PlanTask(input PlanTaskInput) (PlanTaskResult, error) {
 		idRefs[idRef] = s.peekNextTaskIdentifier(i)
 	}
 
+	if meta.RoomID != "" {
+		if err := validateRoomPlan(input.Tasks); err != nil {
+			return PlanTaskResult{}, err
+		}
+		for i, item := range input.Tasks {
+			if !roomWorker(meta, item.AssignTo) {
+				return PlanTaskResult{}, fmt.Errorf("plan tasks[%d]: assignee must be a current room worker", i)
+			}
+		}
+	}
 	resolvedDependsOn := make([][]string, len(input.Tasks))
 	for i, item := range input.Tasks {
 		for _, ref := range item.DependsOnRefs {
@@ -854,7 +892,7 @@ func (s *Service) StartTask(input StartTaskInput) (StartTaskResult, error) {
 		})
 	}
 
-	scheduledCount = s.dispatchReadyChildrenLocked(meta, task.ID, defaultParticipantIDForAgentID(meta.LeadAgentID), now)
+	scheduledCount = s.dispatchReadyChildrenLocked(meta, task.ID, managerParticipantID(meta), now)
 
 	task.Status = TaskStatusInProgress
 	task.Result = ""
@@ -897,7 +935,7 @@ func taskAssignedToManager(assignedTo string, teamMeta TeamMeta) bool {
 	if assignedTo == "" {
 		return false
 	}
-	if leadParticipantID := defaultParticipantIDForAgentID(teamMeta.LeadAgentID); leadParticipantID != "" {
+	if leadParticipantID := managerParticipantID(teamMeta); leadParticipantID != "" {
 		return ParticipantIDsMatch(assignedTo, leadParticipantID)
 	}
 	return false
@@ -923,6 +961,9 @@ func taskIsPlannable(task *TeamTask, meta TeamMeta) bool {
 }
 
 func (s *Service) AssignTask(input AssignTaskInput) (TeamTask, error) {
+	if IsRoomScope(input.TeamID) {
+		return TeamTask{}, fmt.Errorf("changing an existing room plan is not supported")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1191,7 +1232,7 @@ func (s *Service) CompleteTask(input CompleteTaskInput) (TeamTask, error) {
 		CreatedAt: now,
 	})
 	if strings.TrimSpace(task.ParentID) != "" {
-		s.dispatchReadyChildrenLocked(meta, task.ParentID, defaultParticipantIDForAgentID(meta.LeadAgentID), now)
+		s.dispatchReadyChildrenLocked(meta, task.ParentID, managerParticipantID(meta), now)
 		s.maybeCompleteParentIfAllChildrenDoneLocked(meta, task.ParentID, actorID, now)
 	}
 	if err := s.persistMutationLocked(meta.ID, before, eventStart); err != nil {
@@ -1235,6 +1276,7 @@ func (s *Service) FailTask(input FailTaskInput) (TeamTask, error) {
 		Summary:   task.Error,
 		CreatedAt: now,
 	})
+	s.finishRoomFailureLocked(meta, task, actorID, now)
 	if err := s.persistMutationLocked(meta.ID, before, eventStart); err != nil {
 		return TeamTask{}, err
 	}
@@ -1281,6 +1323,13 @@ func (s *Service) RecordPlanFailure(teamID, taskID, actorID string, planErr erro
 func (s *Service) CancelTask(input CancelTaskInput) (TeamTask, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if IsRoomScope(input.TeamID) && !input.ExecutionStopped {
+		for _, running := range s.tasks[input.TeamID] {
+			if running.ParentID != "" && running.Status == TaskStatusInProgress {
+				return TeamTask{}, fmt.Errorf("stop the running worker with the room stop control before cancelling")
+			}
+		}
+	}
 
 	task, meta, err := s.requireTaskLocked(input.TeamID, input.TaskID)
 	if err != nil {
@@ -1314,6 +1363,7 @@ func (s *Service) CancelTask(input CancelTaskInput) (TeamTask, error) {
 		Summary:   task.Error,
 		CreatedAt: now,
 	})
+	s.finishRoomFailureLocked(meta, task, actorID, now)
 	if err := s.persistMutationLocked(meta.ID, before, eventStart); err != nil {
 		return TeamTask{}, err
 	}
@@ -1496,8 +1546,8 @@ func (s *Service) ListAllTasks() []TeamTask {
 	defer s.mu.Unlock()
 
 	out := make([]TeamTask, 0)
-	for _, meta := range s.teams {
-		for _, task := range s.tasksForTeamLocked(meta.ID) {
+	for _, tasks := range s.tasks {
+		for _, task := range tasks {
 			out = append(out, cloneTask(*task))
 		}
 	}
@@ -1605,7 +1655,7 @@ func (s *Service) UpsertPresence(input UpsertPresenceInput) (MemberPresence, err
 	role := strings.TrimSpace(input.Role)
 	if role == "" {
 		role = "worker"
-		if ParticipantIDsMatch(participantID, defaultParticipantIDForAgentID(meta.LeadAgentID)) {
+		if ParticipantIDsMatch(participantID, managerParticipantID(meta)) {
 			role = "manager"
 		}
 	}
@@ -1711,6 +1761,9 @@ func (s *Service) blockTask(input UpdateTaskStatusInput) (TeamTask, error) {
 }
 
 func (s *Service) claimableLocked(meta TeamMeta, task *TeamTask, participantID string) error {
+	if meta.RoomID != "" && !roomWorker(meta, participantID) {
+		return fmt.Errorf("worker is no longer a room member")
+	}
 	participantID = cleanParticipantID(participantID)
 	if participantID == "" {
 		return fmt.Errorf("participant_id is required")
@@ -1829,6 +1882,13 @@ func (s *Service) dispatchReadyChildrenLocked(meta TeamMeta, parentID string, ac
 		return 0
 	}
 	children := s.taskChildrenLocked(meta.ID, parentID)
+	if meta.RoomID != "" {
+		for _, child := range children {
+			if child.DispatchedAt != nil && (child.Status == TaskStatusAssigned || child.Status == TaskStatusInProgress || child.Status == TaskStatusBlocked) {
+				return 0
+			}
+		}
+	}
 	dispatched := 0
 	for _, child := range children {
 		if child == nil || child.DispatchedAt != nil {
@@ -1841,6 +1901,12 @@ func (s *Service) dispatchReadyChildrenLocked(meta TeamMeta, parentID string, ac
 		}
 		assignee := cleanParticipantID(child.AssignedTo)
 		if assignee == "" {
+			continue
+		}
+		if meta.RoomID != "" && !roomWorker(meta, assignee) {
+			child.Status = TaskStatusBlocked
+			child.Error = "assigned worker is no longer a room member"
+			s.appendEventLocked(meta.ID, TeamEvent{Type: EventTaskBlocked, TaskID: child.ID, Summary: child.Error, CreatedAt: now})
 			continue
 		}
 		child.AssignedTo = assignee
@@ -1857,13 +1923,16 @@ func (s *Service) dispatchReadyChildrenLocked(meta TeamMeta, parentID string, ac
 		s.appendEventLocked(meta.ID, TeamEvent{
 			RoomID:    EventRoomID(meta, child),
 			Type:      EventTaskDispatched,
-			ActorID:   firstNonEmpty(strings.TrimSpace(actorID), defaultParticipantIDForAgentID(meta.LeadAgentID)),
+			ActorID:   firstNonEmpty(strings.TrimSpace(actorID), managerParticipantID(meta)),
 			TaskID:    child.ID,
 			TargetID:  assignee,
 			Summary:   child.Title,
 			CreatedAt: now,
 		})
 		dispatched++
+		if meta.RoomID != "" {
+			break
+		}
 	}
 	return dispatched
 }
@@ -1934,6 +2003,15 @@ func (s *Service) markParentInProgressLocked(meta TeamMeta, parentID string, now
 
 func (s *Service) requireTeamLocked(teamID string) (TeamMeta, error) {
 	teamID = strings.TrimSpace(teamID)
+	if IsRoomScope(teamID) {
+		if s.roomResolver != nil {
+			if meta, ok := s.roomResolver(strings.TrimPrefix(teamID, roomScopePrefix)); ok {
+				meta.ID = teamID
+				return meta, nil
+			}
+		}
+		return TeamMeta{}, fmt.Errorf("collaboration room or manager unavailable: %s", teamID)
+	}
 	meta, ok := s.teams[teamID]
 	if !ok {
 		return TeamMeta{}, fmt.Errorf("%w: %s", ErrTeamNotFound, teamID)
@@ -1976,7 +2054,7 @@ func (s *Service) requireTaskOperatorLocked(meta TeamMeta, task *TeamTask, actor
 	if actorID == "" {
 		return fmt.Errorf("actor_id is required")
 	}
-	if ParticipantIDsMatch(actorID, defaultParticipantIDForAgentID(meta.LeadAgentID)) || ParticipantIDsMatch(actorID, task.ClaimedBy) {
+	if ParticipantIDsMatch(actorID, managerParticipantID(meta)) || ParticipantIDsMatch(actorID, task.ClaimedBy) {
 		return nil
 	}
 	return fmt.Errorf("actor %q cannot operate task %s", actorID, task.ID)
@@ -2010,6 +2088,18 @@ func (s *Service) taskChildrenLocked(teamID string, parentID string) []*TeamTask
 		if task.ParentID == parentID {
 			out = append(out, task)
 		}
+	}
+	if IsRoomScope(teamID) {
+		// Serial execution must follow a stable plan order, not map iteration.
+		sort.Slice(out, func(i, j int) bool {
+			if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+				return out[i].CreatedAt.Before(out[j].CreatedAt)
+			}
+			if len(out[i].ID) != len(out[j].ID) {
+				return len(out[i].ID) < len(out[j].ID)
+			}
+			return out[i].ID < out[j].ID
+		})
 	}
 	return out
 }
@@ -2060,7 +2150,7 @@ func (s *Service) newTaskLocked(meta TeamMeta, input CreateTaskInput) (*TeamTask
 	}
 	parentID := strings.TrimSpace(input.ParentID)
 	executionChannel := NormalizeExecutionChannel(input.ExecutionChannel)
-	roomID := ""
+	roomID := meta.RoomID
 	if parentID != "" {
 		if parent, ok := s.tasksForTeamLocked(meta.ID)[parentID]; ok && parent != nil {
 			executionChannel = NormalizeExecutionChannel(parent.ExecutionChannel)
@@ -2068,6 +2158,7 @@ func (s *Service) newTaskLocked(meta TeamMeta, input CreateTaskInput) (*TeamTask
 		}
 	}
 	return &TeamTask{
+		SourceMessageID:  input.SourceMessageID,
 		ID:               taskID,
 		TeamID:           meta.ID,
 		ExecutionChannel: executionChannel,
@@ -2129,6 +2220,10 @@ type capturedTeamState struct {
 
 func (s *Service) captureTeamStateLocked(teamID string) capturedTeamState {
 	meta, ok := s.teams[teamID]
+	if IsRoomScope(teamID) {
+		meta, _ = s.requireTeamLocked(teamID)
+		ok = true
+	}
 	if !ok {
 		return capturedTeamState{}
 	}
@@ -2153,7 +2248,9 @@ func (s *Service) restoreTeamStateLocked(teamID string, state capturedTeamState)
 		delete(s.dirtyPresence, teamID)
 		return
 	}
-	s.teams[teamID] = cloneTeamMeta(state.meta)
+	if !IsRoomScope(teamID) {
+		s.teams[teamID] = cloneTeamMeta(state.meta)
+	}
 	s.tasks[teamID] = cloneTaskMap(state.tasks)
 	s.approvals[teamID] = cloneApprovalMap(state.approvals)
 	s.presence[teamID] = clonePresenceMap(state.presence)
@@ -2188,12 +2285,27 @@ func (s *Service) projectEventsLocked(teamID string, eventStart int) error {
 	if len(events) == 0 {
 		return nil
 	}
-	meta, ok := s.teams[teamID]
-	if !ok {
-		return nil
+	meta, err := s.requireTeamLocked(teamID)
+	if err != nil {
+		return err
 	}
 	if err := s.projector.Project(context.Background(), cloneTeamMeta(meta), events); err != nil {
 		s.recordProjectionFailureLocked(meta, events, err)
+		return nil
+	}
+	if meta.RoomID != "" {
+		changed := false
+		for _, event := range events {
+			if event.Type == EventTaskReported {
+				if task := s.tasks[teamID][event.TaskID]; task != nil {
+					task.ReportStatus = "delivered"
+					changed = true
+				}
+			}
+		}
+		if changed && s.store != nil {
+			return s.store.Save(s.snapshotTeamLocked(teamID), nil)
+		}
 	}
 	return nil
 }
@@ -2209,7 +2321,7 @@ func (s *Service) recordProjectionFailureLocked(meta TeamMeta, events []TeamEven
 		Channel:   events[0].Channel,
 		RoomID:    events[0].RoomID,
 		Type:      EventProjectionFailed,
-		ActorID:   defaultParticipantIDForAgentID(meta.LeadAgentID),
+		ActorID:   managerParticipantID(meta),
 		TaskID:    firstProjectedTaskID(events),
 		TargetID:  fmt.Sprintf("%d", events[0].Seq),
 		Summary:   truncateSummary(cause.Error(), 240),
@@ -2244,7 +2356,13 @@ func truncateSummary(text string, limit int) string {
 }
 
 func (s *Service) snapshotTeamLocked(teamID string) teamSnapshot {
-	meta := cloneTeamMeta(s.teams[teamID])
+	meta, _ := s.requireTeamLocked(teamID)
+	if meta.ID == "" {
+		meta.ID = teamID
+		if IsRoomScope(teamID) {
+			meta.RoomID = strings.TrimPrefix(teamID, roomScopePrefix)
+		}
+	}
 	tasks := make([]TeamTask, 0, len(s.tasksForTeamLocked(teamID)))
 	for _, task := range s.tasksForTeamLocked(teamID) {
 		tasks = append(tasks, cloneTask(*task))
@@ -2287,7 +2405,9 @@ func (s *Service) loadStoreState() error {
 	}
 	for _, snapshot := range snapshots {
 		teamID := snapshot.Meta.ID
-		s.teams[teamID] = cloneTeamMeta(snapshot.Meta)
+		if !IsRoomScope(teamID) {
+			s.teams[teamID] = cloneTeamMeta(snapshot.Meta)
+		}
 		taskMap := make(map[string]*TeamTask, len(snapshot.Tasks))
 		for _, task := range snapshot.Tasks {
 			taskCopy := cloneTask(task)
@@ -2428,7 +2548,7 @@ func (s *Service) updatePresenceLocked(meta TeamMeta, participantID string, stat
 	p.Summary = strings.TrimSpace(summary)
 	p.LastHeartbeatAt = now
 	p.UpdatedAt = now
-	if ParticipantIDsMatch(participantID, defaultParticipantIDForAgentID(meta.LeadAgentID)) {
+	if ParticipantIDsMatch(participantID, managerParticipantID(meta)) {
 		p.Role = "manager"
 	}
 	s.markPresenceDirtyLocked(meta.ID, participantID)
@@ -2501,6 +2621,7 @@ func (s *Service) bumpApprovalIdentifierLocked(id string) {
 }
 
 func cloneTeamMeta(meta TeamMeta) TeamMeta {
+	meta.RoomWorkerIDs = cloneStrings(meta.RoomWorkerIDs)
 	meta.MemberAgentIDs = cloneStrings(meta.MemberAgentIDs)
 	return meta
 }

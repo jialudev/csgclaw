@@ -740,7 +740,7 @@ func (s *Service) bumpApprovalIdentifier(id string) {
 
 func validateAssignment(assignmentType, assignmentID string) error {
 	switch strings.TrimSpace(assignmentType) {
-	case AssignmentTypeTeam, AssignmentTypeAgent:
+	case AssignmentTypeTeam, AssignmentTypeAgent, AssignmentTypeRoom:
 	default:
 		return fmt.Errorf("unsupported assignment_type %q", assignmentType)
 	}

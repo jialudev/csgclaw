@@ -3,6 +3,9 @@ import { localIdentitiesMatch } from "@/models/conversations";
 import { normalizeAvatarPath } from "@/shared/avatar";
 
 export type WorkspaceTask = {
+  goal_outcome?: string;
+  report?: string;
+  report_status?: string;
   id: string;
   assignment_type: string;
   assignment_id: string;
@@ -159,6 +162,9 @@ export function normalizeTask(input: unknown): WorkspaceTask | null {
   }
   return {
     id,
+    ...(assignmentType === "room"
+      ? { goal_outcome: text(item.goal_outcome), report: text(item.report), report_status: text(item.report_status) }
+      : {}),
     assignment_type: assignmentType,
     assignment_id: assignmentID,
     team_id: teamID || (assignmentType === "team" ? assignmentID : ""),
@@ -246,6 +252,7 @@ export function formatTaskUpdatedRelative(value: string, locale?: string, now = 
 }
 
 export function displayTaskTeam(task: WorkspaceTask): string {
+  if (task.assignment_type === "room") return task.room_title || task.room_id;
   if (task.assignment_type === "agent") {
     return task.assigned_to_agent_name || task.assigned_to || task.assignment_id;
   }
@@ -269,6 +276,7 @@ export function displayTaskWorker(task: WorkspaceTask): string {
 }
 
 export function displayTaskAssignmentTarget(task: WorkspaceTask): string {
+  if (task.assignment_type === "room") return displayTaskAssignedAgent(task);
   if (task.parent_id) {
     return displayTaskAssignedAgent(task);
   }

@@ -231,18 +231,20 @@ type persistedBootstrap struct {
 }
 
 type persistedRoom struct {
-	ID              string            `json:"id"`
-	Title           string            `json:"title"`
-	Subtitle        string            `json:"subtitle"`
-	Description     string            `json:"description,omitempty"`
-	Locale          string            `json:"locale,omitempty"`
-	SessionID       string            `json:"session_id,omitempty"`
-	SessionAgentID  string            `json:"session_agent_id,omitempty"`
-	IsDirect        bool              `json:"is_direct,omitempty"`
-	NotifyAllAgents bool              `json:"notify_all_agents,omitempty"`
-	Members         []string          `json:"members"`
-	Messages        string            `json:"messages"`
-	Threads         []persistedThread `json:"threads,omitempty"`
+	CollaborationMode string            `json:"collaboration_mode,omitempty"`
+	ManagerID         string            `json:"manager_id,omitempty"`
+	ID                string            `json:"id"`
+	Title             string            `json:"title"`
+	Subtitle          string            `json:"subtitle"`
+	Description       string            `json:"description,omitempty"`
+	Locale            string            `json:"locale,omitempty"`
+	SessionID         string            `json:"session_id,omitempty"`
+	SessionAgentID    string            `json:"session_agent_id,omitempty"`
+	IsDirect          bool              `json:"is_direct,omitempty"`
+	NotifyAllAgents   bool              `json:"notify_all_agents,omitempty"`
+	Members           []string          `json:"members"`
+	Messages          string            `json:"messages"`
+	Threads           []persistedThread `json:"threads,omitempty"`
 }
 
 type persistedThread struct {
@@ -443,18 +445,20 @@ func loadPersistedRooms(statePath string, rooms []persistedRoom) ([]Room, error)
 			return nil, err
 		}
 		loaded = append(loaded, Room{
-			ID:              room.ID,
-			Title:           room.Title,
-			Subtitle:        room.Subtitle,
-			Description:     room.Description,
-			Locale:          room.Locale,
-			SessionID:       room.SessionID,
-			SessionAgentID:  room.SessionAgentID,
-			IsDirect:        room.IsDirect,
-			NotifyAllAgents: room.NotifyAllAgents,
-			Members:         append([]string(nil), room.Members...),
-			Messages:        messages,
-			Threads:         threads,
+			CollaborationMode: room.CollaborationMode,
+			ManagerID:         room.ManagerID,
+			ID:                room.ID,
+			Title:             room.Title,
+			Subtitle:          room.Subtitle,
+			Description:       room.Description,
+			Locale:            room.Locale,
+			SessionID:         room.SessionID,
+			SessionAgentID:    room.SessionAgentID,
+			IsDirect:          room.IsDirect,
+			NotifyAllAgents:   room.NotifyAllAgents,
+			Members:           append([]string(nil), room.Members...),
+			Messages:          messages,
+			Threads:           threads,
 		})
 	}
 	return loaded, nil
@@ -614,18 +618,20 @@ func saveRoomThreadsForState(statePath string, room Room) error {
 
 func persistedRoomFromRoom(room Room) persistedRoom {
 	return persistedRoom{
-		ID:              room.ID,
-		Title:           room.Title,
-		Subtitle:        room.Subtitle,
-		Description:     room.Description,
-		Locale:          room.Locale,
-		SessionID:       room.SessionID,
-		SessionAgentID:  room.SessionAgentID,
-		IsDirect:        room.IsDirect,
-		NotifyAllAgents: room.NotifyAllAgents,
-		Members:         append([]string(nil), room.Members...),
-		Messages:        sessionRelativePath(room.ID),
-		Threads:         persistedThreadsFromStates(room.Threads),
+		CollaborationMode: room.CollaborationMode,
+		ManagerID:         room.ManagerID,
+		ID:                room.ID,
+		Title:             room.Title,
+		Subtitle:          room.Subtitle,
+		Description:       room.Description,
+		Locale:            room.Locale,
+		SessionID:         room.SessionID,
+		SessionAgentID:    room.SessionAgentID,
+		IsDirect:          room.IsDirect,
+		NotifyAllAgents:   room.NotifyAllAgents,
+		Members:           append([]string(nil), room.Members...),
+		Messages:          sessionRelativePath(room.ID),
+		Threads:           persistedThreadsFromStates(room.Threads),
 	}
 }
 
@@ -1625,6 +1631,10 @@ func (s *Service) UpdateRoom(roomID string, req UpdateRoomRequest) (Room, error)
 		s.mu.Unlock()
 		return Room{}, fmt.Errorf("direct rooms always notify their agent")
 	}
+	if room.CollaborationMode == apitypes.CollaborationModeOnDemand && *req.NotifyAllAgents {
+		s.mu.Unlock()
+		return Room{}, fmt.Errorf("on-demand rooms always route through the manager")
+	}
 	if room.NotifyAllAgents == *req.NotifyAllAgents {
 		presented := s.presentRoomLocked(*room, "")
 		s.mu.Unlock()
@@ -2205,6 +2215,15 @@ func publishRoomEvent(bus *Bus, eventType string, room Room) {
 }
 
 func (s *Service) CreateRoom(req CreateRoomRequest) (Room, error) {
+	if req.CollaborationMode != "" && req.CollaborationMode != apitypes.CollaborationModeOnDemand {
+		return Room{}, fmt.Errorf("unsupported collaboration mode")
+	}
+	if req.CollaborationMode == apitypes.CollaborationModeOnDemand {
+		if strings.TrimSpace(req.ManagerID) == "" {
+			req.ManagerID = ManagerUserID
+		}
+		req.MemberIDs = append(append([]string(nil), req.MemberIDs...), req.ManagerID)
+	}
 	title := strings.TrimSpace(req.Title)
 	description := strings.TrimSpace(req.Description)
 	creatorID := strings.TrimSpace(req.CreatorID)
@@ -2229,14 +2248,23 @@ func (s *Service) CreateRoom(req CreateRoomRequest) (Room, error) {
 		return Room{}, err
 	}
 
+	managerID := ""
+	if req.CollaborationMode == apitypes.CollaborationModeOnDemand {
+		managerID = s.resolveRoomUserIDLocked(req.ManagerID)
+		if _, ok := s.users[managerID]; !ok {
+			return Room{}, fmt.Errorf("room manager is unavailable")
+		}
+	}
 	room := Room{
-		ID:          fmt.Sprintf("room-%d", time.Now().UnixNano()),
-		Title:       title,
-		Subtitle:    formatRoomSubtitle(len(members)),
-		Description: description,
-		Locale:      messagePresentationLocale(req.Locale),
-		IsDirect:    false,
-		Members:     members,
+		CollaborationMode: req.CollaborationMode,
+		ManagerID:         managerID,
+		ID:                fmt.Sprintf("room-%d", time.Now().UnixNano()),
+		Title:             title,
+		Subtitle:          formatRoomSubtitle(len(members)),
+		Description:       description,
+		Locale:            messagePresentationLocale(req.Locale),
+		IsDirect:          false,
+		Members:           members,
 		Messages: []Message{
 			{
 				ID:       fmt.Sprintf("msg-%d", time.Now().UnixNano()),
@@ -2382,6 +2410,13 @@ func (s *Service) RemoveRoomMembers(req AddRoomMembersRequest) (Room, error) {
 		return Room{}, fmt.Errorf("cannot remove members from agent session room")
 	}
 
+	if room.CollaborationMode == apitypes.CollaborationModeOnDemand {
+		for _, id := range req.UserIDs {
+			if s.resolveRoomUserIDLocked(id) == room.ManagerID {
+				return Room{}, fmt.Errorf("cannot remove the collaboration manager")
+			}
+		}
+	}
 	removing := make(map[string]struct{}, len(req.UserIDs))
 	for _, userID := range req.UserIDs {
 		userID = s.resolveRoomUserIDLocked(userID)

@@ -51,6 +51,10 @@ const (
 
 // TeamMeta is a reusable pool of agents that can execute tasks in any supported channel.
 type TeamMeta struct {
+	RoomManagerID string   `json:"-"`
+	RoomWorkerIDs []string `json:"-"`
+	// RoomID marks a transient scheduling context, never a stored Team or member roster.
+	RoomID         string    `json:"-"`
 	ID             string    `json:"id"`
 	Title          string    `json:"title"`
 	LeadAgentID    string    `json:"lead_agent_id"`
@@ -76,6 +80,10 @@ type MemberPresence struct {
 
 // TeamTask is the authoritative task state, independent of room message projection.
 type TeamTask struct {
+	GoalOutcome      string     `json:"goal_outcome,omitempty"`
+	Report           string     `json:"report,omitempty"`
+	ReportStatus     string     `json:"report_status,omitempty"`
+	SourceMessageID  string     `json:"source_message_id,omitempty"`
 	ID               string     `json:"id"`
 	TeamID           string     `json:"team_id"`
 	ExecutionChannel string     `json:"execution_channel"`

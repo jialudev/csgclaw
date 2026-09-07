@@ -36,6 +36,24 @@ func (p *Projector) Project(ctx context.Context, meta TeamMeta, events []TeamEve
 		leadParticipantID := participantIDForAgentID(adapter, meta.LeadAgentID)
 		renderer := newProjectionRenderer(adapter, leadParticipantID)
 		plans := buildProjectionPlans([]TeamEvent{event}, renderer, meta)
+		if meta.RoomID != "" {
+			for i := range plans {
+				if event.Type == EventTaskDispatched {
+					plans[i].content = fmt.Sprintf("Task %s: %s\nRead the room task, claim it, then report results.\ncsgclaw-cli room-task list --room %s\ncsgclaw-cli room-task claim --room %s --task %s --actor-id %s\ncsgclaw-cli room-task update --room %s --task %s --actor-id %s --status completed --result <deliverables-and-unresolved-issues>", event.TaskID, event.Summary, meta.RoomID, meta.RoomID, event.TaskID, event.TargetID, meta.RoomID, event.TaskID, event.TargetID)
+				}
+				if event.Type == EventTaskReported {
+					plans[i].senderID = leadParticipantID
+					plans[i].kind = "task_reported"
+				}
+				switch event.Type {
+				case EventTaskCompleted, EventTaskFailed, EventTaskBlocked, EventTaskCancelled:
+					plans[i].kind = "task_feedback"
+					plans[i].mentionID = leadParticipantID
+					plans[i].senderID = leadParticipantID
+					plans[i].content += "\nManager: inspect the room tasks and report progress or summarize deliverables, test findings and unresolved work in this room. Completed execution does not mean the goal succeeded. Do not create a new task or replan."
+				}
+			}
+		}
 		for _, plan := range plans {
 			if strings.TrimSpace(plan.content) == "" {
 				continue
@@ -187,7 +205,12 @@ func renderSingleEvent(event TeamEvent, renderer projectionRenderer, meta TeamMe
 		return ""
 	case EventTaskCreated:
 		return ""
+	case EventTaskReported:
+		return event.Summary
 	case EventTaskPlanned:
+		if meta.RoomID != "" {
+			return fmt.Sprintf("%s completed planning for %s: %s", renderer.actor(event.ActorID), renderTaskLabel(event.TaskID), event.Summary)
+		}
 		return fmt.Sprintf("%s completed planning for %s", renderer.actor(event.ActorID), renderTaskLabel(event.TaskID))
 	case EventTaskExecutionRoom:
 		return ""
