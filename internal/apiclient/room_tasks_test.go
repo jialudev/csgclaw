@@ -13,6 +13,7 @@ func TestRoomTaskRoutesDoNotRequireTeam(t *testing.T) {
 		name, body, route string
 		call              func(*Client) error
 	}{
+		{"context", `{}`, "GET /api/v1/rooms/room-1/task-context", func(c *Client) error { _, err := c.RoomTaskContext(ctx, "room-1"); return err }},
 		{"list", `[]`, "GET /api/v1/rooms/room-1/tasks", func(c *Client) error { _, err := c.ListRoomTasks(ctx, "room-1"); return err }},
 		{"submit", `{}`, "POST /api/v1/rooms/room-1/tasks", func(c *Client) error {
 			_, err := c.CreateRoomTask(ctx, "room-1", apitypes.CreateRoomTaskRequest{Title: "Build", CreatedBy: "admin", SourceMessageID: "message-1"})

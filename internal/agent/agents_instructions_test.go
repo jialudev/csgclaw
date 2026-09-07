@@ -75,7 +75,7 @@ func TestRenderAgentsInstructionsBlockWithoutInstructions(t *testing.T) {
 	if strings.Contains(got, "# Agent Instructions") {
 		t.Fatalf("RenderAgentsInstructionsBlock() = %q, want no agent instructions section", got)
 	}
-	if !strings.Contains(got, "# CSGClaw Rules\n\n### Scope") {
+	if !strings.Contains(got, "# CSGClaw Rules\n\n### On-demand Room Takes Precedence") {
 		t.Fatalf("RenderAgentsInstructionsBlock() = %q, want embedded rules section", got)
 	}
 	if !strings.HasSuffix(got, agentsInstructionsBlockEnd+"\n") {

@@ -268,6 +268,7 @@ func (s *Service) handleDetachedUserInput(resolution runtimecodex.DetachedUserIn
 	}
 	prompt := "The user answered the request_user_input emitted by the previous successful command. Continue the same workflow using this wire-compatible response JSON. Secret values are replaced with <redacted> before entering the model session:\n" + string(body)
 	w.enqueue(context.Background(), BotEvent{
+		TaskID:       resolution.Context.TaskID,
 		Channel:      resolution.Context.Channel,
 		MessageID:    "structured-user-input-" + snapshot.ID,
 		RoomID:       resolution.Context.RoomID,
@@ -1041,6 +1042,7 @@ func (w *worker) activateStructuredUserInput(
 		RequestedAt: time.Now().UTC(),
 		AutoResolve: autoResolve,
 	}, runtimecodex.DetachedUserInputContext{
+		TaskID:          evt.TaskID,
 		Channel:         localChannel,
 		RoomID:          evt.RoomID,
 		ThreadRootID:    evt.ThreadRootID,
@@ -1386,6 +1388,7 @@ func (w *worker) accept(evt BotEvent) bool {
 
 func (w *worker) detachedSourceIsKnown(detached runtimecodex.DetachedUserInputContext) bool {
 	expected := eventDedupKey(BotEvent{
+		TaskID:       detached.TaskID,
 		MessageID:    detached.SourceMessageID,
 		RoomID:       detached.RoomID,
 		ThreadRootID: detached.ThreadRootID,
@@ -1404,11 +1407,12 @@ func (w *worker) detachedSourceIsKnown(detached runtimecodex.DetachedUserInputCo
 	if w.seen.Has(expected) {
 		return true
 	}
-	return strings.TrimSpace(w.latest[conversationKey(BotEvent{RoomID: detached.RoomID, ThreadRootID: detached.ThreadRootID})]) == expected
+	return strings.TrimSpace(w.latest[conversationKey(BotEvent{RoomID: detached.RoomID, ThreadRootID: detached.ThreadRootID, TaskID: detached.TaskID})]) == expected
 }
 
 func (w *worker) detachedSourceIsCurrent(detached runtimecodex.DetachedUserInputContext) bool {
 	evt := BotEvent{
+		TaskID:       detached.TaskID,
 		MessageID:    detached.SourceMessageID,
 		RoomID:       detached.RoomID,
 		ThreadRootID: detached.ThreadRootID,
@@ -1492,6 +1496,9 @@ func sessionIDForEvent(binding Binding, evt BotEvent) string {
 
 func conversationKey(evt BotEvent) string {
 	roomID := strings.TrimSpace(evt.RoomID)
+	if taskID := strings.TrimSpace(evt.TaskID); taskID != "" && roomID != "" {
+		return roomID + ":task:" + taskID
+	}
 	threadRootID := strings.TrimSpace(evt.ThreadRootID)
 	if roomID == "" {
 		return threadRootID
@@ -1525,6 +1532,9 @@ func formatHiddenChannelContext(binding Binding, evt BotEvent) string {
 	}
 	var b strings.Builder
 	b.WriteString("Current channel context for CSGClaw CLI operations.\n")
+	if taskID := strings.TrimSpace(evt.TaskID); taskID != "" {
+		b.WriteString("- task_id: " + taskID + "\nThis is an isolated task session. Read only this task and its dependencies; report to the current room, never a private chat.\n")
+	}
 	b.WriteString("- channel: ")
 	b.WriteString(channel)
 	b.WriteByte('\n')

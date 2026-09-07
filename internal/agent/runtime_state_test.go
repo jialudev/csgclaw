@@ -118,6 +118,9 @@ func TestRuntimeProfileInjectsConnectorCapabilityOnlyForManager(t *testing.T) {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	manager := svc.runtimeProfileForKind(RuntimeKindCodex, ManagerUserID, ManagerName, "", AgentProfile{})
+	if manager.Env["CSGCLAW_CALLER_AGENT_ID"] != ManagerUserID {
+		t.Fatal("manager CLI caller identity missing")
+	}
 	if got := manager.Env[ConnectorCapabilityEnv]; got == "" {
 		t.Fatal("manager runtime connector capability is empty")
 	}

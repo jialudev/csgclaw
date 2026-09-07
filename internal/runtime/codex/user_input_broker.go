@@ -32,6 +32,7 @@ type PendingUserInputRequest struct {
 }
 
 type DetachedUserInputContext struct {
+	TaskID          string
 	Channel         string
 	RoomID          string
 	ThreadRootID    string

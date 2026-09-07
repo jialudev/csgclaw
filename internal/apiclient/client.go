@@ -21,9 +21,17 @@ type HTTPClient interface {
 }
 
 type Client struct {
-	endpoint string
-	token    string
-	client   HTTPClient
+	callerAgentID string
+	endpoint      string
+	token         string
+	client        HTTPClient
+}
+
+// WithCallerAgentID identifies runtime CLI calls for active-room routing. This
+// is a workflow scope hint, not a substitute for API authentication.
+func (c *Client) WithCallerAgentID(id string) *Client {
+	c.callerAgentID = strings.TrimSpace(id)
+	return c
 }
 
 func DefaultAPIBaseURL() string {
@@ -549,6 +557,9 @@ func (c *Client) Stream(ctx context.Context, path string, values url.Values, w i
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
+	if c.callerAgentID != "" {
+		req.Header.Set("X-CSGClaw-Caller-Agent", c.callerAgentID)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -591,6 +602,9 @@ func (c *Client) DoJSON(ctx context.Context, method, path string, body any, out 
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
+	if c.callerAgentID != "" {
+		req.Header.Set("X-CSGClaw-Caller-Agent", c.callerAgentID)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err

@@ -248,6 +248,7 @@ func (c *Coordinator) handleDetachedResolution(resolution runtimecodex.DetachedU
 	}
 	prompt := "The user answered the request_user_input emitted by the previous successful command. Continue the same workflow using this wire-compatible response JSON. Secret values are replaced with <redacted> before entering the model session:\n" + string(body)
 	if err := submitter.Submit(request.binding, channelbridge.BotEvent{
+		TaskID:        request.turn.TaskID,
 		Channel:       string(channel.ChannelCSGClaw),
 		ParticipantID: request.binding.ParticipantID,
 		MessageID:     "structured-user-input-" + resolution.Snapshot.ID,

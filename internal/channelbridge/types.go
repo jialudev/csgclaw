@@ -11,6 +11,7 @@ type MessageAttachment = apitypes.MessageAttachment
 type MessageAttachmentUpload = apitypes.MessageAttachmentUpload
 
 type BotEvent struct {
+	TaskID        string              `json:"task_id,omitempty"`
 	Channel       string              `json:"channel,omitempty"`
 	ParticipantID string              `json:"participant_id,omitempty"`
 	MessageID     string              `json:"message_id"`

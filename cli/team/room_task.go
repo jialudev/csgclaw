@@ -18,7 +18,8 @@ func (roomTaskCmd) Summary() string {
 }
 func (c roomTaskCmd) Run(ctx context.Context, run *command.Context, args []string, globals command.GlobalOptions) error {
 	if len(args) == 0 || command.IsHelpArg(args[0]) {
-		run.UsageCommandGroup(c, run.Program+" room-task <submit|list|plan|claim|update|report|retry-delivery> --room <id> [flags]", []string{
+		run.UsageCommandGroup(c, run.Program+" room-task <context|submit|list|plan|claim|update|report|retry-delivery> --room <id> [flags]", []string{
+			"context  Inspect only this room's members, capabilities and task policy",
 			"submit --source-message <id> --actor-id <requester> --title <title> [--body <body>]  Create the room root task",
 			"plan --task <id>  Plan and start the root task",
 			"list  Inspect room tasks, progress and results",
@@ -31,7 +32,7 @@ func (c roomTaskCmd) Run(ctx context.Context, run *command.Context, args []strin
 	}
 	action := args[0]
 	switch action {
-	case "submit", "list", "plan", "claim", "update", "report", "retry-delivery":
+	case "context", "submit", "list", "plan", "claim", "update", "report", "retry-delivery":
 	default:
 		return fmt.Errorf("unknown room-task action %q", action)
 	}
@@ -56,6 +57,12 @@ func (c roomTaskCmd) Run(ctx context.Context, run *command.Context, args []strin
 	client := run.APIClient(globals)
 	var items []apitypes.TeamTask
 	switch action {
+	case "context":
+		got, err := client.RoomTaskContext(ctx, *room)
+		if err != nil {
+			return err
+		}
+		return command.WriteJSON(run.Stdout, got)
 	case "retry-delivery":
 		got, err := client.RetryRoomDelivery(ctx, *room)
 		if err != nil {

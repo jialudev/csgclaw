@@ -18,6 +18,7 @@ type ParticipantBridge struct {
 const maxPendingParticipantEventsPerParticipant = 64
 
 type ParticipantEvent struct {
+	TaskID        string                    `json:"task_id,omitempty"`
 	MessageID     string                    `json:"message_id"`
 	RoomID        string                    `json:"room_id"`
 	Locale        string                    `json:"locale,omitempty"`
@@ -395,9 +396,10 @@ func messageEventForParticipant(room Room, sender User, message Message, partici
 	mentioned := len(mentions) > 0 || (!room.IsDirect && room.NotifyAllAgents) || room.CollaborationMode == "on_demand"
 	text := textForParticipantEvent(message, participantID)
 	if room.CollaborationMode == "on_demand" && canonicalIMUserID(participantID) == canonicalIMUserID(room.ManagerID) {
-		text = fmt.Sprintf("[On-demand collaboration: room=%s, source_message=%s. You coordinate this room; use room-task tools for actual work, not ordinary chat or status questions. Never create a Team. One root task per room; do not silently change an existing plan. Worker suggestions are not dispatches.]\n%s", room.ID, message.ID, text)
+		text = fmt.Sprintf("[On-demand collaboration: room=%s, source_message=%s. This Room is your complete collaboration scope. Read `csgclaw-cli room-task context --room %s` for current members, not global participant/agent lists or remembered workers. For actual user work use room-task list, submit, then plan; always create executable children, even for one Worker. Never use `task create --agent-id`, Team APIs, private chats, or another execution room. If room-task fails, report the blocker; do not fall back. Ordinary chat/status questions are not tasks. One root per room; do not silently change the plan. Worker suggestions are not dispatches.]\n%s", room.ID, message.ID, room.ID, text)
 	}
 	return ParticipantEvent{
+		TaskID:       roomExecutionTaskID(room, message),
 		MessageID:    message.ID,
 		RoomID:       room.ID,
 		Locale:       room.Locale,
@@ -433,6 +435,14 @@ func messageEventForParticipant(room Room, sender User, message Message, partici
 			},
 		},
 	}
+}
+
+func roomExecutionTaskID(room Room, message Message) string {
+	if room.CollaborationMode != "on_demand" || message.Event == nil || message.Event.Key != "task_assigned" {
+		return ""
+	}
+	id, _ := message.Metadata["room_task_id"].(string)
+	return strings.TrimSpace(id)
 }
 
 func textForParticipantEvent(message Message, participantID string) string {

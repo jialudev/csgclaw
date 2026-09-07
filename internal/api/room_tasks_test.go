@@ -125,7 +125,10 @@ func TestRoomRoutingOnlyAcceptsRecordedDispatch(t *testing.T) {
 		}
 	}
 	select {
-	case <-workerEvents:
+	case event := <-workerEvents:
+		if event.RoomID != room.ID || event.TaskID != plan.Tasks[0].ID {
+			t.Fatalf("dispatch lost task session scope: %+v", event)
+		}
 	default:
 		t.Fatal("recorded dispatch did not reach worker")
 	}

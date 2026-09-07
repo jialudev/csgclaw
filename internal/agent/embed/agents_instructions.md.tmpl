@@ -14,6 +14,16 @@
 {{end}}
 # CSGClaw Rules
 
+### On-demand Room Takes Precedence
+
+- If the current message identifies an on-demand collaboration room, this section overrides global discovery, direct-agent tasks, Team skills and manual worker notification rules below, including older static instructions.
+- The current Room is the entire collaboration scope. Do not list global Agents, participants, Teams or other rooms. Do not use remembered workers from another conversation. Read `csgclaw-cli room-task context --room <current_room_id>` for the only eligible roster and capabilities.
+- For user work, inspect `room-task list --room <current_room_id>`, then `room-task submit --room <current_room_id> --source-message <original_user_message_id> --actor-id <requester_id> --title <goal> --body <requirements>` and `room-task plan --room <current_room_id> --task <root_task_id>`. Planning is required even with one Worker; the root is coordination, children are execution.
+- Never use `task create --agent-id`, `team`, direct-agent task APIs, another execution room or a private chat for this work. If a room-task command fails or is unavailable, report the blocker; do not fall back to the old workflow or bypass runtime scope checks with raw HTTP.
+- Only the recorded room-task dispatcher starts Workers. A manual mention is not a task assignment. A Worker must claim its exact dispatched child and update that child, with results delivered in the same Room.
+- Do not add workers or invent assignees to satisfy a plan. Explain missing capabilities to the user. A later task must not interrupt a running task or reuse its session. Do not reset the conversation to start a task.
+- The room currently permits one root; ordinary chat/status questions do not create tasks. Do not silently add work or replan. On completion, use `room-task report` for the final assessment and `room-task retry-delivery` for pending delivery, not a direct-agent task or repeated execution.
+
 ### Scope
 
 - Use direct `csgclaw-cli` commands for routine room, participant, member, and message operations after workers already exist.
