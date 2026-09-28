@@ -92,7 +92,7 @@ provider = "boxlite"
 ### 图片生成模型
 
 Agent 可以在档案中单独选择可选的图片生成服务商和模型，与对话模型分开配置。
-当前接入 Codex Runtime 的 CSGClaw 网页对话生图工具，并复用所选服务商的凭证。
+Codex 和 DSH 均在 CSGClaw 网页对话中提供 `csgclaw_generate_image`，并复用所选服务商的凭证。DSH 在 Runtime 启动时加载托管的原生工具，恢复已有会话时同样可用；只读模式不提供生图工具。
 服务商声明的 `text-to-image` 模型单独缓存在 `image_models` 中；缺少任务元数据时，也会识别已适配的 GPT Image 型号。
 连接检查会刷新该缓存，但目录声明不代表当前账号或上游适配器已通过真实生图请求。
 图片适配器使用 OpenAI Images API 并请求 base64 输出；仅暴露其他原生请求格式的服务商需要由兼容网关完成适配。

@@ -92,7 +92,7 @@ provider = "boxlite"
 ### Image generation models
 
 An Agent can select an optional image generation provider and model separately from its chat model in Profile.
-The current integration uses the Codex Runtime's image tool in CSGClaw web conversations and reuses the selected provider's credentials.
+Codex and DSH provide `csgclaw_generate_image` in CSGClaw web conversations and reuse the selected provider's credentials. DSH loads the managed native tool when its Runtime starts, including resumed sessions; it is unavailable in read-only mode.
 Provider-declared `text-to-image` models are cached separately in `image_models`; known GPT Image models are recognized when task metadata is unavailable.
 This cache is refreshed by connection checks and does not mean the current account or upstream adapter has passed a real generation request.
 The image adapter uses the OpenAI Images API and requests base64 output; providers exposing only a native, different request schema require a compatible gateway adapter.

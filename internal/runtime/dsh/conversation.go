@@ -43,7 +43,9 @@ func (c *conversation) Run(ctx context.Context, request contract.TurnRequest, si
 	if turnErr != nil {
 		return contract.TurnResult{Status: contract.TurnFailed, Error: turnErr}
 	}
-	turn := &activeTurn{request: request, sink: sink, tools: make(map[string]contract.ToolActivity)}
+	turnCtx, cancelTurn := context.WithCancel(ctx)
+	defer cancelTurn()
+	turn := &activeTurn{ctx: turnCtx, request: request, sink: sink, tools: make(map[string]contract.ToolActivity)}
 	proc.mu.Lock()
 	proc.active[sessionID] = turn
 	metadata := proc.profile.ModelMetadata.Normalized()

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,6 +91,7 @@ type process struct {
 	workspace            string
 	profile              agentruntime.Profile
 	imagePrompts         bool
+	imageBridge          *http.Server
 	mcp                  []acpMCPServer
 	mcpCatalogRevision   uint64
 	meta                 runtimeMetadata
@@ -106,6 +108,7 @@ type process struct {
 }
 
 type activeTurn struct {
+	ctx              context.Context
 	contextExceeded  bool
 	compactionFailed bool
 	request          contract.TurnRequest
@@ -305,11 +308,16 @@ func writeRuntimePatch(path string, profile agentruntime.Profile) error {
 	if err := os.WriteFile(bridgePath, []byte(contextBridgeModule), 0o600); err != nil {
 		return err
 	}
+	imageBridgePath := filepath.Join(filepath.Dir(path), "image-generation-bridge.mjs")
+	if err := os.WriteFile(imageBridgePath, []byte(imageGenerationBridgeModule), 0o600); err != nil {
+		return err
+	}
 	providerConfig, err := json.Marshal(dshProviderSettings(profile))
 	if err != nil {
 		return err
 	}
 	patch := fmt.Sprintf("- id: llm-deepseek\n  config: %s\n- id: acp\n  config:\n    provider: deepseek-official\n    model: %q\n- id: compaction-basic\n  config:\n    thresholdRatio: 0.75\n    maxOverflowRetries: 1\n    auto: %t\n- insert:\n    - id: csgclaw-context\n      name: %q\n", providerConfig, profile.ModelID, enabled, bridgePath)
+	patch += fmt.Sprintf("- insert:\n    - id: csgclaw-image-generation\n      name: %q\n", imageBridgePath)
 	if err := os.WriteFile(filepath.Join(filepath.Dir(path), contextPatchFileName), []byte(patch), 0o600); err != nil {
 		return err
 	}
@@ -463,12 +471,26 @@ func (r *Runtime) launch(ctx context.Context, root, workspace, binary string, pr
 		stderr.Close()
 		return nil, err
 	}
+	proc := &process{cmd: cmd, stdin: stdin, stderr: stderr, root: root, workspace: workspace, profile: profile.Normalized(), mcp: mcp, meta: meta, environment: append([]string(nil), environment...), extensionDigests: extensionDigests, extensionExecutables: extensionExecutables, done: make(chan struct{}), active: map[string]*activeTurn{}, ready: map[string]bool{}}
+	bridge, bridgeEnv, err := startImageGenerationBridge(proc)
+	if err != nil {
+		stderr.Close()
+		return nil, err
+	}
+	proc.imageBridge = bridge
+	bridgeOwned := false
+	defer func() {
+		if !bridgeOwned {
+			_ = bridge.Close()
+		}
+	}()
+	cmd.Env = append(cmd.Env, bridgeEnv...)
 	if err := cmd.Start(); err != nil {
 		stderr.Close()
 		return nil, fmt.Errorf("start DSH ACP process: %w", err)
 	}
 	client := newACPClient(stdout, stdin)
-	proc := &process{cmd: cmd, stdin: stdin, client: client, stderr: stderr, root: root, workspace: workspace, profile: profile.Normalized(), mcp: mcp, meta: meta, environment: append([]string(nil), environment...), extensionDigests: extensionDigests, extensionExecutables: extensionExecutables, done: make(chan struct{}), active: map[string]*activeTurn{}, ready: map[string]bool{}}
+	proc.client = client
 	client.setHandlers(
 		func(request serverRequest) { r.handleServerRequest(proc, request) },
 		func(note notification) { r.handleNotification(proc, note) },
@@ -514,6 +536,7 @@ func (r *Runtime) launch(ctx context.Context, root, workspace, binary string, pr
 		stderr.Close()
 		return nil, err
 	}
+	bridgeOwned = true
 	go r.waitProcess(proc)
 	return proc, nil
 }
@@ -538,6 +561,7 @@ func requiresHTTPMCP(servers []acpMCPServer) bool {
 func buildEnvironment(profile agentruntime.Profile, home, permissionMode string) []string {
 	blocked := map[string]bool{
 		"DSH_HOME": true, "DSH_AGENTS_HOME": true, llmAPIKeyEnvName: true, permissionModeEnvName: true,
+		imageBridgeURLEnvName: true, imageBridgeTokenEnvName: true,
 		"LARKSUITE_CLI_CONFIG_DIR": true, "LARK_CHANNEL": true, "LARK_CHANNEL_HOME": true,
 		"LARK_CHANNEL_PROFILE": true, "LARK_CHANNEL_CONFIG": true,
 	}
@@ -579,6 +603,7 @@ func buildEnvironmentWithExtensions(profile agentruntime.Profile, home, permissi
 
 func (r *Runtime) waitProcess(proc *process) {
 	_ = proc.cmd.Wait()
+	_ = proc.imageBridge.Close()
 	_ = proc.stderr.Close()
 	_ = proc.updateMetadata(func(meta *runtimeMetadata) {
 		meta.PID = 0
