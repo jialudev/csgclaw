@@ -3,6 +3,8 @@ package im
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -118,6 +120,10 @@ func TestLegacyOversizedMetadataMigratesOnNextSave(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load historical oversized metadata: %v", err)
 			}
+			unchanged, err := os.ReadFile(sessionPath)
+			if err != nil || !bytes.Equal(unchanged, append(data, '\n')) {
+				t.Fatalf("startup must leave legacy history unchanged: %v", err)
+			}
 			if _, err := service.CreateMessage(CreateMessageRequest{RoomID: "other-room", SenderID: AdminUserID, Content: "Hello"}); err != nil {
 				t.Fatalf("historical message blocks another room: %v", err)
 			}
@@ -133,6 +139,276 @@ func TestLegacyOversizedMetadataMigratesOnNextSave(t *testing.T) {
 				t.Fatalf("migration changed historical message content or metadata: %v", err)
 			}
 		})
+	}
+}
+
+func assertSessionFileUnchanged(t *testing.T, path string, before os.FileInfo) {
+	t.Helper()
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("unchanged file was rewritten: %s", path)
+	}
+}
+
+func TestSessionSaveReusesUnchangedFilesAndRepairsMissingBlob(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions", "room.jsonl")
+	messages := []Message{{ID: "large", SenderID: "agent", Content: strings.Repeat("A", 70*1024), CreatedAt: time.Now().UTC()}}
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	blobDir := filepath.Join(filepath.Dir(path), sessionBlobsDirName, "room")
+	entries, err := os.ReadDir(blobDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected one blob: %v", err)
+	}
+	blobPath := filepath.Join(blobDir, entries[0].Name())
+	sessionInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobInfo, err := os.Stat(blobPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	assertSessionFileUnchanged(t, path, sessionInfo)
+	assertSessionFileUnchanged(t, blobPath, blobInfo)
+	if err := os.Remove(blobPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	assertSessionFileUnchanged(t, path, sessionInfo)
+	loaded, err := loadMessagesJSONL(path, "room")
+	if err != nil || !reflect.DeepEqual(loaded, messages) {
+		t.Fatalf("missing blob was not restored: %v", err)
+	}
+}
+
+func TestSessionSaveDetectsSameSizeChangeAfterMatchingPrefix(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "room.jsonl")
+	messages := []Message{
+		{ID: "prefix", SenderID: "agent", Content: strings.Repeat("A", 35*1024), CreatedAt: time.Now().UTC()},
+		{ID: "reply", SenderID: "agent", Content: "old reply", CreatedAt: time.Now().UTC()},
+	}
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	messages[1].Content = "new reply"
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadMessagesJSONL(path, "room")
+	if err != nil || !reflect.DeepEqual(loaded, messages) {
+		t.Fatalf("same-size update was not saved: %v", err)
+	}
+}
+
+func TestSessionSaveAppendsOnlyNewMessages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "room.jsonl")
+	messages := []Message{{ID: "first", SenderID: "agent", Content: strings.Repeat("A", 35*1024), CreatedAt: time.Now().UTC()}}
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages = append(messages,
+		Message{ID: "second", SenderID: "agent", Content: "New reply", CreatedAt: time.Now().UTC()},
+		Message{ID: "third", SenderID: "agent", Content: strings.Repeat("B", 70*1024), CreatedAt: time.Now().UTC()},
+	)
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil || !os.SameFile(before, after) || after.Size() <= before.Size() {
+		t.Fatalf("new messages should append without replacing the existing file: %v", err)
+	}
+	loaded, err := loadMessagesJSONL(path, "room")
+	if err != nil || !reflect.DeepEqual(loaded, messages) {
+		t.Fatalf("appended messages did not survive reload: %v", err)
+	}
+	// Updating an existing message must replace its row, even when the new
+	// snapshot is longer. Do not turn progress updates into duplicate messages.
+	messages[0].Content += "updated"
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = loadMessagesJSONL(path, "room")
+	if err != nil || !reflect.DeepEqual(loaded, messages) {
+		t.Fatalf("updating an old message duplicated or lost records: %v", err)
+	}
+	// Removing a message must not leave a stale suffix on disk.
+	messages = messages[:1]
+	if err := saveMessagesJSONL(path, "room", messages); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = loadMessagesJSONL(path, "room")
+	if err != nil || !reflect.DeepEqual(loaded, messages) {
+		t.Fatalf("removed messages remain on disk: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(path), sessionBlobsDirName, "room"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("removed message blob remains: %v", err)
+	}
+}
+
+func TestSessionLoadHandlesInterruptedAppendWithoutStartupWrites(t *testing.T) {
+	message := Message{ID: "committed", SenderID: "agent", Content: "Keep this", CreatedAt: time.Now().UTC()}
+	line, err := json.Marshal(messageToSessionLine(message))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, tail string
+		first      bool
+		wantError  bool
+	}{
+		{name: "partial_object", tail: `{"id":"next","content":"half`},
+		{name: "partial_array", tail: `{"mentions":[{"id":`},
+		{name: "partial_first_message", tail: `{"id":`, first: true},
+		{name: "complete_legacy_row_without_newline", tail: string(line), first: true},
+		{name: "malformed_tail", tail: `{"id":!}`, wantError: true},
+		{name: "malformed_complete_line", tail: "{\"id\":\n", wantError: true},
+		{name: "malformed_middle_line", tail: "{\"id\":\n" + string(line) + "\n", wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "room.jsonl")
+			data := []byte(tc.tail)
+			var expected []Message
+			if !tc.first {
+				data = append(append(bytes.Clone(line), '\n'), data...)
+				expected = []Message{message}
+			} else if tc.tail == string(line) {
+				expected = []Message{message}
+			}
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := loadMessagesJSONL(path, "room")
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("corrupt complete records must not be silently discarded")
+				}
+				return
+			}
+			if err != nil || len(loaded) != len(expected) || (len(expected) > 0 && !reflect.DeepEqual(loaded, expected)) {
+				t.Fatalf("unexpected recovered history: %#v, error: %v", loaded, err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.Equal(after, data) {
+				t.Fatalf("reading history modified the original file: %v", err)
+			}
+			loaded = append(loaded, Message{ID: "retry", SenderID: "agent", Content: "Retry", CreatedAt: time.Now().UTC()})
+			if err := saveMessagesJSONL(path, "room", loaded); err != nil {
+				t.Fatal(err)
+			}
+			reloaded, err := loadMessagesJSONL(path, "room")
+			if err != nil || !reflect.DeepEqual(reloaded, loaded) {
+				t.Fatalf("normal save did not replace the incomplete tail: %v", err)
+			}
+		})
+	}
+}
+
+type failingSessionAppend struct {
+	*os.File
+	writeErr, syncErr, rollbackErr error
+	shortWrite                     bool
+}
+
+func (f *failingSessionAppend) Write(data []byte) (int, error) {
+	if f.shortWrite || f.writeErr != nil {
+		n, err := f.File.Write(data[:len(data)/2])
+		return n, errors.Join(err, f.writeErr)
+	}
+	return f.File.Write(data)
+}
+
+func (f *failingSessionAppend) Sync() error {
+	if err := f.syncErr; err != nil {
+		f.syncErr = nil // Fail the write sync, allow rollback to sync.
+		return err
+	}
+	return f.File.Sync()
+}
+
+func (f *failingSessionAppend) Truncate(size int64) error {
+	if f.rollbackErr != nil {
+		return f.rollbackErr
+	}
+	return f.File.Truncate(size)
+}
+
+func TestSessionAppendRollsBackWriteFailures(t *testing.T) {
+	writeFailure := errors.New("disk write failed")
+	syncFailure := errors.New("disk sync failed")
+	rollbackFailure := errors.New("truncate failed")
+	for _, tc := range []struct {
+		name string
+		file failingSessionAppend
+		want error
+	}{
+		{"partial_write", failingSessionAppend{writeErr: writeFailure}, writeFailure},
+		{"short_write", failingSessionAppend{shortWrite: true}, io.ErrShortWrite},
+		{"sync", failingSessionAppend{syncErr: syncFailure}, syncFailure},
+		{"rollback", failingSessionAppend{writeErr: writeFailure, rollbackErr: rollbackFailure}, rollbackFailure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "room.jsonl")
+			original := []byte("{\"id\":\"committed\"}\n")
+			if err := os.WriteFile(path, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.OpenFile(path, os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			if _, err := file.Seek(0, io.SeekEnd); err != nil {
+				t.Fatal(err)
+			}
+			tc.file.File = file
+			err = writeSessionAppend(&tc.file, []byte("{\"id\":\"next\"}\n"), int64(len(original)))
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want, err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || !bytes.HasPrefix(after, original) {
+				t.Fatalf("append damaged committed bytes: %v", err)
+			}
+			if tc.file.rollbackErr == nil && !bytes.Equal(after, original) {
+				t.Fatal("failed append was not rolled back")
+			}
+		})
+	}
+}
+
+func TestSessionAppendRejectsChangedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "room.jsonl")
+	if err := os.WriteFile(path, []byte("old\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := atomicWriteFile(path, []byte("replacement\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendSessionJSONL(path, []byte("next\n"), previous); err == nil {
+		t.Fatal("must reject a file replaced after comparison")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "replacement\n" {
+		t.Fatalf("changed file was overwritten: %v", err)
 	}
 }
 
@@ -337,6 +613,14 @@ func TestSaveEmptyMessagesTruncatesSessionAndRemovesBlobs(t *testing.T) {
 	if _, err := os.Stat(blobDir); !os.IsNotExist(err) {
 		t.Fatalf("Stat(blob dir) error = %v, want not exist", err)
 	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveMessagesJSONL(path, roomID, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertSessionFileUnchanged(t, path, before)
 }
 
 func TestLoadLegacyOversizedInlineLine(t *testing.T) {

@@ -171,6 +171,16 @@ func readSessionJSONLLines(r io.Reader) ([][]byte, error) {
 			if len(trimmed) > maxSessionReadLineBytes {
 				return nil, fmt.Errorf("im session line exceeds %d bytes", maxSessionReadLineBytes)
 			}
+			if err == io.EOF {
+				// A crashed append may leave an incomplete final JSON value. Keep
+				// earlier records readable without modifying the file on startup.
+				// Valid legacy rows without a newline, and other corruption, still
+				// go through the normal decoder below.
+				var value json.RawMessage
+				if errors.Is(json.NewDecoder(bytes.NewReader(trimmed)).Decode(&value), io.ErrUnexpectedEOF) {
+					break
+				}
+			}
 			lines = append(lines, bytes.Clone(trimmed))
 		}
 		if err == io.EOF {
@@ -278,7 +288,7 @@ func saveMessagesJSONL(path, roomID string, messages []Message) error {
 		data.WriteByte('\n')
 	}
 
-	if err := atomicWriteFile(path, data.Bytes(), 0o600); err != nil {
+	if err := writeSessionJSONLIfChanged(path, data.Bytes()); err != nil {
 		return fmt.Errorf("write im session: %w", err)
 	}
 	if err := cleanupRoomSessionBlobs(blobDir, keepBlobs); err != nil {
@@ -288,10 +298,111 @@ func saveMessagesJSONL(path, roomID string, messages []Message) error {
 }
 
 func truncateSessionJSONL(path string) error {
-	if err := atomicWriteFile(path, nil, 0o600); err != nil {
+	if err := writeSessionJSONLIfChanged(path, nil); err != nil {
 		return fmt.Errorf("write empty im session: %w", err)
 	}
 	return nil
+}
+
+func writeSessionJSONLIfChanged(path string, data []byte) error {
+	previous, err := matchingSessionJSONLPrefix(path, data)
+	if err != nil {
+		return err
+	}
+	if previous != nil {
+		if previous.Size() == int64(len(data)) {
+			return nil
+		}
+		return appendSessionJSONL(path, data[previous.Size():], previous)
+	}
+	return atomicWriteFile(path, data, 0o600)
+}
+
+// Only a complete, byte-identical history can be reused. Updating or removing
+// any existing message falls back to atomic replacement, not duplicate rows.
+// Close the old file before the caller replaces it on Windows.
+func matchingSessionJSONLPrefix(path string, data []byte) (os.FileInfo, error) {
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > int64(len(data)) {
+		return nil, nil
+	}
+	prefix := data[:info.Size()]
+	if len(prefix) > 0 && prefix[len(prefix)-1] != '\n' {
+		return nil, nil
+	}
+	var buffer [32 * 1024]byte
+	for len(prefix) > 0 {
+		n := min(len(prefix), len(buffer))
+		if _, err := io.ReadFull(file, buffer[:n]); err != nil {
+			return nil, err
+		}
+		if !bytes.Equal(buffer[:n], prefix[:n]) {
+			return nil, nil
+		}
+		prefix = prefix[n:]
+	}
+	return info, nil
+}
+
+func appendSessionJSONL(path string, data []byte, previous os.FileInfo) error {
+	// Use a writable handle and an explicit offset: Windows append-only handles
+	// lack the write-data permission needed to truncate a failed append.
+	file, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	// Service serializes saves. Also reject a replacement/change between the
+	// comparison and opening the append handle; this is not a multi-writer log.
+	current, err := file.Stat()
+	if err == nil && (!os.SameFile(previous, current) || previous.Size() != current.Size() || !previous.ModTime().Equal(current.ModTime())) {
+		err = fmt.Errorf("im session changed before append")
+	}
+	if err == nil {
+		_, err = file.Seek(previous.Size(), io.SeekStart)
+	}
+	if err == nil {
+		err = writeSessionAppend(file, data, previous.Size())
+	}
+	return errors.Join(err, file.Close())
+}
+
+type sessionAppendFile interface {
+	io.Writer
+	Sync() error
+	Truncate(size int64) error
+}
+
+func writeSessionAppend(file sessionAppendFile, data []byte, previousSize int64) error {
+	n, err := file.Write(data)
+	if err == nil && n != len(data) {
+		err = io.ErrShortWrite
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if err == nil {
+		return nil
+	}
+	// Do not leave a failed attempt attached to the committed history. If the
+	// rollback itself fails, report it and leave blob cleanup to a later save.
+	if rollbackErr := file.Truncate(previousSize); rollbackErr != nil {
+		return errors.Join(err, fmt.Errorf("rollback im session append: %w", rollbackErr))
+	}
+	if rollbackErr := file.Sync(); rollbackErr != nil {
+		return errors.Join(err, fmt.Errorf("sync im session append rollback: %w", rollbackErr))
+	}
+	return err
 }
 
 func encodeSessionMessageLine(sessionsRoot, roomID string, message Message) ([]byte, string, error) {
@@ -338,8 +449,16 @@ func encodeSessionMessageLine(sessionsRoot, roomID string, message Message) ([]b
 		return nil, "", fmt.Errorf("encode im session message: metadata exceeds %d bytes for message %s", maxSessionJSONLLineBytes, message.ID)
 	}
 	blobPath := filepath.Join(sessionsRoot, filepath.FromSlash(relativeRef))
-	if err := atomicWriteFile(blobPath, blobData, 0o600); err != nil {
-		return nil, "", fmt.Errorf("write im session blob: %w", err)
+	// The content hash names an immutable payload. Reuse committed blobs rather
+	// than writing and syncing every historical tool result on every save.
+	info, err := os.Lstat(blobPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, "", fmt.Errorf("stat im session blob: %w", err)
+	}
+	if info == nil || !info.Mode().IsRegular() || info.Size() != int64(len(blobData)) {
+		if err := atomicWriteFile(blobPath, blobData, 0o600); err != nil {
+			return nil, "", fmt.Errorf("write im session blob: %w", err)
+		}
 	}
 	return data, relativeRef, nil
 }
