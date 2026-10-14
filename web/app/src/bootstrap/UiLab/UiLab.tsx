@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Button,
+  Checkbox,
   Combobox,
   DialogBody,
   DialogCloseButton,
@@ -13,6 +14,7 @@ import {
   PanelHeader,
   SegmentedControl,
   Select,
+  Switch,
   TextArea,
   TextInput,
   TooltipProvider,
@@ -22,6 +24,8 @@ import { FieldHelpTooltip } from "@/components/business/ProfileControls";
 import { createTranslator } from "@/shared/i18n";
 import type { ResolvedThemeMode } from "@/shared/theme/theme";
 import styles from "./UiLab.module.css";
+import "@/pages/WorkspacePage/components/WorkspaceComponents.css";
+import "@/pages/WorkspacePage/components/WorkspaceModals/WorkspaceModals.css";
 
 const options = Array.from({ length: 180 }, (_, index) => ({
   value: `model-${index + 1}`,
@@ -91,6 +95,24 @@ export function UiLab() {
           />
         </section>
         <section className={styles.card}>
+          <h2>Workspace style boundary</h2>
+          <div className="profile-section">
+            <Field label="Workspace input" error={error ? "Enter a value" : undefined}>
+              <TextInput placeholder="Component styles inside legacy workspace CSS" />
+            </Field>
+            <div className={styles.row}>
+              <Button variant="primary" disabled>
+                Disabled primary
+              </Button>
+              <Button variant="primary" loading>
+                Saving
+              </Button>
+              <Checkbox aria-label="Disabled checkbox" checked disabled />
+              <Switch aria-label="Disabled switch" checked disabled />
+            </div>
+          </div>
+        </section>
+        <section className={styles.card}>
           <h2>Selection controls</h2>
           <div className={styles.grid}>
             <Field label="Sort order">
@@ -104,7 +126,11 @@ export function UiLab() {
                 ]}
               />
             </Field>
-            <Field label="Search picker" hint="Try arrows, Enter, Escape and Tab">
+            <Field
+              label="Search picker"
+              hint="Try arrows, Enter, Escape and Tab"
+              error={error ? "Choose a model" : undefined}
+            >
               <Combobox
                 value={value}
                 onValueChange={setValue}
