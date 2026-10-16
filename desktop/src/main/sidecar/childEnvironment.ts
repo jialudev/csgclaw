@@ -305,7 +305,7 @@ function platformPathFallbacks(
 ): string[] {
   if (platform === DesktopPlatform.MacOS) {
     return [
-      path.join(homeDirectory, ".docker", "bin"),
+      path.posix.join(homeDirectory, ".docker", "bin"),
       "/opt/homebrew/bin",
       "/usr/local/bin",
       "/Applications/Docker.app/Contents/Resources/bin",
@@ -317,7 +317,7 @@ function platformPathFallbacks(
   }
   if (platform === DesktopPlatform.Linux) {
     return [
-      path.join(homeDirectory, ".local", "bin"),
+      path.posix.join(homeDirectory, ".local", "bin"),
       "/usr/local/bin",
       "/usr/bin",
       "/bin",
