@@ -74,7 +74,7 @@ fs.mkdirSync(path.dirname(updateConfig), { recursive: true });
 fs.writeFileSync(
   updateConfig,
   `${JSON.stringify(
-    { base_url: updateBaseURL || "", channels_base_url: updateChannelsBaseURL || "" },
+    { disabled: true, base_url: "", channels_base_url: "" },
     null,
     2,
   )}\n`,
@@ -253,7 +253,7 @@ const config: ForgeConfig = {
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
       [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
       [FuseV1Options.OnlyLoadAppFromAsar]: true,
-      [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
+      // Electron 22 has no GrantFileProtocolExtraPrivileges fuse.
     }),
   ],
   hooks: {

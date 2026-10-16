@@ -9,7 +9,7 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "pnpm run build && node --test dist/main/channelSwitchUpdate.test.js dist/main/deferredRelaunch.test.js dist/main/desktopLogger.test.js dist/main/desktopThemePreference.test.js dist/main/navigationPolicy.test.js dist/main/sidecar/childEnvironment.test.js dist/main/sidecar/systemProxy.test.js dist/main/updateFeed.test.js dist/main/updatePolicy.test.js dist/main/windowsTaskbar.test.js dist/main/windowsShortcuts.test.js dist/main/windowsThemeIcon.test.js dist/preload/index.test.js dist/shared/desktopEnvironment.test.js dist/shared/desktopTheme.test.js dist/shared/releaseVersion.test.js",
+    "test": "pnpm run build && tsc -p tsconfig.test.json && node --test dist/main/channelSwitchUpdate.test.js dist/main/deferredRelaunch.test.js dist/main/desktopLogger.test.js dist/main/desktopThemePreference.test.js dist/main/navigationPolicy.test.js dist/main/sidecar/childEnvironment.test.js dist/main/sidecar/systemProxy.test.js dist/main/updateFeed.test.js dist/main/updatePolicy.test.js dist/main/updater.test.js dist/main/windowsTaskbar.test.js dist/main/windowsShortcuts.test.js dist/main/windowsThemeIcon.test.js dist/preload/index.test.js dist/shared/desktopEnvironment.test.js dist/shared/desktopTheme.test.js dist/shared/releaseVersion.test.js",
     "start": "pnpm run build && electron-forge start",
     "make": "pnpm run build && electron-forge make",
     "publish": "pnpm run build && electron-forge publish"
@@ -28,11 +28,12 @@
     "@electron-forge/shared-types": "7.11.2",
     "@electron/fuses": "2.1.3",
     "@types/electron-squirrel-startup": "1.0.2",
-    "@types/node": "24.9.0",
-    "electron": "43.2.0",
+    "@types/node": "16.18.126",
+    "electron": "22.3.27",
     "electron-winstaller": "5.4.4",
     "lodash": "4.18.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@types/node-host": "npm:@types/node@24.9.0"
   },
   "engines": {
     "node": ">=22.13.0 <25",

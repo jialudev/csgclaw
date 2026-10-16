@@ -8,6 +8,7 @@ overrides:
   yauzl: 3.3.1
 
 allowBuilds:
+  electron: true
   electron-winstaller: true
   fs-xattr: true
   macos-alias: true

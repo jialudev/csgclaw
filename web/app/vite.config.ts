@@ -1,5 +1,4 @@
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 import checker from "vite-plugin-checker";
 import { defineConfig } from "vite";
 import type { PluginOption } from "vite";
@@ -39,7 +38,6 @@ function manualChunks(id: string): string | undefined {
 
 export default defineConfig(({ command }) => ({
   plugins: [
-    tailwindcss(),
     react(),
     keepStaticDistPlaceholderPlugin,
     command === "serve" &&
@@ -63,6 +61,8 @@ export default defineConfig(({ command }) => ({
     },
   },
   build: {
+    target: "chrome108",
+    cssTarget: "chrome108",
     outDir: "../static-dist",
     emptyOutDir: true,
     assetsDir: "assets",

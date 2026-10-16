@@ -995,6 +995,7 @@ try {
         "install-sandbox-cli" { Invoke-TargetBuildSandboxCli }
         "build" { Invoke-TargetBuild }
         "build-all" { Invoke-TargetBuild }
+        "desktop-backend-bundle" { Invoke-DesktopBackendBundle -Goos $script:TargetOs -Goarch $script:TargetArch }
         "desktop-package" { Invoke-TargetDesktopPackage }
         "desktop-msix" { Invoke-TargetDesktopPackage -WindowsChannel "store" }
         "run" { Invoke-TargetRun }
