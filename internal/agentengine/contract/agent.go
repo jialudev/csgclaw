@@ -2,6 +2,7 @@ package contract
 
 import (
 	"context"
+	"csgclaw/internal/apitypes"
 	"csgclaw/internal/modelprovider"
 	"csgclaw/internal/resourcequery"
 	skill "csgclaw/internal/skill/state"
@@ -80,17 +81,18 @@ type Agent struct {
 // Updating it atomically replaces Skills and MCP configuration together
 // with the rest of the desired state.
 type AgentSpec struct {
-	Name         string                     `json:"name"`
-	Description  string                     `json:"description,omitempty"`
-	Instructions string                     `json:"instructions,omitempty"`
-	Role         AgentRole                  `json:"role"`
-	Runtime      RuntimeSpec                `json:"runtime"`
-	Model        ModelSpec                  `json:"model"`
-	SkillStates  map[string]skill.State     `json:"skill_states,omitempty"`
-	Skills       []string                   `json:"skills,omitempty"`
-	MCPServers   map[string]MCPServerConfig `json:"mcp_servers,omitempty"`
-	Memory       *MemorySpec                `json:"memory,omitempty"`
-	DesiredState AgentDesiredState          `json:"desired_state,omitempty"`
+	Dependencies []apitypes.RuntimeDependency `json:"dependencies,omitempty"`
+	Name         string                       `json:"name"`
+	Description  string                       `json:"description,omitempty"`
+	Instructions string                       `json:"instructions,omitempty"`
+	Role         AgentRole                    `json:"role"`
+	Runtime      RuntimeSpec                  `json:"runtime"`
+	Model        ModelSpec                    `json:"model"`
+	SkillStates  map[string]skill.State       `json:"skill_states,omitempty"`
+	Skills       []string                     `json:"skills,omitempty"`
+	MCPServers   map[string]MCPServerConfig   `json:"mcp_servers,omitempty"`
+	Memory       *MemorySpec                  `json:"memory,omitempty"`
+	DesiredState AgentDesiredState            `json:"desired_state,omitempty"`
 }
 
 type MemorySpec struct {

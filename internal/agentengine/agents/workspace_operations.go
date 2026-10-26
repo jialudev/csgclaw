@@ -2,6 +2,7 @@ package agents
 
 import (
 	context "context"
+	"csgclaw/internal/apitypes"
 	config "csgclaw/internal/config"
 	agentruntime "csgclaw/internal/runtime"
 	hub "csgclaw/internal/template"
@@ -85,6 +86,7 @@ func (s *WorkspaceService) HubPublishSpec(agentID string, includeMemory bool) (h
 		DisplayName:    got.Name,
 		Avatar:         got.Avatar,
 		Description:    got.Description,
+		Dependencies:   append([]apitypes.RuntimeDependency(nil), got.Dependencies...),
 		RuntimeKind:    got.RuntimeConfig().Kind(),
 		Image:          got.Image,
 		RuntimeOptions: runtimeOptions,

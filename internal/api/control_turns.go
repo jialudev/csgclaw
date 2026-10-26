@@ -20,6 +20,8 @@ import (
 
 func (h *Handler) registerControlRoutes(r chi.Router) {
 	r.Get("/capabilities", h.getControlCapabilities)
+	r.Get("/readiness", h.preflightAgent)
+	r.Post("/preflight", h.preflightAgent)
 	r.Get("/configuration", h.getControlConfiguration)
 	r.Patch("/configuration", h.patchControlConfiguration)
 	r.Post("/configuration:apply", h.applyControlConfiguration)

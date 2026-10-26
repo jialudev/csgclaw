@@ -75,3 +75,27 @@ flowchart LR
 IM、旧 responses 和新 turns 最终都进入同一个 Engine；IM 的 room/task 会话通过稳定的 `observed.*` 别名只读列出，历史不各存一份；继续聊天仍走原消息 API，保留频道自身的记录、授权与投递。执行请求、最终结果、事件和文件随控制数据目录保存；进度在运行时实时订阅，崩溃后的未完成执行标记 `execution_unknown`，绝不自动重跑外部工具。
 
 `/healthz` 只检查进程；受保护的 `/readyz` 检查服务配置和控制存储，具体 Agent 能否执行以 capabilities 为准。本地与云端各自部署，共用代码，不自动复制两台机器的数据。
+
+## AH-05：模板依赖与运行检查
+
+模板 `agentfile.toml` 可新增以下可选内容，旧模板无需修改：
+
+```toml
+[[dependencies]]
+name = "node"
+min_version = "22.13.0"
+
+[[dependencies]]
+name = "python"
+min_version = "3.10"
+optional = true
+```
+
+支持 node、python（python3）、npm、git、bash、uv；只执行固定的版本查询，不接受模板提供的安装命令。依赖随模板读写、导入、Agent 保存和再次导出保留；宿主模式创建模板时检查必需依赖，缺项不静默换执行程序。
+
+- `POST /api/v1/hub/templates/{id}/preflight`：返回缺失或版本不符的工具，以及此服务真正安装的执行程序。
+- `GET /api/v1/agents/{id}/readiness`（也可 `POST .../preflight`）：核对 Agent 状态、声明依赖、模型配置和目录可写性。
+
+预检不发起付费模型请求，也不把“模型已配置”当作模型/MCP 网络已验证；响应明确给出 `model_probe / mcp_probe = not_performed`。外层沙盒的工具未实际探测时返回 `sandbox_probe_required`，不能用宿主机的 Node/Python 版本冒充沙盒环境。
+
+CPU/内存是否充足、实例休眠唤醒、发布范围、自定义页面和市场注册属于 Server / Portal；这些能力不在 CSGClaw 服务里伪造。

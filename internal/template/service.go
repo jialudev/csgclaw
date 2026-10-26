@@ -263,6 +263,7 @@ func (s *Service) PublishTemplate(ctx context.Context, id, registry string, incl
 		RuntimeKind:    item.RuntimeKind,
 		Version:        item.Version,
 		Image:          item.Image,
+		Dependencies:   append([]apitypes.RuntimeDependency(nil), item.Dependencies...),
 		RuntimeOptions: cloneTemplateRuntimeOptions(item.RuntimeOptions),
 		WorkspaceRef:   workspace,
 		MCPServers:     mcpServers,

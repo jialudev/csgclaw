@@ -768,6 +768,7 @@ func createAgentSpec(spec contract.AgentSpec) CreateAgentSpec {
 	result := CreateAgentSpec{
 		Name:               strings.TrimSpace(spec.Name),
 		Description:        strings.TrimSpace(spec.Description),
+		Dependencies:       slices.Clone(spec.Dependencies),
 		Instructions:       strings.TrimSpace(spec.Instructions),
 		Skills:             slices.Clone(spec.Skills),
 		Image:              strings.TrimSpace(spec.Runtime.Image),
@@ -1011,6 +1012,7 @@ func mcpFromService(input map[string]any) map[string]contract.MCPServerConfig {
 }
 
 func cloneAgentSpec(input contract.AgentSpec) contract.AgentSpec {
+	input.Dependencies = slices.Clone(input.Dependencies)
 	input.Skills = append([]string(nil), input.Skills...)
 	input.Runtime.Credentials = maps.Clone(input.Runtime.Credentials)
 	input.Runtime.Options = utils.CloneAnyMap(input.Runtime.Options)
@@ -1054,6 +1056,7 @@ func (f *Controller) specFromService(selected Agent, skills []string, includeSec
 	spec := contract.AgentSpec{
 		Name:         selected.Name,
 		Description:  selected.Description,
+		Dependencies: slices.Clone(selected.Dependencies),
 		Instructions: selected.Instructions,
 		Role:         role,
 		Runtime: contract.RuntimeSpec{

@@ -109,6 +109,7 @@ func (s *LocalStore) Get(_ context.Context, id string) (Template, error) {
 		Version:        strings.TrimSpace(manifest.Version),
 		Image:          manifestImageRef(manifest.Image),
 		ImageEnv:       manifestImageEnv(manifest.Image),
+		Dependencies:   append([]apitypes.RuntimeDependency(nil), manifest.Dependencies...),
 		RuntimeOptions: runtimeOptions,
 		WorkspaceRef:   s.workspaceRef(id),
 		UpdatedAt:      updatedAt,
@@ -274,6 +275,7 @@ func (s *LocalStore) writeManifest(path string, spec PublishSpec) error {
 		Image: templateImageSection{
 			Ref: spec.Image,
 		},
+		Dependencies:   append([]apitypes.RuntimeDependency(nil), spec.Dependencies...),
 		RuntimeOptions: cloneTemplateRuntimeOptions(spec.RuntimeOptions),
 		UpdatedAt:      spec.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}

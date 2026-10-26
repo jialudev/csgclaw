@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"csgclaw/internal/apitypes"
 	agentruntime "csgclaw/internal/runtime"
 	hub "csgclaw/internal/template"
 	"csgclaw/internal/utils"
@@ -23,29 +24,30 @@ const (
 const StatusRuntimeUnavailable = "runtime_unavailable"
 
 type Agent struct {
-	ID               string                   `json:"id"`
-	Name             string                   `json:"name"`
-	Description      string                   `json:"description,omitempty"`
-	Instructions     string                   `json:"instructions,omitempty"`
-	RuntimeID        string                   `json:"runtime_id,omitempty"`
-	RuntimeKind      string                   `json:"runtime_kind,omitempty"`
-	RuntimeName      string                   `json:"runtime_name,omitempty"`
-	SandboxEnabled   bool                     `json:"sandbox_enabled,omitempty"`
-	Image            string                   `json:"image,omitempty"`
-	Avatar           string                   `json:"avatar,omitempty"`
-	BoxID            string                   `json:"box_id,omitempty"`
-	RuntimeOptions   map[string]any           `json:"runtime_options,omitempty"`
-	SkillStates      map[string]skill.State   `json:"skill_states,omitempty"`
-	MCPServers       map[string]any           `json:"mcpServers,omitempty"`
-	Role             string                   `json:"role"`
-	Status           string                   `json:"status"`
-	DesiredState     string                   `json:"-"`
-	CreatedAt        time.Time                `json:"created_at"`
-	UpdatedAt        time.Time                `json:"updated_at,omitempty"`
-	Profile          string                   `json:"profile,omitempty"`
-	AgentProfile     AgentProfile             `json:"agent_profile,omitempty"`
-	ProfileComplete  bool                     `json:"profile_complete"`
-	DetectionResults []ProfileDetectionResult `json:"detection_results,omitempty"`
+	Dependencies     []apitypes.RuntimeDependency `json:"dependencies,omitempty"`
+	ID               string                       `json:"id"`
+	Name             string                       `json:"name"`
+	Description      string                       `json:"description,omitempty"`
+	Instructions     string                       `json:"instructions,omitempty"`
+	RuntimeID        string                       `json:"runtime_id,omitempty"`
+	RuntimeKind      string                       `json:"runtime_kind,omitempty"`
+	RuntimeName      string                       `json:"runtime_name,omitempty"`
+	SandboxEnabled   bool                         `json:"sandbox_enabled,omitempty"`
+	Image            string                       `json:"image,omitempty"`
+	Avatar           string                       `json:"avatar,omitempty"`
+	BoxID            string                       `json:"box_id,omitempty"`
+	RuntimeOptions   map[string]any               `json:"runtime_options,omitempty"`
+	SkillStates      map[string]skill.State       `json:"skill_states,omitempty"`
+	MCPServers       map[string]any               `json:"mcpServers,omitempty"`
+	Role             string                       `json:"role"`
+	Status           string                       `json:"status"`
+	DesiredState     string                       `json:"-"`
+	CreatedAt        time.Time                    `json:"created_at"`
+	UpdatedAt        time.Time                    `json:"updated_at,omitempty"`
+	Profile          string                       `json:"profile,omitempty"`
+	AgentProfile     AgentProfile                 `json:"agent_profile,omitempty"`
+	ProfileComplete  bool                         `json:"profile_complete"`
+	DetectionResults []ProfileDetectionResult     `json:"detection_results,omitempty"`
 	// Availability is a transient observation of whether a running runtime can
 	// accept work. It is deliberately excluded from the persisted agent record:
 	// lifecycle state is durable, while readiness may change between probes.
@@ -123,37 +125,39 @@ type runtimeJSON struct {
 
 func (a *Agent) UnmarshalJSON(data []byte) error {
 	type agentJSON struct {
-		ID               string                   `json:"id"`
-		Name             string                   `json:"name"`
-		Description      string                   `json:"description,omitempty"`
-		Instructions     string                   `json:"instructions,omitempty"`
-		RuntimeID        string                   `json:"runtime_id,omitempty"`
-		RuntimeKind      string                   `json:"runtime_kind,omitempty"`
-		RuntimeName      string                   `json:"runtime_name,omitempty"`
-		SandboxEnabled   *bool                    `json:"sandbox_enabled,omitempty"`
-		Runtime          *runtimeJSON             `json:"runtime,omitempty"`
-		Image            string                   `json:"image,omitempty"`
-		Avatar           string                   `json:"avatar,omitempty"`
-		BoxID            string                   `json:"box_id,omitempty"`
-		RuntimeOptions   map[string]any           `json:"runtime_options,omitempty"`
-		SkillStates      map[string]skill.State   `json:"skill_states,omitempty"`
-		MCPServers       map[string]any           `json:"mcpServers,omitempty"`
-		Role             string                   `json:"role"`
-		Status           string                   `json:"status"`
-		DesiredState     string                   `json:"desired_state,omitempty"`
-		CreatedAt        time.Time                `json:"created_at"`
-		UpdatedAt        time.Time                `json:"updated_at,omitempty"`
-		ModelConfig      json.RawMessage          `json:"model_config"`
-		Profile          json.RawMessage          `json:"profile"`
-		AgentProfile     AgentProfile             `json:"agent_profile,omitempty"`
-		ProfileComplete  bool                     `json:"profile_complete"`
-		DetectionResults []ProfileDetectionResult `json:"detection_results,omitempty"`
+		Dependencies     []apitypes.RuntimeDependency `json:"dependencies,omitempty"`
+		ID               string                       `json:"id"`
+		Name             string                       `json:"name"`
+		Description      string                       `json:"description,omitempty"`
+		Instructions     string                       `json:"instructions,omitempty"`
+		RuntimeID        string                       `json:"runtime_id,omitempty"`
+		RuntimeKind      string                       `json:"runtime_kind,omitempty"`
+		RuntimeName      string                       `json:"runtime_name,omitempty"`
+		SandboxEnabled   *bool                        `json:"sandbox_enabled,omitempty"`
+		Runtime          *runtimeJSON                 `json:"runtime,omitempty"`
+		Image            string                       `json:"image,omitempty"`
+		Avatar           string                       `json:"avatar,omitempty"`
+		BoxID            string                       `json:"box_id,omitempty"`
+		RuntimeOptions   map[string]any               `json:"runtime_options,omitempty"`
+		SkillStates      map[string]skill.State       `json:"skill_states,omitempty"`
+		MCPServers       map[string]any               `json:"mcpServers,omitempty"`
+		Role             string                       `json:"role"`
+		Status           string                       `json:"status"`
+		DesiredState     string                       `json:"desired_state,omitempty"`
+		CreatedAt        time.Time                    `json:"created_at"`
+		UpdatedAt        time.Time                    `json:"updated_at,omitempty"`
+		ModelConfig      json.RawMessage              `json:"model_config"`
+		Profile          json.RawMessage              `json:"profile"`
+		AgentProfile     AgentProfile                 `json:"agent_profile,omitempty"`
+		ProfileComplete  bool                         `json:"profile_complete"`
+		DetectionResults []ProfileDetectionResult     `json:"detection_results,omitempty"`
 	}
 	var decoded agentJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
 	out := Agent{
+		Dependencies:     slices.Clone(decoded.Dependencies),
 		ID:               decoded.ID,
 		Name:             decoded.Name,
 		Description:      decoded.Description,
@@ -232,31 +236,32 @@ func (a *Agent) UnmarshalJSON(data []byte) error {
 }
 
 type CreateAgentSpec struct {
-	ID                   string            `json:"id,omitempty"`
-	Name                 string            `json:"name"`
-	Description          string            `json:"description,omitempty"`
-	Instructions         string            `json:"instructions,omitempty"`
-	Skills               []string          `json:"skills,omitempty"`
-	Image                string            `json:"image,omitempty"`
-	Avatar               string            `json:"-"`
-	RuntimeKind          string            `json:"-"`
-	RuntimeName          string            `json:"runtime_name,omitempty"`
-	SandboxEnabled       bool              `json:"sandbox_enabled,omitempty"`
-	FromTemplate         string            `json:"from_template,omitempty"`
-	TemplateInstructions string            `json:"-"`
-	TemplateMemory       string            `json:"-"`
-	TemplateMemorySet    bool              `json:"-"`
-	Role                 string            `json:"role,omitempty"`
-	Status               string            `json:"status,omitempty"`
-	CreatedAt            time.Time         `json:"created_at,omitempty"`
-	UpdatedAt            time.Time         `json:"updated_at,omitempty"`
-	Profile              string            `json:"profile,omitempty"`
-	RuntimeOptions       map[string]any    `json:"runtime_options,omitempty"`
-	MCPServers           map[string]any    `json:"mcpServers,omitempty"`
-	MCPServersSet        bool              `json:"-"`
-	RuntimeCredentials   map[string]string `json:"-"`
-	RuntimeInitShell     string            `json:"-"`
-	AgentProfile         AgentProfile      `json:"agent_profile,omitempty"`
+	Dependencies         []apitypes.RuntimeDependency `json:"dependencies,omitempty"`
+	ID                   string                       `json:"id,omitempty"`
+	Name                 string                       `json:"name"`
+	Description          string                       `json:"description,omitempty"`
+	Instructions         string                       `json:"instructions,omitempty"`
+	Skills               []string                     `json:"skills,omitempty"`
+	Image                string                       `json:"image,omitempty"`
+	Avatar               string                       `json:"-"`
+	RuntimeKind          string                       `json:"-"`
+	RuntimeName          string                       `json:"runtime_name,omitempty"`
+	SandboxEnabled       bool                         `json:"sandbox_enabled,omitempty"`
+	FromTemplate         string                       `json:"from_template,omitempty"`
+	TemplateInstructions string                       `json:"-"`
+	TemplateMemory       string                       `json:"-"`
+	TemplateMemorySet    bool                         `json:"-"`
+	Role                 string                       `json:"role,omitempty"`
+	Status               string                       `json:"status,omitempty"`
+	CreatedAt            time.Time                    `json:"created_at,omitempty"`
+	UpdatedAt            time.Time                    `json:"updated_at,omitempty"`
+	Profile              string                       `json:"profile,omitempty"`
+	RuntimeOptions       map[string]any               `json:"runtime_options,omitempty"`
+	MCPServers           map[string]any               `json:"mcpServers,omitempty"`
+	MCPServersSet        bool                         `json:"-"`
+	RuntimeCredentials   map[string]string            `json:"-"`
+	RuntimeInitShell     string                       `json:"-"`
+	AgentProfile         AgentProfile                 `json:"agent_profile,omitempty"`
 }
 
 func (s CreateAgentSpec) RuntimeConfig() agentruntime.RuntimeConfig {
@@ -694,6 +699,7 @@ func cloneAgent(src *Agent) *Agent {
 		return nil
 	}
 	dst := *src
+	dst.Dependencies = slices.Clone(src.Dependencies)
 	dst.AgentProfile = cloneProfile(src.AgentProfile)
 	dst.DetectionResults = append([]ProfileDetectionResult(nil), src.DetectionResults...)
 	dst.RuntimeOptions = utils.CloneAnyMap(src.RuntimeOptions)

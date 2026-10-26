@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"csgclaw/internal/apitypes"
 	"csgclaw/internal/config"
 	"csgclaw/internal/localstore"
 	agentruntime "csgclaw/internal/runtime"
@@ -72,35 +73,36 @@ type legacyWorker struct {
 }
 
 type persistedAgent struct {
-	SkillStates        map[string]skill.State     `json:"skill_states,omitempty"`
-	ID                 string                     `json:"id"`
-	Name               string                     `json:"name"`
-	Description        string                     `json:"description,omitempty"`
-	Instructions       string                     `json:"instructions,omitempty"`
-	RuntimeID          string                     `json:"runtime_id,omitempty"`
-	RuntimeKind        string                     `json:"runtime_kind,omitempty"`
-	Image              string                     `json:"image,omitempty"`
-	Avatar             string                     `json:"avatar,omitempty"`
-	BoxID              string                     `json:"box_id,omitempty"`
-	Runtime            *RuntimeRecord             `json:"runtime,omitempty"`
-	RuntimeOptions     map[string]any             `json:"-"`
-	MCPServers         map[string]any             `json:"-"`
-	RuntimeCredentials map[string]string          `json:"-"`
-	RuntimeInitShell   string                     `json:"-"`
-	Role               string                     `json:"role"`
-	Status             string                     `json:"status,omitempty"`
-	DesiredState       string                     `json:"desired_state,omitempty"`
-	CreatedAt          time.Time                  `json:"created_at"`
-	UpdatedAt          time.Time                  `json:"updated_at,omitempty"`
-	Profile            AgentProfile               `json:"model_config,omitempty"`
-	ProfileSelector    string                     `json:"-"`
-	Provider           string                     `json:"provider,omitempty"`
-	ModelID            string                     `json:"model_id,omitempty"`
-	ReasoningEffort    string                     `json:"reasoning_effort,omitempty"`
-	AgentProfile       AgentProfile               `json:"agent_profile,omitempty"`
-	ProfileComplete    bool                       `json:"profile_complete"`
-	DetectionResults   []ProfileDetectionResult   `json:"detection_results,omitempty"`
-	RuntimeExtensions  map[string]json.RawMessage `json:"-"`
+	Dependencies       []apitypes.RuntimeDependency `json:"dependencies,omitempty"`
+	SkillStates        map[string]skill.State       `json:"skill_states,omitempty"`
+	ID                 string                       `json:"id"`
+	Name               string                       `json:"name"`
+	Description        string                       `json:"description,omitempty"`
+	Instructions       string                       `json:"instructions,omitempty"`
+	RuntimeID          string                       `json:"runtime_id,omitempty"`
+	RuntimeKind        string                       `json:"runtime_kind,omitempty"`
+	Image              string                       `json:"image,omitempty"`
+	Avatar             string                       `json:"avatar,omitempty"`
+	BoxID              string                       `json:"box_id,omitempty"`
+	Runtime            *RuntimeRecord               `json:"runtime,omitempty"`
+	RuntimeOptions     map[string]any               `json:"-"`
+	MCPServers         map[string]any               `json:"-"`
+	RuntimeCredentials map[string]string            `json:"-"`
+	RuntimeInitShell   string                       `json:"-"`
+	Role               string                       `json:"role"`
+	Status             string                       `json:"status,omitempty"`
+	DesiredState       string                       `json:"desired_state,omitempty"`
+	CreatedAt          time.Time                    `json:"created_at"`
+	UpdatedAt          time.Time                    `json:"updated_at,omitempty"`
+	Profile            AgentProfile                 `json:"model_config,omitempty"`
+	ProfileSelector    string                       `json:"-"`
+	Provider           string                       `json:"provider,omitempty"`
+	ModelID            string                       `json:"model_id,omitempty"`
+	ReasoningEffort    string                       `json:"reasoning_effort,omitempty"`
+	AgentProfile       AgentProfile                 `json:"agent_profile,omitempty"`
+	ProfileComplete    bool                         `json:"profile_complete"`
+	DetectionResults   []ProfileDetectionResult     `json:"detection_results,omitempty"`
+	RuntimeExtensions  map[string]json.RawMessage   `json:"-"`
 }
 
 func (a persistedAgent) MarshalJSON() ([]byte, error) {
@@ -125,6 +127,9 @@ func (a persistedAgent) MarshalJSON() ([]byte, error) {
 		"name":       a.Name,
 		"role":       a.Role,
 		"created_at": a.CreatedAt,
+	}
+	if len(a.Dependencies) > 0 {
+		out["dependencies"] = a.Dependencies
 	}
 	if strings.TrimSpace(a.Description) != "" {
 		out["description"] = a.Description
@@ -246,6 +251,7 @@ func newPersistedAgent(a Agent) persistedAgent {
 		ID:                 a.ID,
 		Name:               a.Name,
 		Description:        a.Description,
+		Dependencies:       append([]apitypes.RuntimeDependency(nil), a.Dependencies...),
 		Instructions:       a.Instructions,
 		Image:              a.Image,
 		Runtime:            compactPersistedRuntime(runtimeRecordForAgent(a), topRX),
@@ -319,6 +325,7 @@ func (a persistedAgent) toAgent() Agent {
 		ID:                a.ID,
 		Name:              a.Name,
 		Description:       a.Description,
+		Dependencies:      append([]apitypes.RuntimeDependency(nil), a.Dependencies...),
 		Instructions:      a.Instructions,
 		RuntimeID:         runtimeID,
 		RuntimeKind:       runtimeKind,

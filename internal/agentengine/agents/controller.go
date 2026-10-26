@@ -6,6 +6,7 @@ import (
 	"csgclaw/internal/agentengine/contract"
 	"csgclaw/internal/agentengine/interactionstate"
 	"csgclaw/internal/agentengine/registry"
+	"csgclaw/internal/apitypes"
 	skillbuiltin "csgclaw/internal/skill/builtin"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,7 @@ import (
 	"csgclaw/internal/mcp"
 	agentruntime "csgclaw/internal/runtime"
 	runtimeinstructions "csgclaw/internal/runtime/instructions"
+	"csgclaw/internal/runtimeenv"
 	"csgclaw/internal/sandbox"
 	hub "csgclaw/internal/template"
 	"csgclaw/internal/utils"
@@ -1032,7 +1034,22 @@ func (s *Controller) CreateRecord(ctx context.Context, req CreateRequest) (Agent
 			defer cleanup()
 		}
 	}
-	return s.createNew(ctx, req.Spec)
+	created, err := s.createNew(ctx, req.Spec)
+	if err != nil || len(req.Spec.Dependencies) == 0 {
+		return created, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, key, ok := s.agentByIDLocked(created.ID)
+	if !ok {
+		return Agent{}, fmt.Errorf("created Agent is unavailable")
+	}
+	current.Dependencies = append([]apitypes.RuntimeDependency(nil), req.Spec.Dependencies...)
+	s.putAgentLocked(key, current)
+	if err := s.saveLocked(); err != nil {
+		return Agent{}, err
+	}
+	return current, nil
 }
 
 func (s *Controller) resolveTemplateCreateSpec(ctx context.Context, spec CreateAgentSpec) (CreateAgentSpec, func(), error) {
@@ -1074,6 +1091,12 @@ func (s *Controller) resolveTemplateCreateSpecWithService(
 				return spec, nil, nil
 			}
 			return CreateAgentSpec{}, nil, err
+		}
+	}
+	if len(item.Dependencies) > 0 && !agentruntime.RuntimeConfigForKind(item.RuntimeKind).Sandboxed {
+		report := runtimeenv.Inspect(ctx, item.Dependencies, nil)
+		if !report.Ready {
+			return CreateAgentSpec{}, nil, fmt.Errorf("template dependencies are unavailable; run template preflight for details")
 		}
 	}
 	workspace, err := hubSvc.FetchWorkspace(ctx, templateRef)
@@ -1246,6 +1269,7 @@ func validateDefaultTemplateCompatibility(expectedRole string, spec CreateAgentS
 }
 
 func applyTemplateDefaults(spec CreateAgentSpec, item hub.Template) CreateAgentSpec {
+	spec.Dependencies = append([]apitypes.RuntimeDependency(nil), item.Dependencies...)
 	if strings.TrimSpace(spec.Name) == "" {
 		spec.Name = item.Name
 	}

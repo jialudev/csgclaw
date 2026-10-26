@@ -9,6 +9,7 @@ import (
 	"csgclaw/internal/apitypes"
 	"csgclaw/internal/runtime"
 	runtimedsh "csgclaw/internal/runtime/dsh"
+	"csgclaw/internal/runtimeenv"
 )
 
 const currentAgentFileSchemaVersion = "agentfile/v1"
@@ -27,16 +28,17 @@ func ValidatePublishTemplateName(name string) error {
 }
 
 type templateManifest struct {
-	SchemaVersion  string               `toml:"schema_version,omitempty"`
-	Name           string               `toml:"name"`
-	Avatar         string               `toml:"avatar,omitempty"`
-	DisplayName    string               `toml:"display_name,omitempty"`
-	Description    string               `toml:"description,omitempty"`
-	RuntimeKind    string               `toml:"runtime_kind"`
-	Version        string               `toml:"version,omitempty"`
-	Image          templateImageSection `toml:"image"`
-	RuntimeOptions map[string]any       `toml:"runtime_options,omitempty"`
-	UpdatedAt      string               `toml:"updated_at,omitempty"`
+	Dependencies   []apitypes.RuntimeDependency `toml:"dependencies,omitempty"`
+	SchemaVersion  string                       `toml:"schema_version,omitempty"`
+	Name           string                       `toml:"name"`
+	Avatar         string                       `toml:"avatar,omitempty"`
+	DisplayName    string                       `toml:"display_name,omitempty"`
+	Description    string                       `toml:"description,omitempty"`
+	RuntimeKind    string                       `toml:"runtime_kind"`
+	Version        string                       `toml:"version,omitempty"`
+	Image          templateImageSection         `toml:"image"`
+	RuntimeOptions map[string]any               `toml:"runtime_options,omitempty"`
+	UpdatedAt      string                       `toml:"updated_at,omitempty"`
 }
 
 type templateImageSection struct {
@@ -108,6 +110,9 @@ func validateImageEnvContracts(items []templateImageEnvItem) error {
 }
 
 func validateManifest(manifest templateManifest) error {
+	if err := runtimeenv.Validate(manifest.Dependencies); err != nil {
+		return err
+	}
 	manifest.Name = strings.TrimSpace(manifest.Name)
 	if manifest.Name == "" {
 		return ErrTemplateNameRequired

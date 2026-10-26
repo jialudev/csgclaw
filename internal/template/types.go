@@ -16,6 +16,7 @@ const (
 )
 
 type Template struct {
+	Dependencies   []apitypes.RuntimeDependency
 	ID             string
 	Namespace      string
 	Avatar         string
@@ -65,6 +66,7 @@ type WorkspaceRef struct {
 }
 
 type PublishSpec struct {
+	Dependencies   []apitypes.RuntimeDependency
 	Registry       string
 	IncludeMemory  bool
 	ID             string

@@ -22,6 +22,7 @@ type ImageEnvContract struct {
 }
 
 type HubTemplate struct {
+	Dependencies   []RuntimeDependency  `json:"dependencies,omitempty"`
 	ID             string               `json:"id"`
 	Namespace      string               `json:"namespace,omitempty"`
 	Name           string               `json:"name"`

@@ -2157,6 +2157,7 @@ func presentHubTemplate(item hub.Template) apitypes.HubTemplate {
 		RuntimeKind:    bootstrapRuntimeKind(item.RuntimeKind),
 		Version:        item.Version,
 		Image:          item.Image,
+		Dependencies:   append([]apitypes.RuntimeDependency(nil), item.Dependencies...),
 		ImageEnv:       append([]apitypes.ImageEnvContract(nil), item.ImageEnv...),
 		RuntimeOptions: utils.CloneAnyMap(item.RuntimeOptions),
 		UpdatedAt:      item.UpdatedAt,
