@@ -9,6 +9,7 @@ import (
 func (h *Handler) Routes() chi.Router {
 	h.EnableConversationResources()
 	router := chi.NewRouter()
+	router.Use(h.externalUIRequests)
 	router.Use(h.authorizeAppPlatformRequests)
 	h.registerCoreRoutes(router)
 	h.registerChannelRoutes(router)
@@ -17,8 +18,11 @@ func (h *Handler) Routes() chi.Router {
 
 func (h *Handler) registerCoreRoutes(router chi.Router) {
 	router.Get("/healthz", h.handleHealthz)
+	router.Get("/readyz", h.handleReadyz)
 	router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/version", h.getVersion)
+		r.Post("/control/pair", h.pairExternalUI)
+		r.Post("/control/logout", h.unpairExternalUI)
 		r.Post("/feedback", h.handleFeedback)
 		r.Route("/upgrade", func(r chi.Router) {
 			r.Get("/status", h.getUpgradeStatus)
@@ -34,6 +38,7 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			r.Get("/", h.listAgents)
 			r.Post("/", h.createAgent)
 			r.Route("/{id}", func(r chi.Router) {
+				h.registerControlRoutes(r)
 				r.Handle("/mcp-file-bridge/{server}", http.HandlerFunc(h.handleMCPFileBridge))
 				r.Get("/connectors/gitlab", h.handleAgentGitLabConnector)
 				r.Put("/connectors/gitlab/config", h.handleAgentGitLabConnectorConfig)
@@ -63,8 +68,12 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 				r.Get("/workspace", h.handleAgentWorkspace)
 				r.Get("/workspace/file", h.handleAgentWorkspaceFile)
 				r.Get("/workspace/content", h.handleAgentWorkspaceContent)
-				r.Get("/workspace/location", h.handleAgentWorkspaceLocation)
-				r.Post("/workspace/open", h.handleAgentWorkspaceOpen)
+				if !h.apiOnly {
+					r.Get("/workspace/location", h.handleAgentWorkspaceLocation)
+				}
+				if !h.apiOnly {
+					r.Post("/workspace/open", h.handleAgentWorkspaceOpen)
+				}
 				r.Get("/skills", h.handleAgentSkills)
 				r.Get("/skill-summaries", h.handleAgentSkillSummaries)
 				r.Get("/resources", h.handleAgentResources)
@@ -192,7 +201,9 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 		r.Post("/agent-profiles/models", h.handleAgentProfileModels)
 		r.Get("/agent-profile-defaults", h.handleAgentProfileDefaults)
 		r.Patch("/agent-profile-defaults", h.handleAgentProfileDefaults)
-		r.Post("/local/directory-picker", h.handleLocalDirectoryPicker)
+		if !h.apiOnly {
+			r.Post("/local/directory-picker", h.handleLocalDirectoryPicker)
+		}
 		r.Get("/agents/image-candidates", h.listAgentImageCandidates)
 		r.Route("/config/bootstrap", func(r chi.Router) {
 			r.Get("/", h.getBootstrapConfig)
@@ -220,8 +231,10 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 				r.Post("/diagnostics/timings", h.reportDiagnosticTiming)
 				r.Get("/attachments", h.handleRoomAttachments)
 				r.Get("/attachments/{attachment_id}", h.handleRoomAttachmentDownload)
-				r.Get("/attachments/{attachment_id}/location", h.handleRoomAttachmentLocation)
-				r.Post("/attachments/{attachment_id}/open", h.handleRoomAttachmentOpen)
+				if !h.apiOnly {
+					r.Get("/attachments/{attachment_id}/location", h.handleRoomAttachmentLocation)
+					r.Post("/attachments/{attachment_id}/open", h.handleRoomAttachmentOpen)
+				}
 				r.Delete("/attachments/{attachment_id}", h.handleRoomAttachmentDelete)
 				r.Get("/tasks", h.handleListRoomTasks)
 				r.Get("/tasks/{task_id}", h.handleGetRoomTask)

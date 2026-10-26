@@ -16,6 +16,7 @@ import (
 	"csgclaw/internal/api"
 	"csgclaw/internal/channel/feishu"
 	"csgclaw/internal/connectors"
+	"csgclaw/internal/controlplane"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/mcp"
@@ -30,6 +31,8 @@ import (
 )
 
 type Options struct {
+	UIOrigins          []string
+	ControlStore       *controlplane.Store
 	ListenAddr         string
 	Listener           net.Listener
 	SandboxListener    net.Listener
@@ -75,6 +78,10 @@ type Options struct {
 
 func newHandler(opts Options) *api.Handler {
 	handler := api.NewHandlerWithAuth(opts.AgentServices, opts.AgentEngine, opts.IM, opts.IMBus, opts.ParticipantBridge, opts.Feishu, opts.LLM, opts.AccessToken, opts.NoAuth)
+	if opts.Desktop == nil {
+		_ = handler.SetUIOrigins(opts.UIOrigins)
+	}
+	handler.SetControlStore(opts.ControlStore, opts.Context)
 	handler.SetParticipantService(opts.Participant)
 	handler.SetParticipantWorkService(opts.WorkReporter, opts.WorkBus, opts.WorkControlBus)
 	handler.SetHubService(opts.Hub)
@@ -107,6 +114,9 @@ func newHandler(opts Options) *api.Handler {
 }
 
 func Run(opts Options) error {
+	if err := api.ValidateUIOrigins(opts.UIOrigins); err != nil {
+		return err
+	}
 	if opts.Context == nil {
 		opts.Context = context.Background()
 	}

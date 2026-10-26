@@ -132,6 +132,7 @@ export type AgentRuntimeAvailabilityLike = {
 };
 
 export type AgentLike = AgentProfileLike & {
+  configuration_revision?: string;
   skipped_resources?: Array<{ type?: "mcp" | "knowledge_base" | string; name?: string }> | null;
   agent_profile?: AgentProfileLike | null;
   model_config?: AgentProfileLike | null;
@@ -422,6 +423,7 @@ export function agentProfileConfig(item: AgentLike | null | undefined): AgentPro
 }
 
 export type AgentDraft = {
+  configuration_revision?: string;
   agent_id?: string;
   api_key: string;
   api_key_preview: string;
@@ -1483,6 +1485,7 @@ export function agentToDraft(agent: AgentDraftSource | null | undefined): AgentD
   const botType = normalizeBotType(agent?.bot_type ?? agent?.type);
   const base = profileToDraft(profile, agent);
   return {
+    ...(agent?.configuration_revision ? { configuration_revision: agent.configuration_revision } : {}),
     agent_id: agent?.id || "",
     name: agent?.name || "",
     role: agent?.role || WORKER_AGENT_ROLE,

@@ -1,3 +1,4 @@
+import { resolveBackendPath, backendCredentials } from "@/api/connection";
 import { ApiEndpoints, IM_EVENTS_SHARED_WORKER_PATH } from "@/shared/constants/api";
 import type { IMServerEvent } from "@/models/conversations";
 
@@ -19,11 +20,11 @@ function updateConnection(value: boolean) {
 
 const sharedWorkerURL = import.meta.env.DEV ? "/src/shared/realtime/sseSharedWorker.ts" : IM_EVENTS_SHARED_WORKER_PATH;
 
-function createSharedWorker() {
+function createSharedWorker(endpoint: string) {
   if (import.meta.env.DEV) {
-    return new SharedWorker(sharedWorkerURL, { type: "module" });
+    return new SharedWorker(sharedWorkerURL, { type: "module", name: endpoint });
   }
-  return new SharedWorker(sharedWorkerURL);
+  return new SharedWorker(sharedWorkerURL, { name: endpoint });
 }
 
 type SharedWorkerEnvelope = {
@@ -41,7 +42,7 @@ export function safeParseEventData(raw: string): IMServerEvent | null {
 }
 
 export function resolveIMEventsEndpoint(baseURI: string): string {
-  return new URL(ApiEndpoints.imEvents, baseURI).toString();
+  return resolveBackendPath(ApiEndpoints.imEvents, true) ?? new URL(ApiEndpoints.imEvents, baseURI).toString();
 }
 
 export function subscribeIMEvents(onEvent: (payload: IMServerEvent) => void): () => void {
@@ -49,7 +50,7 @@ export function subscribeIMEvents(onEvent: (payload: IMServerEvent) => void): ()
 
   if (typeof window.SharedWorker === "function") {
     try {
-      const worker = createSharedWorker();
+      const worker = createSharedWorker(endpoint);
       const port = worker.port;
       const handleMessage = ({ data }: MessageEvent<SharedWorkerEnvelope>) => {
         if (data?.type === "open") {
@@ -84,7 +85,7 @@ export function subscribeIMEvents(onEvent: (payload: IMServerEvent) => void): ()
     }
   }
 
-  const source = new EventSource(endpoint);
+  const source = new EventSource(endpoint, { withCredentials: backendCredentials() === "include" });
   source.onopen = () => {
     updateConnection(true);
     onEvent({ type: "connection.open" });

@@ -25,6 +25,8 @@ const (
 )
 
 type Binding struct {
+	SourceBackend   string `json:"source_backend,omitempty"`
+	ReadOnly        bool   `json:"read_only,omitempty"`
 	AgentID         string `json:"agent_id"`
 	ExternalSession string `json:"external_session_id"`
 	ConversationKey string `json:"conversation_key"`
@@ -316,4 +318,12 @@ func newConversationKey() (string, error) {
 		return "", fmt.Errorf("generate conversation key: %w", err)
 	}
 	return "conv_" + hex.EncodeToString(value[:]), nil
+}
+
+// BindExisting indexes a conversation already owned by Engine or an IM channel.
+// A caller cannot replace an existing session's target.
+func (s *Store) BindExisting(binding Binding) error {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	return s.importBinding(binding)
 }

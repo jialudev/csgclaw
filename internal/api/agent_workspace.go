@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/sha256"
 	"csgclaw/internal/utils/filebrowse"
+	"encoding/hex"
 	"errors"
 	"mime"
 	"net/http"
@@ -106,6 +108,10 @@ func (h *Handler) handleAgentWorkspaceFileRead(w http.ResponseWriter, r *http.Re
 		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if !file.Truncated && !file.Binary {
+		sum := sha256.Sum256([]byte(file.Content))
+		w.Header().Set("ETag", `"`+hex.EncodeToString(sum[:])+`"`)
 	}
 	writeJSON(w, http.StatusOK, file)
 }

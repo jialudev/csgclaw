@@ -149,6 +149,10 @@ func (h *Handler) createAgentSessionResponse(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if binding.ReadOnly {
+		writeAgentSessionError(w, 409, "legacy_session_read_only", "legacy history is read-only", nil)
+		return
+	}
 	createdAt := time.Now().UTC()
 	responseID := newAgentSessionAPIID("resp")
 	outputID := newAgentSessionAPIID("msg")

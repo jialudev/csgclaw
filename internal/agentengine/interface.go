@@ -113,6 +113,7 @@ const (
 	TurnSucceeded                    = contract.TurnSucceeded
 	TurnFailed                       = contract.TurnFailed
 	TurnCanceled                     = contract.TurnCanceled
+	ErrorExecutionUnknown            = contract.ErrorExecutionUnknown
 	ErrorInvalidRequest              = contract.ErrorInvalidRequest
 	ErrorAgentNotFound               = contract.ErrorAgentNotFound
 	ErrorAgentUnavailable            = contract.ErrorAgentUnavailable

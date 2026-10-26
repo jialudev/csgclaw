@@ -921,7 +921,11 @@ export function useAgentController({
         if (agentPageDraftLoadSeqRef.current !== loadSeq || agentPageDraftRequestRef.current !== requestID) {
           return;
         }
-        setAgentPageSaveError(errorMessage(err, t("agentActionFailed")));
+        setAgentPageSaveError(
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+        );
       }
     },
     [agentDraftFromItem, errorMessage, resetAgentPageModels, setAgentsData, t],
@@ -1224,7 +1228,10 @@ export function useAgentController({
       }
       return {
         billingURL: apiErrorBillingURL(err),
-        message: errorMessage(err, t("agentActionFailed")),
+        message:
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
       };
     }
   }
@@ -1268,7 +1275,11 @@ export function useAgentController({
       setAgentsError("");
     } catch (err) {
       if (!options.silent) {
-        setAgentsError(errorMessage(err, t("agentActionFailed")));
+        setAgentsError(
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+        );
       }
     }
   }
@@ -1574,7 +1585,11 @@ export function useAgentController({
       setAgentDraft(draft);
       setShowAgentModal(true);
     } catch (err) {
-      setAgentError(errorMessage(err, t("agentActionFailed")));
+      setAgentError(
+        apiErrorCode(err) === "configuration_conflict"
+          ? t("agentConfigurationConflict")
+          : errorMessage(err, t("agentActionFailed")),
+      );
     }
   }
 
@@ -1694,7 +1709,7 @@ export function useAgentController({
     setAgentPageBusy(true);
     setAgentPageSaveError("");
     try {
-      const saved = await updateAgentRequest(agentID, payload);
+      const saved = await updateDraftAgentRequest(agentID, payload, agentPageDraft);
       setAgentsData((current) => mergeAgentIntoList(current, saved));
       setAgentPageDraft((current) => {
         if (!current || String(current.agent_id ?? "").trim() !== agentID) {
@@ -1702,6 +1717,7 @@ export function useAgentController({
         }
         return {
           ...current,
+          ...(saved.configuration_revision ? { configuration_revision: saved.configuration_revision } : {}),
           ...(payload.name !== undefined ? { name: saved.name || "" } : {}),
           ...(payload.description !== undefined ? { description: saved.description || "" } : {}),
         };
@@ -1712,13 +1728,19 @@ export function useAgentController({
         }
         return {
           ...current,
+          ...(saved.configuration_revision ? { configuration_revision: saved.configuration_revision } : {}),
           ...(payload.name !== undefined ? { name: saved.name || "" } : {}),
           ...(payload.description !== undefined ? { description: saved.description || "" } : {}),
         };
       });
     } catch (err) {
       if (!(modelProviderConfigUsesOpenCSG(agentPageDraft) && handleOpenCSGAuthenticationError(err))) {
-        setAgentPageSaveError(errorMessage(err, t("agentActionFailed")), apiErrorBillingURL(err));
+        setAgentPageSaveError(
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+          apiErrorBillingURL(err),
+        );
       }
     } finally {
       setAgentPageBusy(false);
@@ -1790,7 +1812,7 @@ export function useAgentController({
       }
       if (!hasProfileOrRuntimeChange) {
         debugAgentPageSavePayload("meta-only", payload);
-        const savedMetaOnly = await updateAgentRequest(selectedAgentForPage.id, payload);
+        const savedMetaOnly = await updateDraftAgentRequest(selectedAgentForPage.id, payload, draftToSave);
         await saveLinkedAgentUserAvatar(selectedAgentForPage, draft.avatar);
         await refreshAgents();
         await refreshWorkspaceBootstrap();
@@ -1811,7 +1833,7 @@ export function useAgentController({
       debugAgentPageSavePayload("full", payload);
       const managerBeforeSave = selectedAgentForPage;
       const profileIncompleteBeforeSave = !isAgentProfileMarkedComplete(agentPageSavedDraft);
-      const saved = await updateAgentRequest(selectedAgentForPage.id, payload);
+      const saved = await updateDraftAgentRequest(selectedAgentForPage.id, payload, draftToSave);
       syncManagerProfileFromAgent(saved);
       await saveLinkedAgentUserAvatar(selectedAgentForPage, draft.avatar);
       if (mcpServersChanged) {
@@ -1845,7 +1867,12 @@ export function useAgentController({
       }
     } catch (err) {
       if (!(modelProviderConfigUsesOpenCSG(draftToSave) && handleOpenCSGAuthenticationError(err))) {
-        setAgentPageSaveError(errorMessage(err, t("agentActionFailed")), apiErrorBillingURL(err));
+        setAgentPageSaveError(
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+          apiErrorBillingURL(err),
+        );
       }
     } finally {
       setAgentPageBusy(false);
@@ -1928,7 +1955,9 @@ export function useAgentController({
       }
       const reason =
         target === "local"
-          ? errorMessage(err, t("agentActionFailed"))
+          ? apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed"))
           : localizeTemplatePublishError(err, t, t("agentActionFailed"));
       const message = localTemplateID ? t("agentTemplateSavedPublishFailed", { reason }) : reason;
       setAgentPagePublishError(message);
@@ -2086,15 +2115,19 @@ export function useAgentController({
             }
             return createBotRequest(createPayload);
           })()
-        : await updateAgentRequest(editingAgentID, {
-            name: payload.name,
-            description: payload.description,
-            instructions: payload.instructions,
-            agent_profile: payload.agent_profile,
-            profile: payload.profile,
-            ...(payload.runtime_options !== undefined ? { runtime_options: payload.runtime_options } : {}),
-            ...(payload.mcpServers !== undefined ? { mcpServers: payload.mcpServers } : {}),
-          });
+        : await updateDraftAgentRequest(
+            editingAgentID,
+            {
+              name: payload.name,
+              description: payload.description,
+              instructions: payload.instructions,
+              agent_profile: payload.agent_profile,
+              profile: payload.profile,
+              ...(payload.runtime_options !== undefined ? { runtime_options: payload.runtime_options } : {}),
+              ...(payload.mcpServers !== undefined ? { mcpServers: payload.mcpServers } : {}),
+            },
+            agentDraft,
+          );
       if (isCreate && resources && saved.id) {
         const failedResources = await applyAgentCreationResources(saved.id, resources);
         if (failedResources.length)
@@ -2145,7 +2178,11 @@ export function useAgentController({
     } catch (err) {
       setAgentProgress((current) => (current ? { ...current, status: "failed" } : current));
       if (!(requiresOpenCSGAuthentication && handleOpenCSGAuthenticationError(err))) {
-        setAgentError(errorMessage(err, t("agentActionFailed")));
+        setAgentError(
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+        );
         setAgentBillingURL(apiErrorBillingURL(err));
       }
     } finally {
@@ -2282,7 +2319,13 @@ export function useAgentController({
         clearAgentPageNotice(item.id);
       }
       if (!(actionUsesOpenCSG && handleOpenCSGAuthenticationError(err))) {
-        setAgentOperationError(item, errorMessage(err, t("agentActionFailed")), apiErrorBillingURL(err));
+        setAgentOperationError(
+          item,
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+          apiErrorBillingURL(err),
+        );
       }
     } finally {
       releaseAgentAction(item.id, busyKey);
@@ -2511,7 +2554,12 @@ export function useAgentController({
       }
       return true;
     } catch (err) {
-      setAgentOperationError(item, errorMessage(err, t("agentActionFailed")));
+      setAgentOperationError(
+        item,
+        apiErrorCode(err) === "configuration_conflict"
+          ? t("agentConfigurationConflict")
+          : errorMessage(err, t("agentActionFailed")),
+      );
       return false;
     } finally {
       releaseAgentAction(item.id, busyKey);
@@ -2535,7 +2583,12 @@ export function useAgentController({
       await refreshWorkspaceBootstrap();
     } catch (err) {
       if (!options.silent) {
-        setAgentOperationError(item, errorMessage(err, t("agentActionFailed")));
+        setAgentOperationError(
+          item,
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+        );
       }
     }
   }
@@ -2733,7 +2786,11 @@ export function useAgentController({
         ]);
         return true;
       } catch (err) {
-        setAgentMCPAddError(errorMessage(err, t("agentActionFailed")));
+        setAgentMCPAddError(
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+        );
         return false;
       } finally {
         setAgentMCPAddBusy(false);
@@ -2766,7 +2823,11 @@ export function useAgentController({
         ]);
         return true;
       } catch (err) {
-        setAgentMCPDeleteError(errorMessage(err, t("agentActionFailed")));
+        setAgentMCPDeleteError(
+          apiErrorCode(err) === "configuration_conflict"
+            ? t("agentConfigurationConflict")
+            : errorMessage(err, t("agentActionFailed")),
+        );
         return false;
       } finally {
         setAgentMCPDeleteBusy(false);
@@ -2824,7 +2885,12 @@ export function useAgentController({
       const nextRooms = nextData?.rooms ?? rooms;
       selectConversation(direct.id, { rooms: nextRooms });
     } catch (err) {
-      setAgentOperationError(item, errorMessage(err, t("agentActionFailed")));
+      setAgentOperationError(
+        item,
+        apiErrorCode(err) === "configuration_conflict"
+          ? t("agentConfigurationConflict")
+          : errorMessage(err, t("agentActionFailed")),
+      );
     }
   }
 
@@ -3079,4 +3145,14 @@ function csgclawParticipantIDForAgent(item: AgentLike): string {
     (candidate) => String(candidate?.channel || "").trim() === "csgclaw" && String(candidate?.id || "").trim(),
   );
   return String(participant?.id || item.id || "").trim();
+}
+
+function updateDraftAgentRequest(
+  agentID: string,
+  payload: AgentUpdatePayload,
+  draft: AgentDraft | null,
+): Promise<AgentLike> {
+  return draft?.configuration_revision
+    ? updateAgentRequest(agentID, payload, draft.configuration_revision)
+    : updateAgentRequest(agentID, payload);
 }

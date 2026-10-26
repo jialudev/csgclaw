@@ -16,6 +16,7 @@ import (
 
 	"csgclaw/internal/activity"
 	"csgclaw/internal/agentengine"
+	"csgclaw/internal/agentengine/contract"
 	"csgclaw/internal/agentengine/interactionstate"
 	"csgclaw/internal/agentengine/lifecycle"
 	agentruntime "csgclaw/internal/runtime"
@@ -423,6 +424,12 @@ func mergeMemoryUpdate(current agentengine.AgentSpec, request agentengine.AgentU
 			next.Runtime.InitShell = request.Spec.Runtime.InitShell
 		case "model":
 			next.Model = request.Spec.Model
+		case "model.model_id":
+			next.Model.ModelID = request.Spec.Model.ModelID
+		case "model.reasoning_effort":
+			next.Model.ReasoningEffort = request.Spec.Model.ReasoningEffort
+		case "model.fast_mode":
+			next.Model.FastMode = request.Spec.Model.FastMode
 		case "model.selector":
 			next.Model.Selector = request.Spec.Model.Selector
 		case "skills":
@@ -461,6 +468,9 @@ func (a *memoryAgents) Update(ctx context.Context, agentID string, request agent
 	item, ok := a.client.agents[strings.TrimSpace(agentID)]
 	if !ok {
 		return agentengine.Agent{}, &agentengine.TurnError{Code: agentengine.ErrorAgentNotFound, Message: fmt.Sprintf("agent %q not found", agentID)}
+	}
+	if request.ConfigurationRevision != "" && request.ConfigurationRevision != contract.ConfigurationRevision(item.Spec, item.ResourceVersion) {
+		return agentengine.Agent{}, &agentengine.TurnError{Code: agentengine.ErrorInvalidRequest, Message: "agent resource version is stale"}
 	}
 	if request.ResourceVersion != "" && request.ResourceVersion != item.ResourceVersion {
 		return agentengine.Agent{}, &agentengine.TurnError{Code: agentengine.ErrorInvalidRequest, Message: "agent resource version is stale"}

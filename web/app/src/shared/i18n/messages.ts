@@ -2693,6 +2693,7 @@ export const messages = {
     noDirectMessages: "还没有私信",
     modelLoadFailed: "模型加载失败",
     agentProfileSetupRequired: "待完成配置",
+    agentConfigurationConflict: "配置已被另一个页面更新。草稿已保留，请先刷新并核对。",
     profileSaveIncompleteError: "请先选择模型，并在 OpenAI API 模式下填写基础地址与 API Key。",
     profileEnvRequiredError: "请填写模板要求的环境变量。",
     profileSetupIncompleteAfterSave: "保存未生效：请补全模型与连接信息后再保存。",
@@ -5786,6 +5787,8 @@ export const messages = {
     noDirectMessages: "No direct messages yet.",
     modelLoadFailed: "Failed to load models",
     agentProfileSetupRequired: "Setup required",
+    agentConfigurationConflict:
+      "Another UI changed this configuration. Your draft is kept; reload and review before saving.",
     profileSaveIncompleteError: "Select a model first. For OpenAI API, provide Base URL and API Key.",
     profileEnvRequiredError: "Fill in the environment variables required by the template.",
     profileSetupIncompleteAfterSave:

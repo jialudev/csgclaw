@@ -1,3 +1,4 @@
+import { backendCredentials } from "./connection";
 import type { TaskConfiguration } from "@/models/taskConfiguration";
 import type { FileReference } from "@/models/fileReferences";
 import { trackDiagnosticSubmission } from "@/shared/diagnostics/renderTiming";
@@ -123,6 +124,7 @@ function postMessageFormDataWithProgress(formData: FormData, options: SendMessag
     const request = new XMLHttpRequest();
     const abortRequest = () => request.abort();
     request.open("POST", resolveRequestPath("api/v1/messages"));
+    request.withCredentials = backendCredentials() === "include";
     request.setRequestHeader("Accept", "application/json");
     request.upload.addEventListener("progress", (event) => {
       if (!event.lengthComputable || event.total <= 0) {

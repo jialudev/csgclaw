@@ -52,6 +52,9 @@ import (
 )
 
 type Handler struct {
+	externalUI                 *externalUI
+	control                    *controlService
+	apiOnly                    bool
 	resourcesOnce              sync.Once
 	resources                  *conversationresource.Service
 	svc                        AgentRecords
@@ -217,37 +220,38 @@ type updateBootstrapConfigRequest struct {
 }
 
 type agentResponse struct {
-	ID                   string                             `json:"id"`
-	Name                 string                             `json:"name"`
-	Description          string                             `json:"description,omitempty"`
-	Instructions         string                             `json:"instructions,omitempty"`
-	Runtime              apitypes.AgentRuntime              `json:"runtime,omitempty"`
-	RuntimeID            string                             `json:"-"`
-	RuntimeKind          string                             `json:"-"`
-	RuntimeName          string                             `json:"runtime_name,omitempty"`
-	SandboxEnabled       bool                               `json:"sandbox_enabled,omitempty"`
-	Image                string                             `json:"image,omitempty"`
-	Avatar               string                             `json:"-"`
-	BoxID                string                             `json:"-"`
-	Role                 string                             `json:"role"`
-	Status               string                             `json:"-"`
-	CreatedAt            time.Time                          `json:"created_at"`
-	UpdatedAt            time.Time                          `json:"updated_at,omitempty"`
-	Profile              string                             `json:"-"`
-	ProfileConfig        apitypes.AgentProfile              `json:"model_config,omitempty"`
-	RuntimeOptions       map[string]any                     `json:"-"`
-	MCPServers           map[string]any                     `json:"mcpServers,omitempty"`
-	RuntimeOptionSchemas []agentruntime.RuntimeOptionSchema `json:"-"`
-	MemorySupported      bool                               `json:"memory_supported,omitempty"`
-	AgentProfile         agent.AgentProfileView             `json:"-"`
-	ProfileComplete      bool                               `json:"-"`
-	DetectionResults     []agent.ProfileDetectionResult     `json:"-"`
-	UserID               string                             `json:"user_id,omitempty"`
-	UserName             string                             `json:"user_name,omitempty"`
-	ParticipantIDs       []string                           `json:"participant_ids,omitempty"`
-	ParticipantNames     []string                           `json:"participant_names,omitempty"`
-	Participants         []apitypes.Participant             `json:"participants,omitempty"`
-	SkippedResources     []mcp.SkippedTemplateResource      `json:"skipped_resources,omitempty"`
+	ConfigurationRevision string                             `json:"configuration_revision,omitempty"`
+	ID                    string                             `json:"id"`
+	Name                  string                             `json:"name"`
+	Description           string                             `json:"description,omitempty"`
+	Instructions          string                             `json:"instructions,omitempty"`
+	Runtime               apitypes.AgentRuntime              `json:"runtime,omitempty"`
+	RuntimeID             string                             `json:"-"`
+	RuntimeKind           string                             `json:"-"`
+	RuntimeName           string                             `json:"runtime_name,omitempty"`
+	SandboxEnabled        bool                               `json:"sandbox_enabled,omitempty"`
+	Image                 string                             `json:"image,omitempty"`
+	Avatar                string                             `json:"-"`
+	BoxID                 string                             `json:"-"`
+	Role                  string                             `json:"role"`
+	Status                string                             `json:"-"`
+	CreatedAt             time.Time                          `json:"created_at"`
+	UpdatedAt             time.Time                          `json:"updated_at,omitempty"`
+	Profile               string                             `json:"-"`
+	ProfileConfig         apitypes.AgentProfile              `json:"model_config,omitempty"`
+	RuntimeOptions        map[string]any                     `json:"-"`
+	MCPServers            map[string]any                     `json:"mcpServers,omitempty"`
+	RuntimeOptionSchemas  []agentruntime.RuntimeOptionSchema `json:"-"`
+	MemorySupported       bool                               `json:"memory_supported,omitempty"`
+	AgentProfile          agent.AgentProfileView             `json:"-"`
+	ProfileComplete       bool                               `json:"-"`
+	DetectionResults      []agent.ProfileDetectionResult     `json:"-"`
+	UserID                string                             `json:"user_id,omitempty"`
+	UserName              string                             `json:"user_name,omitempty"`
+	ParticipantIDs        []string                           `json:"participant_ids,omitempty"`
+	ParticipantNames      []string                           `json:"participant_names,omitempty"`
+	Participants          []apitypes.Participant             `json:"participants,omitempty"`
+	SkippedResources      []mcp.SkippedTemplateResource      `json:"skipped_resources,omitempty"`
 }
 
 func (r *agentResponse) UnmarshalJSON(data []byte) error {
@@ -292,22 +296,24 @@ func (r *agentResponse) UnmarshalJSON(data []byte) error {
 		}
 	}
 	var legacy struct {
-		RuntimeID            string                             `json:"runtime_id"`
-		RuntimeKind          string                             `json:"runtime_kind"`
-		RuntimeName          string                             `json:"runtime_name"`
-		SandboxEnabled       *bool                              `json:"sandbox_enabled"`
-		Avatar               string                             `json:"avatar"`
-		BoxID                string                             `json:"box_id"`
-		Status               string                             `json:"status"`
-		RuntimeOptions       map[string]any                     `json:"runtime_options"`
-		RuntimeOptionSchemas []agentruntime.RuntimeOptionSchema `json:"runtime_option_schemas"`
-		AgentProfile         agent.AgentProfileView             `json:"agent_profile"`
-		ProfileComplete      bool                               `json:"profile_complete"`
-		DetectionResults     []agent.ProfileDetectionResult     `json:"detection_results"`
+		ConfigurationRevision string                             `json:"configuration_revision"`
+		RuntimeID             string                             `json:"runtime_id"`
+		RuntimeKind           string                             `json:"runtime_kind"`
+		RuntimeName           string                             `json:"runtime_name"`
+		SandboxEnabled        *bool                              `json:"sandbox_enabled"`
+		Avatar                string                             `json:"avatar"`
+		BoxID                 string                             `json:"box_id"`
+		Status                string                             `json:"status"`
+		RuntimeOptions        map[string]any                     `json:"runtime_options"`
+		RuntimeOptionSchemas  []agentruntime.RuntimeOptionSchema `json:"runtime_option_schemas"`
+		AgentProfile          agent.AgentProfileView             `json:"agent_profile"`
+		ProfileComplete       bool                               `json:"profile_complete"`
+		DetectionResults      []agent.ProfileDetectionResult     `json:"detection_results"`
 	}
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return err
 	}
+	r.ConfigurationRevision = legacy.ConfigurationRevision
 	if strings.TrimSpace(legacy.RuntimeID) != "" {
 		r.RuntimeID = legacy.RuntimeID
 	}
@@ -786,7 +792,11 @@ func (h *Handler) bootstrapConfigView(ctx context.Context, cfg config.Config) bo
 			agent.RuntimeKindDSH,
 		})
 	}
-	return bootstrapConfigView(ctx, cfg, h.hub, schemas)
+	view := bootstrapConfigView(ctx, cfg, h.hub, schemas)
+	if h.apiOnly {
+		view.DirectoryPickerAvailable = false
+	}
+	return view
 }
 
 func bootstrapRuntimeKind(runtime string) string {
@@ -1068,7 +1078,7 @@ func (h *Handler) validateServerAccessToken(authHeader string) bool {
 		return true
 	}
 	token := strings.TrimSpace(h.serverAccessToken)
-	return authHeader == "Bearer "+token
+	return token != "" && authHeader == "Bearer "+token
 }
 
 func (h *Handler) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -1279,7 +1289,13 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "agent not found", http.StatusNotFound)
 			return
 		}
+		expected := strings.Trim(r.Header.Get("If-Match"), `"`)
+		if expected != "" && expected != configurationRevision(current) {
+			controlError(w, 409, "configuration_conflict", "configuration changed; reload before saving")
+			return
+		}
 		update := engineUpdateRequest(req, current.ResourceVersion)
+		update.ConfigurationRevision = expected
 		billingModel := current.Spec.Model
 		if agentUpdateIncludes(update, "model") {
 			billingModel = update.Spec.Model
@@ -1287,6 +1303,10 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		billingProfile := serviceProfileFromEngine(agentengine.ModelView{ModelSpec: billingModel})
 		updated, err := agents.Update(r.Context(), id, update)
 		if err != nil {
+			if errors.Is(err, agent.ErrAgentResourceVersionConflict) {
+				controlError(w, 409, "configuration_conflict", "configuration changed; reload before saving")
+				return
+			}
 			writeAgentOperationErrorWithBillingURL(
 				w,
 				err,
@@ -3394,6 +3414,7 @@ func (h *Handler) presentEngineAgentsForRequest(r *http.Request, items []agenten
 	}
 	responses := h.presentAgentsForRequest(r, presented)
 	for index := range responses {
+		responses[index].ConfigurationRevision = configurationRevision(items[index])
 		responses[index].MemorySupported = items[index].Status.Capabilities.Memory
 	}
 	return responses
@@ -3401,6 +3422,7 @@ func (h *Handler) presentEngineAgentsForRequest(r *http.Request, items []agenten
 
 func (h *Handler) presentEngineAgentForRequest(r *http.Request, item agentengine.Agent) agentResponse {
 	response := h.presentAgentForRequest(r, serviceAgentFromEngine(item))
+	response.ConfigurationRevision = configurationRevision(item)
 	response.MemorySupported = item.Status.Capabilities.Memory
 	return response
 }
@@ -4013,3 +4035,6 @@ func (h *Handler) publishTeamEvent(eventType string, item apitypes.Team) {
 		Team:   &teamCopy,
 	})
 }
+
+// SetAPIOnly disables operations that open host desktop windows.
+func (h *Handler) SetAPIOnly(enabled bool) { h.apiOnly = enabled }

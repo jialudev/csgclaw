@@ -1,3 +1,4 @@
+import { backendCredentials, resolveBackendPath } from "./connection";
 export type ApiError = {
   status: number;
   message: string;
@@ -37,6 +38,7 @@ export async function requestWithResponse<T>(
   }
 
   const response = await fetch(resolveRequestPath(path), {
+    credentials: backendCredentials(),
     ...requestOptions,
     body,
     headers,
@@ -74,6 +76,7 @@ export async function requestText(path: string, options: ApiRequestOptions = {})
   }
 
   const response = await fetch(resolveRequestPath(path), {
+    credentials: backendCredentials(),
     ...requestOptions,
     body,
     headers,
@@ -95,7 +98,7 @@ export function resolveRequestPath(path: string): string {
   if (!value || value.startsWith("#") || value.startsWith("//") || absoluteURLPattern.test(value)) {
     return value;
   }
-  return value.replace(/^\/+/, "");
+  return resolveBackendPath(value) ?? value.replace(/^\/+/, "");
 }
 
 export function get<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {

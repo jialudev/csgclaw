@@ -47,6 +47,7 @@ import (
 	"csgclaw/internal/cliproxy"
 	"csgclaw/internal/config"
 	"csgclaw/internal/connectors"
+	"csgclaw/internal/controlplane"
 	"csgclaw/internal/im"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/localstore"
@@ -155,6 +156,7 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	fs.BoolVar(daemon, "d", false, "run server in background")
 	browser := fs.Bool("browser", false, "open the browser after startup")
 	noBrowser := fs.Bool("no-browser", false, "do not open the browser after startup (default)")
+	uiOrigins := fs.String("ui-origins", "", "comma-separated exact origins allowed for external UIs")
 	noAuthDetect := fs.Bool("no-auth-detect", false, "disable automatic auth detection during startup")
 	logLevel := fs.String("log-level", "info", "log level: debug, info, warn, error")
 
@@ -169,6 +171,9 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	logPath := fs.String("log", defaultLogPath, "log file path, daemon mode only")
 	pidPath := fs.String("pid", defaultPIDPath, "pid file path, daemon mode only")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := api.ValidateUIOrigins(splitUIOrigins(*uiOrigins)); err != nil {
 		return err
 	}
 	if err := validateServeInstallation(); err != nil {
@@ -215,6 +220,7 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	}
 
 	serveOpts := serveOptions{
+		UIOrigins:    splitUIOrigins(*uiOrigins),
 		OpenBrowser:  *browser && !*noBrowser,
 		NoAuthDetect: *noAuthDetect,
 	}
@@ -296,8 +302,12 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	logLevel := fs.String("log-level", "info", "log level: debug, info, warn, error")
 	browser := fs.Bool("browser", false, "open the browser after startup")
 	noBrowser := fs.Bool("no-browser", false, "do not open the browser after startup (default)")
+	uiOrigins := fs.String("ui-origins", "", "comma-separated exact origins allowed for external UIs")
 	noAuthDetect := fs.Bool("no-auth-detect", false, "disable automatic auth detection during startup")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := api.ValidateUIOrigins(splitUIOrigins(*uiOrigins)); err != nil {
 		return err
 	}
 	if err := validateServeInstallation(); err != nil {
@@ -360,6 +370,7 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 		return err
 	}
 	return startServerWithConfigPath(ctx, run, cfg, svc, imSvc, imBus, feishuSvc, configPath, globals.Output, serveOptions{
+		UIOrigins:    splitUIOrigins(*uiOrigins),
 		OpenBrowser:  *browser && !*noBrowser,
 		NoAuthDetect: *noAuthDetect,
 	})
@@ -387,6 +398,7 @@ func officialInstallGuidance(goos string) (string, string) {
 }
 
 type serveOptions struct {
+	UIOrigins       []string
 	OpenBrowser     bool
 	NoAuthDetect    bool
 	Quiet           bool
@@ -506,6 +518,9 @@ func backgroundServeArgs(configPath, pidPath, logLevel string, opts serveOptions
 	if strings.TrimSpace(logLevel) != "" {
 		args = append(args, "--log-level", logLevel)
 	}
+	if len(opts.UIOrigins) > 0 {
+		args = append(args, "--ui-origins", strings.Join(opts.UIOrigins, ","))
+	}
 	if opts.OpenBrowser {
 		args = append(args, "--browser")
 	}
@@ -622,6 +637,24 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	// One Engine instance owns Agent administration, admission for HTTP
 	// sessions, and direct channel execution.
 	conversationEngine := agentengine.New(svc)
+	controlDir, err := config.DefaultDomainDir("control")
+	if err != nil {
+		return err
+	}
+	controlStore, err := controlplane.Open(controlDir)
+	if err != nil {
+		return fmt.Errorf("initialize control store: %w", err)
+	}
+	defer controlStore.Close()
+	if err = conversationEngine.EnablePersistence(controlDir); err != nil {
+		return fmt.Errorf("initialize conversation store: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = conversationEngine.Shutdown(shutdownCtx)
+		_ = conversationEngine.ClosePersistence()
+	}()
 	participantSvc, err := newParticipantService(conversationEngine, imSvc)
 	if err != nil {
 		return err
@@ -770,6 +803,8 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		svc.PrepareConfiguredAgentsStartup()
 	}
 	return RunServer(server.Options{
+		UIOrigins:          serveOpts.UIOrigins,
+		ControlStore:       controlStore,
 		ListenAddr:         cfg.Server.ListenAddr,
 		Listener:           serveOpts.Listener,
 		SandboxListener:    serveOpts.SandboxListener,
@@ -1586,4 +1621,14 @@ func formatModelList(models []string) string {
 		return "[]"
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+func splitUIOrigins(raw string) []string {
+	var out []string
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }

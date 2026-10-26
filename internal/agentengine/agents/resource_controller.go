@@ -300,6 +300,12 @@ func mergeAgentUpdate(current contract.AgentSpec, request contract.AgentUpdateRe
 			next.Runtime.InitShell = request.Spec.Runtime.InitShell
 		case "model":
 			next.Model = request.Spec.Model
+		case "model.model_id":
+			next.Model.ModelID = request.Spec.Model.ModelID
+		case "model.reasoning_effort":
+			next.Model.ReasoningEffort = request.Spec.Model.ReasoningEffort
+		case "model.fast_mode":
+			next.Model.FastMode = request.Spec.Model.FastMode
 		case "model.selector":
 			next.Model.Selector = request.Spec.Model.Selector
 		case "skill_states":
@@ -392,6 +398,7 @@ func preserveWriteOnlyFields(current, desired contract.AgentSpec) contract.Agent
 }
 
 type agentUpdateOptions struct {
+	configurationRevision string
 	saveInstructions      bool
 	loadSkills            bool
 	loadMemory            bool
@@ -402,9 +409,10 @@ type agentUpdateOptions struct {
 }
 
 func updateOptionsFor(request contract.AgentUpdateRequest) agentUpdateOptions {
-	loadSkills := len(request.FieldMask) == 0 || fieldMaskContains(request.FieldMask, "skills") || fieldMaskContains(request.FieldMask, "skill_states") || len(request.ReplaceSkills) > 0
+	loadSkills := request.ConfigurationRevision != "" || len(request.FieldMask) == 0 || fieldMaskContains(request.FieldMask, "skills") || fieldMaskContains(request.FieldMask, "skill_states") || len(request.ReplaceSkills) > 0
 	return agentUpdateOptions{
 		saveInstructions:      len(request.FieldMask) == 0 || fieldMaskContains(request.FieldMask, "instructions"),
+		configurationRevision: request.ConfigurationRevision,
 		loadSkills:            loadSkills,
 		loadMemory:            fieldMaskContains(request.FieldMask, "memory") || request.Spec.Memory != nil,
 		reconcileDesiredState: fieldMaskContains(request.FieldMask, "desired_state"),
@@ -434,6 +442,9 @@ func (f *Controller) updateDesired(ctx context.Context, agentID, resourceVersion
 		current, err := f.specFromService(previous, previousSkills, true)
 		if err != nil {
 			return err
+		}
+		if options.configurationRevision != "" && options.configurationRevision != contract.ConfigurationRevision(current, resourceVersionForAgent(previous)) {
+			return ErrAgentResourceVersionConflict
 		}
 		if options.loadMemory {
 			document, memoryErr := f.MemoryDocument(lifecycleCtx, agentID)

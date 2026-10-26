@@ -1,3 +1,4 @@
+import { backendCredentials } from "./connection";
 import { get, readResponseText, resolveRequestPath, type ApiError } from "@/api/client";
 import type { AgentLike } from "@/models/agents";
 
@@ -45,6 +46,7 @@ export async function streamAgentSessionResponse(
   let response: Response;
   try {
     response = await fetch(resolveRequestPath(path), {
+      credentials: backendCredentials(),
       method: "POST",
       headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
       body: JSON.stringify({ input: request.input, stream: true }),
@@ -124,6 +126,7 @@ export async function cancelAgentSessionResponse(request: CancelAgentSessionResp
   let response: Response;
   try {
     response = await fetch(resolveRequestPath(path), {
+      credentials: backendCredentials(),
       method: "POST",
       headers: { Accept: "application/json" },
     });

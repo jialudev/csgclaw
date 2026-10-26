@@ -52,7 +52,7 @@ function connect(): void {
   }
 
   clearReconnectTimer();
-  es = new EventSource(endpoint);
+  es = new EventSource(endpoint, { withCredentials: true });
 
   es.onopen = () => {
     reconnectDelayMs = 3000;

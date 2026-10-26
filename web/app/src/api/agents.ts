@@ -27,6 +27,7 @@ export type FetchAgentsOptions = {
 };
 
 export type AgentInstructionsDocument = {
+  configuration_revision?: string;
   instructions: string;
   effective: string;
 };
@@ -54,8 +55,13 @@ export function updateAgentMemoryEnabled(agentID: string, enabled: boolean): Pro
 export function updateAgentEffectiveInstructions(
   agentID: string,
   effective: string,
+  expectedRevision?: string,
 ): Promise<AgentInstructionsDocument> {
-  return put(`api/v1/agents/${encodeURIComponent(agentID)}/instructions`, { effective });
+  return put(
+    `api/v1/agents/${encodeURIComponent(agentID)}/instructions`,
+    { effective },
+    expectedRevision ? { headers: { "If-Match": expectedRevision } } : {},
+  );
 }
 
 export type FetchAgentOptions = {
@@ -316,15 +322,23 @@ export async function pickHostDirectoryRequest(): Promise<HostDirectoryPickResul
   }
 }
 
-export function updateAgentRequest(agentID: string, payload: AgentUpdatePayload): Promise<AgentLike> {
+export function updateAgentRequest(
+  agentID: string,
+  payload: AgentUpdatePayload,
+  expectedRevision?: string,
+): Promise<AgentLike> {
   const normalizedPayload = normalizeAgentPayload(payload);
   const fieldMask = Object.keys(normalizedPayload).filter(
     (key) => key !== "field_mask" && normalizedPayload[key as keyof AgentUpdatePayload] !== undefined,
   );
-  return patch(`api/v1/agents/${encodeURIComponent(agentID)}`, {
-    ...normalizedPayload,
-    field_mask: fieldMask,
-  });
+  return patch(
+    `api/v1/agents/${encodeURIComponent(agentID)}`,
+    {
+      ...normalizedPayload,
+      field_mask: fieldMask,
+    },
+    expectedRevision ? { headers: { "If-Match": expectedRevision } } : {},
+  );
 }
 
 function normalizeAgentPayload(payload: AgentUpdatePayload): AgentUpdatePayload {

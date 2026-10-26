@@ -1975,6 +1975,7 @@ type AgentInstructionsPanelProps = {
 function AgentInstructionsPanel({ draft, t, updateDraft }: AgentInstructionsPanelProps) {
   const [mode, setMode] = useState<"default" | "advanced">("default");
   const [effective, setEffective] = useState("");
+  const [effectiveRevision, setEffectiveRevision] = useState("");
   const [advancedError, setAdvancedError] = useState("");
   const [advancedSaving, setAdvancedSaving] = useState(false);
   useEffect(() => {
@@ -1988,6 +1989,7 @@ function AgentInstructionsPanel({ draft, t, updateDraft }: AgentInstructionsPane
       .then((document) => {
         if (!canceled) {
           setEffective(document.effective || "");
+          setEffectiveRevision(document.configuration_revision || "");
         }
       })
       .catch((error) => {
@@ -2006,7 +2008,10 @@ function AgentInstructionsPanel({ draft, t, updateDraft }: AgentInstructionsPane
     setAdvancedSaving(true);
     setAdvancedError("");
     try {
-      const document = await updateAgentEffectiveInstructions(agentID, effective);
+      const document = effectiveRevision
+        ? await updateAgentEffectiveInstructions(agentID, effective, effectiveRevision)
+        : await updateAgentEffectiveInstructions(agentID, effective);
+      setEffectiveRevision(document.configuration_revision || "");
       setEffective(document.effective || "");
       updateDraft({ instructions: document.instructions || "" });
     } catch (error) {

@@ -2,6 +2,8 @@ package contract
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -27,17 +29,20 @@ type FileContent struct {
 
 // FileCreateRequest declares metadata for one uploaded immutable file.
 type FileCreateRequest struct {
-	Name      string `json:"name"`
-	MIMEType  string `json:"mime_type"`
-	SizeBytes int64  `json:"size_bytes"`
-	SHA256    string `json:"sha256,omitempty"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	Name           string `json:"name"`
+	MIMEType       string `json:"mime_type"`
+	SizeBytes      int64  `json:"size_bytes"`
+	SHA256         string `json:"sha256,omitempty"`
 }
 
 // FileStore owns process-local immutable snapshots indexed by Agent and FileID.
 // It is reusable by the real Engine and contract-compatible test clients.
 type FileStore struct {
-	mu      sync.RWMutex
-	byAgent map[string]map[string]storedFile
+	inputRefs map[string]map[string]uint64
+	disk      *diskFiles
+	mu        sync.RWMutex
+	byAgent   map[string]map[string]storedFile
 }
 
 type storedFile struct {
@@ -78,8 +83,28 @@ func (f *agentFiles) Create(ctx context.Context, request FileCreateRequest, cont
 		}
 		return OutputFile{}, &TurnError{Code: ErrorFileUnavailable, Message: "file content could not be stored"}
 	}
+	if request.IdempotencyKey != "" {
+		if len(request.IdempotencyKey) > 256 {
+			file.Cleanup()
+			return OutputFile{}, &TurnError{Code: ErrorInvalidRequest, Message: "file idempotency key is too long"}
+		}
+		sum := sha256.Sum256([]byte(f.agentID + "\x00" + request.IdempotencyKey))
+		file.ID = "file-" + hex.EncodeToString(sum[:16])
+		if existing, ok := f.store.existingMetadata(f.agentID, file.ID); ok {
+			file.Cleanup()
+			if existing == file.OutputFileMetadata {
+				return OutputFile{OutputFileMetadata: existing}, nil
+			}
+			return OutputFile{}, &TurnError{Code: ErrorInvalidRequest, Message: "file idempotency key was used with different content"}
+		}
+	}
 	if storeErr := f.store.put(f.agentID, storedFile{file: file}); storeErr != nil {
 		file.Cleanup()
+		if request.IdempotencyKey != "" {
+			if existing, ok := f.store.existingMetadata(f.agentID, file.ID); ok && existing == file.OutputFileMetadata {
+				return OutputFile{OutputFileMetadata: existing}, nil
+			}
+		}
 		return OutputFile{}, storeErr
 	}
 	return file.Metadata(), nil
@@ -117,10 +142,28 @@ func (f *agentFiles) Delete(_ context.Context, fileID string) error {
 	if f == nil || f.store == nil || f.agentID == "" || fileID == "" {
 		return &TurnError{Code: ErrorInvalidRequest, Message: "agent ID and file ID are required"}
 	}
-	file, ok := f.store.delete(f.agentID, fileID)
+	f.store.mu.Lock()
+	if f.store.inputRefs[f.agentID][fileID] > 0 {
+		f.store.mu.Unlock()
+		return &TurnError{Code: ErrorConversationBusy, Message: "file is in use by an execution"}
+	}
+	files := f.store.byAgent[f.agentID]
+	file, ok := files[fileID]
 	if !ok {
+		f.store.mu.Unlock()
 		return &TurnError{Code: ErrorFileNotFound, Message: fmt.Sprintf("file %q was not found", fileID)}
 	}
+	if f.store.disk != nil {
+		if err := f.store.disk.remove(f.agentID, fileID); err != nil {
+			f.store.mu.Unlock()
+			return &TurnError{Code: ErrorFileUnavailable, Message: "file could not be removed"}
+		}
+	}
+	delete(files, fileID)
+	if len(files) == 0 {
+		delete(f.store.byAgent, f.agentID)
+	}
+	f.store.mu.Unlock()
 	file.file.Cleanup()
 	return nil
 }
@@ -141,6 +184,12 @@ func (s *FileStore) put(agentID string, file storedFile) *TurnError {
 	if _, exists := files[file.file.ID]; exists {
 		s.mu.Unlock()
 		return &TurnError{Code: ErrorFileUnavailable, Message: "file ID collision"}
+	}
+	if s.disk != nil {
+		if err := s.disk.put(agentID, file); err != nil {
+			s.mu.Unlock()
+			return &TurnError{Code: ErrorFileUnavailable, Message: "file could not be persisted"}
+		}
 	}
 	files[file.file.ID] = file
 	s.mu.Unlock()
@@ -188,20 +237,57 @@ func (s *FileStore) RegisterTurnFiles(agentID string, conversationKey Conversati
 }
 
 func (s *FileStore) Resolve(agentID, fileID string) (*OutputFile, func(), *TurnError) {
+	return s.resolve(agentID, fileID, false)
+}
+
+// ResolveInput reserves an execution input until its returned release runs.
+// Ordinary snapshot readers use Resolve and may finish after catalog deletion.
+func (s *FileStore) ResolveInput(agentID, fileID string) (*OutputFile, func(), *TurnError) {
+	return s.resolve(agentID, fileID, true)
+}
+
+func (s *FileStore) resolve(agentID, fileID string, input bool) (*OutputFile, func(), *TurnError) {
 	agentID = strings.TrimSpace(agentID)
 	fileID = strings.TrimSpace(fileID)
-	s.mu.RLock()
+	s.mu.Lock()
 	file, ok := s.byAgent[agentID][fileID]
 	if !ok {
-		s.mu.RUnlock()
+		s.mu.Unlock()
 		return nil, nil, &TurnError{Code: ErrorFileNotFound, Message: fmt.Sprintf("file %q was not found", fileID)}
 	}
 	release, retained := file.file.snapshot.retain()
-	s.mu.RUnlock()
 	if !retained {
+		s.mu.Unlock()
 		return nil, nil, &TurnError{Code: ErrorFileUnavailable, Message: "file content is unavailable"}
 	}
-	return file.file, release, nil
+	if !input {
+		s.mu.Unlock()
+		var once sync.Once
+		return file.file, func() { once.Do(release) }, nil
+	}
+	if s.inputRefs == nil {
+		s.inputRefs = map[string]map[string]uint64{}
+	}
+	if s.inputRefs[agentID] == nil {
+		s.inputRefs[agentID] = map[string]uint64{}
+	}
+	s.inputRefs[agentID][fileID]++
+	s.mu.Unlock()
+	var once sync.Once
+	return file.file, func() {
+		once.Do(func() {
+			release()
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			s.inputRefs[agentID][fileID]--
+			if s.inputRefs[agentID][fileID] == 0 {
+				delete(s.inputRefs[agentID], fileID)
+			}
+			if len(s.inputRefs[agentID]) == 0 {
+				delete(s.inputRefs, agentID)
+			}
+		})
+	}, nil
 }
 
 func (s *FileStore) DeleteTurn(agentID string, conversationKey ConversationKey, turnID TurnID) {
@@ -228,6 +314,11 @@ func (s *FileStore) DeleteAgent(agentID string) {
 	s.mu.Lock()
 	files := s.byAgent[agentID]
 	delete(s.byAgent, agentID)
+	if s.disk != nil {
+		for id := range files {
+			_ = s.disk.remove(agentID, id)
+		}
+	}
 	s.mu.Unlock()
 	for _, file := range files {
 		file.file.Cleanup()
@@ -244,4 +335,14 @@ func (UnavailableFiles) Get(context.Context, string) (FileContent, error) {
 }
 func (UnavailableFiles) Delete(context.Context, string) error {
 	return &TurnError{Code: ErrorAgentUnavailable, Message: "file store is unavailable"}
+}
+
+func (s *FileStore) existingMetadata(agent, id string) (OutputFileMetadata, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	file, ok := s.byAgent[agent][id]
+	if !ok {
+		return OutputFileMetadata{}, false
+	}
+	return file.file.OutputFileMetadata, true
 }

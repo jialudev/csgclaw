@@ -220,6 +220,7 @@ const (
 type ErrorCode string
 
 const (
+	ErrorExecutionUnknown            ErrorCode = "execution_unknown"
 	ErrorInvalidRequest              ErrorCode = "invalid_request"
 	ErrorAgentNotFound               ErrorCode = "agent_not_found"
 	ErrorAgentUnavailable            ErrorCode = "agent_unavailable"

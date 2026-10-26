@@ -4,8 +4,10 @@ import (
 	"context"
 	"csgclaw/internal/activity"
 	"csgclaw/internal/agentengine/contract"
+	"csgclaw/internal/controlplane"
 	"csgclaw/internal/diagnostics"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -28,6 +30,10 @@ type conversationRuntimeAdapter interface {
 // identity, pending interactions, replay-safe event delivery, and terminal
 // result idempotency.
 type Engine struct {
+	closed        bool
+	historyIndex  map[turnIdentity]historySummary
+	historyRefs   map[string]map[string]int
+	history       *controlplane.Store
 	generateImage imageGenerator
 	generateVideo videoGenerator
 	agents        AgentInterface
@@ -70,6 +76,8 @@ type pendingInteraction struct {
 }
 
 type activeTurn struct {
+	createdAt           time.Time
+	changed             chan struct{}
 	emitMu              sync.Mutex
 	agentID             string
 	structuredUserInput *activity.RequestUserInputArgs
@@ -120,7 +128,19 @@ type conversations struct {
 	agentID string
 }
 
-func (c *conversations) Run(ctx context.Context, request TurnRequest, sink EventSink) TurnResult {
+func (c *conversations) Run(ctx context.Context, request TurnRequest, sink EventSink) (outcome TurnResult) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	defer func() {
+		if notify, ok := ctx.Value(startNotificationKey{}).(func(error)); ok {
+			if outcome.Error != nil {
+				notify(outcome.Error)
+			} else {
+				notify(nil)
+			}
+		}
+	}()
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -152,6 +172,9 @@ func (c *conversations) Run(ctx context.Context, request TurnRequest, sink Event
 	if replay, existing, preflightResult := c.engine.preflightTurn(identity, request); replay != nil {
 		return replayCompleted(ctx, sink, *replay)
 	} else if existing != nil {
+		if notify, ok := ctx.Value(startNotificationKey{}).(func(error)); ok {
+			notify(nil)
+		}
 		return awaitActiveTurn(ctx, sink, existing)
 	} else if preflightResult != nil {
 		return *preflightResult
@@ -176,6 +199,9 @@ func (c *conversations) Run(ctx context.Context, request TurnRequest, sink Event
 	if admissionResult != nil {
 		return *admissionResult
 	}
+	if notify, ok := ctx.Value(startNotificationKey{}).(func(error)); ok {
+		notify(nil)
+	}
 	turn.ctx = diagnostics.WithRecord(turn.ctx, diagnostics.From(ctx))
 	turn.agentID = c.agentID
 	if request.ImageGeneration != nil {
@@ -195,8 +221,7 @@ func (c *conversations) Run(ctx context.Context, request TurnRequest, sink Event
 			result = failedResult(ErrorRuntimeFailed, err.Error())
 		}
 		turn.cancel()
-		c.engine.complete(identity, turn, result)
-		return result
+		return c.engine.complete(identity, turn, result)
 	}
 	if request.VideoGeneration != nil {
 		if request.VideoGeneration.Model == nil && c.engine.agents != nil {
@@ -212,8 +237,7 @@ func (c *conversations) Run(ctx context.Context, request TurnRequest, sink Event
 			result = failedResult(ErrorRuntimeFailed, err.Error())
 		}
 		turn.cancel()
-		c.engine.complete(identity, turn, result)
-		return result
+		return c.engine.complete(identity, turn, result)
 	}
 	if c.engine.agents != nil {
 		selected, err := c.engine.agents.Get(turn.ctx, c.agentID, AgentGetOptions{})
@@ -228,8 +252,7 @@ func (c *conversations) Run(ctx context.Context, request TurnRequest, sink Event
 		diagnostics.From(turn.ctx).Failure(string(resolveErr.Code), "runtime.prepare", resolveErr.Message)
 		result := TurnResult{Status: TurnFailed, Error: resolveErr}
 		turn.cancel()
-		c.engine.complete(identity, turn, result)
-		return result
+		return c.engine.complete(identity, turn, result)
 	}
 	if releaseRuntime == nil {
 		releaseRuntime = func() {}
@@ -279,8 +302,7 @@ func (c *conversations) Run(ctx context.Context, request TurnRequest, sink Event
 	}
 	turn.cancel()
 	releaseRuntime()
-	c.engine.complete(identity, turn, result)
-	return result
+	return c.engine.complete(identity, turn, result)
 }
 
 func (e *Engine) preflightTurn(identity conversationIdentity, request TurnRequest) (*completedTurn, *activeTurn, *TurnResult) {
@@ -319,7 +341,7 @@ func (e *Engine) resolveInputFiles(agentID string, request TurnRequest) (TurnReq
 		if part.Kind != InputPartFile {
 			continue
 		}
-		file, releaseFile, err := e.files.Resolve(agentID, part.File.ID)
+		file, releaseFile, err := e.files.ResolveInput(agentID, part.File.ID)
 		if err != nil {
 			release()
 			return TurnRequest{}, func() {}, err
@@ -418,7 +440,36 @@ func (e *Engine) admit(ctx context.Context, identity conversationIdentity, reque
 	for {
 		e.mu.Lock()
 		e.ensureState()
+		if e.closed {
+			e.mu.Unlock()
+			result := failedResult(ErrorAgentUnavailable, "Engine is stopping")
+			return nil, nil, nil, &result
+		}
 		turnKey := turnIdentity{conversationIdentity: identity, id: request.ID}
+		if e.history != nil {
+			saved, err := e.savedTurn(identity.agentID, identity.key, request.ID)
+			if err == nil {
+				if !saved.matches(request) {
+					e.mu.Unlock()
+					result := failedResult(ErrorInvalidRequest, "turn already exists or its previous execution outcome is unknown")
+					return nil, nil, nil, &result
+				}
+				if saved.Status == "execution_unknown" || (saved.Result == nil && (e.active[identity] == nil || e.active[identity].request.ID != request.ID)) {
+					e.mu.Unlock()
+					result := failedResult(ErrorExecutionUnknown, "previous execution outcome is unknown; inspect its record before starting another task")
+					return nil, nil, nil, &result
+				}
+				if saved.Result != nil {
+					e.mu.Unlock()
+					replay := &completedTurn{request: saved.Request, events: saved.Events, result: *saved.Result}
+					return nil, replay, nil, nil
+				}
+			} else if !os.IsNotExist(err) {
+				e.mu.Unlock()
+				result := failedResult(ErrorRuntimeFailed, "execution record is unavailable")
+				return nil, nil, nil, &result
+			}
+		}
 		if completed, ok := e.completed[turnKey]; ok {
 			if !sameTurnRequest(completed.request, request) {
 				e.mu.Unlock()
@@ -442,6 +493,13 @@ func (e *Engine) admit(ctx context.Context, identity conversationIdentity, reque
 		current := e.active[identity]
 		if control == nil && current == nil {
 			turn := newActiveTurn(ctx, request)
+			turn.agentID = identity.agentID
+			if err := e.saveTurn(turn, "running", nil); err != nil {
+				turn.cancel()
+				e.mu.Unlock()
+				result := failedResult(ErrorRuntimeFailed, "execution record could not be saved")
+				return nil, nil, nil, &result
+			}
 			e.active[identity] = turn
 			e.mu.Unlock()
 			return turn, nil, nil, nil
@@ -493,6 +551,8 @@ func newActiveTurn(ctx context.Context, request TurnRequest) *activeTurn {
 	runCtx, cancel := context.WithCancel(ctx)
 	return &activeTurn{
 		request:      cloneTurnRequest(request),
+		createdAt:    time.Now().UTC(),
+		changed:      make(chan struct{}),
 		ctx:          runCtx,
 		cancel:       cancel,
 		done:         make(chan struct{}),
@@ -545,6 +605,12 @@ func (e *Engine) promoteControl(identity conversationIdentity, control *conversa
 	if e.controls[identity] != control || e.active[identity] != nil {
 		return false
 	}
+	turn.agentID = identity.agentID
+	if err := e.saveTurn(turn, "running", nil); err != nil {
+		delete(e.controls, identity)
+		close(control.done)
+		return false
+	}
 	e.active[identity] = turn
 	delete(e.controls, identity)
 	close(control.done)
@@ -585,13 +651,21 @@ func (e *Engine) recordAndEmit(ctx context.Context, turn *activeTurn, sink Event
 		}
 	}
 	turn.events = append(turn.events, cloneTurnEvent(event))
+	if turn.changed != nil {
+		close(turn.changed)
+	}
+	turn.changed = make(chan struct{})
 	e.mu.Unlock()
 	return emitTurnEvent(ctx, sink, cloneTurnEvent(event))
 }
 
-func (e *Engine) complete(identity conversationIdentity, turn *activeTurn, result TurnResult) {
+func (e *Engine) complete(identity conversationIdentity, turn *activeTurn, result TurnResult) TurnResult {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := e.saveTurn(turn, string(result.Status), &result); err != nil {
+		result.Error = &TurnError{Code: ErrorExecutionUnknown, Message: "execution completed but its result could not be persisted; do not retry automatically"}
+		result.Status = TurnFailed
+	}
 	turn.result = cloneTurnResult(result)
 	if e.active[identity] == turn {
 		delete(e.active, identity)
@@ -605,10 +679,16 @@ func (e *Engine) complete(identity conversationIdentity, turn *activeTurn, resul
 			oldest := e.completedOrder[0]
 			e.completedOrder = e.completedOrder[1:]
 			delete(e.completed, oldest)
-			e.files.DeleteTurn(oldest.agentID, oldest.key, oldest.id)
+			if e.history == nil {
+				e.files.DeleteTurn(oldest.agentID, oldest.key, oldest.id)
+			}
 		}
 	}
+	if turn.changed != nil {
+		close(turn.changed)
+	}
 	close(turn.done)
+	return cloneTurnResult(result)
 }
 
 func awaitActiveTurn(ctx context.Context, sink EventSink, turn *activeTurn) TurnResult {

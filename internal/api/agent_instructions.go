@@ -28,7 +28,10 @@ func (h *Handler) getAgentInstructions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	document := agent.InstructionsDocument{Instructions: current.Spec.Instructions, Effective: current.Status.Instructions.Effective}
-	writeJSON(w, http.StatusOK, document)
+	writeJSON(w, http.StatusOK, struct {
+		agent.InstructionsDocument
+		ConfigurationRevision string `json:"configuration_revision"`
+	}{document, configurationRevision(current)})
 }
 
 func (h *Handler) putAgentInstructions(w http.ResponseWriter, r *http.Request) {
@@ -50,9 +53,14 @@ func (h *Handler) putAgentInstructions(w http.ResponseWriter, r *http.Request) {
 	agents := h.agentEngine.Agents()
 	current, err := agents.Get(r.Context(), pathValue(r, "id"), agentengine.AgentGetOptions{IncludeDocuments: true})
 	if err == nil {
+		expected := strings.Trim(r.Header.Get("If-Match"), `"`)
+		if expected != "" && expected != configurationRevision(current) {
+			controlError(w, 409, "configuration_conflict", "configuration changed; reload before saving")
+			return
+		}
 		current.Spec.Instructions = runtimeinstructions.ExtractUserInstructionsFromAgentsDocument(request.Effective)
 		_, err = agents.Update(r.Context(), current.ID, agentengine.AgentUpdateRequest{
-			Spec: current.Spec, FieldMask: []string{"instructions"}, ResourceVersion: current.ResourceVersion,
+			Spec: current.Spec, FieldMask: []string{"instructions"}, ResourceVersion: current.ResourceVersion, ConfigurationRevision: expected,
 		})
 	}
 	if err != nil {
@@ -71,5 +79,8 @@ func (h *Handler) putAgentInstructions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	document := agent.InstructionsDocument{Instructions: current.Spec.Instructions, Effective: current.Status.Instructions.Effective}
-	writeJSON(w, http.StatusOK, document)
+	writeJSON(w, http.StatusOK, struct {
+		agent.InstructionsDocument
+		ConfigurationRevision string `json:"configuration_revision"`
+	}{document, configurationRevision(current)})
 }
