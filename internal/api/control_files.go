@@ -64,6 +64,13 @@ func (h *Handler) deleteControlFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := controlPathID(r, "file_id")
+	if used, err := h.legacyFileReferenced(a.ID, id); err != nil {
+		controlError(w, 503, "storage_unavailable", "import references could not be checked")
+		return
+	} else if used {
+		controlError(w, 409, "file_in_use", "file is referenced by an import")
+		return
+	}
 	if refs, ok := h.agentEngine.(interface {
 		FileReferenced(string, string) (bool, error)
 	}); ok {

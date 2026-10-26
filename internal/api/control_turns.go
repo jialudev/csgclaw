@@ -14,6 +14,7 @@ import (
 
 	"csgclaw/internal/agentengine"
 	"csgclaw/internal/agentsession"
+	"csgclaw/internal/legacyimport"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -23,6 +24,9 @@ func (h *Handler) registerControlRoutes(r chi.Router) {
 	r.Get("/readiness", h.preflightAgent)
 	r.Post("/preflight", h.preflightAgent)
 	r.Get("/configuration", h.getControlConfiguration)
+	r.Get("/imports", h.listLegacyImports)
+	r.Post("/imports", h.createLegacyImport)
+	r.Get("/imports/{import_id}", h.getLegacyImport)
 	r.Patch("/configuration", h.patchControlConfiguration)
 	r.Post("/configuration:apply", h.applyControlConfiguration)
 	r.Post("/files", h.createControlFile)
@@ -142,6 +146,15 @@ func (h *Handler) getControlSession(w http.ResponseWriter, r *http.Request) {
 	}
 	b, ok := h.controlBinding(w, r, a.ID, false)
 	if !ok {
+		return
+	}
+	if b.ReadOnly && strings.HasPrefix(b.ConversationKey, "import:") {
+		var record legacyimport.Record
+		if err := h.control.store.Read(legacyimport.Key(a.ID, strings.TrimPrefix(b.ConversationKey, "import:")), &record); err != nil {
+			writeControlError(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"session_id": b.ExternalSession, "agent_id": a.ID, "read_only": true, "source_backend": b.SourceBackend, "state": record.State, "legacy_messages": record.History, "files": record.Files, "items": []agentengine.TurnRecord{}})
 		return
 	}
 	history, ok := h.controlHistory(w, a.ID)

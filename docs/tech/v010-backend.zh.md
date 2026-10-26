@@ -1,6 +1,14 @@
 # 0.10：CSGClaw 端实施与对接
 
-本分支只修改 CSGClaw；云端权限、实例、配额和发布目录由 CSGHub Server / Portal 接入。
+本分支只修改 CSGClaw；云端用户权限、实例分配、休眠唤醒、发布目录与入口切换由 CSGHub Server / Portal 实现。
+
+| 我的需求 | CSGClaw 交付 | 平台仍需接入 |
+| --- | --- | --- |
+| CL-01 | 不含网页的构建、API-only 启动、外接网页与桌面连接、鉴权 | 云端网关授权转发 |
+| CL-02 | 共用配置、文件、会话、执行、确认与订阅 API | 平台按用户和实例授权转发 |
+| AH-05 | 模板依赖声明、实际环境检查与就绪信息 | 资源调度、自动唤醒、发布范围及自定义页面 |
+| AH-11 | 可重复调用的默认业务 Agent 准备与查询 | 用户到实例的唯一关系、免费配额与部署 |
+| AH-10 | 旧数据的幂等导入、冲突保护、校验记录 | 读取旧服务、用户灰度、新旧入口切换 |
 
 ## CL-01：独立后端
 
@@ -38,21 +46,6 @@ API、流式回复、IM 事件、文件和上传共用地址配置，保留部�
 
 严格同站 Cookie 不适用于任意跨站网页；这种部署使用同域代理。浏览器跨域请求必须显式携带凭据，不能配置 `*` 来源；配对不等于 OpenCSG 账号登录。Electron 原有来源与双监听端口检查保留，外接模式由宿主连接已有服务。
 
-## CL-01：桌面连接已有后端
-
-宿主可配置 `CSGCLAW_DESKTOP_BACKEND_API_BASE`（例如 `https://service.example/api/v1/`）和 `CSGCLAW_DESKTOP_BACKEND_TOKEN`。默认不设置时仍启动原本的本地服务。
-
-```mermaid
-flowchart LR
-    Desktop["CSGClaw 桌面 UI"] --> Proxy["本机 UI 代理<br/>检查来源与桌面凭据"]
-    Proxy -->|服务凭据、JSON / SSE / 文件| Backend["已有 CSGClaw 后端"]
-    Other["其他 UI"] --> Backend
-    Backend --> Task["同一个 Engine 与任务"]
-```
-
-连接模式先验证受保护的 `GET /api/v1/control/capabilities`，只接受协议版本 1。桌面启动的子进程只提供网页和转发，不初始化配置、Agent 或 IM，也不争抢已有后端的实例锁；凭据经私有 stdin 管道交给代理，不进启动参数、渲染器或日志。
-
-代理保留原桌面的 Host / Origin / CSP 约束，另外检查随机桌面凭据；移除浏览器 Cookie、替换转发凭据，拒绝远端机器上的“打开文件 / 选择目录”。退出或重启桌面只关闭 UI 代理，不关闭已有后端；后端进程仍由原部署方管理。云端网关需授权转发握手与相应 API，不能靠客户端任意指定内部目标。
 ## CL-02：共用接口
 
 下面均接在 `/api/v1/agents/{id}` 后，要求服务凭据；平台仍须先检查用户与实例归属。
@@ -113,3 +106,38 @@ CPU/内存是否充足、实例休眠唤醒、发布范围、自定义页面和�
 多个请求串行准备同一个固定 ID；创建后写记录失败或进程重启，下一次从该 ID 认领已有 Agent，不另建一个。原对应关系会保护删除，仍允许编辑与重建执行程序。只有 Agent、模型配置和声明环境都就绪才返回 200；准备中返回 202，并给出缺项，失败返回同一操作记录和重试入口。
 
 用户到实例的唯一关系、免费资格、配额和实例休眠恢复由 Server 负责，不能把本地绑定当作云端用户分配已经完成。
+
+## AH-10：接收旧小助手数据
+
+`POST /api/v1/agents/{id}/imports` 接收 Server 已授权导出的数据；CSGClaw 不自行登录旧服务，也不接收任意旧服务器地址或挂载路径。
+
+请求包含 `source_id / source_session / expected_revision`，可选 `source_revision` 区分同一会话的不同导出快照；内容分为：
+
+- `configuration`：指定字段导入提示词、模型选择和 MCP，保留未指定字段和凭据。
+- `files`：相对路径、MIME、SHA-256 和 Base64 内容；稳定文件 ID，同时保存到 `imports/{批次ID}/...`。
+- `skills`：名称与文件清单，必须有 `SKILL.md`；同名且内容不同则冲突，不覆盖原技能。
+- `history`：带来源消息 ID 的文本记录；按只读旧会话显示，不恢复旧执行程序的内部上下文。
+
+单次请求上限 32 MiB，解码后的文件总量上限 24 MiB。先核对路径和 hash，再分步保存结果；配置信息沿用 CL-02 的版本检查，技能通过现有 Engine 的替换与重启流程应用。
+
+`GET .../imports` 和 `GET .../imports/{批次ID}` 可查文件映射、数量、hash、技能、历史和状态。相同快照重试复用原文件 ID；完成后再次导入只读取原结果，不覆盖用户之后的新配置。来源内容改变必须使用新的 `source_revision`。
+
+若在配置生效后、保存导入结果前崩溃，状态为 `needs_review`，返回 409；先人工核对，不猜测后再执行一遍。普通文件阶段中断可继续原批次。导入历史进入 `legacy.*` 只读会话，旧 responses 和新 turns 都拒绝在它上面继续执行；新聊天创建新的 CSGClaw 会话。
+
+Server 仍负责旧数据导出权限、新旧入口切换、灰度和回退。CSGClaw 保留两边数据，不替平台删除旧会话。
+
+## CL-01：桌面连接已有后端
+
+宿主可配置 `CSGCLAW_DESKTOP_BACKEND_API_BASE`（例如 `https://service.example/api/v1/`）和 `CSGCLAW_DESKTOP_BACKEND_TOKEN`。默认不设置时仍启动原本的本地服务。
+
+```mermaid
+flowchart LR
+    Desktop["CSGClaw 桌面 UI"] --> Proxy["本机 UI 代理<br/>检查来源与桌面凭据"]
+    Proxy -->|服务凭据、JSON / SSE / 文件| Backend["已有 CSGClaw 后端"]
+    Other["其他 UI"] --> Backend
+    Backend --> Task["同一个 Engine 与任务"]
+```
+
+连接模式先验证受保护的 `GET /api/v1/control/capabilities`，只接受协议版本 1。桌面启动的子进程只提供网页和转发，不初始化配置、Agent 或 IM，也不争抢已有后端的实例锁；凭据经私有 stdin 管道交给代理，不进启动参数、渲染器或日志。
+
+代理保留原桌面的 Host / Origin / CSP 约束，另外检查随机桌面凭据；移除浏览器 Cookie、替换转发凭据，拒绝远端机器上的“打开文件 / 选择目录”。退出或重启桌面只关闭 UI 代理，不关闭已有后端；后端进程仍由原部署方管理。云端网关需授权转发握手与相应 API，不能靠客户端任意指定内部目标。

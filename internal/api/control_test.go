@@ -3,12 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
-	agentruntime "csgclaw/internal/runtime"
-	hub "csgclaw/internal/template"
 	"encoding/json"
-	"io"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -164,21 +160,4 @@ func TestConfigurationKeepsLastAppliedRevisionWhilePending(t *testing.T) {
 	if after.Applied != before.Applied || after.Desired == after.Applied || after.State != "applying" {
 		t.Fatalf("pending state: %s", pending.Body)
 	}
-}
-
-type importTestWorkspace struct{ root string }
-
-func (w importTestWorkspace) AgentLayout(string) (agentruntime.Layout, error) {
-	return agentruntime.Layout{WorkspaceRoot: w.root}, nil
-}
-func (w importTestWorkspace) SkillsRoot(string) (string, error) {
-	return filepath.Join(w.root, "skills"), nil
-}
-func (w importTestWorkspace) WorkspaceRoot(string) (string, error)     { return w.root, nil }
-func (w importTestWorkspace) WorkspaceRootByID(string) (string, error) { return w.root, nil }
-func (w importTestWorkspace) HubPublishSpec(string, bool) (hub.PublishSpec, error) {
-	return hub.PublishSpec{}, nil
-}
-func (w importTestWorkspace) StreamLogs(context.Context, string, bool, int, io.Writer) error {
-	return nil
 }
