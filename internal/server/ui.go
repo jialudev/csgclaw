@@ -3,13 +3,7 @@ package server
 import (
 	"net/http"
 	"strings"
-
-	webui "csgclaw/web"
 )
-
-func uiHandler() http.Handler {
-	return webui.Handler()
-}
 
 func uiFallbackHandler() http.Handler {
 	return apiAwareFallbackHandler(uiHandler())

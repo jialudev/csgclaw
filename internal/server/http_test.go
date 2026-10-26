@@ -376,6 +376,9 @@ func TestRunDesktopServesRendererAndSandboxOnSeparateListeners(t *testing.T) {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	for _, tt := range tests {
+		if tt.name == "renderer UI accepts external browser" && !UIAvailable {
+			tt.wantStatus = http.StatusNotFound
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, tt.url, nil)
 			if err != nil {

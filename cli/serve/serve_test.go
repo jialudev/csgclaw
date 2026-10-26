@@ -506,6 +506,9 @@ func TestRefreshStartupModelProvidersSavesDiscoveredModels(t *testing.T) {
 }
 
 func TestServeForegroundOpensIMURLWhenBrowserAllowed(t *testing.T) {
+	if !server.UIAvailable {
+		t.Skip("requires embedded UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 
@@ -606,6 +609,9 @@ func TestServeRunDoesNotOpenBrowserByDefault(t *testing.T) {
 }
 
 func TestServeRunBrowserFlagOpensBrowser(t *testing.T) {
+	if !server.UIAvailable {
+		t.Skip("requires embedded UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 
@@ -655,6 +661,9 @@ func TestServeRunBrowserFlagOpensBrowser(t *testing.T) {
 }
 
 func TestServeForegroundPrintsManualIMURLWhenBrowserNotAllowed(t *testing.T) {
+	if !server.UIAvailable {
+		t.Skip("requires embedded UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 
@@ -696,6 +705,9 @@ func TestServeForegroundPrintsManualIMURLWhenBrowserNotAllowed(t *testing.T) {
 }
 
 func TestServeForegroundWaitsForHealthyBeforeOpeningBrowser(t *testing.T) {
+	if !server.UIAvailable {
+		t.Skip("requires embedded UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 

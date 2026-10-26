@@ -18,6 +18,8 @@ const (
 )
 
 type BootstrapMessage struct {
+	BackendAPIBase  string `json:"backend_api_base,omitempty"`
+	BackendToken    string `json:"backend_token,omitempty"`
 	Type            string `json:"type"`
 	ProtocolVersion int    `json:"protocol_version"`
 	InstanceID      string `json:"instance_id"`

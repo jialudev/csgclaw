@@ -46,6 +46,7 @@ DESKTOP_PLATFORM ?= $(if $(filter windows,$(TARGET_OS)),win32,$(TARGET_OS))
 DESKTOP_ARCH ?= $(if $(filter amd64,$(TARGET_ARCH)),x64,$(TARGET_ARCH))
 HOST_BINARY_SUFFIX := $(if $(filter windows,$(TARGET_OS)),.exe,)
 SERVER_BIN ?= $(BIN_DIR)/$(APP)$(HOST_BINARY_SUFFIX)
+HEADLESS_BIN ?= $(BIN_DIR)/$(APP)-headless$(HOST_BINARY_SUFFIX)
 HOST_CLI_BIN ?= $(BIN_DIR)/csgclaw-cli$(HOST_BINARY_SUFFIX)
 BIN ?= $(SERVER_BIN)
 SANDBOX_BUNDLE_TOOLS_DIR ?= $(BIN_DIR)/sandbox-tools
@@ -53,7 +54,7 @@ SANDBOX_CLI_BIN ?= $(SANDBOX_BUNDLE_TOOLS_DIR)/csgclaw-cli
 
 .DEFAULT_GOAL := build
 
-.PHONY: help fmt test check-web-toolchain check-web-layout ensure-web-deps web-install web-dev web-typecheck web-build-assets build-web check-desktop-layout ensure-desktop-deps desktop-dev desktop-backend-bundle desktop-package desktop-package-macos-signed desktop-package-oss desktop-oss-manifest desktop-oss-publish desktop-oss-upload-packages desktop-oss-release build build-all build-server build-server-bin build-codex-cli build-sandbox-cli install-sandbox-cli run clean package package-all release
+.PHONY: build-headless help fmt test check-web-toolchain check-web-layout ensure-web-deps web-install web-dev web-typecheck web-build-assets build-web check-desktop-layout ensure-desktop-deps desktop-dev desktop-backend-bundle desktop-package desktop-package-macos-signed desktop-package-oss desktop-oss-manifest desktop-oss-publish desktop-oss-upload-packages desktop-oss-release build build-all build-server build-server-bin build-codex-cli build-sandbox-cli install-sandbox-cli run clean package package-all release
 
 help:
 	@printf '%s\n' \
@@ -64,6 +65,7 @@ help:
 		'make test       - run go test ./...' \
 		'make web-install - install Web UI dependencies' \
 		'make web-dev    - run Vite Web UI dev server' \
+		'make build-headless - build an API-only backend without Node or Web assets' \
 		'make build-web  - build Web UI app into web/static-dist' \
 		'make desktop-dev - install dependencies when needed, build the local backend, and start Electron Forge' \
 		'make desktop-package - create platform Electron installers/archives (set CSGCLAW_DESKTOP_WINDOWS_CHANNEL=store for MSIX)' \
@@ -258,6 +260,13 @@ desktop-oss-upload-packages:
 desktop-oss-release: desktop-oss-publish
 
 build: build-web build-server-bin build-sandbox-cli
+
+build-headless: build-codex-cli
+	mkdir -p $(BIN_DIR)
+	env GOCACHE=$(GOCACHE) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+		$(GO) build -tags headless -ldflags "$(LDFLAGS)" -o "$(HEADLESS_BIN)" ./cmd/csgclaw
+	env GOCACHE=$(GOCACHE) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+		$(GO) build -ldflags "$(CLI_LDFLAGS)" -o "$(HOST_CLI_BIN)" ./cmd/csgclaw-cli
 
 build-all: build
 

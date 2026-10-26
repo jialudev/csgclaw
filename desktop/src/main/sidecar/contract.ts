@@ -11,6 +11,8 @@ export type DesktopBootstrapMessage = {
   protocol_version: typeof DESKTOP_PROTOCOL_VERSION;
   instance_id: string;
   session_token: string;
+ backend_api_base?: string;
+ backend_token?: string;
 };
 
 export type DesktopReadyMessage = {

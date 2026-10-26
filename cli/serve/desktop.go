@@ -60,6 +60,9 @@ func (desktopServeCmd) Run(parent context.Context, run *command.Context, args []
 		return err
 	}
 
+	if bootstrap.BackendAPIBase != "" || bootstrap.BackendToken != "" {
+		return serveExternalDesktop(parent, run, reader, bootstrap)
+	}
 	instanceLock, err := appbootstrap.AcquireInstanceLock()
 	if err != nil {
 		return err
@@ -202,4 +205,29 @@ func monitorDesktopControlChannel(ctx context.Context, cancel context.CancelFunc
 	case <-timer.C:
 		cancel()
 	}
+}
+
+// The UI host has its own lifetime and intentionally does not acquire the local
+// Engine instance lock or initialize any Agent/configuration service.
+func serveExternalDesktop(parent context.Context, run *command.Context, reader *bufio.Reader, bootstrap desktop.BootstrapMessage) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	if err := server.CheckBackendConnection(ctx, bootstrap.BackendAPIBase, bootstrap.BackendToken); err != nil {
+		return err
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	ready, err := desktop.NewReadyMessage(bootstrap.InstanceID, "http://"+listener.Addr().String())
+	if err != nil {
+		return err
+	}
+	go monitorDesktopControlChannel(ctx, cancel, reader)
+	return server.RunUIProxy(server.UIProxyOptions{Context: ctx, Listener: listener, BackendAPIBase: bootstrap.BackendAPIBase, BackendToken: bootstrap.BackendToken, SessionToken: bootstrap.SessionToken, OnListening: func() {
+		if json.NewEncoder(run.Stdout).Encode(ready) != nil {
+			cancel()
+		}
+	}})
 }

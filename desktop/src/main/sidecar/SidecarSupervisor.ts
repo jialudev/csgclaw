@@ -7,6 +7,7 @@ import readline from "node:readline";
 import { app, session } from "electron";
 import { resolveSidecarEnvironment } from "./childEnvironment";
 import { DesktopMessageType, DESKTOP_PROTOCOL_VERSION, type DesktopBootstrapMessage, type DesktopReadyMessage } from "./contract";
+import { externalBackendFromEnvironment } from "./externalBackend";
 import { locateBackendBundle } from "./locateBundle";
 import { assertCompatibleVersions, parseReadyMessage } from "./readyProtocol";
 
@@ -99,7 +100,10 @@ export class SidecarSupervisor extends EventEmitter {
     if (configPath) {
       args.push("--config", configPath);
     }
-    const childEnvironment = await this.resolveChildEnvironment(bundle.root);
+    const externalBackend=externalBackendFromEnvironment(process.env);
+    const childEnvironment = { ...await this.resolveChildEnvironment(bundle.root) };
+    delete childEnvironment.CSGCLAW_DESKTOP_BACKEND_TOKEN;
+    delete childEnvironment.CSGCLAW_DESKTOP_BACKEND_API_BASE;
     const child = spawn(bundle.executable, args, {
       cwd: bundle.root,
       env: childEnvironment,
@@ -114,6 +118,7 @@ export class SidecarSupervisor extends EventEmitter {
       protocol_version: DESKTOP_PROTOCOL_VERSION,
       instance_id: instanceID,
       session_token: sessionToken,
+      ...externalBackend,
     };
     child.stdin.write(`${JSON.stringify(bootstrap)}\n`);
 

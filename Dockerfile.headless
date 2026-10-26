@@ -1,0 +1,40 @@
+ARG GO_IMAGE=golang:1.26.2-alpine
+ARG RUNTIME_IMAGE=alpine:3.23
+FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build
+WORKDIR /src
+RUN apk add --no-cache bash ca-certificates curl tar gzip
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG CODEX_CLI_DOWNLOAD_BASE_URL=https://csgclaw.opencsg.com/codex-cli/latest
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -tags headless -trimpath \
+    -ldflags="-s -w -X csgclaw/internal/version.Version=${VERSION} -X csgclaw/internal/version.Commit=${COMMIT} -X csgclaw/internal/version.BuildTime=${BUILD_TIME}" \
+    -o /out/csgclaw ./cmd/csgclaw && \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
+    -ldflags="-s -w -X csgclaw/internal/version.Version=${VERSION} -X csgclaw/internal/version.Commit=${COMMIT} -X csgclaw/internal/version.BuildTime=${BUILD_TIME}" \
+    -o /out/csgclaw-cli ./cmd/csgclaw-cli
+
+RUN CODEX_CLI_DOWNLOAD_BASE_URL="${CODEX_CLI_DOWNLOAD_BASE_URL}" \
+    ./scripts/fetch-codex-cli.sh "${TARGETOS}" "${TARGETARCH}" /out
+
+# A deployment may supply its validated runtime image here.
+# This base includes common tool interpreters; runtime availability is checked
+# separately instead of silently selecting a different Agent runtime.
+FROM ${RUNTIME_IMAGE}
+RUN apk add --no-cache ca-certificates tzdata nodejs npm python3 git bash
+COPY --from=build /out/csgclaw /opt/csgclaw/bin/csgclaw
+COPY --from=build /out/csgclaw-cli /opt/csgclaw/bin/csgclaw-cli
+COPY --from=build /out/codex /opt/csgclaw/bin/codex
+RUN printf '%s\n' '{"app":"csgclaw","layout":"official-bundle","flavor":"headless"}' > /opt/csgclaw/.csgclaw-bundle.json && \
+    ln -s /opt/csgclaw/bin/csgclaw /usr/local/bin/csgclaw && \
+    ln -s /opt/csgclaw/bin/csgclaw-cli /usr/local/bin/csgclaw-cli && \
+    ln -s /opt/csgclaw/bin/codex /usr/local/bin/codex && \
+    /opt/csgclaw/bin/codex --version
+WORKDIR /opt/csgclaw
+ENTRYPOINT ["/opt/csgclaw/bin/csgclaw"]
+CMD ["serve", "--api-only", "--no-browser"]

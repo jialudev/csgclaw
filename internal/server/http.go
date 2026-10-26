@@ -33,6 +33,7 @@ import (
 type Options struct {
 	UIOrigins          []string
 	ControlStore       *controlplane.Store
+	APIOnly            bool
 	ListenAddr         string
 	Listener           net.Listener
 	SandboxListener    net.Listener
@@ -81,6 +82,7 @@ func newHandler(opts Options) *api.Handler {
 	if opts.Desktop == nil {
 		_ = handler.SetUIOrigins(opts.UIOrigins)
 	}
+	handler.SetAPIOnly(opts.APIOnly || !UIAvailable)
 	handler.SetControlStore(opts.ControlStore, opts.Context)
 	handler.SetParticipantService(opts.Participant)
 	handler.SetParticipantWorkService(opts.WorkReporter, opts.WorkBus, opts.WorkControlBus)
@@ -155,7 +157,9 @@ func Run(opts Options) error {
 		return fmt.Errorf("recover video generations: %w", err)
 	}
 	router := handler.Routes()
-	router.Handle("/*", uiFallbackHandler())
+	if !opts.APIOnly && UIAvailable {
+		router.Handle("/*", uiFallbackHandler())
+	}
 
 	var rootHandler http.Handler = router
 	type serverEndpoint struct {

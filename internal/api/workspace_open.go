@@ -43,7 +43,7 @@ func (h *Handler) validWorkspaceOpenCredential(header string) bool {
 }
 
 func (h *Handler) workspaceOpenTargets(r *http.Request, path string, directory bool) []workspaceOpenTarget {
-	if !localWorkspaceClient(r) || appRequestAgentID(r) != "" || r.Header.Get("X-CSGClaw-Caller-Agent") != "" || strings.HasPrefix(r.Header.Get("Authorization"), "Bearer agent.") {
+	if h.apiOnly || !localWorkspaceClient(r) || appRequestAgentID(r) != "" || r.Header.Get("X-CSGClaw-Caller-Agent") != "" || strings.HasPrefix(r.Header.Get("Authorization"), "Bearer agent.") {
 		return []workspaceOpenTarget{}
 	}
 	if header := r.Header.Get("Authorization"); header != "" && !h.validWorkspaceOpenCredential(header) {

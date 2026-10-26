@@ -157,6 +157,7 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	browser := fs.Bool("browser", false, "open the browser after startup")
 	noBrowser := fs.Bool("no-browser", false, "do not open the browser after startup (default)")
 	uiOrigins := fs.String("ui-origins", "", "comma-separated exact origins allowed for external UIs")
+	apiOnly := fs.Bool("api-only", !server.UIAvailable, "serve APIs without the built-in UI or host desktop actions")
 	noAuthDetect := fs.Bool("no-auth-detect", false, "disable automatic auth detection during startup")
 	logLevel := fs.String("log-level", "info", "log level: debug, info, warn, error")
 
@@ -172,6 +173,9 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 	pidPath := fs.String("pid", defaultPIDPath, "pid file path, daemon mode only")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *apiOnly || !server.UIAvailable {
+		*noAuthDetect = true
 	}
 	if err := api.ValidateUIOrigins(splitUIOrigins(*uiOrigins)); err != nil {
 		return err
@@ -221,7 +225,8 @@ func (c serveCmd) Run(ctx context.Context, run *command.Context, args []string, 
 
 	serveOpts := serveOptions{
 		UIOrigins:    splitUIOrigins(*uiOrigins),
-		OpenBrowser:  *browser && !*noBrowser,
+		APIOnly:      *apiOnly || !server.UIAvailable,
+		OpenBrowser:  *browser && !*noBrowser && !*apiOnly && server.UIAvailable,
 		NoAuthDetect: *noAuthDetect,
 	}
 	if *daemon {
@@ -303,9 +308,13 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	browser := fs.Bool("browser", false, "open the browser after startup")
 	noBrowser := fs.Bool("no-browser", false, "do not open the browser after startup (default)")
 	uiOrigins := fs.String("ui-origins", "", "comma-separated exact origins allowed for external UIs")
+	apiOnly := fs.Bool("api-only", !server.UIAvailable, "serve APIs without the built-in UI or host desktop actions")
 	noAuthDetect := fs.Bool("no-auth-detect", false, "disable automatic auth detection during startup")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *apiOnly || !server.UIAvailable {
+		*noAuthDetect = true
 	}
 	if err := api.ValidateUIOrigins(splitUIOrigins(*uiOrigins)); err != nil {
 		return err
@@ -371,7 +380,8 @@ func (c internalServeCmd) Run(ctx context.Context, run *command.Context, args []
 	}
 	return startServerWithConfigPath(ctx, run, cfg, svc, imSvc, imBus, feishuSvc, configPath, globals.Output, serveOptions{
 		UIOrigins:    splitUIOrigins(*uiOrigins),
-		OpenBrowser:  *browser && !*noBrowser,
+		APIOnly:      *apiOnly || !server.UIAvailable,
+		OpenBrowser:  *browser && !*noBrowser && !*apiOnly && server.UIAvailable,
 		NoAuthDetect: *noAuthDetect,
 	})
 }
@@ -399,6 +409,7 @@ func officialInstallGuidance(goos string) (string, string) {
 
 type serveOptions struct {
 	UIOrigins       []string
+	APIOnly         bool
 	OpenBrowser     bool
 	NoAuthDetect    bool
 	Quiet           bool
@@ -521,10 +532,13 @@ func backgroundServeArgs(configPath, pidPath, logLevel string, opts serveOptions
 	if len(opts.UIOrigins) > 0 {
 		args = append(args, "--ui-origins", strings.Join(opts.UIOrigins, ","))
 	}
-	if opts.OpenBrowser {
+	if opts.APIOnly || !server.UIAvailable {
+		args = append(args, "--api-only")
+	}
+	if opts.OpenBrowser && !opts.APIOnly && server.UIAvailable {
 		args = append(args, "--browser")
 	}
-	if opts.NoAuthDetect {
+	if opts.NoAuthDetect || opts.APIOnly || !server.UIAvailable {
 		args = append(args, "--no-auth-detect")
 	}
 	return args
@@ -805,6 +819,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 	return RunServer(server.Options{
 		UIOrigins:          serveOpts.UIOrigins,
 		ControlStore:       controlStore,
+		APIOnly:            serveOpts.APIOnly || !server.UIAvailable,
 		ListenAddr:         cfg.Server.ListenAddr,
 		Listener:           serveOpts.Listener,
 		SandboxListener:    serveOpts.SandboxListener,
@@ -845,7 +860,7 @@ func startServerWithConfigPath(ctx context.Context, run *command.Context, cfg co
 		OnReady: func(handler *api.Handler, router chi.Router) {
 			deliver := channelwiring.WireNotificationParticipantPull(ctx, participantSvc, imSvc, apiURL, cfg.Server.AccessToken)
 			handler.SetNotificationDeliver(deliver)
-			if serveOpts.OpenBrowser && output != "json" && run != nil {
+			if serveOpts.OpenBrowser && !serveOpts.APIOnly && server.UIAvailable && output != "json" && run != nil {
 				waitForHealthy := WaitForHealthy
 				openBrowser := OpenBrowser
 				go func() {
