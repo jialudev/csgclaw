@@ -669,6 +669,7 @@ describe("TasksView", () => {
     await waitFor(() =>
       expect(onEditScheduledTask).toHaveBeenCalledWith(item.id, {
         title: "Updated report",
+        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         agent_id: "agent-2",
         prompt: "Write the updated report",
         recurrence: "weekly",

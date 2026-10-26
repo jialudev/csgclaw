@@ -107,6 +107,23 @@ func (h *Handler) authorizeAgentPlatformRoute(r *http.Request, agentID string) b
 	if h.agentPlatformManager(agentID) && managerSkillRoute(r) {
 		return true
 	}
+	if parts[0] == "scheduled-tasks" {
+		if !h.agentPlatformManager(agentID) {
+			return false
+		}
+		if len(parts) == 2 && parts[1] == "parse" {
+			return r.Method == http.MethodPost
+		}
+		if len(parts) == 1 && r.Method == http.MethodGet {
+			return true
+		}
+		if len(parts) == 1 && r.Method == http.MethodPost {
+			payload, ok := platformRequestBody(r)
+			confirmed, _ := payload["confirmed"].(bool)
+			return ok && confirmed
+		}
+		return false
+	}
 	if parts[0] == "agent-tasks" || parts[0] == "teams" {
 		return h.authorizeAgentTaskRoute(r, agentID, parts)
 	}

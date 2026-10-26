@@ -13,17 +13,20 @@ const (
 )
 
 type Task struct {
-	ID         string     `json:"id"`
-	Title      string     `json:"title"`
-	AgentID    string     `json:"agent_id"`
-	Prompt     string     `json:"prompt"`
-	Recurrence string     `json:"recurrence"`
-	Enabled    bool       `json:"enabled"`
-	NextRunAt  time.Time  `json:"next_run_at"`
-	LastRunAt  *time.Time `json:"last_run_at,omitempty"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	CreateFingerprint string     `json:"create_fingerprint,omitempty"`
+	TimeZone          string     `json:"time_zone,omitempty"`
+	ClientRequestID   string     `json:"client_request_id,omitempty"`
+	ID                string     `json:"id"`
+	Title             string     `json:"title"`
+	AgentID           string     `json:"agent_id"`
+	Prompt            string     `json:"prompt"`
+	Recurrence        string     `json:"recurrence"`
+	Enabled           bool       `json:"enabled"`
+	NextRunAt         time.Time  `json:"next_run_at"`
+	LastRunAt         *time.Time `json:"last_run_at,omitempty"`
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 type Run struct {
@@ -36,16 +39,19 @@ type Run struct {
 }
 
 type CreateInput struct {
-	Title      string
-	AgentID    string
-	Prompt     string
-	Recurrence string
-	FirstRunAt time.Time
-	ExpiresAt  *time.Time
-	Enabled    bool
+	TimeZone        string
+	ClientRequestID string
+	Title           string
+	AgentID         string
+	Prompt          string
+	Recurrence      string
+	FirstRunAt      time.Time
+	ExpiresAt       *time.Time
+	Enabled         bool
 }
 
 type UpdateInput struct {
+	TimeZone   *string
 	ID         string
 	Title      *string
 	AgentID    *string

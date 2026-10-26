@@ -14,6 +14,8 @@ export type TaskCreateFieldErrors = {
 };
 
 export type ScheduledTaskFormDraft = {
+  timeZone?: string;
+  clientRequestID?: string;
   agentID: string;
   date: string;
   expiresDate: string;

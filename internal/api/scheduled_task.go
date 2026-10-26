@@ -49,7 +49,18 @@ func (h *Handler) handleCreateScheduledTask(w http.ResponseWriter, r *http.Reque
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	if req.Recurrence != "" && req.Recurrence != "once" && req.Recurrence != "daily" && req.Recurrence != "weekly" && req.Recurrence != "monthly" {
+		http.Error(w, "unsupported recurrence", http.StatusBadRequest)
+		return
+	}
+	if h.svc != nil {
+		if _, found := h.svc.Agent(req.AgentID); !found {
+			http.Error(w, "executor is unavailable", http.StatusBadRequest)
+			return
+		}
+	}
 	item, err := svc.Create(scheduledtask.CreateInput{
+		TimeZone: req.TimeZone, ClientRequestID: req.ClientRequestID,
 		Title:      strings.TrimSpace(req.Title),
 		AgentID:    strings.TrimSpace(req.AgentID),
 		Prompt:     strings.TrimSpace(req.Prompt),
@@ -76,6 +87,7 @@ func (h *Handler) handleUpdateScheduledTask(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	item, err := svc.Update(scheduledtask.UpdateInput{
+		TimeZone:   req.TimeZone,
 		ID:         pathValue(r, "scheduled_task_id"),
 		Title:      req.Title,
 		AgentID:    req.AgentID,
@@ -144,6 +156,7 @@ func writeScheduledTaskError(w http.ResponseWriter, err error) {
 
 func apiScheduledTask(item scheduledtask.Task, presenter teamIdentityPresenter) apitypes.ScheduledTask {
 	return apitypes.ScheduledTask{
+		TimeZone: item.TimeZone, ClientRequestID: item.ClientRequestID,
 		ID:         item.ID,
 		Title:      item.Title,
 		AgentID:    item.AgentID,
@@ -191,6 +204,7 @@ func localTimeDoublePtr(value *time.Time) **time.Time {
 }
 
 type patchScheduledTaskRequest struct {
+	TimeZone   *string      `json:"time_zone,omitempty"`
 	Title      *string      `json:"title,omitempty"`
 	AgentID    *string      `json:"agent_id,omitempty"`
 	Prompt     *string      `json:"prompt,omitempty"`

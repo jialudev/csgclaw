@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Select } from "@/components/ui";
+import { browserTimeZone } from "@/models/scheduleTime";
+import { Select, TextInput, Field } from "@/components/ui";
 import { classNames } from "@/shared/lib/classNames";
 import { TASK_TITLE_MAX_LENGTH } from "./taskDialogTypes";
 import styles from "./TasksView.module.css";
@@ -27,6 +28,12 @@ export function ScheduledTaskFormFields({
 }: ScheduledTaskFormFieldsProps) {
   return (
     <div className={styles.taskCreateForm}>
+      <Field label={t("scheduleTimeZone")}>
+        <TextInput
+          value={draft.timeZone || browserTimeZone()}
+          onChange={(event) => onChange((current) => ({ ...current, timeZone: event.currentTarget.value }))}
+        />
+      </Field>
       <label className={classNames("field", styles.taskCreateField)} data-invalid={errors.title ? true : undefined}>
         <span>{t("taskTitleLabel")}</span>
         <input

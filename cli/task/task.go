@@ -36,6 +36,8 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 	}
 
 	switch args[0] {
+	case "schedule":
+		return c.runSchedule(ctx, run, args[1:], globals)
 	case "list":
 		return c.runList(ctx, run, args[1:], globals)
 	case "create":
@@ -55,6 +57,7 @@ func (c cmd) Run(ctx context.Context, run *command.Context, args []string, globa
 func (c cmd) usage(run *command.Context) {
 	run.UsageCommandGroup(c, run.Program+" task <subcommand> [flags]", []string{
 		"list                        List global tasks or tasks in --room",
+		"schedule parse|create|list   Preview and confirm scheduled tasks",
 		"create                      Create an agent task",
 		"claim                       Claim a task; assignment is resolved from its id",
 		"update                      Update a task; assignment is resolved from its id",

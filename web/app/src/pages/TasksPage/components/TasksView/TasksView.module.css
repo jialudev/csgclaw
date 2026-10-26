@@ -1279,3 +1279,31 @@
     width: 100%;
   }
 }
+
+.schedulePreviewFields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.scheduledCreateDialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.scheduledCreateBody {
+  min-height: 0;
+  overflow: auto;
+}
+.scheduledCreateFooter {
+  flex-shrink: 0;
+}
+.scheduleNatural {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.scheduleNaturalText {
+  min-height: 72px;
+}

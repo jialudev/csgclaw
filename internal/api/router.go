@@ -311,6 +311,7 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 			})
 		})
 		r.Route("/scheduled-tasks", func(r chi.Router) {
+			r.Post("/parse", h.handleParseScheduledTask)
 			r.Get("/", h.listScheduledTasks)
 			r.Post("/", h.createScheduledTask)
 			r.Route("/{scheduled_task_id}", func(r chi.Router) {

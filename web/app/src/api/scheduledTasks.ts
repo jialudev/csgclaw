@@ -12,6 +12,8 @@ import type {
 } from "@/models/scheduledTasks";
 
 export type CreateScheduledTaskPayload = {
+  time_zone?: string;
+  client_request_id?: string;
   title: string;
   agent_id: string;
   prompt: string;
@@ -22,6 +24,7 @@ export type CreateScheduledTaskPayload = {
 };
 
 export type UpdateScheduledTaskPayload = Partial<{
+  time_zone?: string;
   title: string;
   agent_id: string;
   prompt: string;
@@ -90,4 +93,17 @@ export async function runScheduledTaskNow(taskID: string): Promise<WorkspaceSche
     throw new Error("Invalid scheduled task run response");
   }
   return run;
+}
+
+export type SchedulePreview = CreateScheduledTaskPayload & {
+  time_zone: string;
+  client_request_id?: string;
+  clarification?: string;
+};
+export function parseScheduledTask(
+  text: string,
+  time_zone: string,
+  default_agent_id?: string,
+): Promise<SchedulePreview> {
+  return post<SchedulePreview>("/api/v1/scheduled-tasks/parse", { text, time_zone, default_agent_id });
 }

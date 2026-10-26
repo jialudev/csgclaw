@@ -87,11 +87,15 @@ func (s *Service) CreateAgentTask(ctx context.Context, input CreateInput) (taskc
 	if err != nil {
 		return taskcore.Task{}, err
 	}
+	role := agent.RoleWorker
+	if agentID == agent.ManagerUserID {
+		role = agent.RoleManager
+	}
 	user, room, err := s.im.EnsureAgentUser(im.EnsureAgentUserRequest{
 		ID:          agentID,
 		Name:        name,
 		Description: description,
-		Role:        agent.RoleWorker,
+		Role:        role,
 	})
 	if err != nil {
 		return taskcore.Task{}, err

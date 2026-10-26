@@ -1,3 +1,4 @@
+import { browserTimeZone, scheduleClock, scheduleInstant } from "@/models/scheduleTime";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
 import { Bot, CalendarClock, ChevronDown, Pencil, Play, Trash2 } from "lucide-react";
@@ -155,11 +156,13 @@ function taskAssignmentOptions(teams: readonly WorkspaceTeam[], agents: readonly
 }
 
 function scheduledTaskAgentOptions(agents: readonly AgentLike[]) {
-  return assignableAgents(agents).map((agent) => ({
-    value: String(agent.id || ""),
-    label: displayAgent(agent),
-    description: String(agent.id || ""),
-  }));
+  return agents
+    .filter((agent) => agent.id && ["manager", "worker", "agent"].includes(agent.role || "worker"))
+    .map((agent) => ({
+      value: String(agent.id || ""),
+      label: displayAgent(agent),
+      description: String(agent.id || ""),
+    }));
 }
 
 function todayInputValue(now = new Date()): string {
@@ -170,62 +173,31 @@ function timeInputValue(now = new Date()): string {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
-function localDateTimeISO(date: string, time: string): string {
-  const parsed = new Date(`${date}T${time}:00`);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
-}
-
-function nextDailyRunAtISO(time: string, now = new Date()): string {
-  const candidate = new Date(`${todayInputValue(now)}T${time}:00`);
-  if (Number.isNaN(candidate.getTime())) {
-    return "";
-  }
-  if (candidate.getTime() <= now.getTime()) {
-    candidate.setDate(candidate.getDate() + 1);
-  }
-  return candidate.toISOString();
-}
-
 function scheduledTaskNextRunAtISO(draft: ScheduledTaskFormDraft): string {
   if (draft.date) {
-    return localDateTimeISO(draft.date, draft.time);
+    return scheduleInstant(draft.date, draft.time, draft.timeZone || browserTimeZone());
   }
   if (draft.recurrence === "daily" && draft.time) {
-    return nextDailyRunAtISO(draft.time);
+    const zone = draft.timeZone || browserTimeZone();
+    const today = scheduleClock(new Date().toISOString(), zone).date;
+    const next = scheduleInstant(today, draft.time, zone);
+    if (next && Date.parse(next) > Date.now()) return next;
+    const tomorrow = new Date(`${today}T12:00:00Z`);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    return scheduleInstant(tomorrow.toISOString().slice(0, 10), draft.time, zone);
   }
   return "";
-}
-
-function dateInputFromISO(value: string): string {
-  if (!value) {
-    return "";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "";
-  }
-  return todayInputValue(parsed);
-}
-
-function timeInputFromISO(value: string): string {
-  if (!value) {
-    return "";
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "";
-  }
-  return timeInputValue(parsed);
 }
 
 function scheduledTaskDraftFromTask(task: WorkspaceScheduledTask): ScheduledTaskFormDraft {
   return {
     agentID: task.agent_id,
-    date: dateInputFromISO(task.next_run_at),
-    expiresDate: dateInputFromISO(task.expires_at),
+    timeZone: task.time_zone || browserTimeZone(),
+    date: scheduleClock(task.next_run_at, task.time_zone || browserTimeZone()).date,
+    expiresDate: scheduleClock(task.expires_at, task.time_zone || browserTimeZone()).date,
     prompt: task.prompt,
     recurrence: task.recurrence,
-    time: timeInputFromISO(task.next_run_at),
+    time: scheduleClock(task.next_run_at, task.time_zone || browserTimeZone()).time,
     title: task.title,
   };
 }
@@ -535,10 +507,16 @@ export function TasksView({
       prompt: result.prompt,
       recurrence: scheduledDraft.recurrence,
       first_run_at: result.nextRunAt,
+      time_zone: scheduledDraft.timeZone || browserTimeZone(),
+      client_request_id: scheduledDraft.clientRequestID,
       enabled: true,
     };
     if (scheduledDraft.expiresDate) {
-      payload.expires_at = localDateTimeISO(scheduledDraft.expiresDate, "23:59");
+      payload.expires_at = scheduleInstant(
+        scheduledDraft.expiresDate,
+        "23:59",
+        scheduledDraft.timeZone || browserTimeZone(),
+      );
     }
     await onCreateScheduledTask?.(payload);
     onSelectTaskBoardView("scheduled");
@@ -563,7 +541,10 @@ export function TasksView({
       prompt: result.prompt,
       recurrence: editScheduledDraft.recurrence,
       next_run_at: result.nextRunAt,
-      expires_at: editScheduledDraft.expiresDate ? localDateTimeISO(editScheduledDraft.expiresDate, "23:59") : null,
+      time_zone: editScheduledDraft.timeZone || browserTimeZone(),
+      expires_at: editScheduledDraft.expiresDate
+        ? scheduleInstant(editScheduledDraft.expiresDate, "23:59", editScheduledDraft.timeZone || browserTimeZone())
+        : null,
       enabled: shouldReactivateEditedSchedule ? true : editingScheduledTask.enabled,
     });
   }

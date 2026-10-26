@@ -2,15 +2,19 @@ package scheduledtask
 
 import (
 	"context"
-	agent "csgclaw/internal/agentengine/agents"
-	"csgclaw/internal/agenttask"
-	"csgclaw/internal/taskcore"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	agent "csgclaw/internal/agentengine/agents"
+	"csgclaw/internal/agenttask"
+	"csgclaw/internal/taskcore"
 )
 
 const schedulerCreatedBy = "scheduler"
@@ -130,21 +134,42 @@ func (s *Service) Create(input CreateInput) (Task, error) {
 	}
 	now := s.now()
 	item := Task{
-		Title:      title,
-		AgentID:    agentID,
-		Prompt:     prompt,
-		Recurrence: recurrence,
-		Enabled:    input.Enabled,
-		NextRunAt:  input.FirstRunAt,
-		ExpiresAt:  cloneTime(input.ExpiresAt),
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		TimeZone:        strings.TrimSpace(input.TimeZone),
+		ClientRequestID: strings.TrimSpace(input.ClientRequestID),
+		Title:           title,
+		AgentID:         agentID,
+		Prompt:          prompt,
+		Recurrence:      recurrence,
+		Enabled:         input.Enabled,
+		NextRunAt:       input.FirstRunAt,
+		ExpiresAt:       cloneTime(input.ExpiresAt),
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if err := validateSchedule(item); err != nil {
 		return Task{}, err
 	}
+	raw, _ := json.Marshal(struct {
+		Title, AgentID, Prompt, Recurrence, TimeZone, FirstRunAt, ExpiresAt string
+		Enabled                                                             bool
+	}{item.Title, item.AgentID, item.Prompt, item.Recurrence, item.TimeZone, item.NextRunAt.UTC().Format(time.RFC3339Nano), expirationKey(item.ExpiresAt), item.Enabled})
+	sum := sha256.Sum256(raw)
+	item.CreateFingerprint = hex.EncodeToString(sum[:])
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for _, existing := range s.state.Tasks {
+		if item.ClientRequestID != "" && existing.ClientRequestID == item.ClientRequestID {
+			if existing.CreateFingerprint != item.CreateFingerprint {
+				return Task{}, fmt.Errorf("client_request_id already used with a different schedule")
+			}
+			return existing, nil
+		}
+	}
+	// Retry lookup must precede the time check: the first request may already
+	// have succeeded and fired before the client receives a response.
+	if item.TimeZone != "" && !item.NextRunAt.After(now) {
+		return Task{}, fmt.Errorf("first_run_at must be in the future")
+	}
 	next := cloneServiceState(s.state)
 	item.ID = fmt.Sprintf("scheduled-task-%d", next.NextTaskID)
 	next.NextTaskID++
@@ -167,6 +192,9 @@ func (s *Service) Update(input UpdateInput) (Task, error) {
 		return Task{}, fmt.Errorf("scheduled task not found")
 	}
 	item := s.state.Tasks[idx]
+	if input.TimeZone != nil {
+		item.TimeZone = strings.TrimSpace(*input.TimeZone)
+	}
 	if input.Title != nil {
 		item.Title = strings.TrimSpace(*input.Title)
 	}
@@ -415,6 +443,18 @@ func indexTask(tasks []Task, id string) int {
 }
 
 func validateSchedule(item Task) error {
+	if item.TimeZone != "" {
+		if item.TimeZone == "Local" {
+			return fmt.Errorf("use an explicit time_zone such as Asia/Shanghai or UTC")
+		}
+		if _, err := time.LoadLocation(item.TimeZone); err != nil {
+			return fmt.Errorf("invalid time_zone")
+		}
+	}
+	if len(item.ClientRequestID) > 128 {
+		return fmt.Errorf("client_request_id is too long")
+	}
+
 	if item.Enabled && item.ExpiresAt != nil && !item.NextRunAt.IsZero() && item.ExpiresAt.Before(item.NextRunAt) {
 		return fmt.Errorf("expires_at must not be before next_run_at")
 	}
@@ -431,6 +471,11 @@ func normalizeRecurrence(value string) string {
 }
 
 func nextRunAt(item Task, from time.Time) (time.Time, bool) {
+	if item.TimeZone != "" {
+		if location, err := time.LoadLocation(item.TimeZone); err == nil {
+			item.NextRunAt = item.NextRunAt.In(location)
+		}
+	}
 	switch normalizeRecurrence(item.Recurrence) {
 	case RecurrenceDaily:
 		return advanceUntilAfter(item.NextRunAt, from, func(t time.Time) time.Time { return t.AddDate(0, 0, 1) }), true
@@ -478,4 +523,11 @@ func taskIDForRunID(runID string) string {
 		return ""
 	}
 	return "task-" + runID
+}
+
+func expirationKey(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }

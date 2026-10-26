@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { ScheduleNaturalInput } from "./ScheduleNaturalInput";
 import {
   Button,
   DialogBody,
@@ -44,9 +46,10 @@ export function ScheduledTaskCreateDialog({
   onClose,
   onSubmit,
 }: ScheduledTaskCreateDialogProps) {
+  const [parsing, setParsing] = useState(false);
   return (
-    <DialogRoot open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose?.() : null)}>
-      <DialogContent className={styles.taskCreateDialog}>
+    <DialogRoot open={open} onOpenChange={(nextOpen) => (!nextOpen && !parsing ? onClose?.() : null)}>
+      <DialogContent className={classNames(styles.taskCreateDialog, styles.scheduledCreateDialog)}>
         <DialogHeader>
           <div>
             <DialogTitle>{t("scheduledTaskCreateTitle")}</DialogTitle>
@@ -54,19 +57,31 @@ export function ScheduledTaskCreateDialog({
           </div>
           <TaskDialogCloseButton label={t("close")} />
         </DialogHeader>
-        <DialogBody>
-          <ScheduledTaskFormFields
+        <DialogBody className={styles.scheduledCreateBody}>
+          <ScheduleNaturalInput
             draft={draft}
-            errors={errors}
-            scheduledAgentOptions={scheduledAgentOptions}
+            onChange={(value) => {
+              onChange(value);
+              for (const field of Object.keys(errors) as (keyof ScheduledTaskFormFieldErrors)[]) onClearError(field);
+            }}
+            onBusyChange={setParsing}
+            disabled={busy || parsing}
             t={t}
-            onChange={onChange}
-            onClearError={onClearError}
           />
+          <fieldset className={styles.schedulePreviewFields} disabled={parsing || busy}>
+            <ScheduledTaskFormFields
+              draft={draft}
+              errors={errors}
+              scheduledAgentOptions={scheduledAgentOptions}
+              t={t}
+              onChange={onChange}
+              onClearError={onClearError}
+            />
+          </fieldset>
           {error ? <div className={classNames("form-error", styles.taskCreateError)}>{error}</div> : null}
         </DialogBody>
-        <DialogFooter>
-          <Button variant="secondaryGray" size="md" onClick={onClose}>
+        <DialogFooter className={styles.scheduledCreateFooter}>
+          <Button variant="secondaryGray" size="md" disabled={parsing || busy} onClick={onClose}>
             {t("cancel")}
           </Button>
           <Button
@@ -74,7 +89,7 @@ export function ScheduledTaskCreateDialog({
             size="md"
             loading={busy}
             loadingLabel={t("scheduledTaskCreating")}
-            disabled={busy}
+            disabled={busy || parsing}
             onClick={onSubmit}
           >
             {t("scheduledTaskCreateSubmit")}

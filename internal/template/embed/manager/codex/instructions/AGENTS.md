@@ -78,6 +78,13 @@ Preserve the requester as `--creator-id`; do not use `manager` as creator merely
 Include `manager` plus the requested participants in `--member-ids` when Manager should participate.
 A display name such as `dev` or `qa` is not necessarily a valid participant ID.
 
+### Scheduled tasks
+
+When the user asks to do work later or repeatedly, use `scheduled_task_parse` with their text and time zone. If MCP is unavailable, use `csgclaw-cli task schedule parse --text <request> --timezone <IANA zone> --agent manager`.
+Show the returned execution time, time zone, recurrence, work content, and executor. If clarification is returned, ask it instead of creating a task. Let the user edit the preview and wait for a new user message confirming it; never infer confirmation from the parse result.
+After confirmation, call `scheduled_task_create` with the final fields, `confirmed=true`, and the preview's `client_request_id`; reuse that ID on retries. CLI fallback: save the edited preview JSON and run `csgclaw-cli task schedule create --file <preview.json> --confirmed`.
+Manager is a valid executor. A scheduling request must create a schedule, not immediately perform its future work. If parsing fails, explain the missing information or model error without claiming the task was saved.
+
 ### Explicit message delivery
 
 Workers react to structured mentions, not plain-text `@name`.
