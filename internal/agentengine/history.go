@@ -104,6 +104,21 @@ func (e *Engine) EnablePersistence(dir string) error {
 		s.Close()
 		return err
 	}
+	root, err := controlplane.Open(dir)
+	if err != nil {
+		s.Close()
+		return err
+	}
+	var binding controlplane.AssistantBinding
+	err = root.Read(controlplane.DefaultAssistantKey, &binding)
+	root.Close()
+	if err != nil && !os.IsNotExist(err) {
+		s.Close()
+		return err
+	}
+	if binding.AgentID != "" {
+		e.ProtectAgent(binding.AgentID)
+	}
 	e.history = s
 	return nil
 }

@@ -33,6 +33,7 @@ type Engine struct {
 	closed        bool
 	historyIndex  map[turnIdentity]historySummary
 	historyRefs   map[string]map[string]int
+	protected     map[string]bool
 	history       *controlplane.Store
 	generateImage imageGenerator
 	generateVideo videoGenerator
@@ -102,7 +103,7 @@ func (e *Engine) Agents() AgentInterface {
 	if e == nil || e.agents == nil {
 		return unavailableAgents{}
 	}
-	return e.agents
+	return protectedAgentClient{AgentInterface: e.agents, engine: e}
 }
 
 func (e *Engine) Conversations(agentID string) ConversationInterface {

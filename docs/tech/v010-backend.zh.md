@@ -99,3 +99,17 @@ optional = true
 预检不发起付费模型请求，也不把“模型已配置”当作模型/MCP 网络已验证；响应明确给出 `model_probe / mcp_probe = not_performed`。外层沙盒的工具未实际探测时返回 `sandbox_probe_required`，不能用宿主机的 Node/Python 版本冒充沙盒环境。
 
 CPU/内存是否充足、实例休眠唤醒、发布范围、自定义页面和市场注册属于 Server / Portal；这些能力不在 CSGClaw 服务里伪造。
+
+## AH-11：默认业务助手
+
+| 接口 | 行为 |
+| --- | --- |
+| `GET /api/v1/default-assistant` | 只查询，未准备返回 404；不创建资源 |
+| `POST /api/v1/default-assistant:ensure` | 可选 `template / runtime / model_selector`；先保存固定 Agent ID，再创建或恢复；重复调用复用原 Agent |
+| `POST /api/v1/default-assistant:retry` | 带查询得到的 `operation_id`，仅恢复失败操作；过期操作返回 409 |
+
+这是每个私有 CSGClaw 实例中的业务 Agent，角色为 worker，不复用固定 Codex 的系统 Manager。第一次选 Codex 或 DSH 后不偷偷换程序；已绑定时不能通过 ensure 改绑，编辑走共用配置接口。
+
+多个请求串行准备同一个固定 ID；创建后写记录失败或进程重启，下一次从该 ID 认领已有 Agent，不另建一个。原对应关系会保护删除，仍允许编辑与重建执行程序。只有 Agent、模型配置和声明环境都就绪才返回 200；准备中返回 202，并给出缺项，失败返回同一操作记录和重试入口。
+
+用户到实例的唯一关系、免费资格、配额和实例休眠恢复由 Server 负责，不能把本地绑定当作云端用户分配已经完成。

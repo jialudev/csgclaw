@@ -17,6 +17,7 @@ import (
 	"csgclaw/internal/codexcli"
 	"csgclaw/internal/config"
 	"csgclaw/internal/connectors"
+	"csgclaw/internal/controlplane"
 	"csgclaw/internal/conversationresource"
 	"csgclaw/internal/dshcli"
 	"csgclaw/internal/im"
@@ -1319,6 +1320,13 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 		h.publishUpdatedAgentUser(serviceUpdated)
 		writeJSON(w, http.StatusOK, h.presentEngineAgentForRequest(r, updated))
 	case http.MethodDelete:
+		if h.control != nil && h.control.store != nil {
+			var binding controlplane.AssistantBinding
+			if err := h.control.store.Read(controlplane.DefaultAssistantKey, &binding); err == nil && agent.CanonicalID(id) == binding.AgentID {
+				controlError(w, 409, "default_assistant_protected", "default assistant cannot be deleted")
+				return
+			}
+		}
 		var err error
 		if h.participant != nil {
 			_, err = h.participant.DeleteAgent(r.Context(), id)

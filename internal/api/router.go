@@ -21,6 +21,9 @@ func (h *Handler) registerCoreRoutes(router chi.Router) {
 	router.Get("/readyz", h.handleReadyz)
 	router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/version", h.getVersion)
+		r.Get("/default-assistant", h.defaultAssistant)
+		r.Post("/default-assistant:ensure", h.ensureDefaultAssistant)
+		r.Post("/default-assistant:retry", h.retryDefaultAssistant)
 		r.Get("/control/capabilities", h.getServiceCapabilities)
 		r.Post("/control/pair", h.pairExternalUI)
 		r.Post("/control/logout", h.unpairExternalUI)
