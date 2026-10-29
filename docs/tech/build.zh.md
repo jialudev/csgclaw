@@ -58,6 +58,91 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 build
 
 本地编译的 `bin/csgclaw[.exe]` 启动沙盒时，会把相邻的 `bin/sandbox-tools/csgclaw-cli` 同步到 `~/.csgclaw/sandbox-tools/csgclaw-cli`，然后将这个托管目录只读挂载到沙盒内的 `/opt/csgclaw/bin`。正式安装器也会从已安装 bundle 完成同样的首次同步。
 
+## 独立后端与可选 UI
+
+```bash
+make build-headless
+./bin/csgclaw-headless serve
+# 普通含 UI 的构建也可以在运行时关闭 UI：
+./bin/csgclaw serve --api-only
+```
+
+`build-headless` 只生成 `bin/csgclaw-headless`（Windows 带 `.exe`），底层使用
+`go build -tags headless`。它不执行 Node/pnpm、不编译网页、不下载 Codex，生成的
+可执行程序不依赖 `csgclaw/web`。Codex、DSH、伴生 CLI 和沙盒工具等执行依赖由
+宿主或镜像按需配置。本地 make 构建继续带 `+local` 版本后缀；正式版本仍要求
+已有的官方 bundle 布局。
+
+启动入口将可选的 `http.Handler` 传入 `server.Options.UI`。`internal/server`
+维护 API 路由，只消费这个接口，不导入具体 UI。传 nil 时是纯后端：健康检查、
+API 和事件流保留；UI 页面及未知 API 返回 404。API-only 启动关闭自动登录探测、
+浏览器打开和宿主桌面应用打开，后台启动也保留此模式。headless 产物始终使用此模式，
+传 `--api-only=false` 也不会恢复 UI；内部 Electron 入口会明确拒绝启动。
+`--no-browser` 只控制不打开浏览器，不会关闭 UI 路由。
+
+普通本地版和 Electron 继续使用内嵌 UI。多套外部客户端可以通过已有 API、事件协议和
+访问策略连接同一后端；独立托管的浏览器页面经平台网关或同域反向代理接入。本次未新增
+CORS、另一套 UI、Electron 远程后端模式或通用插件生命周期框架。配置与业务数据继续
+使用原有格式和位置，无需迁移。
+
+复用现有容器布局构建纯后端：
+
+```bash
+docker build --build-arg CSGCLAW_BUILD=headless -t csgclaw:headless .
+docker run --rm csgclaw:headless serve
+```
+
+默认值是 `CSGCLAW_BUILD=embedded`。BuildKit 在 headless 模式跳过 Web 构建阶段，
+最终镜像仍包含伴生 CLI 和 Codex。后续云端沙盒镜像流水线接入时需显式传入该参数；
+源码变更不会自动更新已经部署的实例。
+
+## 选择并打包一套 UI
+
+```bash
+make build-ui UI=web
+make build-ui UI=custom UI_DIR=/absolute/path/to/another-ui/dist
+make build-ui UI=none
+```
+
+每个命令生成一个服务端二进制 `bin/csgclaw-<UI>[.exe]`，最多嵌入一套 UI，统一放在 `/`。
+`UI_BIN` 可指定输出位置。执行器等运行依赖由宿主提供，与 `build-headless` 相同。
+默认 `make`、桌面安装包和 release 打包继续使用现有 UI。
+
+| UI 选择 | 编译进入的 UI 包 | 页面入口 | Docker 的 `CSGCLAW_BUILD` |
+| --- | --- | --- | --- |
+| `web` | `web` | `/` | `embedded` |
+| `custom` | `web/custom` | `/` | `custom` |
+| `none` | 不包含 UI 包 | 没有 UI 路由 | `headless` |
+
+`UI_DIR` 是已经构建好、包含 `index.html` 的静态前端目录。打包脚本不替另一套 UI
+执行构建，只复制产物到忽略提交的 `web/custom/static-dist/`，替换旧资源，跳过隐藏
+文件和 `node_modules`，拒绝符号链接及特殊文件。同一 worktree 的不同自定义 UI 构建
+应串行执行，或分别使用隔离 worktree。二进制运行时不再依赖 `UI_DIR`；自定义产物按
+与现有前端相同的可信应用代码对待。
+
+构建标签选择一个 `http.Handler`，传给 `server.Options.UI`，传 nil 即纯后端。
+`internal/uiassets.SPA` 只共享静态文件、缓存和 SPA 兜底逻辑。没有模块注册表、挂载
+配置、多 UI 路由或 UI 启动信息接口；API 和健康检查继续由后端提供，缺失资源及未知
+API 返回 404。
+
+自定义 UI 相对于应用根路径访问已有 `api/v1/` 接口；使用相对资源和 API 地址可保留
+平台网关路径前缀。优先使用 hash 路由，history 路由需显式配置资源和路由 base。
+鉴权与事件协议保持原样。外部 UI 可通过同域代理连接同一后端，无需一起打包。
+
+用最小测试页面验证自定义 UI 打包和 API 接入：
+
+```bash
+make build-ui UI=custom UI_DIR=web/custom/testdata
+./bin/csgclaw-custom serve --no-browser
+# 测试页面在 /，读取后端版本接口。
+```
+
+测试页面不作为完整产品 UI。构建 custom 容器前，先执行
+`make prepare-custom-ui UI_DIR=...`，然后执行
+`docker build --build-arg CSGCLAW_BUILD=custom -t csgclaw:custom .`。
+Docker 检查预备产物的 `index.html`，custom 模式跳过现有前端编译阶段。
+云端流水线、签名桌面安装包和正式 release 的变体接入需要另外显式选择构建方式。
+
 ## Web UI
 
 | Target | 说明 |

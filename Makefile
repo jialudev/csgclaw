@@ -46,12 +46,24 @@ DESKTOP_PLATFORM ?= $(if $(filter windows,$(TARGET_OS)),win32,$(TARGET_OS))
 DESKTOP_ARCH ?= $(if $(filter amd64,$(TARGET_ARCH)),x64,$(TARGET_ARCH))
 HOST_BINARY_SUFFIX := $(if $(filter windows,$(TARGET_OS)),.exe,)
 SERVER_BIN ?= $(BIN_DIR)/$(APP)$(HOST_BINARY_SUFFIX)
+HEADLESS_BIN ?= $(BIN_DIR)/csgclaw-headless$(HOST_BINARY_SUFFIX)
+UI ?= web
+UI_DIR ?=
+UI_BIN ?= $(BIN_DIR)/csgclaw-$(UI)$(HOST_BINARY_SUFFIX)
+UI_TAGS_web :=
+UI_TAGS_custom := ui_custom
+UI_TAGS_none := headless
+UI_DEPS_web := build-web
+UI_DEPS_custom := prepare-custom-ui
+UI_DEPS_none :=
 HOST_CLI_BIN ?= $(BIN_DIR)/csgclaw-cli$(HOST_BINARY_SUFFIX)
 BIN ?= $(SERVER_BIN)
 SANDBOX_BUNDLE_TOOLS_DIR ?= $(BIN_DIR)/sandbox-tools
 SANDBOX_CLI_BIN ?= $(SANDBOX_BUNDLE_TOOLS_DIR)/csgclaw-cli
 
 .DEFAULT_GOAL := build
+
+.PHONY: build-headless build-ui check-ui-choice prepare-custom-ui
 
 .PHONY: help fmt test check-web-toolchain check-web-layout ensure-web-deps web-install web-dev web-typecheck web-build-assets build-web check-desktop-layout ensure-desktop-deps desktop-dev desktop-backend-bundle desktop-package desktop-package-macos-signed desktop-package-oss desktop-oss-manifest desktop-oss-publish desktop-oss-upload-packages desktop-oss-release build build-all build-server build-server-bin build-codex-cli build-sandbox-cli install-sandbox-cli run clean package package-all release
 
@@ -60,6 +72,8 @@ help:
 		'make            - build Web UI, companion host binaries, and the Linux sandbox CLI' \
 		'make build      - same as default goal' \
 		'make build-all  - same as build (runtime images are remote fixed refs)' \
+		'make build-headless - build the API-only binary without the Web toolchain or assets' \
+		'make build-ui UI=web|custom|none [UI_DIR=<frontend-dist>] - build a server with one selected embedded UI' \
 		'make fmt        - format Go files' \
 		'make test       - run go test ./...' \
 		'make web-install - install Web UI dependencies' \
@@ -260,6 +274,25 @@ desktop-oss-release: desktop-oss-publish
 build: build-web build-server-bin build-sandbox-cli
 
 build-all: build
+
+check-ui-choice:
+	@case "$(UI)" in web|custom|none) ;; *) echo 'UI must be web, custom, or none' >&2; exit 1 ;; esac
+
+prepare-custom-ui:
+	$(NODE) scripts/prepare-custom-ui.mjs "$(UI_DIR)"
+
+# This target produces one server binary; runtime tools are provisioned separately.
+# Resource prerequisites finish before go:embed compiles the selected UI.
+build-ui: check-ui-choice $(UI_DEPS_$(UI))
+	mkdir -p "$(dir $(UI_BIN))"
+	env GOCACHE=$(GOCACHE) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+		$(GO) build -tags "$(UI_TAGS_$(UI))" -ldflags "$(LDFLAGS)" -o "$(UI_BIN)" ./cmd/csgclaw
+
+# Runtime dependencies (Codex, DSH, sandbox tools) are provisioned by the host image.
+build-headless:
+	mkdir -p "$(dir $(HEADLESS_BIN))"
+	env GOCACHE=$(GOCACHE) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+		$(GO) build -tags headless -ldflags "$(LDFLAGS)" -o "$(HEADLESS_BIN)" ./cmd/csgclaw
 
 build-server-bin: build-codex-cli
 	mkdir -p $(BIN_DIR)

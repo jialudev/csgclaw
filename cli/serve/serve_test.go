@@ -506,6 +506,9 @@ func TestRefreshStartupModelProvidersSavesDiscoveredModels(t *testing.T) {
 }
 
 func TestServeForegroundOpensIMURLWhenBrowserAllowed(t *testing.T) {
+	if !embeddedUIAvailable {
+		t.Skip("requires bundled UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 
@@ -600,12 +603,19 @@ func TestServeRunDoesNotOpenBrowserByDefault(t *testing.T) {
 		t.Fatalf("OpenBrowser called for %q, want suppressed", rawURL)
 	default:
 	}
-	if got := run.Stdout.(*bytes.Buffer).String(); !strings.Contains(got, "CSGClaw IM is available at: http://example.test/base/") {
+	label := "CSGClaw IM is available at: http://example.test/base/"
+	if !embeddedUIAvailable {
+		label = "CSGClaw API is available at: http://example.test/base"
+	}
+	if got := run.Stdout.(*bytes.Buffer).String(); !strings.Contains(got, label) {
 		t.Fatalf("stdout missing IM URL:\n%s", got)
 	}
 }
 
 func TestServeRunBrowserFlagOpensBrowser(t *testing.T) {
+	if !embeddedUIAvailable {
+		t.Skip("requires bundled UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 
@@ -655,6 +665,9 @@ func TestServeRunBrowserFlagOpensBrowser(t *testing.T) {
 }
 
 func TestServeForegroundPrintsManualIMURLWhenBrowserNotAllowed(t *testing.T) {
+	if !embeddedUIAvailable {
+		t.Skip("requires bundled UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 
@@ -696,6 +709,9 @@ func TestServeForegroundPrintsManualIMURLWhenBrowserNotAllowed(t *testing.T) {
 }
 
 func TestServeForegroundWaitsForHealthyBeforeOpeningBrowser(t *testing.T) {
+	if !embeddedUIAvailable {
+		t.Skip("requires bundled UI build")
+	}
 	restore := stubServeDependencies(t)
 	defer restore()
 
@@ -969,6 +985,10 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 	}
 
 	got := run.Stdout.(*bytes.Buffer).String()
+	addressMessage := "CSGClaw IM is available at: http://example.test/"
+	if !embeddedUIAvailable {
+		addressMessage = "CSGClaw API is available at: http://example.test"
+	}
 	for _, want := range []string{
 		"effective config:\n",
 		`listen_addr = "127.0.0.1:18080"`,
@@ -979,7 +999,7 @@ func TestServeForegroundPassesContextToServer(t *testing.T) {
 		`[sandbox]`,
 		fmt.Sprintf(`provider = %q`, config.DockerProvider),
 		`debian_registries_override = []`,
-		"CSGClaw IM is available at: http://example.test/",
+		addressMessage,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stdout missing %q:\n%s", want, got)

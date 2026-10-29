@@ -102,6 +102,7 @@ type Handler struct {
 	sessionBindings            *agentsession.Store
 	localDirectoryPicker       func(context.Context) (string, error)
 	workspaceOpener            func(context.Context, string, string, bool) error
+	hostDesktopActionsDisabled bool
 	feishuRegistrationStateDir string
 	runtimeExtensionSourcesSet bool
 	larkCLISigningOnce         sync.Once
