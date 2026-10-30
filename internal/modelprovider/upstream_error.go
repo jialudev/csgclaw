@@ -118,6 +118,15 @@ func errorCodeFromValue(value any) string {
 		return ""
 	}
 	message := strings.ToLower(stringValue(errObj["message"]))
+	// llama.cpp-compatible servers use a numeric HTTP code and put the
+	// actionable category in error.type. Preserve the canonical context error
+	// so runtimes can distinguish overflow from invalid configuration.
+	for _, field := range []string{"code", "type"} {
+		switch strings.ToLower(strings.TrimSpace(stringValue(errObj[field]))) {
+		case "context_length_exceeded", "exceed_context_size_error", "context_window_exceeded":
+			return "context_length_exceeded"
+		}
+	}
 	if stringValue(errObj["param"]) == "tools" && strings.Contains(message, "reasoning.effort 'minimal'") && strings.Contains(message, "web_search") {
 		return ToolReasoningUnsupported
 	}

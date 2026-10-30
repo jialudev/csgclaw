@@ -1504,6 +1504,13 @@ func TestCompactUpstreamErrorResponseUsesFriendlyMessages(t *testing.T) {
 		want   string
 	}{
 		{
+			name:   "llama.cpp numeric code context overflow",
+			status: http.StatusBadRequest,
+			body:   `{"error":{"code":400,"type":"exceed_context_size_error","message":"request exceeds the available context size; private diagnostic"}}`,
+			code:   "context_length_exceeded",
+			want:   "The conversation exceeds this model's context length. Shorten it or start a new conversation.",
+		},
+		{
 			name:   "standard insufficient balance",
 			status: http.StatusPaymentRequired,
 			body:   `{"error":{"code":"insufficient_balance","message":"**Insufficient balance** stack detail","type":"insufficient_balance"}}`,

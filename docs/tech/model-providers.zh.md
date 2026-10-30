@@ -25,6 +25,8 @@ API Key 与套餐 Key 必须匹配所选服务及区域，即使地址相同也�
 `api_protocol` 支持 `responses`、`chat_completions` 和 `anthropic_messages`，在配置加载、保存、onboard、Agent 和会话配置解析中保持一致。
 运行时仍调用本地 LLM 桥接层，由桥接层转换上游协议、流式事件及工具调用。
 
+Codex 的 Agent 配置校验在显式选择 `chat_completions` 时直接验证上游 Chat 接口，不要求该模型同时支持 Responses。成功校验的缓存按协议、模型、地址和凭据指纹区分；更换 Key 或认证请求头后会重新验证。兼容 llama.cpp 的上游若以数值 `code: 400` 和 `type: exceed_context_size_error` 返回上下文超限，桥接层会保留其语义并输出标准 `context_length_exceeded`，避免误报为配置错误。这不会改变模型的实际上下文容量。
+
 模型列表优先通过厂商接口获取。
 接口不支持模型发现或返回空列表时，使用官方文档预设或手动指定的模型，并通过最小推理验证后才显示连接成功。
 列表来源标记为 `upstream`、`preset` 或 `manual`。

@@ -2,6 +2,8 @@ package codex
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 
 	"csgclaw/internal/auth"
 	"csgclaw/internal/mcpschema"
+	"csgclaw/internal/modelpreset"
 	"csgclaw/internal/modelprovider"
 	agentruntime "csgclaw/internal/runtime"
 )
@@ -54,13 +57,13 @@ func (r *Runtime) ValidateConfig(ctx context.Context, current agentruntime.Runti
 	}
 	target, ok, err := responsesProbeTarget(ctx, current.Profile)
 	if err != nil {
-		return fmt.Errorf("validate Codex provider Responses API: %w", err)
+		return fmt.Errorf("validate Codex provider API: %w", err)
 	}
 	if !ok {
 		return nil
 	}
 	if err := codexResponsesProbeCache.validate(ctx, target); err != nil {
-		return fmt.Errorf("validate Codex provider Responses API at %s for model %s: %w", target.baseURL, target.modelID, err)
+		return fmt.Errorf("validate Codex provider API at %s for model %s: %w", target.baseURL, target.modelID, err)
 	}
 	return nil
 }
@@ -215,6 +218,7 @@ func (r *Runtime) ListMCPServers(_ context.Context, h agentruntime.Handle, _ age
 
 type responsesProbeTargetConfig struct {
 	provider string
+	protocol string
 	baseURL  string
 	apiKey   string
 	modelID  string
@@ -237,6 +241,7 @@ func responsesProbeTarget(ctx context.Context, profile agentruntime.RuntimeProfi
 		}
 		return responsesProbeTargetConfig{
 			provider: provider,
+			protocol: strings.TrimSpace(profile.APIProtocol),
 			baseURL:  strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 			apiKey:   strings.TrimSpace(apiKey),
 			modelID:  strings.TrimSpace(profile.ModelID),
@@ -249,6 +254,7 @@ func responsesProbeTarget(ctx context.Context, profile agentruntime.RuntimeProfi
 	}
 	return responsesProbeTargetConfig{
 		provider: provider,
+		protocol: strings.TrimSpace(profile.APIProtocol),
 		baseURL:  baseURL,
 		apiKey:   strings.TrimSpace(profile.APIKey),
 		modelID:  strings.TrimSpace(profile.ModelID),
@@ -268,7 +274,14 @@ func (c *responsesProbeCache) validate(ctx context.Context, target responsesProb
 	}
 	c.mu.Unlock()
 
-	err := checkResponsesAPIForProvider(ctx, target.baseURL, target.apiKey, target.modelID, target.headers)
+	var err error
+	if target.protocol == modelpreset.ChatCompletions {
+		// Codex speaks Responses to our local bridge, but an explicitly configured
+		// Chat provider is translated by that bridge. Probe the endpoint it uses.
+		err = modelprovider.CheckChatCompletionsAPIWithClient(ctx, nil, target.baseURL, target.apiKey, target.modelID, target.headers)
+	} else {
+		err = checkResponsesAPIForProvider(ctx, target.baseURL, target.apiKey, target.modelID, target.headers)
+	}
 
 	if err == nil {
 		c.mu.Lock()
@@ -285,7 +298,10 @@ func (c *responsesProbeCache) clear() {
 }
 
 func responsesProbeCacheKey(target responsesProbeTargetConfig) string {
-	return strings.TrimSpace(target.provider) + "\x00" + strings.TrimRight(strings.TrimSpace(target.baseURL), "/") + "\x00" + strings.TrimSpace(target.modelID)
+	// A successful probe under previous credentials cannot validate a newly
+	// selected key or account. Keep secrets out of the cache key itself.
+	auth, _ := json.Marshal([]any{target.apiKey, target.headers})
+	return strings.TrimSpace(target.provider) + "\x00" + strings.TrimSpace(target.protocol) + "\x00" + strings.TrimRight(strings.TrimSpace(target.baseURL), "/") + "\x00" + strings.TrimSpace(target.modelID) + fmt.Sprintf("\x00%x", sha256.Sum256(auth))
 }
 
 func normalizeHeaders(values map[string]string) map[string]string {

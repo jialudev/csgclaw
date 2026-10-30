@@ -45,6 +45,8 @@ Explicit duplicate display names are rejected.
 The provider config loader, external model storage, onboarding, Agent profiles, and session profile resolution preserve it.
 Agents continue to use the local CSGClaw LLM bridge, which translates requests and streamed tool events to the configured upstream protocol.
 
+Codex Agent validation probes Chat directly when `chat_completions` is explicitly selected; it does not require that model to support Responses as well. Successful probes are cached by protocol, model, endpoint, and a credential fingerprint, so changing a Key or authentication header triggers validation again. The bridge normalizes llama.cpp-style `code: 400` / `type: exceed_context_size_error` to `context_length_exceeded` instead of reporting an invalid configuration. This does not change the model's actual context capacity.
+
 Model discovery uses the provider's authenticated model endpoint.
 If discovery is unsupported or empty, a documented preset or manually supplied model list can be used only after a successful inference.
 The response identifies `model_source` as `upstream`, `preset`, or `manual`.

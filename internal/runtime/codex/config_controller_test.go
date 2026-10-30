@@ -2,13 +2,111 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
+	"csgclaw/internal/modelpreset"
 	"csgclaw/internal/modelprovider"
 	agentruntime "csgclaw/internal/runtime"
 )
+
+func TestValidateConfigProbesExplicitChatProtocol(t *testing.T) {
+	codexResponsesProbeCache.clear()
+	t.Cleanup(codexResponsesProbeCache.clear)
+	chatCalls, responsesCalls := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/responses" {
+			responsesCalls++
+			http.Error(w, `{"error":{"code":"InvalidParameter","message":"Model unsupported by Responses"}}`, http.StatusBadRequest)
+			return
+		}
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		chatCalls++
+		if r.Header.Get("Authorization") != "Bearer test-key" || r.Header.Get("X-Test") != "forwarded" {
+			t.Error("provider credentials or headers not forwarded")
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Model != "chat-only-model" {
+			t.Error("probe did not use the selected model")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+	profile := agentruntime.RuntimeProfileConfig{Provider: "api", APIProtocol: modelpreset.ChatCompletions, BaseURL: server.URL, APIKey: "test-key", ModelID: "chat-only-model", Headers: map[string]string{"X-Test": "forwarded"}}
+	rt := &Runtime{}
+	for i := 0; i < 2; i++ {
+		if err := rt.ValidateConfig(context.Background(), agentruntime.RuntimeConfigSnapshot{Profile: profile}); err != nil {
+			t.Fatalf("explicit Chat validation failed: %v", err)
+		}
+	}
+	if chatCalls != 1 || responsesCalls != 0 {
+		t.Fatalf("calls: Chat=%d Responses=%d; want 1 cached Chat probe only", chatCalls, responsesCalls)
+	}
+	profile.APIProtocol = modelpreset.Responses
+	if err := rt.ValidateConfig(context.Background(), agentruntime.RuntimeConfigSnapshot{Profile: profile}); err == nil {
+		t.Fatal("Responses configuration reused Chat success instead of probing its endpoint")
+	}
+	if responsesCalls != 1 {
+		t.Fatalf("Responses calls=%d, want 1", responsesCalls)
+	}
+}
+
+func TestValidateConfigExplicitChatRejectsAuthenticationFailure(t *testing.T) {
+	codexResponsesProbeCache.clear()
+	t.Cleanup(codexResponsesProbeCache.clear)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+		}
+		http.Error(w, `{"error":{"message":"Unauthorized"}}`, http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	err := (&Runtime{}).ValidateConfig(context.Background(), agentruntime.RuntimeConfigSnapshot{Profile: agentruntime.RuntimeProfileConfig{Provider: "api", APIProtocol: modelpreset.ChatCompletions, BaseURL: server.URL, ModelID: "chat-only-model"}})
+	var status *modelprovider.ResponsesAPIStatusError
+	if !errors.As(err, &status) || status.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("error=%v, want authentication rejection", err)
+	}
+}
+
+func TestValidateConfigDoesNotReusePreviousCredentials(t *testing.T) {
+	codexResponsesProbeCache.clear()
+	t.Cleanup(codexResponsesProbeCache.clear)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer valid-key" || r.Header.Get("X-Account") != "valid-account" {
+			http.Error(w, `{"error":{"message":"Unauthorized"}}`, http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+	profile := agentruntime.RuntimeProfileConfig{Provider: "api", APIProtocol: modelpreset.ChatCompletions, BaseURL: server.URL, APIKey: "valid-key", ModelID: "fixture-model", Headers: map[string]string{"X-Account": "valid-account"}}
+	validate := func() error {
+		return (&Runtime{}).ValidateConfig(context.Background(), agentruntime.RuntimeConfigSnapshot{Profile: profile})
+	}
+	if err := validate(); err != nil {
+		t.Fatal(err)
+	}
+	profile.APIKey = "wrong-key"
+	if validate() == nil {
+		t.Fatal("changed API key reused cached success")
+	}
+	profile.APIKey = "valid-key"
+	profile.Headers["X-Account"] = "wrong-account"
+	if validate() == nil {
+		t.Fatal("changed authentication header reused cached success")
+	}
+}
 
 func TestReconcileConfigRotatesConversationsWhenModelChanges(t *testing.T) {
 	root := t.TempDir()

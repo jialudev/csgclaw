@@ -20,6 +20,7 @@ import (
 	"csgclaw/internal/conversationresource"
 	"csgclaw/internal/dshcli"
 	"csgclaw/internal/im"
+	"csgclaw/internal/knowledgebase"
 	"csgclaw/internal/llm"
 	"csgclaw/internal/mcp"
 	"csgclaw/internal/modelprovider"
@@ -52,6 +53,7 @@ import (
 )
 
 type Handler struct {
+	knowledgeQueryDelivery     knowledgebase.QueryDelivery
 	agentArchiveMu             sync.Mutex
 	resourcesOnce              sync.Once
 	resources                  *conversationresource.Service

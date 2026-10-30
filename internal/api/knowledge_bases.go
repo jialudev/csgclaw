@@ -196,6 +196,11 @@ func (h *Handler) handleKnowledgeBaseMCPProxy(w http.ResponseWriter, r *http.Req
 		http.Error(w, "AIGateway base URL is not configured", http.StatusBadGateway)
 		return
 	}
+	scope := queryDeliveryScope(connection, contentID)
+	rpc, handled := h.prepareKnowledgeRPC(w, r, scope)
+	if handled {
+		return
+	}
 	target := baseURL + "/llmwikis/" + url.PathEscape(contentID) + "/mcp"
 	upstream, err := http.NewRequestWithContext(r.Context(), r.Method, target, r.Body)
 	if err != nil {
@@ -203,6 +208,8 @@ func (h *Handler) handleKnowledgeBaseMCPProxy(w http.ResponseWriter, r *http.Req
 		return
 	}
 	copyKnowledgeBaseRequestHeaders(upstream.Header, r.Header)
+	// The response adapter needs an uncompressed JSON/SSE body.
+	upstream.Header.Del("Accept-Encoding")
 	upstream.Header.Set("Authorization", "Bearer "+connection.CSGHubAccessToken)
 	response, err := knowledgeBaseProxyHTTPClient.Do(upstream)
 	if err != nil {
@@ -211,12 +218,18 @@ func (h *Handler) handleKnowledgeBaseMCPProxy(w http.ResponseWriter, r *http.Req
 	}
 	defer response.Body.Close()
 	copyKnowledgeBaseResponseHeaders(w.Header(), response.Header)
+	w.Header().Del("Content-Length")
+	w.Header().Del("ETag")
 	w.WriteHeader(response.StatusCode)
 	writer := io.Writer(w)
 	if flusher, ok := w.(http.Flusher); ok {
 		writer = flushResponseWriter{Writer: w, Flusher: flusher}
 	}
-	_, _ = io.Copy(writer, response.Body)
+	if err := h.copyKnowledgeRPC(writer, response.Body, response.Header.Get("Content-Type"), rpc, scope); err != nil {
+		// Headers may already be sent. Abort instead of making a partial body
+		// look like a successfully delivered query result.
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func writeKnowledgeBaseError(w http.ResponseWriter, err error) {

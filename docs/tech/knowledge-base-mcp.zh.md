@@ -150,6 +150,31 @@ AgenticHub 当前配置 ──────────────────�
 
 社区模板是例外：发布时已经移除凭证，因此从模板创建 Agent 时会尝试访问 AgenticHub，并用当前使用者的 URL 和 Token 生成一份新的可运行配置副本。这个刷新过程是 best-effort：知识库未就绪、查询失败或 Token 不可用时，创建流程保留模板中已脱敏的 MCP 配置并继续创建 Agent，不让外部知识库状态阻塞云端部署。保留的知识库来源标记仍用于标识和后续模板发布；失败时不会向模板携带的 URL 注入当前使用者的 Token。
 
+## 受管知识库的查询结果交付
+
+受管知识库在运行时通过本机 `/api/v1/knowledge-bases/{content_id}/mcp` 代理连接，代理每次请求使用当前登录环境的凭据。持久配置与运行时配置是不同层次：`knowledgebase.RuntimeServers` 生成本地代理地址及本地服务鉴权，不向模板保存使用者的 Token。手工配置、没有受管来源标记的 MCP 不经过此适配。
+
+Codex 的工具结果有长度预算。直接把很长的检索结果交给 Runtime，可能使中间的证据被截断，即使知识库原始结果写着 `truncated: false`。代理对 `kb-query-result.v2` 的单条文本结果进行分页，文本与 `structuredContent` 使用同一页，单页 JSON 文本不超过 8,000 字节。较小结果只做紧凑序列化；未知格式、错误、多内容块及文本与结构化内容冲突的结果保持原样。
+
+首次 `query` 仍执行原始检索，参数及 MCP 元数据保留。较大结果优先在完整 evidence 记录之间分割，保留原字段、顺序和来源。单条记录或公共元数据过大时，返回 `json_fragment` 页，按偏移顺序拼接 `result_fragment` 可还原原 JSON。JSON 数值不经浮点取整，UTF-8 字符不从中间切断。
+
+| 字段 | 含义 |
+| --- | --- |
+| `delivery.mode` | `evidence` 为完整记录页；`json_fragment` 为 JSON 文本片段页 |
+| `delivery.page` | 从 1 开始的页号 |
+| `delivery.offset` / `total` | evidence 模式为记录偏移 / 总数；片段模式为原 JSON 的 UTF-8 字节偏移 / 总字节数 |
+| `delivery.has_more` / `next_cursor` | 是否还有页及下一页游标 |
+| `query_coverage` | evidence 模式下保留的原始后端 coverage |
+| `coverage` | evidence 模式下为 `partial` / `RESULT_PAGED`，防止把单页误当完整证据 |
+
+续取仍使用同一个 `query` 工具，传原 `query` 和可选的 `csgclaw_result_cursor=delivery.next_cursor`。游标只读取同一次检索的缓存，不重复请求后端，也不改变检索结果。读完这些页仅代表读完本次检索，不代表扫描了知识库全表。模型仍须根据问题决定所需证据是否齐全，不能把检索未命中视为全库不存在。
+
+缓存仅在当前服务进程内存中，按网关地址、当前凭据指纹和知识库隔离。有效期为 15 分钟，最多 64 次查询、32 MiB 的序列化缓存；容量满时淘汰最旧条目。服务重启、凭据变化或缓存失效后，续取返回明确工具错误，要求重做原查询，不以空证据代替失败。单次 JSON-RPC 请求或响应事件上限为 32 MiB；响应读取失败会中断连接，不把半截数据伪装成成功结果。
+
+`tools/list` 会增加续取说明、展开参数的本地 `$defs` 引用，并将类型和上下界补入参数说明，适应 Runtime 的 JSON Schema 子集。原参数校验约束继续保留；字符串形式的 `filters` 会得到明确的对象类型错误。分页含片段输出时不再声明只适用于原始结果的 `outputSchema`。JSON 与 SSE 响应均支持适配，SSE 进度事件即时转发。
+
+分页解决的是证据传递丢失，仍会占用模型上下文和工具轮次；它不能保证模型会续取、理解和使用所有证据，也不增加知识库的全表筛选能力。该边界由单元测试、代理测试和 `TestKnowledgeQueryBundledCodexE2E` 覆盖，后者使用真实的打包 Codex 与本地模型/MCP 夹具。
+
 ## OpenCSG MCP Gateway
 
 普通 OpenCSG MCP 可以通过受信任的统一 Gateway 暴露工具。模板使用以下来源标记：
