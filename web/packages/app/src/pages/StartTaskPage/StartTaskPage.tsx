@@ -16,6 +16,8 @@ import {
   BookOpen,
   ClipboardCheck,
   FileText,
+  ListTodo,
+  MessagesSquare,
   PanelRightOpen,
   Presentation,
   Search,
@@ -24,7 +26,18 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { Button, DismissibleInlineError, PopoverAnchor, PopoverContent, PopoverRoot, Tooltip } from "@/components/ui";
+import {
+  Button,
+  DismissibleInlineError,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverRoot,
+  SelectContent,
+  SelectItem,
+  SelectRoot,
+  SelectTrigger,
+  Tooltip,
+} from "@/components/ui";
 import { ChatSidePanel, useChatSidePanel } from "@/components/business/ChatSidePanel";
 import { closeChatSideTab } from "@/models/chatSidePanel";
 import { fileReferenceKey } from "@/models/fileReferences";
@@ -35,7 +48,7 @@ import { localizeAPIError } from "@/shared/i18n";
 import { normalizeAuthProviderName, providerNeedsAuth, resolveAgentChannelUserID } from "@/models/agents";
 import { modelProviderConfigUsesOpenCSG } from "@/models/modelProviders";
 import { taskConversationTitle } from "@/models/taskConversations";
-import type { IMConversation } from "@/models/conversations";
+import { RoomTypes, type IMConversation } from "@/models/conversations";
 import styles from "./StartTaskPage.module.css";
 import { TargetPicker, SOLO_TEAM_ID } from "./components/TargetPicker";
 import {
@@ -85,6 +98,15 @@ import { useWorkspaceDialogs } from "@/hooks/workspace/useWorkspaceDialogs";
 import { TASK_EXAMPLES_HIDDEN_STORAGE_KEY } from "@/shared/storage/keys";
 import "@/components/business/ConversationPane/ConversationPane.css";
 
+const collaborationModes = {
+  [RoomTypes.onDemand]: { title: "onDemandCollaboration", hint: "onDemandCollaborationHint", icon: ListTodo },
+  [RoomTypes.autonomous]: {
+    title: "autonomousCollaboration",
+    hint: "autonomousCollaborationHint",
+    icon: MessagesSquare,
+  },
+} as const;
+
 export function StartTaskPage() {
   const location = useLocation();
   const [params] = useSearchParams();
@@ -116,6 +138,9 @@ function StartTaskForm({
   const { openSettings } = useWorkspaceDialogs();
   const [configuration, setConfiguration] = useState<TaskConfiguration>(initialConfiguration || {});
   const [{ target, revision }, setTarget] = useState({ target: initialTarget, revision: 0 });
+  const [collaborationMode, setCollaborationMode] = useState<keyof typeof collaborationModes>(RoomTypes.onDemand);
+  const collaborationModeID = useId();
+  const { title: modeTitle, icon: ModeIcon } = collaborationModes[collaborationMode];
   const [resources, setResources] = useState<ResourceSnapshot[]>([]);
   const [examplesHidden, setExamplesHidden] = useState(() => {
     try {
@@ -360,7 +385,7 @@ function StartTaskForm({
           cloud_agent: selectedCloud
             ? { agent_id: selectedCloud.id, connection_id: selectedCloud.connectionID }
             : undefined,
-          type: selectedAgent || selectedCloud ? "free" : "on_demand",
+          type: selectedAgent || selectedCloud ? RoomTypes.free : collaborationMode,
           is_direct: Boolean(selectedAgent || selectedCloud),
           configuration: selectedCloud
             ? undefined
@@ -721,6 +746,52 @@ function StartTaskForm({
                         showDirectory
                         disabled={busy}
                       />
+                      {!selectedAgent ? (
+                        <SelectRoot
+                          value={collaborationMode}
+                          disabled={busy || Boolean(created.current)}
+                          onValueChange={(value) => {
+                            if (inFlight.current || created.current) return;
+                            if (value !== RoomTypes.onDemand && value !== RoomTypes.autonomous) return;
+                            setCollaborationMode(value);
+                            requestID.current = createUUID();
+                          }}
+                        >
+                          <SelectTrigger
+                            size="sm"
+                            className={styles.modeTrigger}
+                            aria-label={t("collaborationMode")}
+                            aria-describedby={collaborationModeID}
+                          >
+                            <span className={styles.modeLabel}>
+                              <ModeIcon size={15} aria-hidden="true" />
+                              <span id={collaborationModeID}>{t(modeTitle)}</span>
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent side="top" align="end" collisionPadding={12} className={styles.modeMenu}>
+                            {Object.entries(collaborationModes).map(([value, { title, hint, icon: Icon }]) => {
+                              const hintID = `${collaborationModeID}-${value}`;
+                              return (
+                                <SelectItem
+                                  key={value}
+                                  value={value}
+                                  className={styles.modeOption}
+                                  textValue={t(title)}
+                                  aria-describedby={hintID}
+                                  description={
+                                    <span id={hintID} className={styles.modeOptionHint}>
+                                      {t(hint)}
+                                    </span>
+                                  }
+                                >
+                                  <Icon className={styles.modeOptionIcon} size={15} aria-hidden="true" />
+                                  <span className={styles.modeOptionTitle}>{t(title)}</span>
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </SelectRoot>
+                      ) : null}
                     </>
                   ) : null}
                   <Button

@@ -161,7 +161,7 @@ func (p *progressState) observe(ctx context.Context, event agentengine.TurnEvent
 			p.tools[id] = index
 			p.snapshot.Items = append(p.snapshot.Items, activity.ProgressItem{ID: id, Kind: "tool"})
 		}
-		p.snapshot.Items[index].Tool = progressTool(*event.Tool, p.snapshot.Items[index].Tool)
+		p.snapshot.Items[index].Tool = progressToolDetails(*event.Tool, p.snapshot.Items[index].Tool, p.turn.Autonomous || p.turn.ChatType == "group")
 		immediate = !exists || terminalTool(event.Tool.Status)
 	case agentengine.TurnEventInteractionRequest:
 		if event.Interaction != nil && !event.Interaction.Detached {

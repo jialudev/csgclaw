@@ -1,4 +1,4 @@
-import { expandProgressMessage } from "@/models/turnProgress";
+import { expandProgressMessage, newerProgressMessage } from "@/models/turnProgress";
 import {
   agentActivityMessageToolMergeKey,
   agentActivityToolMergeKeys,
@@ -154,7 +154,11 @@ export function mergeConversationActivityMessages(
 ): IMMessage[] {
   const messages = new Map<string, IMMessage>();
   collections.forEach((collection) => {
-    (collection || []).forEach((message) => messages.set(messageMergeKey(message), message));
+    (collection || []).forEach((message) => {
+      const key = messageMergeKey(message);
+      const previous = messages.get(key);
+      messages.set(key, previous ? newerProgressMessage(previous, message) : message);
+    });
   });
   return sortMessages(Array.from(messages.values()));
 }
@@ -322,7 +326,10 @@ function conversationWorkingActionForStage(
   }
 }
 
-export function conversationActivityEntryDetails(entry: ConversationActivityEntry): ConversationActivityDetail[] {
+export function conversationActivityEntryDetails(
+  entry: ConversationActivityEntry,
+  includeToolInput = false,
+): ConversationActivityDetail[] {
   const runtimeErrorDetail = messageRuntimeErrorDetail(entry.message);
   if (runtimeErrorDetail) {
     return [{ kind: "result", value: runtimeErrorDetail }];
@@ -339,6 +346,10 @@ export function conversationActivityEntryDetails(entry: ConversationActivityEntr
     const command = toolCommandText(tool);
     return compactDetails([
       { kind: command ? "command" : "input", value: command || toolInputText(tool) },
+      {
+        kind: "input",
+        value: includeToolInput && command && toolInputText(tool) !== command ? toolInputText(tool) : "",
+      },
       { kind: "result", value: toolOutputText(tool) },
     ]);
   }

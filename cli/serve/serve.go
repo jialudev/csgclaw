@@ -1418,6 +1418,7 @@ func newCSGClawAdapterSource(
 	adapterOptions := []execution.Option{
 		execution.WithDiagnostics(imSvc.Diagnostics()),
 		execution.WithRoomContextProvider(participantBridge.RoomContext),
+		execution.WithUnreadUpdates(imSvc.PendingAutonomousNotification),
 		execution.WithResourceInputProvider(participantBridge.ResourceInput),
 		execution.WithTaskRooms(imSvc.Room),
 		execution.WithAttachmentResolver(attachmentResolver),

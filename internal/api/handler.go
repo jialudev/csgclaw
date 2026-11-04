@@ -220,6 +220,8 @@ type updateBootstrapConfigRequest struct {
 }
 
 type agentResponse struct {
+	CreatedBy            string                             `json:"created_by,omitempty"`
+	NamedBy              string                             `json:"named_by,omitempty"`
 	ArchivedAt           *time.Time                         `json:"archived_at,omitempty"`
 	ArchivedBy           string                             `json:"archived_by,omitempty"`
 	ID                   string                             `json:"id"`
@@ -261,6 +263,7 @@ func (r *agentResponse) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*r = agentResponse{
+		CreatedBy: apiAgent.CreatedBy, NamedBy: apiAgent.NamedBy,
 		ArchivedAt:       apiAgent.ArchivedAt,
 		ArchivedBy:       apiAgent.ArchivedBy,
 		ID:               apiAgent.ID,
@@ -1165,6 +1168,7 @@ func (h *Handler) handleAgentByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		update := engineUpdateRequest(req, current.ResourceVersion)
+		update.ActorID = h.agentMutationActor(r)
 		billingModel := current.Spec.Model
 		if agentUpdateIncludes(update, "model") {
 			billingModel = update.Spec.Model
@@ -1696,6 +1700,7 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 			return
 		}
 		update := engineReplaceRequest(createReq, current)
+		update.ActorID = h.agentMutationActor(r)
 		if h.im != nil {
 			name := current.Spec.Name
 			if len(update.FieldMask) == 0 || agentUpdateIncludes(update, "name") {
@@ -1708,7 +1713,9 @@ func (h *Handler) handleCreateAgentWorker(w http.ResponseWriter, r *http.Request
 		}
 		created, err = agents.Recreate(ctx, current.ID, agentengine.AgentRecreateOptions{Update: &update})
 	} else {
-		created, err = agents.Create(ctx, engineCreateRequest(createReq))
+		request := engineCreateRequest(createReq)
+		request.ActorID = h.agentMutationActor(r)
+		created, err = agents.Create(ctx, request)
 	}
 	if err != nil {
 		writeAgentOperationErrorWithBillingURL(w, err, http.StatusBadRequest, llm.OpenCSGBillingURL(createReq.Spec.AgentProfile))
@@ -2270,7 +2277,7 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 
 		messages, err := channel.ListMessagesWithOptions(roomID, im.ListMessagesOptions{
-			IncludeThreadReplies: parseBoolQuery(r.URL.Query().Get("include_thread_replies")),
+			IncludeThreadReplies: parseBoolQuery(r.URL.Query().Get("include_thread_replies")) || r.URL.Query().Get("thread_root_id") != "",
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
@@ -2280,6 +2287,27 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, err, http.StatusBadRequest)
 			return
 		}
+		if appRequestAgentID(r) != "" && h.im != nil {
+			if room, ok := h.im.Room(roomID); ok && room.IsAutonomous() {
+				public := messages[:0]
+				for _, message := range messages {
+					if !im.IsAgentActivityMessage(message) {
+						public = append(public, im.PublicMessageView(message))
+					}
+				}
+				messages = public
+			}
+		}
+		if root := r.URL.Query().Get("thread_root_id"); root != "" {
+			filtered := messages[:0]
+			for _, message := range messages {
+				if message.ID == root || (message.RelatesTo != nil && message.RelatesTo.RelType == im.RelationTypeThread && message.RelatesTo.EventID == root) {
+					filtered = append(filtered, message)
+				}
+			}
+			messages = filtered
+		}
+
 		writeJSON(w, http.StatusOK, messages)
 	case http.MethodPost:
 		h.handleCreateMessage(w, r)
@@ -3786,6 +3814,7 @@ func presentAgent(item agent.Agent) agentResponse {
 	profile := profileResponseFromAgentView(av)
 	runtimeCfg := item.RuntimeConfig()
 	return agentResponse{
+		CreatedBy: item.CreatedBy, NamedBy: item.NamedBy,
 		ArchivedAt:   item.ArchivedAt,
 		ArchivedBy:   item.ArchivedBy,
 		ID:           item.ID,

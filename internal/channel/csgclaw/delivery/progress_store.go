@@ -9,14 +9,27 @@ import (
 	"csgclaw/internal/im"
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 func (s *IMTranscriptStore) DeliverTurnProgress(ctx context.Context, turn channel.TurnContext, progress activity.TurnProgress, answer string, persist bool, files []agentengine.OutputFile) error {
 	if err := contextError(ctx); err != nil {
 		return err
 	}
+	uploads, rejected := s.outputFileSources(ctx, turn.AgentID, files)
+	defer CloseOutputFileSources(uploads)
+	answer = outputFileDeliveryText(answer, rejected, turn.Locale)
 	kind := "activity"
-	if progress.Status == "succeeded" && (strings.TrimSpace(answer) != "" || len(files) > 0) {
+	publicFinal := progress.Status == "succeeded" && (strings.TrimSpace(answer) != "" || len(files) > 0)
+	if turn.Autonomous && publicFinal && len(files) == 0 {
+		startedAt, _ := time.Parse(time.RFC3339Nano, progress.StartedAt)
+		publicFinal = !s.im.HasAutonomousReply(turn.RoomID, s.senderID(turn.ParticipantID), turn.ThreadRootID, finalMessageID(turn), answer, startedAt)
+	}
+	if turn.Autonomous && !publicFinal {
+		progress.PrivateOutput = true
+		answer = ""
+	} else if publicFinal {
+		progress.PrivateOutput = false
 		kind = "final"
 	}
 	internalError := strings.TrimSpace(progress.Error)
@@ -41,9 +54,6 @@ func (s *IMTranscriptStore) DeliverTurnProgress(ctx context.Context, turn channe
 	if internalError != "" {
 		metadata = mergeCSGClawMetadata(metadata, map[string]any{channelrender.RuntimeErrorMetaKey: true, channelrender.RuntimeErrorDetailKey: internalError, "error_code": publicError.Code, "presentation_version": 2})
 	}
-	uploads, rejected := s.outputFileSources(ctx, turn.AgentID, files)
-	defer CloseOutputFileSources(uploads)
-	answer = outputFileDeliveryText(answer, rejected, turn.Locale)
 	if strings.TrimSpace(answer) == "" {
 		answer = "\u200b"
 	}

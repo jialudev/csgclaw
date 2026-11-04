@@ -16,12 +16,21 @@ func IsAgentActivityMessage(message Message) bool {
 			return true
 		}
 	}
+	final := false
 	for _, key := range []string{"codex", "csgclaw"} {
 		if meta, ok := message.Metadata[key].(map[string]any); ok {
-			if kind, _ := meta["delivery_kind"].(string); kind == "tool" || kind == "thought" || kind == "activity" || kind == "task_reported" {
+			kind, _ := meta["delivery_kind"].(string)
+			switch kind {
+			case "tool", "thought", "activity", "task_reported":
 				return true
+			case "final":
+				final = true
 			}
 		}
+	}
+	// Only untyped historical records need content-based activity detection.
+	if final {
+		return false
 	}
 	content := strings.TrimSpace(message.Content)
 	if strings.HasPrefix(content, "🔧 ") {

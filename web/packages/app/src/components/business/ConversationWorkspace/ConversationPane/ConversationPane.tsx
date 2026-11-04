@@ -1,5 +1,8 @@
 import { conversationMemoryAgent } from "@/components/business/ConversationPane/useConversationMemory";
 import { CloudPrivacyDialog } from "@/components/business/CloudPrivacyDialog";
+import { CollaborationStatus } from "@/components/business/ConversationPane/CollaborationStatus";
+import { usesCollaborationTranscript } from "@/models/collaborationTranscript";
+import { localIdentitiesMatch } from "@/models/conversations";
 import { PendingTurnReplies } from "./PendingTurnReplies";
 import { TaskConversationControls } from "../TaskConversationControls/TaskConversationControls";
 import { WorkingTurnControls } from "@/components/business/ConversationPane/WorkingTurnControls";
@@ -335,6 +338,7 @@ function ConversationPaneContent({
   const [deleteRoomBusy, setDeleteRoomBusy] = useState(false);
   const [deleteRoomError, setDeleteRoomError] = useState("");
   const composerDisabled = Boolean(composerDisabledReason);
+  const collaboration = usesCollaborationTranscript(conversation);
   const mainMessages = useMemo(
     () => conversation.messages.filter((message) => !message.relates_to),
     [conversation.messages],
@@ -419,6 +423,7 @@ function ConversationPaneContent({
     !conversation.cloud_agent &&
     !questionMode.pending.length &&
     onStopWorkingTurn &&
+    !collaboration &&
     (isDirectConversation(conversation) || activityAgents.length === 1) &&
     roomTurns.length === 1 &&
     roomTurns[0].canStop &&
@@ -464,6 +469,18 @@ function ConversationPaneContent({
       openActivity(participant?.activity?.entryID);
     },
     [onToggleChannelTools, openActivity, memberPanelProps],
+  );
+
+  const openCollaborationActivity = useCallback(
+    (senderID?: string, turnID?: string, requestID?: string) => {
+      onToggleChannelTools(false);
+      memberPanelProps?.onClose();
+      const actor = senderID
+        ? activityAgents.find((agent) => agent.identities.some((identity) => localIdentitiesMatch(identity, senderID)))
+        : undefined;
+      openActivity(undefined, actor?.id, turnID, requestID);
+    },
+    [activityAgents, memberPanelProps, onToggleChannelTools, openActivity],
   );
 
   const handlePreviewAttachment = useCallback(
@@ -528,6 +545,12 @@ function ConversationPaneContent({
   const threadPanel =
     !conversation.cloud_agent && activeThreadRootID ? (
       <Conversation.ThreadPanel
+        collaboration={collaboration}
+        workingParticipants={workingParticipantsWithActivity.filter(
+          (participant) => participant.threadRootID === activeThreadRootID,
+        )}
+        onOpenCollaborationActivity={openCollaborationActivity}
+        onStopWorkingTurn={onStopWorkingTurn}
         memoryAgentID={conversationMemoryAgent(conversation, agents, currentUserID, usersById)}
         currentUserID={currentUserID}
         resourceAgentID={resourceAgentID}
@@ -569,6 +592,18 @@ function ConversationPaneContent({
         onSend={onSendThreadReply}
       />
     ) : null;
+  const collaborationStatus = collaboration ? (
+    <CollaborationStatus
+      roomID={conversation.id}
+      messages={mainMessages}
+      participants={[...roomTurns, ...messageControls.composerParticipants]}
+      agents={agents}
+      usersById={usersById}
+      t={t}
+      onOpenActivity={openCollaborationActivity}
+      onStop={onStopWorkingTurn}
+    />
+  ) : undefined;
   const agentDetailPanel = agentDetailPanelProps ? <AgentDetailSidePanel {...agentDetailPanelProps} /> : null;
 
   return (
@@ -609,15 +644,17 @@ function ConversationPaneContent({
 
       <Conversation.MessageList
         footerSlot={
-          <PendingTurnReplies
-            participants={pendingCloudReply ? [pendingCloudReply] : messageControls.pendingReplies}
-            stoppableInComposer={stoppableParticipant}
-            agents={agents}
-            usersById={usersById}
-            t={t}
-            onAction={conversation.cloud_agent ? undefined : handleOpenActivityPanel}
-            onStop={onStopWorkingTurn}
-          />
+          !collaboration && (pendingCloudReply || messageControls.pendingReplies.length) ? (
+            <PendingTurnReplies
+              participants={pendingCloudReply ? [pendingCloudReply] : messageControls.pendingReplies}
+              stoppableInComposer={stoppableParticipant}
+              agents={agents}
+              usersById={usersById}
+              t={t}
+              onAction={conversation.cloud_agent ? undefined : handleOpenActivityPanel}
+              onStop={onStopWorkingTurn}
+            />
+          ) : undefined
         }
         renderTurnControls={renderTurnControls}
         renderMessageFooter={taskFooter}
@@ -648,9 +685,10 @@ function ConversationPaneContent({
       />
 
       {!conversation.cloud_agent && questionMode.pending.length > 0 ? (
-        <AgentQuestionComposer mode={questionMode} t={t} usersById={usersById} />
+        <AgentQuestionComposer mode={questionMode} t={t} usersById={usersById} statusSlot={collaborationStatus} />
       ) : (
         <Conversation.Composer
+          statusSlot={collaborationStatus}
           textOnly={Boolean(conversation.cloud_agent)}
           resourceAgentID={resourceAgentID}
           onPickResources={onPickResources}
@@ -683,7 +721,7 @@ function ConversationPaneContent({
           toolbar={
             <TaskConversationControls
               conversation={conversation}
-              participants={workingParticipantsWithActivity}
+              participants={collaboration ? [] : workingParticipantsWithActivity}
               agents={agents}
               t={t}
               onNewTask={onNewTask}
@@ -692,7 +730,7 @@ function ConversationPaneContent({
           }
           hideWorkingContextUsage
           stoppableParticipant={stoppableParticipant}
-          workingParticipants={conversation.cloud_agent ? [] : messageControls.composerParticipants}
+          workingParticipants={conversation.cloud_agent || collaboration ? [] : messageControls.composerParticipants}
           onApplyMention={onApplyMention}
           onApplySlashCandidate={onApplySlashCandidate}
           onAddAttachments={conversation.cloud_agent ? undefined : onAddAttachments}

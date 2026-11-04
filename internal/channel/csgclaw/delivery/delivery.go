@@ -12,6 +12,7 @@ import (
 	"csgclaw/internal/agentengine/contract"
 	"csgclaw/internal/channel"
 	channelrender "csgclaw/internal/channel/csgclaw/render"
+	"csgclaw/internal/roomtask"
 )
 
 const completedTurnWindow = 1024
@@ -242,7 +243,15 @@ func (r *TranscriptRenderer) Complete(ctx context.Context, turn channel.TurnCont
 	if r == nil {
 		return nil
 	}
-	state := r.finishState(turn)
+	if turn.Autonomous {
+		if err := r.Start(ctx, turn); err != nil {
+			return err
+		}
+	}
+	state, firstCompletion := r.finishState(turn)
+	if turn.Autonomous && !firstCompletion {
+		return nil
+	}
 	if state != nil && state.progress != nil && result.Status != agentengine.TurnSucceeded {
 		return state.progress.finish(ctx, result, "", false)
 	}
@@ -278,11 +287,23 @@ func (r *TranscriptRenderer) Complete(ctx context.Context, turn channel.TurnCont
 		state.renderer.ApplyText(activity.RuntimeEvent{Kind: activity.RuntimeEventTextDelta, Text: result.Output})
 	}
 	answer := result.Output
+	acceptsSilence := turn.Autonomous || turn.ChatType == "group"
+	silent := acceptsSilence && strings.TrimSpace(answer) == roomtask.AutonomousSilence
 	if state.progress != nil {
-		answer = state.progress.finalText(result.Output)
+		if !silent {
+			answer = state.progress.finalText(answer)
+		}
+	}
+	if silent {
+		answer = ""
+	}
+	if silent || state.progress != nil {
 		state.renderer.ReplaceText(answer)
 	}
 	text := strings.TrimSpace(strings.Join(state.renderer.FinalMessages(), "\n\n"))
+	if acceptsSilence && text == roomtask.AutonomousSilence {
+		text = ""
+	}
 	if state.progress != nil {
 		if err := state.progress.finish(ctx, result, text, true); err != nil {
 			return err
@@ -315,7 +336,7 @@ func (r *TranscriptRenderer) Complete(ctx context.Context, turn channel.TurnCont
 			return err
 		}
 	}
-	if r.taskTitle != nil && turn.AgentTurn && result.Status == agentengine.TurnSucceeded && text != "" &&
+	if r.taskTitle != nil && !turn.Autonomous && turn.AgentTurn && result.Status == agentengine.TurnSucceeded && text != "" &&
 		state.structuredUserInput == nil && len(result.Interactions) == 0 {
 		r.taskTitle(turn, answer)
 	}
@@ -440,7 +461,7 @@ func (r *TranscriptRenderer) deliverRenderedActivity(ctx context.Context, turn c
 	return nil
 }
 
-func (r *TranscriptRenderer) finishState(turn channel.TurnContext) *turnRenderState {
+func (r *TranscriptRenderer) finishState(turn channel.TurnContext) (*turnRenderState, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := bufferKey(turn)
@@ -450,7 +471,7 @@ func (r *TranscriptRenderer) finishState(turn channel.TurnContext) *turnRenderSt
 		r.completed = make(map[turnBufferKey]uint64)
 	}
 	if _, exists := r.completed[key]; exists {
-		return state
+		return state, false
 	}
 	var sequence uint64
 	if state != nil {
@@ -459,12 +480,12 @@ func (r *TranscriptRenderer) finishState(turn channel.TurnContext) *turnRenderSt
 	r.completed[key] = sequence
 	r.completedOrder = append(r.completedOrder, key)
 	if len(r.completedOrder) <= completedTurnWindow {
-		return state
+		return state, true
 	}
 	oldest := r.completedOrder[0]
 	r.completedOrder = r.completedOrder[1:]
 	delete(r.completed, oldest)
-	return state
+	return state, true
 }
 
 func normalizedRuntimeEvent(turn channel.TurnContext, event agentengine.TurnEvent) (activity.RuntimeEvent, bool) {

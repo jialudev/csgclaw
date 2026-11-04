@@ -1,6 +1,7 @@
 import type { IMMessage, TranslateFn } from "@/models/conversations";
 
 export type ProgressTool = {
+  details_version?: number;
   name: string;
   actions: string[];
   status: string;
@@ -19,6 +20,8 @@ export type ProgressItem = {
   tool?: ProgressTool;
 };
 export type TurnProgress = {
+  private_output?: boolean;
+  final_text?: string;
   id: string;
   revision: number;
   status: string;
@@ -164,10 +167,17 @@ export function expandProgressMessage(message: IMMessage): IMMessage[] {
       },
     };
   });
-  if (message.content?.replace(/\u200b/g, "").trim() || progress.error)
+  if (
+    message.content?.replace(/\u200b/g, "").trim() ||
+    progress.final_text ||
+    progress.error ||
+    message.attachments?.length
+  )
     entries.push({
       ...message,
-      content: message.content?.replace(/\u200b/g, "").trim() ? message.content : progress.error || "",
+      content: message.content?.replace(/\u200b/g, "").trim()
+        ? message.content
+        : progress.final_text || progress.error || "",
     });
   return entries;
 }
@@ -178,6 +188,7 @@ export function emptyCompletedProgress(message: IMMessage | null | undefined): b
   return (
     progress?.status === "succeeded" &&
     progress.items.length === 0 &&
+    !progress.final_text &&
     !message.content?.replace(/\u200b/g, "").trim() &&
     !message.attachments?.length
   );

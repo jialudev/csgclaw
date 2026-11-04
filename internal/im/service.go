@@ -259,6 +259,7 @@ type persistedRoom struct {
 	ContextUsage         map[string]modelcap.ContextUsage `json:"context_usage,omitempty"`
 	TitleSource          string                           `json:"title_source,omitempty"`
 	CloudAgent           *apitypes.CloudAgentReference    `json:"cloud_agent,omitempty"`
+	AutonomousState      *apitypes.AutonomousState        `json:"autonomous_state,omitempty"`
 	CreationWorkspaceDir *string                          `json:"creation_workspace_dir,omitempty"`
 
 	SourceTeamID       string             `json:"source_team_id,omitempty"`
@@ -543,6 +544,7 @@ func loadPersistedRooms(statePath string, rooms []persistedRoom) ([]Room, error)
 			CreatedAt:            room.CreatedAt,
 
 			Type:            apitypes.NormalizeRoomType(room.Type),
+			AutonomousState: cloneAutonomousState(room.AutonomousState),
 			ManagerID:       room.ManagerID,
 			ID:              room.ID,
 			Title:           room.Title,
@@ -737,6 +739,7 @@ func persistedRoomFromRoom(room Room) persistedRoom {
 		CreatedAt:            room.CreatedAt,
 
 		Type:            apitypes.NormalizeRoomType(room.Type),
+		AutonomousState: cloneAutonomousState(room.AutonomousState),
 		ManagerID:       room.ManagerID,
 		ID:              room.ID,
 		Title:           room.Title,
@@ -1786,7 +1789,7 @@ func (s *Service) UpdateRoom(roomID string, req UpdateRoomRequest) (Room, error)
 		}
 	}
 	if req.Configuration != nil {
-		if !room.IsDirect && !room.IsOnDemand() {
+		if !room.IsDirect && !room.IsOnDemand() && !room.IsAutonomous() {
 			return Room{}, fmt.Errorf("workspace configuration requires a task or collaboration room")
 		}
 		if !room.IsDirect && (req.Configuration.ModelID != "" || req.Configuration.ModelProviderID != "" || req.Configuration.ReasoningEffort != "" || req.Configuration.ExecutionMode != "") {
@@ -1845,6 +1848,7 @@ func (s *Service) ClearRoomMessages(roomID string) (Room, error) {
 		return Room{}, ErrRoomNotFound
 	}
 	room.Messages = []Message{}
+	room.AutonomousState = nil
 	room.Threads = []ThreadState{}
 	room.ContextUsage = nil
 	room.ContextUsageEpoch++
@@ -2257,6 +2261,7 @@ func (s *Service) CreateMessageOnce(req CreateMessageRequest) (Message, bool, er
 		return Message{}, false, err
 	}
 	message.Attachments = attachments
+	assignAutonomousSequence(room, &message)
 	room.Messages = append(room.Messages, message)
 	if err := s.saveLocked(); err != nil {
 		rollbackRoom()
@@ -2370,6 +2375,8 @@ func (s *Service) DeliverMessageContext(ctx context.Context, req DeliverMessageR
 	message.Attachments = attachments
 	if replaceIndex >= 0 {
 		message.CreatedAt = room.Messages[replaceIndex].CreatedAt
+		message.RoomSequence = room.Messages[replaceIndex].RoomSequence
+		assignAutonomousSequence(room, &message)
 		room.Messages[replaceIndex] = message
 		s.rebuildThreadStatesLocked(room)
 		if err := s.saveMessageProjectionLocked(req.Transient, operation); err != nil {
@@ -2381,6 +2388,7 @@ func (s *Service) DeliverMessageContext(ctx context.Context, req DeliverMessageR
 		finishPublish()
 		return presented, nil
 	}
+	assignAutonomousSequence(room, &message)
 	room.Messages = append(room.Messages, message)
 	if err := s.saveMessageProjectionLocked(req.Transient, operation); err != nil {
 		return Message{}, err
@@ -2508,6 +2516,7 @@ func (s *Service) DeliverEvent(req DeliverEventRequest) (Message, error) {
 			return presented, nil
 		}
 	}
+	assignAutonomousSequence(room, &message)
 	room.Messages = append(room.Messages, message)
 	if err := s.saveLocked(); err != nil {
 		return Message{}, err
@@ -2554,7 +2563,7 @@ func publishRoomEvent(bus *Bus, eventType string, room Room) {
 func (s *Service) CreateRoom(req CreateRoomRequest) (Room, error) {
 	req.SourceTeamID = strings.TrimSpace(req.SourceTeamID)
 	req.Type = apitypes.NormalizeRoomType(req.Type)
-	if req.Type != apitypes.RoomTypeFree && req.Type != apitypes.RoomTypeOnDemand {
+	if req.Type != apitypes.RoomTypeFree && req.Type != apitypes.RoomTypeOnDemand && req.Type != apitypes.RoomTypeAutonomous {
 		return Room{}, fmt.Errorf("unsupported room type")
 	}
 	if req.Type == apitypes.RoomTypeOnDemand {
@@ -2648,7 +2657,7 @@ func (s *Service) CreateRoom(req CreateRoomRequest) (Room, error) {
 		},
 	}
 
-	if room.IsOnDemand() {
+	if room.IsOnDemand() || room.IsAutonomous() {
 		requested := requestedWorkspaceDir(req.Configuration)
 		room.CreationWorkspaceDir = &requested
 	}
@@ -3160,6 +3169,7 @@ func cloneCloudAgent(ref *apitypes.CloudAgentReference) *apitypes.CloudAgentRefe
 
 func cloneRoom(room Room) Room {
 	room.CloudAgent = cloneCloudAgent(room.CloudAgent)
+	room.AutonomousState = cloneAutonomousState(room.AutonomousState)
 	if room.CreationWorkspaceDir != nil {
 		dir := *room.CreationWorkspaceDir
 		room.CreationWorkspaceDir = &dir
@@ -3390,6 +3400,15 @@ func (s *Service) threadSummaryLocked(room Room, rootMessageID string) (ThreadSu
 		return ThreadSummary{}, false
 	}
 	replies := s.threadRepliesLocked(room, rootMessageID)
+	if room.IsAutonomous() {
+		public := make([]Message, 0, len(replies))
+		for _, reply := range replies {
+			if publicAutonomousMessage(reply) {
+				public = append(public, reply)
+			}
+		}
+		replies = public
+	}
 	var latest *Message
 	if len(replies) > 0 {
 		msg := cloneMessage(replies[len(replies)-1])

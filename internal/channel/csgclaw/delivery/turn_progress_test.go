@@ -8,12 +8,14 @@ import (
 	"csgclaw/internal/channel"
 	"csgclaw/internal/im"
 	"csgclaw/internal/modelusage"
+	"csgclaw/internal/roomtask"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestLargeProgressPersistsWithoutBlockingOtherRooms(t *testing.T) {
@@ -361,5 +363,149 @@ func TestProgressPreservesStructuredContextFailures(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestProgressSilenceIsScopedToCollaboration(t *testing.T) {
+	for _, tc := range []struct {
+		name, chatType, taskID string
+		autonomous, private    bool
+	}{
+		{name: "autonomous", chatType: "group", autonomous: true, private: true},
+		{name: "on-demand task", chatType: "group", taskID: "task-1", private: true},
+		{name: "direct", chatType: "direct"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			renderer, service, turn := progressFixture(t)
+			turn.Autonomous = tc.autonomous
+			turn.ChatType = tc.chatType
+			turn.TaskID = tc.taskID
+			ctx := context.Background()
+			if err := renderer.Emit(ctx, turn, agentengine.TurnEvent{Kind: agentengine.TurnEventTextDelta, Sequence: 1, Text: roomtask.AutonomousSilence}); err != nil {
+				t.Fatal(err)
+			}
+			if err := renderer.Complete(ctx, turn, agentengine.TurnResult{Status: agentengine.TurnSucceeded, Output: roomtask.AutonomousSilence}); err != nil {
+				t.Fatal(err)
+			}
+			message, progress := progressMessage(t, service)
+			if progress.Status != "succeeded" || im.IsAgentActivityMessage(message) != tc.private ||
+				strings.Contains(message.Content, roomtask.AutonomousSilence) == tc.private {
+				t.Fatalf("unexpected delivery (want activity=%v): %+v", tc.private, message)
+			}
+		})
+	}
+}
+
+func TestAutonomousFinalReplyReturnsToConversation(t *testing.T) {
+	for _, tc := range []struct {
+		name, sent, answer string
+		thread, private    bool
+	}{
+		{name: "peer without mention", answer: "🔧 Looks good"},
+		{name: "status after claim", sent: "I will check", answer: "Finished checking"},
+		{name: "already published", sent: "Done", answer: "Done", private: true},
+		{name: "explicit silence", answer: roomtask.AutonomousSilence, private: true},
+		{name: "thread reply without mention", answer: "In thread", thread: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			renderer, service, turn := progressFixture(t)
+			peer, _, err := service.EnsureAgentUser(im.EnsureAgentUserRequest{ID: "peer", Name: "Peer", Role: "worker"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			room, err := service.CreateRoom(im.CreateRoomRequest{Type: apitypes.RoomTypeAutonomous, Title: "Collaboration", CreatorID: "user", MemberIDs: []string{"agent", peer.ID}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			turn.RoomID = room.ID
+			turn.Autonomous = true
+			request := im.CreateMessageRequest{RoomID: room.ID, SenderID: peer.ID, Content: "Could you review this?"}
+			if tc.thread {
+				root, err := service.CreateMessage(im.CreateMessageRequest{RoomID: room.ID, SenderID: "user", Content: "Review"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				turn.ThreadRootID = root.ID
+				request.RelatesTo = &im.MessageRelation{RelType: "m.thread", EventID: root.ID}
+			}
+			source, err := service.CreateMessage(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			turn.SourceMessageID = source.ID
+			if err := renderer.Start(ctx, turn); err != nil {
+				t.Fatal(err)
+			}
+			if tc.sent != "" {
+				if _, err := service.CreateMessage(im.CreateMessageRequest{RoomID: room.ID, SenderID: "agent", Content: tc.sent, RelatesTo: request.RelatesTo}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := renderer.Emit(ctx, turn, agentengine.TurnEvent{Sequence: 1, Kind: agentengine.TurnEventTextDelta, Phase: "commentary", Text: "Checking"}); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := renderer.Complete(ctx, turn, agentengine.TurnResult{Status: agentengine.TurnSucceeded, Output: tc.answer}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			page, err := service.PrepareUnread(room.ID, peer.ID, turn.ThreadRootID, 50, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var delivered int
+			for _, message := range page.Messages {
+				if message.ID == finalMessageID(turn) {
+					delivered++
+					if message.Content != tc.answer {
+						t.Fatalf("wrong reply: %q", message.Content)
+					}
+				}
+			}
+			want := 1
+			if tc.private {
+				want = 0
+			}
+			if delivered != want {
+				t.Fatalf("final reply appears %d times in the peer inbox, want %d", delivered, want)
+			}
+		})
+	}
+}
+
+func TestCollaborationToolDetailsKeepNativeArgumentsAndResults(t *testing.T) {
+	for _, schema := range []string{"codex", "dsh"} {
+		t.Run(schema, func(t *testing.T) {
+			input := map[string]any{"query": strings.Repeat("I", 500), "ack_token": "[redacted]"}
+			output := map[string]any{"text": strings.Repeat("O", 2000), "tail": "END"}
+			payload := map[string]any{"arguments": input, "result": output}
+			if schema == "dsh" {
+				payload = map[string]any{"rawInput": input, "content": output}
+			}
+			tool := agentengine.ToolActivity{Kind: "mcp_tool_call", Title: "messages_read", Status: "completed", InputSummary: "short input", OutputSummary: "short output", Payload: payload}
+			full := progressToolDetails(tool, nil, true)
+			if !strings.Contains(full.Input, strings.Repeat("I", 500)) || !strings.Contains(full.Output, "END") || full.Truncated || full.DetailsVersion != 1 {
+				t.Fatalf("lost full details: %+v", full)
+			}
+			direct := progressTool(tool, nil)
+			if direct.Input != "short input" || direct.Output != "short output" || direct.DetailsVersion != 0 {
+				t.Fatalf("single agent presentation changed: %+v", direct)
+			}
+			payload["result"] = map[string]any{"text": strings.Repeat("界", 30000)}
+			delete(payload, "content")
+			truncated := progressToolDetails(tool, nil, true)
+			if !truncated.Truncated || len(truncated.Output) > 64<<10 || !utf8.ValidString(truncated.Output) {
+				t.Fatal("missing safe truncation")
+			}
+		})
+	}
+}
+
+func TestCollaborationDetailProtectsEmbeddedCredentialsWithoutLosingLongResults(t *testing.T) {
+	text := `{"record_id":9007199254740993,"ack_token":"fixture-ack-secret","result":"` + strings.Repeat("A", 2048) + `"}`
+	detail := progressDetailJSON(map[string]any{"content": []any{map[string]any{"type": "text", "text": text}}})
+	if strings.Contains(detail, "fixture-ack-secret") || !strings.Contains(detail, "[redacted]") || !strings.Contains(detail, "9007199254740993") || !strings.Contains(detail, strings.Repeat("A", 2048)) {
+		t.Fatal("credential protection or full detail preservation failed")
 	}
 }

@@ -371,7 +371,13 @@ export function WorkspaceConversationRow({
       <span className={styles.conversationTail}>
         {isDirect ? null : (
           <span className={classNames(styles.roomModeBadge, onDemand && styles.roomModeBadgeOnDemand)}>
-            {t(onDemand ? "onDemandCollaborationTag" : "freeCollaborationTag")}
+            {t(
+              conversation.type === "autonomous"
+                ? "autonomousCollaboration"
+                : onDemand
+                  ? "onDemandCollaborationTag"
+                  : "freeCollaborationTag",
+            )}
           </span>
         )}
         <span className={styles.time}>{formatSidebarTime(lastMessage?.created_at, locale, t)}</span>

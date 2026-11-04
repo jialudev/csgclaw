@@ -347,6 +347,8 @@ function outgoingMessageRecipientAgents({
     return peers;
   }
 
+  if (conversation.type === RoomTypes.autonomous) return peers;
+
   const mentionedAgents = mentionedConversationAgents(segments, peers, agents, usersById);
   const senderAgent = conversationAgentForMember(currentUserID, agents, usersById);
   if (isNewConversationMessage(segments)) {

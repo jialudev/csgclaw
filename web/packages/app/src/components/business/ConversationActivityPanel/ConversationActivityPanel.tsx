@@ -19,6 +19,9 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { CollaborationActivityTurns } from "./CollaborationActivityTurns";
+import { collaborationTurns } from "@/models/collaborationTurns";
+import { usesCollaborationTranscript } from "@/models/collaborationTranscript";
 import { fetchMessagesRequest } from "@/api/im";
 import { errorMessage } from "@/api/client";
 import { MessageContent } from "@/components/business/MessageContent";
@@ -67,6 +70,7 @@ type ConversationActivityPanelProps = {
   agents: readonly AgentLike[];
   conversation: IMConversation;
   initialEntryID?: string | null;
+  actorSelection?: { agentID?: string; turnID?: string; requestID?: string };
   locale: LocaleCode;
   onClose: () => void;
   onCitationSelect?: CitationSelectHandler;
@@ -122,6 +126,7 @@ export function ConversationActivityPanel({
   agents,
   conversation,
   initialEntryID = null,
+  actorSelection,
   locale,
   onClose,
   onCitationSelect,
@@ -133,7 +138,9 @@ export function ConversationActivityPanel({
   const [loadError, setLoadError] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("newest_first");
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(() => new Set());
-  const [selectedActorID, setSelectedActorID] = useState("all");
+  const [selectedActorID, setSelectedActorID] = useState(
+    actorSelection?.agentID ? `agent:${actorSelection.agentID}` : "all",
+  );
   const [selectedEntryID, setSelectedEntryID] = useState<string | null>(initialEntryID);
   const [panelWidth, setPanelWidth] = useState(readPanelWidth);
   const [resizing, setResizing] = useState(false);
@@ -145,6 +152,13 @@ export function ConversationActivityPanel({
   const resizeRef = useRef({ pointerID: -1, startWidth: DEFAULT_PANEL_WIDTH, startX: 0 });
   const actorFilterDragRef = useRef({ dragged: false, pointerID: -1, startScrollLeft: 0, startX: 0 });
   const direct = isDirectConversation(conversation);
+  const collaboration = usesCollaborationTranscript(conversation);
+  const [showEvents, setShowEvents] = useState(false);
+  const turnGroups = useMemo(() => collaborationTurns(messages), [messages]);
+  const showTurns = collaboration && !showEvents && turnGroups.turns.length > 0;
+  useEffect(() => {
+    if (actorSelection?.turnID || actorSelection?.requestID) setShowEvents(false);
+  }, [actorSelection]);
 
   const activityAgents = useMemo(() => conversationActivityAgents(conversation, agents), [agents, conversation]);
   const entries = useMemo(
@@ -231,6 +245,12 @@ export function ConversationActivityPanel({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [initialEntryID]);
+
+  useEffect(() => {
+    if (!actorSelection) return;
+    setSelectedActorID(actorSelection?.agentID ? `agent:${actorSelection.agentID}` : "all");
+    setSelectedTypes(new Set());
+  }, [actorSelection]);
 
   const toggleType = useCallback((eventType: string) => {
     setSelectedTypes((current) => {
@@ -365,6 +385,7 @@ export function ConversationActivityPanel({
         "conversation-activity-panel",
         styles.panel,
         embedded && styles.embedded,
+        showTurns && styles.turnMode,
         resizing && styles.resizing,
       )}
       aria-labelledby="conversation-activity-title"
@@ -392,189 +413,250 @@ export function ConversationActivityPanel({
         />
       ) : null}
 
-      <header className={styles.header}>
+      <header className={classNames(styles.header, collaboration && styles.collaborationHeader)}>
         <div className={styles.titleGroup}>
           <h2 id="conversation-activity-title">{t("agentActivityTitle")}</h2>
           <p>
-            {t(direct ? "conversationActivityCurrentConversation" : "conversationActivityRoomTimeline", {
-              name: conversation.title || conversation.id,
-            })}
+            {t(
+              direct
+                ? "conversationActivityCurrentConversation"
+                : showTurns
+                  ? "collaborationTurnSubtitle"
+                  : "conversationActivityRoomTimeline",
+              {
+                name: conversation.title || conversation.id,
+              },
+            )}
           </p>
         </div>
-        <Button
-          className={styles.closeButton}
-          iconOnly
-          size="sm"
-          variant="tertiaryGray"
-          aria-label={t("close")}
-          title={t("close")}
-          onClick={onClose}
-        >
-          <X aria-hidden="true" size={17} />
-        </Button>
-      </header>
-
-      <div className={styles.toolbar}>
-        <div className={styles.toolbarTop}>
-          <div className={styles.summary} aria-label={t("agentActivitySummaryLabel")}>
-            {summary.duration ? (
-              <MetaChip className={styles.durationMeta} icon={<Clock aria-hidden="true" size={14} />}>
-                {summary.duration}
-              </MetaChip>
-            ) : null}
-            <MetaChip>{t("agentActivityToolCallsCount", { count: summary.toolCount })}</MetaChip>
-            <MetaChip className={styles.eventCountMeta}>
-              {selectedTypes.size || selectedActorID !== "all"
-                ? t("agentActivityFilteredEventsCount", { shown: summary.filteredCount, total: summary.eventCount })
-                : t("agentActivityEventsCount", { count: summary.eventCount })}
-            </MetaChip>
-          </div>
-          <div className={styles.controls}>
+        <div className={styles.headerActions}>
+          {collaboration ? (
             <SegmentedControl
-              className={styles.sortControl}
-              label={t("agentActivitySortLabel")}
               size="sm"
-              value={sortMode}
-              onChange={setSortMode}
+              label={t("collaborationTurnView")}
+              value={showTurns ? "turns" : "events"}
+              onChange={(value) => setShowEvents(value === "events")}
               options={[
-                {
-                  value: "chronological",
-                  accessibleName: t("agentActivityChronological"),
-                  label: (
-                    <>
-                      <ArrowDownNarrowWide aria-hidden="true" size={14} />
-                      <span className={styles.sortLabel}>{t("agentActivityChronological")}</span>
-                    </>
-                  ),
-                },
-                {
-                  value: "newest_first",
-                  accessibleName: t("agentActivityNewestFirst"),
-                  label: (
-                    <>
-                      <ArrowUpNarrowWide aria-hidden="true" size={14} />
-                      <span className={styles.sortLabel}>{t("agentActivityNewestFirst")}</span>
-                    </>
-                  ),
-                },
+                { value: "turns", label: t("collaborationTurnViewTurns"), disabled: !turnGroups.turns.length },
+                { value: "events", label: t("collaborationTurnViewEvents") },
               ]}
             />
-            <ActivityFilterMenu
-              options={filterOptions}
-              selected={selectedTypes}
-              t={t}
-              onClear={() => setSelectedTypes(new Set())}
-              onToggle={toggleType}
-            />
+          ) : null}
+          {(!embedded || !collaboration) && (
             <Button
-              className={styles.refreshButton}
+              className={styles.closeButton}
               iconOnly
               size="sm"
-              variant="secondaryGray"
-              disabled={loading}
-              aria-label={t("agentActivityRefresh")}
-              title={t("agentActivityRefresh")}
-              onClick={() => void refresh()}
+              variant="tertiaryGray"
+              aria-label={t("close")}
+              title={t("close")}
+              onClick={onClose}
             >
-              <RefreshCw className={loading ? styles.spinning : undefined} aria-hidden="true" size={15} />
+              <X aria-hidden="true" size={17} />
             </Button>
-          </div>
+          )}
         </div>
+      </header>
 
-        {entries.length ? (
-          <ActivityDensityBar
-            entries={filteredEntries}
-            locale={locale}
-            selectedEntryID={selectedEntryID}
-            t={t}
-            usersById={usersById}
-            onSelect={scrollToEntry}
-          />
-        ) : null}
+      {showTurns ? (
+        <CollaborationActivityTurns
+          turns={turnGroups.turns}
+          unassignedCount={turnGroups.unassigned.length}
+          agents={activityAgents}
+          usersById={usersById}
+          locale={locale}
+          t={t}
+          selection={actorSelection}
+          initialEntryID={initialEntryID}
+          loading={loading}
+          loadError={loadError}
+          onRefresh={() => void refresh()}
+          onShowEvents={() => setShowEvents(true)}
+          onCitationSelect={onCitationSelect}
+          renderEntry={(entry, expandAll, selected) => (
+            <ActivityRow
+              key={entry.id}
+              direct
+              entry={entry}
+              locale={locale}
+              selected={selected}
+              expandAll={expandAll}
+              showTime={false}
+              includeToolInput
+              t={t}
+              usersById={usersById}
+              onCitationSelect={onCitationSelect}
+              rowRef={() => undefined}
+            />
+          )}
+        />
+      ) : (
+        <>
+          <div className={styles.toolbar}>
+            <div className={styles.toolbarTop}>
+              <div className={styles.summary} aria-label={t("agentActivitySummaryLabel")}>
+                {summary.duration ? (
+                  <MetaChip className={styles.durationMeta} icon={<Clock aria-hidden="true" size={14} />}>
+                    {summary.duration}
+                  </MetaChip>
+                ) : null}
+                <MetaChip>{t("agentActivityToolCallsCount", { count: summary.toolCount })}</MetaChip>
+                <MetaChip className={styles.eventCountMeta}>
+                  {selectedTypes.size || selectedActorID !== "all"
+                    ? t("agentActivityFilteredEventsCount", { shown: summary.filteredCount, total: summary.eventCount })
+                    : t("agentActivityEventsCount", { count: summary.eventCount })}
+                </MetaChip>
+              </div>
+              <div className={styles.controls}>
+                <SegmentedControl
+                  className={styles.sortControl}
+                  label={t("agentActivitySortLabel")}
+                  size="sm"
+                  value={sortMode}
+                  onChange={setSortMode}
+                  options={[
+                    {
+                      value: "chronological",
+                      accessibleName: t("agentActivityChronological"),
+                      label: (
+                        <>
+                          <ArrowDownNarrowWide aria-hidden="true" size={14} />
+                          <span className={styles.sortLabel}>{t("agentActivityChronological")}</span>
+                        </>
+                      ),
+                    },
+                    {
+                      value: "newest_first",
+                      accessibleName: t("agentActivityNewestFirst"),
+                      label: (
+                        <>
+                          <ArrowUpNarrowWide aria-hidden="true" size={14} />
+                          <span className={styles.sortLabel}>{t("agentActivityNewestFirst")}</span>
+                        </>
+                      ),
+                    },
+                  ]}
+                />
+                <ActivityFilterMenu
+                  options={filterOptions}
+                  selected={selectedTypes}
+                  t={t}
+                  onClear={() => setSelectedTypes(new Set())}
+                  onToggle={toggleType}
+                />
+                <Button
+                  className={styles.refreshButton}
+                  iconOnly
+                  size="sm"
+                  variant="secondaryGray"
+                  disabled={loading}
+                  aria-label={t("agentActivityRefresh")}
+                  title={t("agentActivityRefresh")}
+                  onClick={() => void refresh()}
+                >
+                  <RefreshCw className={loading ? styles.spinning : undefined} aria-hidden="true" size={15} />
+                </Button>
+              </div>
+            </div>
 
-        {!direct && activityActors.length ? (
-          <div
-            className={classNames(styles.actorFilters, draggingActorFilters && styles.draggingActorFilters)}
-            role="group"
-            aria-label={t("conversationActivityActorFilter")}
-            onClickCapture={(event) => {
-              if (!actorFilterDragRef.current.dragged) {
-                return;
-              }
-              event.preventDefault();
-              event.stopPropagation();
-              actorFilterDragRef.current.dragged = false;
-            }}
-            onPointerCancel={(event) => finishActorFilterDrag(event, true)}
-            onPointerDown={handleActorFilterDragStart}
-            onPointerMove={handleActorFilterDragMove}
-            onPointerUp={finishActorFilterDrag}
-            onWheel={handleActorFilterWheel}
-          >
-            <button
-              type="button"
-              className={classNames(styles.actorChip, selectedActorID === "all" && styles.selectedActor)}
-              aria-pressed={selectedActorID === "all"}
-              onClick={() => setSelectedActorID("all")}
-            >
-              <span className={styles.allActorsDot} aria-hidden="true" />
-              {t("conversationActivityAllActors")}
-            </button>
-            {activityActors.map((actor) => (
-              <button
-                key={actor.filterID}
-                type="button"
-                className={classNames(styles.actorChip, selectedActorID === actor.filterID && styles.selectedActor)}
-                aria-pressed={selectedActorID === actor.filterID}
-                onClick={() => setSelectedActorID((current) => (current === actor.filterID ? "all" : actor.filterID))}
-              >
-                {actor.kind === "human" ? (
-                  <UserRound className={styles.humanActorIcon} aria-hidden="true" size={13} strokeWidth={2} />
-                ) : (
-                  <span
-                    className={styles.agentDot}
-                    style={{ "--agent-hue": agentHue(actor.hueIndex) } as CSSProperties}
-                    aria-hidden="true"
-                  />
-                )}
-                {actor.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
-      <div className={styles.body}>
-        {loadError ? <div className={styles.loadError}>{loadError}</div> : null}
-        {loading && entries.length === 0 ? <div className={styles.empty}>{t("agentActivityLoading")}</div> : null}
-        {!loading && entries.length === 0 ? <div className={styles.empty}>{t("agentActivityEmpty")}</div> : null}
-        {!loading && entries.length > 0 && displayEntries.length === 0 ? (
-          <div className={styles.empty}>{t("agentActivityNoFilteredResults")}</div>
-        ) : null}
-        {displayEntries.length ? (
-          <div className={styles.list} role="list">
-            {displayEntries.map((entry) => (
-              <ActivityRow
-                key={entry.id}
-                direct={direct}
-                entry={entry}
+            {entries.length ? (
+              <ActivityDensityBar
+                entries={filteredEntries}
                 locale={locale}
-                selected={selectedEntryID === entry.id}
+                selectedEntryID={selectedEntryID}
                 t={t}
                 usersById={usersById}
-                onCitationSelect={onCitationSelect}
-                rowRef={(node) => {
-                  if (node) {
-                    rowRefs.current.set(entry.id, node);
-                  } else {
-                    rowRefs.current.delete(entry.id);
-                  }
-                }}
+                onSelect={scrollToEntry}
               />
-            ))}
+            ) : null}
+
+            {!direct && activityActors.length ? (
+              <div
+                className={classNames(styles.actorFilters, draggingActorFilters && styles.draggingActorFilters)}
+                role="group"
+                aria-label={t("conversationActivityActorFilter")}
+                onClickCapture={(event) => {
+                  if (!actorFilterDragRef.current.dragged) {
+                    return;
+                  }
+                  event.preventDefault();
+                  event.stopPropagation();
+                  actorFilterDragRef.current.dragged = false;
+                }}
+                onPointerCancel={(event) => finishActorFilterDrag(event, true)}
+                onPointerDown={handleActorFilterDragStart}
+                onPointerMove={handleActorFilterDragMove}
+                onPointerUp={finishActorFilterDrag}
+                onWheel={handleActorFilterWheel}
+              >
+                <button
+                  type="button"
+                  className={classNames(styles.actorChip, selectedActorID === "all" && styles.selectedActor)}
+                  aria-pressed={selectedActorID === "all"}
+                  onClick={() => setSelectedActorID("all")}
+                >
+                  <span className={styles.allActorsDot} aria-hidden="true" />
+                  {t("conversationActivityAllActors")}
+                </button>
+                {activityActors.map((actor) => (
+                  <button
+                    key={actor.filterID}
+                    type="button"
+                    className={classNames(styles.actorChip, selectedActorID === actor.filterID && styles.selectedActor)}
+                    aria-pressed={selectedActorID === actor.filterID}
+                    onClick={() =>
+                      setSelectedActorID((current) => (current === actor.filterID ? "all" : actor.filterID))
+                    }
+                  >
+                    {actor.kind === "human" ? (
+                      <UserRound className={styles.humanActorIcon} aria-hidden="true" size={13} strokeWidth={2} />
+                    ) : (
+                      <span
+                        className={styles.agentDot}
+                        style={{ "--agent-hue": agentHue(actor.hueIndex) } as CSSProperties}
+                        aria-hidden="true"
+                      />
+                    )}
+                    {actor.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
+
+          <div className={styles.body}>
+            {loadError ? <div className={styles.loadError}>{loadError}</div> : null}
+            {loading && entries.length === 0 ? <div className={styles.empty}>{t("agentActivityLoading")}</div> : null}
+            {!loading && entries.length === 0 ? <div className={styles.empty}>{t("agentActivityEmpty")}</div> : null}
+            {!loading && entries.length > 0 && displayEntries.length === 0 ? (
+              <div className={styles.empty}>{t("agentActivityNoFilteredResults")}</div>
+            ) : null}
+            {displayEntries.length ? (
+              <div className={styles.list} role="list">
+                {displayEntries.map((entry) => (
+                  <ActivityRow
+                    key={entry.id}
+                    direct={direct}
+                    entry={entry}
+                    locale={locale}
+                    selected={selectedEntryID === entry.id}
+                    t={t}
+                    usersById={usersById}
+                    onCitationSelect={onCitationSelect}
+                    rowRef={(node) => {
+                      if (node) {
+                        rowRefs.current.set(entry.id, node);
+                      } else {
+                        rowRefs.current.delete(entry.id);
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </>
+      )}
     </aside>
   );
 }
@@ -685,7 +767,13 @@ function ActivityRow({
   t,
   usersById,
   onCitationSelect,
+  expandAll,
+  showTime = true,
+  includeToolInput = false,
 }: {
+  expandAll?: boolean;
+  showTime?: boolean;
+  includeToolInput?: boolean;
   direct: boolean;
   entry: ConversationActivityEntry;
   locale: LocaleCode;
@@ -696,8 +784,14 @@ function ActivityRow({
   onCitationSelect?: CitationSelectHandler;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const details = conversationActivityEntryDetails(entry);
+  useEffect(() => {
+    if (expandAll !== undefined) setExpanded(expandAll || selected);
+  }, [expandAll, selected]);
+  const details = conversationActivityEntryDetails(entry, includeToolInput);
   const hasDetail = details.length > 0;
+  const tool = includeToolInput ? entry.activity?.content.tool : undefined;
+  const summary = conversationActivityEntrySummary(entry);
+  const rowSummary = tool?.title && !summary.startsWith(tool.title) ? `${tool.title} · ${summary}` : summary;
 
   return (
     <article
@@ -715,19 +809,33 @@ function ActivityRow({
             onClick={() => setExpanded((current) => !current)}
           >
             <ChevronRight className={expanded ? styles.expanded : undefined} aria-hidden="true" size={14} />
-            <span>{conversationActivityEntrySummary(entry) || "-"}</span>
+            <span>{rowSummary || "-"}</span>
           </button>
         ) : (
-          <div className={styles.rowSummaryText}>{conversationActivityEntrySummary(entry) || "-"}</div>
+          <div className={styles.rowSummaryText}>{rowSummary || "-"}</div>
         )}
         {!direct ? <span className={styles.agentName}>{activityActorName(entry, usersById, t)}</span> : null}
         <span className={styles.sequence}>#{entry.index}</span>
-        <time className={styles.time} dateTime={entry.createdAt}>
-          {formatTime(entry.createdAt, locale)}
-        </time>
+        {showTime ? (
+          <time className={styles.time} dateTime={entry.createdAt}>
+            {formatTime(entry.createdAt, locale)}
+          </time>
+        ) : null}
       </div>
       {hasDetail && expanded ? (
         <div className={styles.detail}>
+          {tool ? (
+            <div className={styles.toolFacts}>
+              <span>
+                {tool.title} · {tool.status}
+              </span>
+              {tool.duration_ms != null ? (
+                <span>{t("progressToolDuration", { seconds: (tool.duration_ms / 1000).toFixed(1) })}</span>
+              ) : null}
+              {tool.exit_code != null ? <span>{t("progressExitCode", { code: tool.exit_code })}</span> : null}
+              {tool.cwd ? <span>{t("progressDirectory", { path: tool.cwd })}</span> : null}
+            </div>
+          ) : null}
           {entry.source === "user" || entry.eventType === "message" ? (
             <MessageContent
               showTurnProgress={false}

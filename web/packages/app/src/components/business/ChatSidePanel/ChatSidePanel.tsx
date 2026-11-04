@@ -27,6 +27,7 @@ import { attachmentCapability, filePreviewItem, transcriptRoomFiles } from "@/ap
 import { useRoomFileReader } from "./useRoomFileReader";
 import { clampChatSideWidth, type ChatSideTab } from "@/models/chatSidePanel";
 import { parseCitationDocument } from "@/models/citations";
+import { usesCollaborationTranscript } from "@/models/collaborationTranscript";
 import type { AttachmentPreviewItem } from "@/models/attachments";
 import type { AgentLike } from "@/models/agents";
 import type { IMConversation, LocaleCode, TranslateFn, UsersById } from "@/models/conversations";
@@ -443,6 +444,7 @@ export function ChatSidePanel({
                   agents={agents}
                   conversation={conversation}
                   initialEntryID={tab.entryID}
+                  actorSelection={usesCollaborationTranscript(conversation) ? tab : undefined}
                   locale={locale}
                   t={t}
                   usersById={usersById}

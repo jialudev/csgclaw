@@ -173,6 +173,12 @@ func (h *Handler) stopParticipantWork(w http.ResponseWriter, r *http.Request) {
 		h.writeParticipantWorkError(w, err)
 		return
 	}
+	if h.im != nil {
+		if err := h.im.PauseAutonomousRoom(request.RoomID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	writeJSON(w, http.StatusAccepted, response)
 }
 
