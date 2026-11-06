@@ -1,3 +1,9 @@
+import messageContentStyles from "@/components/business/MessageContent/MessageContent.module.css";
+import testWorkingTurnStyles from "@/components/business/ConversationPane/WorkingTurn.module.css";
+import testConversationThreadsStyles from "@/components/business/ConversationPane/ConversationThreads.module.css";
+import testConversationAttachmentsStyles from "@/components/business/ConversationPane/ConversationAttachments.module.css";
+import testConversationMessageListStyles from "@/components/business/ConversationPane/ConversationMessageList.module.css";
+import testMentionPickerStyles from "@/components/business/ConversationPane/MentionPicker.module.css";
 import { createQueryWrapper } from "../helpers/queryClient";
 import { createRef, useRef, useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -445,9 +451,9 @@ describe("ConversationPane", () => {
       });
       expect(container.querySelector("[data-work-lease-id]")).not.toBeInTheDocument();
       expect(container.querySelector(".composer > .composer-working")).not.toBeInTheDocument();
-      expect(container.querySelectorAll(".message-row .composer-working-stop")).toHaveLength(
-        status === "running" ? 1 : 0,
-      );
+      expect(
+        container.querySelectorAll(`.message-row .${testWorkingTurnStyles["composer-working-stop"]}`),
+      ).toHaveLength(status === "running" ? 1 : 0);
     },
   );
 
@@ -466,11 +472,15 @@ describe("ConversationPane", () => {
         { id: "thread-b", content: "Thread B", sender_id: "u-manager", created_at: "2026-05-25T08:14:00Z" },
       ],
     });
-    await waitFor(() => expect(document.querySelector(".thread-root")).toHaveTextContent("Thread A"));
+    await waitFor(() =>
+      expect(document.querySelector(`.${testConversationThreadsStyles["thread-root"]}`)).toHaveTextContent("Thread A"),
+    );
     const row = screen.getByText("Thread B").closest(".message-row") as HTMLElement;
     await user.hover(row);
     await user.click(row.querySelector(".thread-hover-button") as HTMLButtonElement);
-    await waitFor(() => expect(document.querySelector(".thread-root")).toHaveTextContent("Thread B"));
+    await waitFor(() =>
+      expect(document.querySelector(`.${testConversationThreadsStyles["thread-root"]}`)).toHaveTextContent("Thread B"),
+    );
     expect(onRestoreThread).not.toHaveBeenCalled();
     view.unmount();
     renderThreadPane({
@@ -478,7 +488,9 @@ describe("ConversationPane", () => {
       onRestoreThread,
       messages: [{ id: "msg-root", content: "Thread A", sender_id: "u-manager", created_at: "2026-05-25T08:13:00Z" }],
     });
-    await waitFor(() => expect(document.querySelector(".thread-root")).toHaveTextContent("Thread A"));
+    await waitFor(() =>
+      expect(document.querySelector(`.${testConversationThreadsStyles["thread-root"]}`)).toHaveTextContent("Thread A"),
+    );
     expect(onRestoreThread).not.toHaveBeenCalled();
   });
 
@@ -653,7 +665,9 @@ describe("ConversationPane", () => {
     expect(screen.getAllByText("Choose a color").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "Choose a color" })).toBeInTheDocument();
     expect(screen.getByRole("timer")).toBeInTheDocument();
-    expect(screen.getByText("Choose a color", { selector: ".agent-question-prompt" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Choose a color", { selector: `.${messageContentStyles["agent-question-prompt"]}` }),
+    ).toBeInTheDocument();
     expect(document.querySelector(".message-bubble:has(> .agent-activity-card)")).toBeInTheDocument();
     expect(screen.queryByLabelText("questionFreeformAnswer")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "questionPrevious" })).toBeDisabled();
@@ -1041,7 +1055,9 @@ describe("ConversationPane", () => {
       ],
     });
 
-    const attachmentButton = document.querySelector<HTMLButtonElement>(".message-file-attachment");
+    const attachmentButton = document.querySelector<HTMLButtonElement>(
+      `.${testConversationAttachmentsStyles["message-file-attachment"]}`,
+    );
     expect(attachmentButton).not.toBeNull();
     fireEvent.click(attachmentButton!);
     expect(onClose).toHaveBeenCalledWith(false);
@@ -1075,7 +1091,9 @@ describe("ConversationPane", () => {
       ],
     });
 
-    const attachmentButton = document.querySelector<HTMLButtonElement>(".message-file-attachment");
+    const attachmentButton = document.querySelector<HTMLButtonElement>(
+      `.${testConversationAttachmentsStyles["message-file-attachment"]}`,
+    );
     expect(attachmentButton).not.toBeNull();
     fireEvent.click(attachmentButton!);
 
@@ -1352,21 +1370,24 @@ describe("ConversationPane", () => {
       });
 
       expect(
-        [...container.querySelectorAll(".message-time-divider-label")].map((item) => ({
-          tooltip: item.getAttribute("data-tooltip"),
-          text: item.textContent,
-          title: item.getAttribute("title"),
-        })),
+        [...container.querySelectorAll(`.${testConversationMessageListStyles["message-time-divider-label"]}`)].map(
+          (item) => ({
+            tooltip: item.getAttribute("data-tooltip"),
+            text: item.textContent,
+            title: item.getAttribute("title"),
+          }),
+        ),
       ).toEqual([
         { text: "5月11日", title: null, tooltip: "2026-05-11 10:25:00" },
         { text: "5月12日", title: null, tooltip: "2026-05-12 09:15:00" },
       ]);
-      expect(container.querySelector(".message-row .message-timestamp")).toHaveAttribute(
-        "data-tooltip",
-        "2026-05-11 10:25:00",
-      );
       expect(
-        [...container.querySelectorAll(".message-row .message-timestamp")].map((item) => item.textContent),
+        container.querySelector(`.message-row .${testConversationMessageListStyles["message-timestamp"]}`),
+      ).toHaveAttribute("data-tooltip", "2026-05-11 10:25:00");
+      expect(
+        [...container.querySelectorAll(`.message-row .${testConversationMessageListStyles["message-timestamp"]}`)].map(
+          (item) => item.textContent,
+        ),
       ).toEqual(["10:25", "16:45", "09:15"]);
     } finally {
       vi.useRealTimers();
@@ -1396,7 +1417,7 @@ describe("ConversationPane", () => {
 
     const options = screen.getAllByRole("option");
     expect(options).toHaveLength(roomUsers.length);
-    expect(options[1]).toHaveClass("mention-option", "active");
+    expect(options[1]).toHaveClass(testMentionPickerStyles["mention-option"], "active");
     expect(options[1]).toHaveAttribute("aria-selected", "true");
 
     await user.click(options[2]);

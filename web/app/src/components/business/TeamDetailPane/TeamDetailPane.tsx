@@ -4,6 +4,7 @@ import { AgentAvatarContent, RoomAvatar } from "@/components/business";
 import { Edit3, ListChecks, MessageSquarePlus, Trash2, UserPlus, Users } from "lucide-react";
 import { TaskSubtaskIndicator } from "@/components/business";
 import {
+  TextArea,
   Button,
   DialogBody,
   DialogCloseButton,
@@ -147,7 +148,7 @@ export function TeamDetailPane({
           </div>
           {onUpdateDescription ? (
             editingDescription ? (
-              <textarea
+              <TextArea
                 ref={descriptionRef}
                 className={styles.descriptionInput}
                 aria-label={t("teamDescriptionLabel")}

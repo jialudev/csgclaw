@@ -1479,7 +1479,7 @@ describe("HubDetailPane", () => {
       screen.getByText("This template only contains generated defaults. Switch to Advanced to view the full content."),
     ).toBeInTheDocument();
     expect(screen.getByText("Default mode shows only user-defined instructions.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Advanced" }));
+    await user.click(screen.getByRole("radio", { name: "Advanced" }));
     expect(screen.getByLabelText("Instructions")).toHaveTextContent("# Instructions Follow the template rules.");
     await user.click(screen.getByRole("button", { name: /^Skills/ }));
     expect(screen.getByText("demo")).toBeInTheDocument();

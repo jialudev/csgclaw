@@ -1,3 +1,4 @@
+import conversationHeaderStyles from "./ConversationHeader.module.css";
 import { memo } from "react";
 import type { ReactNode, RefObject } from "react";
 import { AgentAvatarContent } from "@/components/business/AgentAvatar";
@@ -74,7 +75,7 @@ export const ConversationHeader = memo(function ConversationHeader({
 
   return (
     <PanelHeader className="chat-header">
-      <div className="chat-header-main">
+      <div className={conversationHeaderStyles["chat-header-main"]}>
         <div className="chat-title-bar">
           <div className="chat-title-row">
             <div className="chat-title-group">
@@ -94,14 +95,19 @@ export const ConversationHeader = memo(function ConversationHeader({
               </div>
               <Tooltip
                 content={conversation.title}
-                contentProps={{ align: "start", className: "chat-title-tooltip", side: "bottom", sideOffset: 6 }}
+                contentProps={{
+                  align: "start",
+                  className: conversationHeaderStyles["chat-title-tooltip"],
+                  side: "bottom",
+                  sideOffset: 6,
+                }}
               >
                 <div className="chat-title truncate" tabIndex={0}>
                   {conversation.title}
                 </div>
               </Tooltip>
               {showMemberListAction ? (
-                <div ref={memberMenuRef} className="header-menu">
+                <div ref={memberMenuRef} className={conversationHeaderStyles["header-menu"]}>
                   <Tooltip content={t("membersTitle")}>
                     <Button
                       className="member-badge-button"
@@ -116,15 +122,17 @@ export const ConversationHeader = memo(function ConversationHeader({
                       <span className="icon-button-mark" aria-hidden="true">
                         <UsersIcon />
                       </span>
-                      <span className="member-badge-count">{conversationMembers.length}</span>
+                      <span className={conversationHeaderStyles["member-badge-count"]}>
+                        {conversationMembers.length}
+                      </span>
                     </Button>
                   </Tooltip>
                   {showMemberList ? (
-                    <div className="header-popover members-popover">
+                    <div className={`header-popover ${conversationHeaderStyles["members-popover"]}`}>
                       <div className="header-popover-title">{t("membersTitle")}</div>
-                      <div className="members-popover-list">
+                      <div className={conversationHeaderStyles["members-popover-list"]}>
                         {conversationMembers.map((user) => (
-                          <div key={user.id} className="member-row">
+                          <div key={user.id} className={conversationHeaderStyles["member-row"]}>
                             <button
                               type="button"
                               className="avatar avatar-button"
@@ -136,9 +144,9 @@ export const ConversationHeader = memo(function ConversationHeader({
                                 fallback={avatarFallbackText(user.avatar, user.name, user.id)}
                               />
                             </button>
-                            <div className="member-row-main">
-                              <div className="member-row-name">{user.name}</div>
-                              <div className="member-row-meta">
+                            <div className={conversationHeaderStyles["member-row-main"]}>
+                              <div className={conversationHeaderStyles["member-row-name"]}>{user.name}</div>
+                              <div className={conversationHeaderStyles["member-row-meta"]}>
                                 {user.id} · {localizeRole(user.role || "", t)}
                               </div>
                             </div>
@@ -176,7 +184,7 @@ export const ConversationHeader = memo(function ConversationHeader({
             ) : null}
             {headerAccessory}
             {showChannelToolsAction ? (
-              <div ref={channelToolsRef} className="header-menu tools-menu">
+              <div ref={channelToolsRef} className={`${conversationHeaderStyles["header-menu"]} tools-menu`}>
                 <Tooltip content={t("channelTools")} contentProps={{ side: "bottom" }}>
                   <Button
                     className="icon-button"
@@ -197,7 +205,7 @@ export const ConversationHeader = memo(function ConversationHeader({
                   </Button>
                 </Tooltip>
                 {showChannelTools ? (
-                  <div className="header-popover tools-popover">
+                  <div className={`header-popover ${conversationHeaderStyles["tools-popover"]}`}>
                     <div className="header-popover-title">{t("channelTools")}</div>
                     <Button className="tool-menu-row" onClick={() => onToggleToolCalls((value) => !value)}>
                       <span>{showToolCalls ? t("toggleToolCallsHide") : t("toggleToolCallsShow")}</span>
