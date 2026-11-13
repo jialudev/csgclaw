@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchRoomTasks, fetchRoomTaskEvents } from "@/api/tasks";
-import { isOnDemandConversation, type IMConversation } from "@/models/conversations";
+import { RoomTypes, roomType, type IMConversation } from "@/models/conversations";
 
 export function useRoomTasks(conversation: IMConversation) {
   const client = useQueryClient();
-  const enabled = isOnDemandConversation(conversation) && !conversation.is_direct;
+  const enabled = roomType(conversation) !== RoomTypes.free && !conversation.is_direct;
   const revision = (conversation.messages ?? [])
     .filter((message) => message.metadata?.task_id)
     .map((message) => message.id)

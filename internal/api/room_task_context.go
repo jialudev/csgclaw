@@ -175,6 +175,9 @@ func contextExcerpt(value string, limit int) string {
 }
 
 func (h *Handler) handleGetRoomTask(w http.ResponseWriter, r *http.Request) {
+	if h.autonomousRoomTaskRead(w, r, false) {
+		return
+	}
 	if !h.requireRoomTasks(w, r) {
 		return
 	}

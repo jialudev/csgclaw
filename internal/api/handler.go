@@ -78,6 +78,7 @@ type Handler struct {
 	hub                        *hub.Service
 	mcp                        *mcp.Service
 	roomTaskSvc                *roomtask.Service
+	autonomousTasks            *roomtask.AutonomousService
 	teamSvc                    *team.Service
 	agentTaskSvc               *agenttask.Service
 	scheduledTaskSvc           *scheduledtask.Service
@@ -2576,7 +2577,7 @@ func (h *Handler) handleLocalRoomByID(w http.ResponseWriter, r *http.Request, id
 			}
 		}
 		defer releaseRoomDeletion()
-		if err := channel.DeleteRoom(id); err != nil {
+		if err := h.withAutonomousRoomMutation(id, func() error { return channel.DeleteRoom(id) }); err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				writeCodedAPIError(w, http.StatusNotFound, "room_not_found", im.ErrRoomNotFound.Error())
 				return
@@ -2614,7 +2615,12 @@ func (h *Handler) handleClearRoomMessages(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	room, err := h.im.ClearRoomMessages(roomID)
+	var room im.Room
+	err := h.withAutonomousRoomMutation(roomID, func() error {
+		var err error
+		room, err = h.im.ClearRoomMessages(roomID)
+		return err
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeCodedAPIError(w, http.StatusNotFound, "room_not_found", im.ErrRoomNotFound.Error())
@@ -2711,7 +2717,26 @@ func (h *Handler) handleRoomMemberDeletePath(w http.ResponseWriter, r *http.Requ
 			}
 		}
 	}
-	room, err := channel.RemoveRoomMembers(serviceReq)
+	var room im.Room
+	autonomous := false
+	if h.autonomousTasks != nil && h.im != nil {
+		current, ok := h.im.Room(roomID)
+		autonomous = ok && current.IsAutonomous()
+	}
+	removeMembers := func() error {
+		if autonomous {
+			for _, member := range serviceReq.UserIDs {
+				target := h.participantBridgeTargetForRoomMember(member)
+				if err := h.autonomousTasks.CheckMemberRemoval(roomID, target.matches); err != nil {
+					return err
+				}
+			}
+		}
+		var err error
+		room, err = channel.RemoveRoomMembers(serviceReq)
+		return err
+	}
+	err := h.withAutonomousRoomMutation(roomID, removeMembers)
 	if err != nil {
 		writeAPIError(w, err, http.StatusBadRequest)
 		return

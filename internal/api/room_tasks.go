@@ -22,9 +22,11 @@ func (h *Handler) SetRoomTaskCore(core *taskcore.Service) {
 	}
 	if core == nil {
 		h.roomTaskSvc = nil
+		h.autonomousTasks = nil
 		return
 	}
 	h.roomTaskSvc = roomtask.NewService(core, h.roomSchedulingContext, h.deliverRoomTaskProjection)
+	h.autonomousTasks = roomtask.NewAutonomousService(core, h.publishAutonomousTaskNotice)
 }
 
 func (h *Handler) deliverRoomTaskProjection(p roomtask.Projection) error {
@@ -183,6 +185,13 @@ func roomTaskError(w http.ResponseWriter, err error) {
 	http.Error(w, diagnostics.Redact(err.Error()), http.StatusConflict)
 }
 func (h *Handler) handleListRoomTasks(w http.ResponseWriter, r *http.Request) {
+	if h.autonomousTasks != nil && h.im != nil {
+		if room, ok := h.im.Room(pathValue(r, "id")); ok && room.IsAutonomous() {
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, http.StatusOK, h.autonomousRoomTaskViews(room.ID, nil))
+			return
+		}
+	}
 	if !h.requireRoomTasks(w, r) {
 		return
 	}

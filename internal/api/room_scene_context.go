@@ -42,6 +42,20 @@ func (h *Handler) roomSceneContext(room im.Room, request roomtask.TurnContextReq
 	snapshot := map[string]any{}
 	if notification != nil {
 		snapshot["unread"] = notification
+		if h.autonomousTasks != nil {
+			threadID := notification.ThreadRootID
+			tasks := h.autonomousRoomTaskViews(room.ID, &threadID)
+			active := make([]map[string]string, 0)
+			for _, task := range tasks {
+				if !roomtask.Terminal(task.Status) {
+					active = append(active, map[string]string{
+						"id": task.ID, "source_message_id": task.SourceMessageID, "parent_id": task.ParentID,
+						"title": task.Title, "status": task.Status, "owner": task.AssignedToAgentName,
+					})
+				}
+			}
+			snapshot["autonomous_tasks"] = active
+		}
 	}
 
 	scopeJSON, err := json.Marshal(scope)

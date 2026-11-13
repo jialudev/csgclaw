@@ -28,6 +28,8 @@ import {
   getConversationDescription,
   isDirectConversation,
   isOnDemandConversation,
+  roomType,
+  RoomTypes,
   userDisplayName,
 } from "@/models/conversations";
 import type { AgentDetailSidePanelProps } from "@/hooks/workspace/types";
@@ -135,7 +137,10 @@ function AgentDetailSidePanel({ onClose, onOpenDM, onNewTask, ...props }: AgentD
 
 type RoomTaskSlots = { taskPanel?: ReactNode; taskDialog?: ReactNode; taskFooter?: (message: IMMessage) => ReactNode };
 export function ConversationPane(props: ConversationPaneProps) {
-  if (isOnDemandConversation(props.conversation) && !props.conversation.is_direct) {
+  if (
+    !props.conversation.is_direct &&
+    (isOnDemandConversation(props.conversation) || roomType(props.conversation) === RoomTypes.autonomous)
+  ) {
     return <RoomTaskConversation key={props.conversation.id} {...props} />;
   }
   return <ConversationPaneContent {...props} />;
@@ -147,7 +152,14 @@ function RoomTaskConversation(props: ConversationPaneProps) {
   const selected = params.get("task") ?? "";
   const trigger = useRef<HTMLElement | null>(null);
   const tasks = query.data ?? [];
-  const anchors = roomTaskMessageAnchors(conversation.messages ?? [], conversation.manager_id ?? "");
+  const autonomous = roomType(conversation) === RoomTypes.autonomous;
+  const anchors = autonomous
+    ? new Map(
+        tasks.flatMap((task) =>
+          task.source_message_id && !task.parent_id ? [[task.source_message_id, task.id] as const] : [],
+        ),
+      )
+    : roomTaskMessageAnchors(conversation.messages ?? [], conversation.manager_id ?? "");
   const open = (id: string, anchor?: HTMLElement) => {
     if (anchor) trigger.current = anchor;
     void query.refetch();
@@ -208,6 +220,7 @@ function RoomTaskConversation(props: ConversationPaneProps) {
           roomTitle={conversation.title ?? conversation.id}
           taskID={selected}
           tasks={tasks}
+          autonomous={autonomous}
           loading={query.isLoading}
           error={query.isError ? localizeAPIError(query.error, t, t("tasksLoadFailed")) : ""}
           onClose={close}
@@ -556,6 +569,7 @@ function ConversationPaneContent({
         resourceAgentID={resourceAgentID}
         onPickResources={onPickThreadResources}
         renderTurnControls={renderTurnControls}
+        renderMessageFooter={roomType(conversation) === RoomTypes.autonomous ? taskFooter : undefined}
         agents={agents}
         thread={activeThreadView}
         loading={threadLoading}

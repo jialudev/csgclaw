@@ -36,6 +36,29 @@ func publicAutonomousMessage(message Message) bool {
 		(strings.TrimSpace(strings.ReplaceAll(message.Content, "\u200b", "")) != "" || len(message.Attachments) > 0)
 }
 
+// AutonomousTaskSource resolves a human request in the bound conversation.
+// A thread can also refer to its root message. When that happens the root
+// belongs to the same task as in the main chat.
+func (s *Service) AutonomousTaskSource(roomID, thread, sourceID string) (Message, User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	room, ok := s.rooms[roomID]
+	if !ok || !room.IsAutonomous() {
+		return Message{}, User{}, ErrRoomNotFound
+	}
+	for _, message := range room.Messages {
+		if message.ID != sourceID || (threadRootID(message) != thread && message.ID != thread) {
+			continue
+		}
+		sender := s.users[message.SenderID]
+		if publicAutonomousMessage(message) && humanRole(sender.Role) {
+			return PublicMessageView(message), sender, nil
+		}
+		break
+	}
+	return Message{}, User{}, fmt.Errorf("source_message_id must identify a human request in this conversation")
+}
+
 // PublicMessageView omits the private execution trace attached to legacy final
 // replies. A public body must not expose another member's tool history.
 func PublicMessageView(message Message) Message {

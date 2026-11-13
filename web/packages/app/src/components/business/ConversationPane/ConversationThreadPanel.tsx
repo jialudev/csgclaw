@@ -101,6 +101,7 @@ export type ConversationThreadPanelProps = ComposerResourceProps & {
   memoryAgentID?: string;
   fileScope?: ChatFileScope;
   renderTurnControls?: (message: IMMessage) => ProgressControlSlots | null;
+  renderMessageFooter?: (message: IMMessage) => React.ReactNode;
   agents?: AgentLike[];
   disabled: boolean;
   draftSegments: ComposerSegment[];
@@ -146,6 +147,7 @@ export function ConversationThreadPanel({
   onPickResources,
   fileScope,
   renderTurnControls,
+  renderMessageFooter,
   thread,
   currentUserID,
   agents = [],
@@ -416,6 +418,7 @@ export function ConversationThreadPanel({
               }
               currentUserID={currentUserID}
               progressControls={renderTurnControls?.(visibleRoot)}
+              footer={renderMessageFooter?.(visibleRoot)}
               agents={agents}
               usersById={usersById}
               locale={locale}
@@ -440,6 +443,7 @@ export function ConversationThreadPanel({
                 onForgetMemory={memory.sourceFor(message) ? () => memory.forget(memory.sourceFor(message)) : undefined}
                 currentUserID={currentUserID}
                 progressControls={renderTurnControls?.(message)}
+                footer={renderMessageFooter?.(message)}
                 agents={agents}
                 usersById={usersById}
                 locale={locale}
@@ -675,6 +679,7 @@ export function ConversationThreadPanel({
 }
 
 type ThreadMessageProps = {
+  footer?: React.ReactNode;
   showTurnProgress?: boolean;
   currentUserID?: string;
   progressControls?: ProgressControlSlots | null;
@@ -695,6 +700,7 @@ type ThreadMessageProps = {
 };
 
 function ThreadMessage({
+  footer,
   showTurnProgress = true,
   currentUserID,
   progressControls,
@@ -788,6 +794,7 @@ function ThreadMessage({
           />
         ))}
         <ConversationMessageActions
+          leading={footer}
           showTokenUsage={showTurnProgress}
           metadata={message.metadata}
           className={conversationThreadsStyles["thread-message-actions"]}

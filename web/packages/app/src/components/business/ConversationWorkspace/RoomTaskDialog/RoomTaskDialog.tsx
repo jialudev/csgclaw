@@ -79,6 +79,7 @@ type Props = Shared & {
   taskID: string;
   loading: boolean;
   error: string;
+  autonomous?: boolean;
   onClose: () => void;
   onRestoreFocus: () => void;
 };
@@ -89,6 +90,7 @@ export function RoomTaskDialog({
   tasks,
   loading,
   error,
+  autonomous = false,
   onClose,
   onRestoreFocus,
   t,
@@ -149,6 +151,12 @@ export function RoomTaskDialog({
                   <Status task={group.task} tasks={scoped} t={t} />
                 </div>
               ) : null}
+              {autonomous ? (
+                <p>
+                  {t(group.children.length ? "roomTaskCoordinator" : "roomTaskOwner")} ·{" "}
+                  {group.task.assigned_to_agent_name || group.task.assigned_to || t("taskAssigneeUnassigned")}
+                </p>
+              ) : null}
               {group.children.length ? (
                 <ol className={styles.children} aria-label={t("roomTaskChildren")}>
                   {group.children.map((child) => (
@@ -169,9 +177,9 @@ export function RoomTaskDialog({
                     </li>
                   ))}
                 </ol>
-              ) : (
+              ) : !autonomous ? (
                 <p>{t("roomPlanWaiting")}</p>
-              )}
+              ) : null}
             </section>
           ))}
         </div>

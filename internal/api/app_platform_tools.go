@@ -76,10 +76,14 @@ func platformToolFailure(err error) *mcp.CallToolResult {
 // Use the native turn's persisted conversation binding, never an Agent's latest
 // room: one Agent may coordinate several rooms concurrently.
 func (h *Handler) scopeAppPlatformRoomTool(agentID, name string, request *mcp.CallToolRequest, args map[string]any) error {
-	if name != "agent_task_create" && name != "message_send" && name != "messages_read" && name != "messages_ack" && name != "messages_list" && !strings.HasPrefix(name, "room_task") {
+	autonomousTask := strings.HasPrefix(name, "autonomous_task")
+	if !autonomousTask && name != "agent_task_create" && name != "message_send" && name != "messages_read" && name != "messages_ack" && name != "messages_list" && !strings.HasPrefix(name, "room_task") {
 		return nil
 	}
 	if request.Params.Meta["x-codex-turn-metadata"] == nil {
+		if autonomousTask {
+			return h.scopeUnboundAutonomous(agentID, args, true)
+		}
 		switch name {
 		case "message_send", "messages_read", "messages_ack":
 			return h.scopeUnboundAutonomousMessage(agentID, args)
@@ -102,11 +106,18 @@ func (h *Handler) scopeAppPlatformRoomTool(agentID, name string, request *mcp.Ca
 }
 
 func (h *Handler) scopeAppPlatformRoomConversation(agentID, name, conversation string, args map[string]any) error {
+	autonomousTask := strings.HasPrefix(name, "autonomous_task")
 	if !strings.HasPrefix(conversation, "csgclaw-im:") {
+		if autonomousTask {
+			return fmt.Errorf("this tool requires an active autonomous room turn")
+		}
 		return nil
 	}
 	_, scope, ok := strings.Cut(conversation, ":room:")
 	if !ok {
+		if autonomousTask {
+			return fmt.Errorf("this tool requires an active autonomous room turn")
+		}
 		return nil
 	}
 	scope, suffix, _ := strings.Cut(scope, ":")
@@ -123,6 +134,9 @@ func (h *Handler) scopeAppPlatformRoomConversation(agentID, name, conversation s
 					return fmt.Errorf("invalid thread conversation binding")
 				}
 			}
+			if autonomousTask {
+				return bindAutonomousMessageTarget(args, roomID, boundThread)
+			}
 			switch name {
 			case "message_send", "messages_read", "messages_ack":
 				return bindAutonomousMessageTarget(args, roomID, boundThread)
@@ -132,6 +146,9 @@ func (h *Handler) scopeAppPlatformRoomConversation(agentID, name, conversation s
 				}
 			}
 		}
+	}
+	if autonomousTask {
+		return fmt.Errorf("this tool requires an active autonomous room turn")
 	}
 	roster, ok := h.roomSchedulingContext(roomID)
 	if !ok {
@@ -174,10 +191,17 @@ func bindAutonomousMessageTarget(args map[string]any, roomID, threadRootID strin
 // During autonomous work, the active conversation must be unambiguous before
 // sending a message or reserving and acknowledging its unread page.
 func (h *Handler) scopeUnboundAutonomousMessage(agentID string, args map[string]any) error {
+	return h.scopeUnboundAutonomous(agentID, args, false)
+}
+
+func (h *Handler) scopeUnboundAutonomous(agentID string, args map[string]any, requireRoom bool) error {
 	reader, ok := h.participantWork.(interface {
 		ActiveWorkForParticipant(string) []apitypes.ParticipantWorkUpdate
 	})
 	if !ok || h.im == nil {
+		if requireRoom {
+			return fmt.Errorf("this tool requires an active autonomous room turn")
+		}
 		return nil
 	}
 	type scope struct{ roomID, threadRootID string }
@@ -194,6 +218,9 @@ func (h *Handler) scopeUnboundAutonomousMessage(agentID string, args map[string]
 		}
 	}
 	if current.roomID == "" {
+		if requireRoom {
+			return fmt.Errorf("this tool requires an active autonomous room turn")
+		}
 		return nil
 	}
 	if len(scopes) != 1 {
